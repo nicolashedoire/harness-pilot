@@ -303,7 +303,7 @@ def test_topic_permission_deny_rules_and_turn_env(client, topic, mx):
     """A topic's own permission mode wins over the global one; every turn gets the deny rules protecting the
     secrets, the compaction window (threshold + margin) and the quiet start."""
     from maxxing import config
-    from maxxing.sessions import spawn
+    from maxxing.sessions import codex, spawn
     project, name = topic.split("/")[1], topic.split("/")[3]
     t = client.patch(f"/api/workspace/projects/{project}/topics/{name}", json={"permission_mode": "default"}).json()
     assert t["permission_mode"] == "default"
@@ -316,6 +316,7 @@ def test_topic_permission_deny_rules_and_turn_env(client, topic, mx):
     assert argv[argv.index("--permission-mode") + 1] == "default" and "--dangerously-skip-permissions" not in argv
     rules = json.loads(argv[argv.index("--settings") + 1])["permissions"]["deny"]
     assert f"Read(/{config.STATE}/secrets.json)" in rules and any(r.startswith("Read(//") and ".ssh/**" in r for r in rules)
+    assert f"Read(/{codex.home() / 'auth.json'})" in rules and f"Edit(/{config.claude_dir() / '.credentials.json'})" in rules
     assert c["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == str(400000 + spawn.COMPACT_WINDOW_MARGIN)
     assert c["env"]["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
     # back to the global mode; protection, compaction and quiet start can be turned off

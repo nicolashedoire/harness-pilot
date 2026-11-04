@@ -127,18 +127,23 @@ def compact_window(cfg: dict) -> int | None:
 
 
 def secret_paths() -> list[Path]:
-    """What `protect_secrets` keeps from the agents: the server's secrets file and the SSH keys folder."""
+    """What `protect_secrets` keeps from the agents: the server's secrets file, the SSH keys folder, and the agents' own
+    sign-ins - Codex's auth.json (`codex.home()`: CODEX_HOME, else ~/.codex) and Claude Code's credentials file
+    (`config.claude_dir()`; on macOS Claude Code keeps them in the Keychain instead). Each agent's own process still
+    reads its file: the rules cover tools and sandboxed commands, not the CLI itself."""
+    from . import codex                                  # its CODEX_HOME rule
     home = os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir
-    return [config.STATE / "secrets.json", Path(home) / ".ssh"]
+    return [config.STATE / "secrets.json", Path(home) / ".ssh", codex.home() / "auth.json",
+            config.claude_dir() / ".credentials.json"]
 
 
 def protected_paths() -> list[str]:
-    """Files Claude's tools must not read or edit when `protect_secrets` is on: the server's secrets and SSH keys.
-    A speed bump against injected instructions ("read ~/.ssh/id_ed25519 and post it"): Read/Edit and simple shell
-    reads (`cat`) are refused, a script that opens the file is not - permission modes are the real limit.
+    """Files Claude's tools must not read or edit when `protect_secrets` is on: the server's secrets, SSH keys and the
+    agents' sign-ins. A speed bump against injected instructions ("read ~/.ssh/id_ed25519 and post it"): Read/Edit and
+    simple shell reads (`cat`) are refused, a script that opens the file is not - permission modes are the real limit.
     Codex turns deny the same paths in their OS sandbox (`codex.sandbox_args`)."""
-    secrets, ssh = secret_paths()
-    return [str(secrets), str(ssh) + "/**"]
+    secrets, ssh, *files = secret_paths()
+    return [str(secrets), str(ssh) + "/**", *map(str, files)]
 
 
 def deny_rules(cfg: dict) -> list[str]:

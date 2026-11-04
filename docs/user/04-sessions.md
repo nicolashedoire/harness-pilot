@@ -49,9 +49,10 @@ On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Code
 ([Telegram](telegram#choosing-the-agent)).
 
 **Protect the secrets** (Settings → Claude, on by default) applies to Codex too: its sandbox refuses to read or change
-the server's `secrets.json` and `~/.ssh` in every mode, for every command Codex runs, a script included. Outside that
-sandbox: the MCP servers Codex starts, and its image viewer, which could still show it a picture stored in those
-folders. Checked on macOS and on Linux. On a Linux machine where Codex's sandbox cannot start (bubblewrap without
+the server's `secrets.json`, `~/.ssh` and the agents' own sign-ins (Codex's `auth.json`, Claude Code's
+`.credentials.json`) in every mode, for every command Codex runs, a script included; Codex itself still signs in with
+its file. Outside that sandbox: the MCP servers Codex starts, and its image viewer, which could still show it a
+picture stored in those folders. Checked on macOS and on Linux. On a Linux machine where Codex's sandbox cannot start (bubblewrap without
 user namespaces, as in some containers), a Codex turn now stops with that error instead of answering without running
 commands; turning **Protect the secrets** off brings the old behaviour back, without this protection.
 
