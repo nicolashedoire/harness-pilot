@@ -3780,6 +3780,10 @@ export const en = {
   "instanceBackup.error.large": "The archive exceeds the configured backup or upload size limit. Review the included directories and server limits.",
 
   "instanceBackup.resumeError": "Some background services could not resume after the snapshot. Review server logs and restart the application before continuing.",
+  "instanceBackup.included": "Included",
+  "instanceBackup.notIncluded": "Not included",
+  "instanceBackup.filesLeftOut": "The Files page folder is your home folder (or contains it), so it is not included: only the application’s own folders are archived — settings and credentials, conversations, attachments and projects.",
+  "instanceBackup.archiveLeftOut": "This archive does not include the Files page folder of the original instance (a home folder). The restored copy uses its restored workspace as its Files page folder; paths into the original home folder are kept as they were.",
   "instanceBackup.exports.title": "Archives kept on this server",
   "instanceBackup.exports.hint": "Encrypted archives stay in the application’s data folder until you delete them. Download a copy to keep elsewhere first.",
   "instanceBackup.exports.empty": "No archive is kept on this server.",

@@ -874,7 +874,7 @@ All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persis
 
 | Method/path | Request | Result |
 | --- | --- | --- |
-| GET base | — | Data roots, size limit, `restore_hold`, `integrations_paused`, export availability |
+| GET base | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`) |
 | POST `/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
 | GET `/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes}]` |
 | DELETE `/exports/{id}` | — | `{ok, id}`: removes the export and its metadata · `404 not_found` for an unknown id, anything but 32 lowercase hex characters, or a symbolic link |
@@ -885,6 +885,13 @@ All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persis
 | POST `/resume-integrations` | `{}` | `{ok, scheduled_jobs, telegram}`: resume Telegram, scheduled jobs and the GitHub memory backup of an activated copy · `409 restore_hold` before activation |
 
 A full snapshot pauses pausable services and rejects concurrent HTTP mutations/WebSocket activity.
+A root that is the filesystem root, the home folder or one of its ancestors is broad. A broad state or workspace
+root makes export fail with `400 broad_root` (the message names the folder). A broad files root (the Files page
+scope: `$HOME` on default installs) is recorded as `{source, archive: null, excluded: "broad_root"}`, is never read,
+and the export, preview and restore results list it in `excluded_roots` (`includes` then lacks `files`). Restoring
+such an archive sets the copy's `files_root` to its restored workspace and leaves paths into the excluded root
+unchanged; a manifest that leaves out another root, gives another reason or has entries under the left-out root
+is refused (`400 manifest`).
 Changed sources or active/queued sessions abort export. Restored instances defer service startup,
 allow authentication and reads, and reject mutations until explicit activation. A verified preview (decrypted, under the
 private state folder) expires after 1 hour (`PREVIEW_TTL`): the module's startup hook purges expired previews

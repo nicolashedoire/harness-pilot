@@ -8,7 +8,8 @@ for recovery, and a **selected-file GitHub memory backup** for versioned memory.
 
 ## Complete instance archive
 
-The archive includes the configured application state, workspace and files directories:
+The archive includes the configured application state and workspace directories, and the Files page
+folder when it is a dedicated one:
 settings and credentials, conversations and logs, attachments, projects, ordinary files,
 and valid personal/agent/shared labels. Expand **Included data directories** to check the scope.
 It does not contain the application itself or provider binaries. Temporary runtime files,
@@ -57,8 +58,12 @@ system typed it as one character or as a letter plus an accent. The entire encry
 stream must authenticate before its ZIP inventory is examined; file hashes and paths are checked
 again before extraction. The default uncompressed data limit is 2048 MiB (`instance_backup_max_mb`);
 `upload_max_mb` and available-disk reserves also apply. Large archives are streamed rather than
-loaded into browser memory. A dedicated workspace and files directory is required; the filesystem
-root or the whole home directory cannot be used as a complete-backup root.
+loaded into browser memory. The application data folder and the workspace must be dedicated folders: when either is the filesystem
+root, your home folder or a folder containing it, export is refused with a message naming it. The Files
+page folder is your home folder on a default installation: it is then **not included** (nothing outside
+the application's own folders is read), which the folder list and a note show before you export. A
+dedicated Files page folder is included. Restoring an archive without it gives the copy its restored
+workspace as Files page folder; paths into the original home folder are kept as they were.
 
 Verified previews temporarily contain decrypted data in the private state directory (mode 0700).
 They expire after one hour. The server removes an expired preview as soon as its hour is up, when it

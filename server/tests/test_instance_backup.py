@@ -478,3 +478,68 @@ def test_decrypted_previews_last_one_hour_and_are_purged_at_startup_and_on_expir
         fresh = imports / snapshots.inspect(archive, PASSWORD)['id']
         assert (fresh / 'snapshot.zip').is_file()
         wait_for(lambda: not fresh.exists(), timeout=15)
+
+
+def test_a_broad_files_root_is_left_out_and_the_copy_uses_its_restored_workspace(mx, monkeypatch):
+    seed(mx)
+    home = mx['tmp']                                  # the default install: files_root = $HOME
+    monkeypatch.setenv('HOME', str(home))
+    config.update_config(files_root=str(home))
+    personal = home / 'Documents/tax-return.pdf'
+    personal.parent.mkdir()
+    personal.write_bytes(b'%PDF personal')
+    (mx['state'] / 'notes.json').write_text(json.dumps({'file': str(personal)}))
+    excluded = {'files': {'source': str(home.resolve()), 'reason': 'broad_root'}}
+    status = snapshots.status()
+    assert status['export_error'] is None
+    assert status['roots']['files'] == {'source': str(home.resolve()), 'archive': None, 'excluded': 'broad_root'}
+    assert status['roots']['workspace']['archive'] == 'workspace' and status['roots']['state']['archive'] == 'state'
+    exported, preview, restored = round_trip(mx)
+    for result in (exported, preview, restored):
+        assert result['excluded_roots'] == excluded and 'files' not in result['includes']
+    destination = Path(restored['destination'])
+    assert not (destination / 'files').exists()
+    assert not [p for p in destination.rglob('*') if p.name in ('tax-return.pdf', 'attachment.bin', 'crontab')]
+    assert (destination / 'workspace/projects/acme').is_dir()
+    cfg = json.loads((destination / 'state/config.json').read_text())
+    assert cfg['files_root'] == str(destination / 'workspace') and cfg['workspace'] == str(destination / 'workspace')
+    assert str(home.resolve()) not in [alias['source'] for alias in cfg['restored_path_aliases']]
+    # A path into the original home folder stays a historical reference: never retargeted into the copy.
+    assert json.loads((destination / 'state/notes.json').read_text()) == {'file': str(personal)}
+    assert json.loads((destination / 'restore-report.json').read_text())['excluded_roots'] == excluded
+    # An ancestor of the home folder (/home, /Users) is just as broad.
+    monkeypatch.setenv('HOME', str(mx['files'] / 'someone'))
+    config.update_config(files_root=str(mx['files']))
+    assert snapshots._roots()['files']['archive'] is None
+
+
+@pytest.mark.parametrize('name, home', [('workspace', 'ws'), ('workspace', 'ws/someone'), ('state', 'state')])
+def test_a_broad_state_or_workspace_root_is_refused_clearly(mx, monkeypatch, name, home):
+    seed(mx)
+    monkeypatch.setenv('HOME', str(mx['tmp'] / home))
+    label = {'workspace': 'workspace folder', 'state': 'application data folder'}[name]
+    assert label in snapshots.status()['export_error']
+    with pytest.raises(snapshots.SnapshotError) as caught:
+        snapshots.export(PASSWORD)
+    assert caught.value.code == 'broad_root' and 'dedicated folder' in str(caught.value)
+    assert not list((mx['state'] / 'instance-backups').glob('exports/*.pilotbackup'))
+
+
+@pytest.mark.parametrize('files_root, entry', [
+    ({'source': '/', 'archive': None, 'excluded': 'broad_root'}, 'files/secret'),   # data under a root left out
+    ({'source': '/', 'archive': None, 'excluded': 'other'}, None),
+    ({'source': '/', 'archive': None}, None),
+    ({'source': '/srv/files', 'archive': 'elsewhere'}, None),
+])
+def test_restore_refuses_inconsistent_excluded_roots(mx, files_root, entry):
+    seed(mx)
+    roots = {**snapshots._roots(), 'files': files_root}
+    plain, encrypted = mx['tmp'] / 'invalid.zip', mx['tmp'] / 'invalid.pilotbackup'
+    entries = [{'path': entry, 'kind': 'directory', 'mode': 448}] if entry else []
+    manifest = {'format': 'pilot-instance', 'schema': 1, 'version': 'test', 'created': 1, 'roots': roots, 'entries': entries}
+    with zipfile.ZipFile(plain, 'w') as bundle:
+        bundle.writestr('manifest.json', json.dumps(manifest))
+    snapshots._crypt(plain, encrypted, PASSWORD)
+    with pytest.raises(snapshots.SnapshotError) as caught:
+        snapshots.inspect(encrypted, PASSWORD)
+    assert caught.value.code == 'manifest'
