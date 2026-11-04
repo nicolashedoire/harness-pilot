@@ -6,7 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
-- Browser notification setup now offers Cancel while waiting for permission or push registration and stops waiting after 30 seconds. A late browser response does not resume a cancelled registration. The push switch also becomes available after the first service worker activates, without a reload.
+- Settings → Notifications: while the browser asks for notification permission or sets up push, a **Cancel** button shows and the app stops waiting after 30 seconds; an answer given after a cancel no longer finishes the cancelled attempt. On a first visit, the push switch becomes available without reloading the page.
 - The inherited license commands no longer contact the original project's license server or code repository: activating or releasing a key now stops with a clear message, and removing a key only forgets it on your computer.
 - Install harness-pilot as a service on a Linux server (Debian 12 or Ubuntu 24.04): download `install.sh` from this repository and run it with `sudo bash install.sh`. It sets up the service, a setup link for your password, security updates and the tools, and `pilot update` keeps it up to date. See Installation for the steps and what has been verified so far.
 - The Security help page now describes the local installation: who can reach the interface, where secrets are kept and how, what agents, companions and extensions can do on your computer, telemetry, and good practice.

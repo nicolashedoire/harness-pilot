@@ -108,16 +108,14 @@ finished: browser, silent*). A webhook or a script is pushed with all its events
 forgotten by itself. If the server's push key is replaced (its key file lost), each browser subscribes again by
 itself the next time the app is open there.
 
+While the browser asks for permission or sets up push, the card shows **Waiting for your browser** with a
+**Cancel** button, and the app stops waiting after 30 seconds. Answer the browser's prompt, or cancel and try again
+later: an answer given after a cancel does not turn push on (cancelling does not close the browser's prompt, and a
+permission you grant there stays granted). On a first visit the switch becomes available once the app has finished
+installing in the browser, without reloading the page.
+
 ## Good to know
 
 - Events are kept 30 days. They live on your server (`/var/lib/claude-maxxing/feed.db`).
 - A webhook's content comes from outside: *Ask harness-pilot* treats it as data, never as instructions, and opens the
   session in plan mode (Claude explains, it changes nothing until you approve a plan).
-
-
-### If browser permission or push setup is waiting
-
-Settings -> Notifications shows **Waiting for your browser** during setup. Respond to the browser's permission
-prompt, or press **Cancel** and retry later. The app stops waiting after 30 seconds. Cancelling does not close a
-native browser prompt or undo permission you already granted, but its later answer cannot silently finish the
-cancelled registration. First installation waits for the service worker to activate; a reload should not be needed.
