@@ -544,6 +544,7 @@ export const fr: Record<keyof typeof en, string> = {
   'swarm.result': 'Résultat transmis',
   'swarm.noResult': 'Aucun résultat disponible pour le moment.',
   'swarm.loadEarlier': 'Charger les messages précédents',
+  'swarm.stopHint': 'Les sous-agents s’exécutent dans le tour en cours de Claude : Claude Code ne permet pas d’en arrêter un seul. Arrêtez la session pour interrompre le coordinateur et tous ses sous-agents.',
   'summary.memory': 'Mémoire partagée du sujet',
   'summary.memoryHelp': 'Relisez et modifiez ce texte avant de l’enregistrer dans le fichier memory.md du sujet. Codex le lit au prochain tour ; Claude le charge au démarrage d’un nouveau fil. Rien n’est enregistré automatiquement.',
   'summary.memoryReview': 'Relire la mémoire',
