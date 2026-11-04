@@ -227,6 +227,33 @@ Python modules call each other only through these functions. Keep signatures sta
 - Telegram: `gateway.feed_notify(ev, loud)` / `feed_message(ev)` (body cut at 700 characters BEFORE HTML escaping); thread key `#feed` (`NOTIFY_ONLY` = Crons, Alerts,
   Notifications: never treated as topic threads by the legacy migration); callback `f:<id>` = Ask Claude.
 
+## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
+Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
+inside the functions that need them), so `sessions/codex.py` could read its output without it.
+- `BUILTINS` (type, icon, category, hint, `fields` = the body summary given to the agents, `schema`, `raw` field for
+  raw-text bodies, `pin`) is the source of the built-in schemas. Copies to keep in step (tests fail otherwise):
+  `web/mock/blocks-builtins.json` (dev mock) and the type sets of `web/src/features/blocks/fence.tsx`.
+- `check_schema(schema)` (raises ValueError on anything outside the subset) and `validate(schema, data, limit=20) ->
+  [str]` (mirrors `features/blocks/schema.ts`, same messages).
+- `parse_manifest(dir) -> dict` validates `block.json` (limits, renders, hosts, schema file, entry inside the folder).
+  `extensions._load_one` calls it for a folder with `block.json` and no `manifest.json`: `Extension.type == "block"`,
+  `Extension.block` = the manifest; never imported, never a widget. `extensions.on_change(fn)` listeners run after a
+  rescan or an enable / disable (the blocks API registers `sync_agent_files`).
+- `plugins(light=False)` (built-ins + block extensions with `enabled`, `error` - a type claimed twice -, `consent`),
+  `get(id)`, `enabled_plugins()`, `set_enabled(id, on)` (config `blocks.disabled` or `extensions.disabled`).
+  `light=True` reads the block.json files directly (CLI: install, doctor) instead of the extension registry.
+- Consent: `set_consent(id, "always"|"once"|"deny"|"reset")` (config `blocks.consent`, or an in-memory grant token for
+  one hour), `allowed_hosts(plugin, grant)`, `frame_csp(hosts)` (the frames' policy).
+- `to_card(type, data, title)` / `pin(...)`: dashboard pins are plain widget extensions `pin-<slug>-<hex>` (manifest,
+  `card.json`, fixed `api.py` returning it).
+- Agents: `skill_vars(ps)` -> `{{PILOT_BLOCKS_TYPES}}`, `{{PILOT_BLOCKS_ENABLED}}`, merged into `cmd_core._skill_vars()`
+  (install and `skills_status` render `skills/pilot-blocks/SKILL.md` with them); `sync_agent_files()` writes
+  `<state>/blocks/agents.md` (Codex: `sessions/codex.workspace_context` appends it, the only hook in session code),
+  `<state>/blocks/reference.md`, and renders the installed skill again when it exists. Idempotent (files rewritten only
+  on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `maxxing init`. The
+  user's CLAUDE.md files are never touched.
+- `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
+
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
   cron sessions; a discussion / debate paused with `discussion_pause_reason == "limit"` -> `discussion.paused`; state

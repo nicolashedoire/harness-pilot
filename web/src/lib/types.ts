@@ -719,10 +719,12 @@ export type DashboardLayout = { order: string[]; hidden: string[] }
 export type Extension = {
   id: string
   name: string
-  type: 'widget' | 'page'
+  type: 'widget' | 'page' | 'block'
   icon: string
   version: string
   enabled: boolean
+  /** Block extensions (block.json): the conversation block types it draws. */
+  renders?: string[]
   error: string | null
   has_api: boolean
   /** Page extensions: own entry in the sidebar (otherwise listed under "Extensions"). */

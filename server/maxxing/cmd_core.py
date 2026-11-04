@@ -35,7 +35,7 @@ CADDYFILE = Path("/etc/caddy/Caddyfile")
 CADDY_SITE = Path("/etc/caddy/claude-maxxing.caddy")
 BIN_LINK = Path("/usr/local/bin/maxxing")
 PRODUCT_SKILLS_EXTRA = ("memory", "memory-compaction", "video-motion-design", "pdf-document", "image-edit",
-                        "seo-audit", "web-scraping")                     # + every skill named maxxing-*
+                        "seo-audit", "web-scraping", "pilot-blocks")     # + every skill named maxxing-*
 UPDATE_TOKEN = "github_update_token"
 STDIN_SECRETS = (UPDATE_TOKEN, "claude_oauth_token", "anthropic_api_key")
 COMPACTION_JOB = {
@@ -187,7 +187,8 @@ def skills_target() -> Path:
 
 
 def _skill_vars() -> dict[str, str]:
-    return template_vars(config.workspace())
+    from . import blocks                       # pilot-blocks lists the conversation blocks enabled on this server
+    return {**template_vars(config.workspace()), **blocks.skill_vars()}
 
 
 def _render_skill_tree(dst: Path, variables: dict[str, str]) -> None:
@@ -561,6 +562,11 @@ def do_init(a: argparse.Namespace) -> dict:
     ws = Path(raw["workspace"])
     report["workspace_created"] = copy_templates(ws)
     report["skills"] = install_skills()
+    try:                                     # the enabled conversation block types, where the agents read them
+        from . import blocks
+        blocks.sync_agent_files()
+    except Exception:  # noqa: BLE001
+        pass
     report["claude_settings"] = "defaults set (transcripts kept, no AI credit in commits)" if claude_settings_defaults() else "unchanged"
     report["crons"] = "skipped (--no-crons)" if a.no_crons else ensure_default_crons()
     report["jobs_slice"] = ensure_jobs_slice()

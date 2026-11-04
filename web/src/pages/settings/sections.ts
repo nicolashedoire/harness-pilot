@@ -1,9 +1,9 @@
 // Settings sub-navigation (route /settings/:section). Lightweight on purpose: also used by the palette.
 // Support (donation) stays last and in the accent colour (pages/settings/index.tsx).
-import { Building2, UserRound, BarChart3, Bell, FolderKanban, HandHeart, History, ToggleRight, Blocks, BookOpen, Bot, Brain, DatabaseBackup, FileInput, KeyRound, Mic, Plug, Send, Server, Shield, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react'
+import { Building2, UserRound, BarChart3, Bell, FolderKanban, HandHeart, History, ToggleRight, Blocks, BookOpen, Shapes, Bot, Brain, DatabaseBackup, FileInput, KeyRound, Mic, Plug, Send, Server, Shield, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react'
 import type { TKey } from '@/i18n'
 
-export type SettingsSectionId = 'general' | 'profile' | 'license' | 'support' | 'packs' | 'features' | 'notifications' | 'security' | 'claude' | 'codex' | 'stats' | 'memory' | 'telegram' | 'voice' | 'backup' | 'keys' | 'mcp' | 'extensions' | 'import' | 'trash' | 'system' | 'updates' | 'docs'
+export type SettingsSectionId = 'general' | 'profile' | 'license' | 'support' | 'packs' | 'features' | 'notifications' | 'security' | 'claude' | 'codex' | 'stats' | 'memory' | 'telegram' | 'voice' | 'backup' | 'keys' | 'mcp' | 'extensions' | 'blocks' | 'import' | 'trash' | 'system' | 'updates' | 'docs'
 
 export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: TKey; description: TKey; icon: LucideIcon; keywords?: string }[] = [
   { id: 'general', label: 'settings.general', description: 'settings.general.desc', icon: SlidersHorizontal, keywords: 'theme accent language timezone density' },
@@ -24,6 +24,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: TKey; descriptio
   { id: 'keys', label: 'settings.keys', description: 'settings.keys.desc', icon: KeyRound, keywords: 'secrets vault env api keys' },
   { id: 'mcp', label: 'settings.mcp', description: 'settings.mcp.desc', icon: Plug, keywords: 'mcp servers tools connectors oauth model context protocol' },
   { id: 'extensions', label: 'settings.extensions', description: 'settings.extensions.desc', icon: Blocks, keywords: 'widgets pages plugins' },
+  { id: 'blocks', label: 'blocks.section', description: 'blocks.section.desc', icon: Shapes, keywords: 'conversation blocks plugins chart table form charts tables forms answers rich content' },
   { id: 'import', label: 'settings.import', description: 'settings.import.desc', icon: FileInput, keywords: 'import migrate hermes openclaw claude code zip memory' },
   { id: 'trash', label: 'settings.trash', description: 'settings.trash.desc', icon: Trash2, keywords: 'deleted restore recycle bin undo corbeille' },
   { id: 'packs', label: 'settings.projects', description: 'settings.projects.desc', icon: FolderKanban, keywords: 'packs starter projects ecommerce affiliate creator apps second brain freelance templates' },

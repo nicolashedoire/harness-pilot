@@ -93,6 +93,17 @@ Shared feature blocks (`src/features`): `Callout` (inline result/explanation, to
 domain components reused by onboarding **and** settings: `ClaudeConnect`, `ClaudeDefaults`, `CreateProjectTopic`
 (+ `SlugPreview`), `TelegramSetup` (+ `ThreadList`), `BackupSetup` (+ `BackupWhy`), `RegionFields`.
 
+**Conversation blocks** (`src/features/blocks`, API.md#conversation-blocks): `components/ui/markdown.tsx` asks the eager
+`fence.tsx` whether a fence is a block, then mounts the lazy `BlockFence` chunk (with the `blocks` dictionary group).
+Every renderer uses `BlockShell` (header: type icon, title, source · body · footer actions) and the fallback card
+`BlockNotice`; its root carries `.mx-block` (`blocks.css` hands the markdown element styles back to Tailwind inside
+it). Block data is model output: rendered as text only (never `dangerouslySetInnerHTML`), links through the safe
+checks, HTML only inside the sandboxed frames. Sending to the conversation goes through `useSendToSession` (shows the
+exact text, asks). The conversation view hooks in with `<BlockHostProvider value={{sessionId, send?, openPanel?,
+agent?}}>` (`features/blocks/host.tsx`); without it the blocks find the session from `[data-mx-session]` / the URL and
+open their own side drawer (`mx-block-open` window event too). Settings -> Conversation blocks
+(`pages/settings/sections/Blocks.tsx`) lists, toggles and explains the plugins.
+
 ## 3. Layout rules
 
 - **Two layouts**, decided once by `html[data-compact]` (`stores/media.ts` `isCompact()` / `useCompact()`, copied in
