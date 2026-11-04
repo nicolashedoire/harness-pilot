@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Texts that still said scheduled prompts, MCP servers or summaries were for Claude Code only now say that Codex does them too: the Crons page, **Settings → MCP** and **Settings → Codex**, the README and the scheduled jobs and MCP skills. The README also says that local scheduled jobs can catch up a missed run and run `@reboot` jobs at each start, and that a mixed team can be coordinated by Codex.
 - The server now refuses requests sent under a name that is not its own, so a website cannot reach it by pointing its domain at your computer (DNS rebinding). Addresses, `localhost`, Tailscale (`.ts.net`) and `.local` names and the configured public URL keep working; another name in front of the server can be allowed in `config.json`.
 - Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed. Outside **Full access**, Codex only uses the tools a server marks as read-only.
 - A mixed team's mission can be spoken: the recording is transcribed and its text is sent as the mission, like a voice message in the other modes.

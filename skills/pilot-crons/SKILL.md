@@ -1,6 +1,6 @@
 ---
 name: pilot-crons
-description: Create, change, disable or debug harness-pilot scheduled jobs (shell commands or Claude prompts run in a topic on a cron schedule, with Telegram reports). Use when the user wants something to happen every day/hour/week, asks about crons, or a job did not run.
+description: Create, change, disable or debug harness-pilot scheduled jobs (shell commands, or Claude Code or Codex prompts run in a topic on a cron schedule, with Telegram reports). Use when the user wants something to happen every day/hour/week, asks about crons, or a job did not run.
 ---
 
 # Scheduled jobs
@@ -43,8 +43,10 @@ Server command: `pilot` (`maxxing`, its earlier name, still works).
 4. `pilot cron run <id>` - test it now (records a run, sends the report per `notify`).
 
 ## Good practice
-- Claude jobs: say exactly what to produce and where to write it; mention the skill to use if one
-  exists ("Use the memory-compaction skill…"). Claude jobs appear as sessions flagged *cron*.
+- Prompt jobs (Claude Code or Codex): say exactly what to produce and where to write it; mention the skill to
+  use if one exists ("Use the memory-compaction skill…"). They appear as sessions flagged *cron*. A Codex job
+  needs Codex signed in on the server; with `permission_mode` `default` (Ask, strict) it runs read-only, with
+  the other modes it may write in the topic folder.
 - Shell jobs: absolute paths, idempotent scripts, write their own logs if long; the run keeps the
   last 2 KB of output.
 - Long work: raise `timeout_s` rather than chaining jobs. Overlapping runs of the same job are skipped.

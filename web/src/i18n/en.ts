@@ -1105,7 +1105,7 @@ export const en = {
   'codex.unknown': 'Unable to check the connection right now.',
   'codex.loginHint': 'After installing Codex, sign in from a terminal with',
   'codex.capabilities': 'Current capabilities',
-  'codex.capabilitiesDesc': 'Individual sessions and automatic conversations with Claude Code.',
+  'codex.capabilitiesDesc': 'Individual sessions, automatic conversations with Claude Code, mixed teams and scheduled prompts.',
   'codex.limits': 'Codex shares topic memory, attachments, plan mode, compaction, side questions and the MCP servers of Settings → MCP (not their sign-ins; outside Full access, only read-only tools). Claude Code only for now: Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota. Details in the Sessions guide.',
   'settings.telegram': 'Telegram',
   'settings.telegram.desc': 'Your bot, linked chat, threads and notifications.',
@@ -1639,8 +1639,8 @@ export const en = {
 
   // mcp
   'settings.mcp': 'MCP',
-  'settings.mcp.desc': 'Tools Claude can use (Google Ads, Notion, a database…): where each MCP server applies and whether it is connected.',
-  'mcp.whatTitle': 'MCP servers give Claude new tools',
+  'settings.mcp.desc': 'Tools Claude Code and Codex can use (Google Ads, Notion, a database…): where each MCP server applies and whether it is connected.',
+  'mcp.whatTitle': 'MCP servers give Claude Code and Codex new tools',
   'pc.candidateTitle': "{name} wants to connect",
   'pc.candidateFrom': "It connected from {ip} at {time}. If that is not your computer's address, refuse.",
   'pc.candidateDesc': "A {os} computer used your download. Is it yours? Until you say yes, Claude cannot use it. If you do not recognise it, refuse: it is disconnected and forgets this server.",
@@ -1695,7 +1695,7 @@ export const en = {
   'pc.idle': 'Close the browser after',
   'pc.idleDesc': 'Without any browser action from Claude for this long, the browser and its tools stop.',
   'pc.recent': 'Recent actions',
-  'mcp.whatExplain': 'A server added for "Every session" is available everywhere; one added to a topic only in the sessions of that topic. Secrets stay in Settings → Keys and are referenced as ${KEY_NAME}. You can also just ask Claude in a topic: "connect the MCP …".',
+  'mcp.whatExplain': 'A server added for "Every session" is available everywhere; one added to a topic only in the sessions of that topic. Secrets stay in Settings → Keys and are referenced as ${KEY_NAME}. You can also just ask Claude in a topic: "connect the MCP …". Codex sessions get these servers too, without their sign-ins; outside Full access, only the tools a server marks as read-only.',
   'mcp.servers': 'MCP servers',
   'mcp.autoTitle': 'Loading',
   'mcp.auto': 'Load MCP servers only when a session needs them',
@@ -1762,7 +1762,7 @@ export const en = {
   'mcp.chatConnected': '{name} was connected at the last check: connect it again if the agent still asks.',
   'mcp.remove': 'Remove',
   'mcp.removeTitle': 'Remove {name}?',
-  'mcp.removeDesc': 'Claude will no longer have its tools there. The keys of the vault are kept.',
+  'mcp.removeDesc': 'Sessions will no longer have its tools there. The keys of the vault are kept.',
 
   // keys
   'keys.vault': 'Vault',
@@ -2543,7 +2543,7 @@ export const en = {
   'tasks.projects.deleteTitle': 'Delete this project?',
   'tasks.projects.deleteDesc': 'Its tasks are kept, without a project.',
   'crons.description': 'Scheduled shell commands and harness-pilot prompts',
-  'crons.localHint': 'Local schedules run only while the application is running. Missed runs are skipped, unless a job is set to catch up at the next start; @reboot jobs run each time the application starts. Scheduled prompts use Claude Code.',
+  'crons.localHint': 'Local schedules run only while the application is running. Missed runs are skipped, unless a job is set to catch up at the next start; @reboot jobs run each time the application starts.',
   'crons.new': 'New job',
   'crons.newTitle': 'New scheduled job',
   'crons.editTitle': 'Edit job',
