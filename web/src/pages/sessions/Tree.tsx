@@ -93,6 +93,7 @@ import {
   Tooltip,
   useMask,
 } from '@/components/ui'
+import { AgentIcon, sessionAgents } from '@/features/agents/AgentIcon'
 import { SlugPreview } from '@/features/workspace/CreateProjectTopic'
 import { forgetLog } from './log'
 import { FLAT_SORTS, RECENT_COUNTS, saveDraft, saveQuotes, TREE_MODES, useSessionsUI, type FlatSort, type ListBy, type TreeMode } from './store'
@@ -112,6 +113,8 @@ const TreeIntro = React.createContext(false)
 let introPlayed = false
 
 type Props = {
+  /** Computer layout: buttons of the list's title row (new session, layouts…). */
+  actions?: React.ReactNode
   onOpenSession: (s: Session) => void
   onNewSession: (path: string) => void
   /** Topic highlighted (focused column / ?path=). */
@@ -126,7 +129,7 @@ type Props = {
   className?: string
 }
 
-export function SessionTree({ onOpenSession, onNewSession, activePath, openIds, focusedId, onHide, touch, className }: Props) {
+export function SessionTree({ actions, onOpenSession, onNewSession, activePath, openIds, focusedId, onHide, touch, className }: Props) {
   const t = useT()
   const ws = useWorkspace()
   const reorderProjects = useReorderProjects()
@@ -238,6 +241,7 @@ export function SessionTree({ onOpenSession, onNewSession, activePath, openIds, 
       sessions={live.data || []}
       onNew={touch ? (newHere === null ? undefined : () => onNewSession(newHere)) : undefined}
       onHide={onHide}
+      actions={actions}
       menu={
         projects.length > 0 && (
           <ViewMenu
@@ -382,8 +386,10 @@ function ListHeader({
   sessions,
   onNew,
   onHide,
+  actions,
   menu,
 }: {
+  actions?: React.ReactNode
   touch?: boolean
   q: string
   onQ: (v: string) => void
@@ -404,15 +410,22 @@ function ListHeader({
       on ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground active:bg-accent',
     )
   return (
-    <div className={cn('grid shrink-0', touch ? 'gap-2.5 px-3 pt-3 pb-2' : 'gap-2 px-2 pt-2 pb-1.5')} data-testid="tree-header">
+    <div className={cn('grid shrink-0', touch ? 'gap-2.5 px-3 pt-3 pb-2' : 'gap-2.5 px-2.5 pt-2.5 pb-1.5')} data-testid="tree-header">
+      {!touch && (
+        // Computer: the list's title row ("Sessions", fold, layouts, new session) - the page has no other header
+        <div className="flex h-9 min-w-0 items-center gap-1">
+          {onHide && (
+            <Tooltip content={t('sessions.tree.hide')}>
+              <Button variant="ghost" size="icon-sm" aria-label={t('sessions.tree.hide')} onClick={onHide} className="-ml-1 shrink-0 text-muted-foreground">
+                <PanelLeftClose />
+              </Button>
+            </Tooltip>
+          )}
+          <h2 className="min-w-0 flex-1 truncate px-0.5 text-[15px] font-semibold">{t('nav.sessions')}</h2>
+          {actions}
+        </div>
+      )}
       <div className={cn('flex items-center', touch ? 'gap-2' : 'gap-1')}>
-        {onHide && (
-          <Tooltip content={t('sessions.tree.hide')}>
-            <Button variant="ghost" size="icon-sm" aria-label={t('sessions.tree.hide')} onClick={onHide} className="shrink-0 text-muted-foreground">
-              <PanelLeftClose />
-            </Button>
-          </Tooltip>
-        )}
         <div className="relative min-w-0 flex-1">
           <Search className={cn('pointer-events-none absolute top-1/2 -translate-y-1/2 text-muted-foreground', touch ? 'left-3 size-[18px]' : 'left-2.5 size-3.5')} />
           <Input
@@ -1007,6 +1020,14 @@ const SessionRow = React.memo(function SessionRow({
             {s.favorite && <Star className="size-3 shrink-0 fill-current text-warning" aria-label={t('sessions.fav.on')} />}
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-normal text-muted-foreground max-md:text-[12.5px]">
+            {s.provider && s.provider !== 'claude' && (
+              // Codex, or a discussion between both agents: their marks (Claude Code alone is the default)
+              <span className="flex shrink-0 items-center gap-0.5" data-testid="session-agents">
+                {sessionAgents(s.provider).map((a) => (
+                  <AgentIcon key={a} agent={a} size={12} />
+                ))}
+              </span>
+            )}
             {label && (
               <span className="min-w-0 shrink truncate" data-testid="session-label">
                 <Sensitive length={8}>{label}</Sensitive> ·
@@ -1014,7 +1035,10 @@ const SessionRow = React.memo(function SessionRow({
             )}
             <span className="shrink-0 tabular-nums">{fmtRelative(s.updated, lang)}</span>
             {s.debate_paused && s.discussion_pause_reason === 'limit' && <span className="shrink-0 text-warning">· {t('sessions.discussionLimitReached')}</span>}
-            {model && !label && <span className="truncate">· {modelLabel(model, claude?.models)}</span>}
+            {(s.provider === 'discussion' || s.provider === 'debate') && !!s.discussion_turns && (
+              <span className="shrink-0 tabular-nums">· {t('conv.reply', { n: s.discussion_turn_limit ? `${s.discussion_turns}/${s.discussion_turn_limit}` : s.discussion_turns })}</span>
+            )}
+            {model && !label && s.provider !== 'discussion' && s.provider !== 'debate' && <span className="truncate">· {modelLabel(model, claude?.models)}</span>}
             {s.queue > 0 && <span className="shrink-0">· {t('sessions.queue.short', { count: s.queue })}</span>}
           </span>
         </span>
