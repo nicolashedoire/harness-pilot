@@ -61,7 +61,7 @@ export const routes: RouteObject[] = [
           { path: 'docs/:slug', lazy: page(() => import('./pages/docs')) },
           // Extension pages: /x/<id> loads /ext/<id>/page.js
           { path: 'x', lazy: page(() => import('./pages/ext/hub')) },
-          { path: 'x/:id/*', lazy: page(() => import('./pages/ext')) },
+          { path: 'x/:id/*', lazy: page(() => import('./pages/ext'), ['exterr']) },
           { path: '*', Component: NotFound },
         ],
       },
