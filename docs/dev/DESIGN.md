@@ -354,7 +354,10 @@ default" (applied once per new browser).
 
 `useT()` → `t('key', {vars})`. English is the reference (`en.ts`); `fr.ts` is typed
 `Record<keyof typeof en, string>` so a missing translation fails the build. Plurals: add `key#one` (used when
-`count` is 1 — French: 0 or 1). Keys are grouped by area (`common.*`, `nav.*`, `settings.*`, `onb.*`…). The language
+`count` is 1 — French: 0 or 1). Keys are grouped by area (`common.*`, `nav.*`, `settings.*`, `onb.*`…). Accessible names
+(`aria-label`, `title`, `alt`, `sr-only` text) go through `t()` too: `web/tests/i18n-labels.test.ts` fails on a literal
+one (product names aside). An error raised in the browser before the server answers (`ApiError` status 0, `network`)
+is worded by `errorMessage` in the UI language (`onLocalErrorText`, registered in `App.tsx`). The language
 comes from server settings once signed in (stored locally too for the login page). Format dates/numbers with
 `lib/format.ts` + the current language and the configured time zone.
 
