@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { AppWindow, Blocks, Bot, Clock, GraduationCap, LayoutGrid, Palette, Pin, UserRound, Wrench, type LucideIcon } from 'lucide-react'
 import { useLang, useT, type TKey } from '@/i18n'
 import { fmtDate, fmtRelative } from '@/lib/format'
-import type { AtelierItem, AtelierOrigin, AtelierState, AtelierType } from '@/lib/types'
+import type { AtelierDraft, AtelierItem, AtelierOrigin, AtelierState, AtelierType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Sensitive } from '@/components/ui'
 import { AgentIcon } from '@/features/agents/AgentIcon'
@@ -115,4 +115,14 @@ export function VersionTag({ version, label, className }: { version: number | nu
       {`v${version}`}
     </span>
   )
+}
+
+/** The button that turns it on, worded for what it is (the validation screen, the proposal card). */
+export function approveWord(t: (k: TKey) => string, d: Pick<AtelierDraft, 'change' | 'type'>) {
+  if (d.change === 'update') return t('atelier.review.approveUpdate')
+  if (d.type === 'widget' || d.type === 'html_widget' || d.type === 'pin') return t('atelier.review.approveDashboard')
+  if (d.type === 'page') return t('atelier.review.approvePage')
+  if (d.type === 'block') return t('atelier.review.approveBlock')
+  if (d.type === 'agent') return t('atelier.review.approveAgent')
+  return t('atelier.review.approve')
 }

@@ -40,6 +40,20 @@ in, with its name already written, so you only say what to change.
 **Create with an agent** (top right) opens a new session in the *system › harness* topic with the start of a request:
 say what you want (a widget, a page, a theme, a skill…) and send.
 
+## In the conversation
+
+When an agent proposes something, its answer shows a violet **proposal card**: what it is (a widget, a page…, new or
+a new version), what the agent says it does, what it asks for (sites, keys, files), how many files, and the result of
+its check. Nothing runs by itself: **Preview with your data** runs it once, in a sandboxed frame. Then:
+
+- **Add to the dashboard** (or **Turn the page on**, **Turn the new version on**…) approves it right there;
+- **Ask for a change** opens a field in the card: what you write goes to the agent, in this session, and it proposes
+  again;
+- **Open in the Studio** opens the full review screen (files, line by line).
+
+A card that says *Being registered* belongs to an agent that has not finished its turn yet (Codex): it fills in by
+itself. Once decided, the card says what became of the proposal (approved as vN, refused, replaced by a newer one).
+
 ## Reviewing a proposal
 
 **Review** opens the proposal on its own screen. Nothing of it is installed yet.

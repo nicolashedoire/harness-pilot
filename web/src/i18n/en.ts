@@ -4315,5 +4315,17 @@ export const en = {
   "atelier.access.undeclared": "not declared",
   "atelier.access.notAllowed": "waits for your permission",
   "atelier.access.refused": "refused by you",
+  "blocks.type.proposal": "Proposal",
+  "blocks.desc.proposal": "A creation an agent proposes to the Studio: what it does and asks for, with Add to the dashboard, Ask for a change and Open in the Studio.",
+  "atelier.card.label": "Proposal: {name}",
+  "atelier.card.kicker": "Proposed to the Studio · waits for you",
+  "atelier.card.kickerDone": "Proposed to the Studio",
+  "atelier.card.preview": "Preview with your data",
+  "atelier.card.open": "Open in the Studio",
+  "atelier.card.untitled": "A proposal",
+  "atelier.card.waiting": "Being registered: it shows here once the agent's turn ends.",
+  "atelier.card.loadFailed": "The proposal could not be loaded",
+  "atelier.card.files": "{count} files",
+  "atelier.card.files#one": "{count} file",
 
 }

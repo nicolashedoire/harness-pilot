@@ -29,7 +29,7 @@ import {
   toast,
 } from '@/components/ui'
 import { Page } from '@/components/shell/Page'
-import { OriginMark, TypeTile, sessionHref, typeLabel } from '@/features/atelier/parts'
+import { OriginMark, TypeTile, approveWord, sessionHref, typeLabel } from '@/features/atelier/parts'
 import { PermissionRows } from '@/features/atelier/Permissions'
 import { DraftPreview } from '@/features/atelier/Preview'
 import { CheckLine } from '@/features/atelier/Check'
@@ -43,16 +43,6 @@ export function agentWord(t: (k: TKey) => string, agent: string | null | undefin
   if (agent?.startsWith('plugin:')) return agent.slice(7)
   if (agent === 'user') return t('atelier.origin.you')
   return t('atelier.origin.anAgent')
-}
-
-/** The button that turns it on, worded for what it is. */
-function approveLabel(t: (k: TKey) => string, d: AtelierDraft) {
-  if (d.change === 'update') return t('atelier.review.approveUpdate')
-  if (d.type === 'widget' || d.type === 'html_widget' || d.type === 'pin') return t('atelier.review.approveDashboard')
-  if (d.type === 'page') return t('atelier.review.approvePage')
-  if (d.type === 'block') return t('atelier.review.approveBlock')
-  if (d.type === 'agent') return t('atelier.review.approveAgent')
-  return t('atelier.review.approve')
 }
 
 export function DraftReview() {
@@ -297,7 +287,7 @@ function DecisionButtons({ draft, blocked, approving, onApprove, onReject, onCha
           <MessageSquarePlus className="max-md:hidden" /> <span className="truncate">{t('atelier.review.askChange')}</span>
         </Button>
         <Button onClick={onApprove} loading={approving} disabled={blocked} className="ml-auto max-md:order-1 max-md:col-span-2 max-md:ml-0" data-testid="atelier-approve">
-          <CircleCheck /> {approveLabel(t, draft)}
+          <CircleCheck /> {approveWord(t, draft)}
         </Button>
       </div>
       {blocked && <p className="text-xs text-destructive">{t('atelier.review.blocked')}</p>}

@@ -4296,5 +4296,17 @@ export const fr: Record<keyof typeof en, string> = {
   "atelier.access.undeclared": "non déclarée",
   "atelier.access.notAllowed": "attend ton autorisation",
   "atelier.access.refused": "refusée par toi",
+  "blocks.type.proposal": "Proposition",
+  "blocks.desc.proposal": "Une création qu’un agent propose à l’Atelier : ce qu’elle fait et demande, avec Activer, Demander une modification et Voir dans l’Atelier.",
+  "atelier.card.label": "Proposition : {name}",
+  "atelier.card.kicker": "Proposée à l’Atelier · attend ta validation",
+  "atelier.card.kickerDone": "Proposée à l’Atelier",
+  "atelier.card.preview": "Aperçu avec tes données",
+  "atelier.card.open": "Voir dans l’Atelier",
+  "atelier.card.untitled": "Une proposition",
+  "atelier.card.waiting": "En cours d’enregistrement : elle s’affiche ici à la fin du tour de l’agent.",
+  "atelier.card.loadFailed": "Impossible de charger la proposition",
+  "atelier.card.files": "{count} fichiers",
+  "atelier.card.files#one": "{count} fichier",
 
 }
