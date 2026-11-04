@@ -27,6 +27,7 @@ timeout. "Run now" and history are there too.
 | `enabled` | on/off |
 | `notify` | `never` \| `failure` (default) \| `always` - Telegram report in the "Crons" thread |
 | `timeout_s` | max duration, 10 s to 7 days (default 3600) |
+| `catch_up` | local app only, default false: at startup, one run if runs were missed while the app was stopped |
 
 Schedule examples: `0 7 * * *` every day 07:00 · `*/15 * * * *` every 15 min · `30 8 * * 1-5`
 weekdays 08:30 · `0 9 1 * *` 1st of the month 09:00 · `0 */6 * * *` every 6 h.

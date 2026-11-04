@@ -130,7 +130,7 @@ export function useClearQueue() {
 }
 /** Side question: Claude answers about the session without interrupting it (nothing is saved in the session). */
 export function useAskAside() {
-  return useMut(({ id, question }: { id: string; question: string }) => api.post<{ answer: string; cost_usd: number; duration_ms: number }>(`/api/sessions/${seg(id)}/ask`, { question }), {
+  return useMut(({ id, question }: { id: string; question: string }) => api.post<{ answer: string; agent?: 'claude' | 'codex'; cost_usd: number; duration_ms: number }>(`/api/sessions/${seg(id)}/ask`, { question }), {
     errorToast: false,
   })
 }

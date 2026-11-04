@@ -7,7 +7,7 @@ page. Code lives in `web/` (React 19 + TypeScript strict + Vite + Tailwind v4 + 
 web/
   index.html               theme bootstrap script (no flash): theme, cached palette CSS (`mx-theme`) — mirrors src/stores/ui.ts
   vite.config.ts           dev proxy /api + /ext → MAXXING_API (default http://127.0.0.1:8801)
-  mock/server.mjs          zero-dependency mock of part of the API (port 8809, scenarios) — see "Mock"
+  mock/server.mjs          zero-dependency mock of the API (port 8809, scenarios) — see "Mock"
   src/
     main.tsx  App.tsx      providers (QueryClient, Tooltip, Router, ConfirmHost, Toaster)
     routes.tsx             THE route table (lazy pages)
@@ -394,12 +394,16 @@ Don't
 
 ## 9. Mock & visual checks
 
-`web/mock/server.mjs` implements part of the API.md endpoints with in-memory, product-neutral data and serves
-`web/dist`. It is incomplete: on 2026-11-04 it answered 141 of the server's 304 `/api` method + path pairs. Mostly
-covered: auth, Claude, workspace, sessions, files, tasks, crons, feed, backup, Telegram, dashboard, blocks. Not
-covered at all: companions, resident missions, pull requests, instance backups, space labels, MCP, Git, Infra,
-voice, trash, import, starter packs and the PC bridge. A route it does not implement answers
-`404 {"error":"not_found","message":"No route for …"}`. Run it with
+`web/mock/server.mjs` implements the API.md endpoints with in-memory, product-neutral data and serves `web/dist`:
+every `/api` route a server router registers has a mock, with the server's checks and error codes, except the PC
+agent's WebSockets (`/api/pc/ws`, `/api/pc/cdp`) and loopback MCP endpoint (`POST /api/pc/mcp`), the server-to-server
+Team routes (`/api/team-peer/*`) and the extension frames `/ext/<id>/widget-frame`, `/ext/<id>/widget.html` and
+`/ext/ui-kit.css` (extension pages and block frames are served). Work that needs the real system is canned: agent turns,
+transcription (always the same sentence), Git histories (generated from a seed), GitHub, Cloudflare and Hostinger
+(`mock/infra-resources.json` is the real builder's output on the `tests/test_infra.py` fixture), downloads of the PC
+agent. A route it does not implement answers `404 {"error":"not_found","message":"No route for …"}`. A new server
+route gets its mock in the feature's block, its state created on first use (`S.<feature> ||= …`, so `buildState`
+stays untouched), and a seed for the `ready` scenario when the page would be empty. Run it with
 `MOCK_PORT=8809 MOCK_SCENARIO=ready|onboarding|login|setup|maxxing node mock/server.mjs`
 (`maxxing`: 30 more sessions that keep finishing at random, for Maxxing mode; `MOCK_PASSWORD=…` asks for that password;
 `MOCK_DIST=…` serves another build)

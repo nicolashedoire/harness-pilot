@@ -98,7 +98,24 @@ stored key, then choose **Schedule archives**.
 - A restored copy does not run the schedule until you **Resume integrations**.
 - **Turn off** deletes the stored key; archives already made stay.
 
-Scheduled archives stay on this server: download one regularly and keep it on another device.
+Scheduled archives stay on this server: download one regularly, or set a copy folder (below).
+
+### Copy to a folder
+
+Under **Copy to a folder**, enter the full path of an existing folder: an external drive, or a folder that
+iCloud Drive, Dropbox or another sync client uploads (no cloud service is built in; the client does the upload).
+After every archive, manual or scheduled, the encrypted file is copied there as
+`pilot-<date>-<time>-<id>.pilotbackup`, once services are running again.
+
+- The copy is written under a temporary name, read back and compared with the archive (size and SHA-256) before it
+  gets its final name. **Archives kept on this server** marks each archive **Copied** or **Copy failed**, with a
+  button to copy it again (after reconnecting a drive, for example).
+- The folder is never created: when a drive is unplugged, the copy fails and you are notified, instead of writing
+  to the internal disk where the drive is usually mounted. A failure also shows under **Copy to a folder**; the next
+  successful copy resolves the notification.
+- The folder must be outside the application's data (otherwise the next archive would contain the previous ones).
+- Copies are never deleted from that folder, even when older scheduled archives are deleted from this server: clean
+  it up yourself. The passphrase is never copied; the archives stay encrypted.
 
 ## GitHub memory backup
 
@@ -114,8 +131,10 @@ Only a **whitelist**, relative to the workspace:
   (your changes to the product code, see [Customizing](customizing));
 - by default also: `**/NOTES.md`, `tasks.json`, `projects/*/topics/*/accounts.md` (the subscriptions inventory, kept in `general/inbox`), `extensions/**`, `.claude/skills/**`
   (editable in Settings -> Backup);
-- plus non-secret settings (time zone, language, default model, dashboard layout...) and your
-  scheduled jobs, in a `_maxxing/` folder.
+- plus non-secret settings (time zone, language, default model, dashboard layout...), your
+  scheduled jobs and the space labels (Personal, Agents, Shared) of the saved files and of the folders that hold
+  them, in a `_maxxing/` folder. A restore puts the labels back on the restored items; labels already set on other
+  items stay.
 
 Never saved, even if a pattern matches: `secrets.json`, keys, `.env` files, private keys,
 credentials, logs, `attachments/`, `.git`, `node_modules` and virtual environments. Session conversations are stored outside the workspace and are not included. Other project files are included only when a configured pattern matches them. This is a selected-file memory backup, not a complete project archive.

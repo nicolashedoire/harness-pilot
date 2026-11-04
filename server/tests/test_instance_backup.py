@@ -659,3 +659,71 @@ def test_schedule_routes(client, mx):
         {'enabled': True, 'frequency': 'weekly', 'hour': 22, 'keep': 4}
     assert client.get('/api/backup/instance').json()['schedule']['enabled'] is True
     assert client.delete('/api/backup/instance/schedule').json()['enabled'] is False
+
+
+def test_copy_folder_rules(mx, tmp_path):
+    with pytest.raises(snapshots.SnapshotError) as refused:
+        snapshots.set_copy_folder('relative/folder')
+    assert refused.value.code == 'copy_folder'
+    with pytest.raises(snapshots.SnapshotError):
+        snapshots.set_copy_folder(str(tmp_path / 'unplugged-drive'))      # never created
+    assert not (tmp_path / 'unplugged-drive').exists()
+    for inside in (mx['state'] / 'copies', mx['ws'] / 'copies'):          # would be archived again
+        inside.mkdir()
+        with pytest.raises(snapshots.SnapshotError):
+            snapshots.set_copy_folder(str(inside))
+    target = tmp_path / 'drive'
+    target.mkdir()
+    assert snapshots.set_copy_folder(str(target)) == {'folder': str(target), 'last': None}
+    assert snapshots.disable_copy()['folder'] is None
+
+
+def test_each_archive_is_copied_and_checked(mx, tmp_path, monkeypatch):
+    from maxxing import feed
+    seed(mx)
+    target = tmp_path / 'drive'
+    target.mkdir()
+    snapshots.set_copy_folder(str(target))
+    exported = snapshots.export(PASSWORD)
+    record = snapshots.copy_export(exported['id'])
+    copy = Path(record['path'])
+    assert record['ok'] and copy.parent == target and copy.name.endswith(f"-{exported['id'][:12]}.pilotbackup")
+    assert copy.read_bytes() == snapshots.exported(exported['id']).read_bytes()
+    assert record['sha256'] == exported['sha256'] and oct(copy.stat().st_mode & 0o777) == '0o600'
+    assert snapshots.list_exports()[0]['copy'] == record and snapshots.copy_status()['last'] == record
+    assert snapshots.inspect(copy, PASSWORD)['files'] == exported['files']           # the copy restores
+    assert not list(target.glob('.*.partial'))
+    notices = lambda: feed.list_events(kind='instance_backup.copy_failed')['events']
+    # A copy that does not read back as the archive is refused and notified; no partial file stays.
+    real_digest = snapshots._digest
+    monkeypatch.setattr(snapshots, '_digest', lambda path: 'f' * 64 if path.name.endswith('.partial') else real_digest(path))
+    copy.unlink()
+    failed = snapshots.copy_export(exported['id'])
+    assert failed['ok'] is False and failed['code'] == 'copy_mismatch' and not list(target.iterdir())
+    assert len(notices()) == 1 and notices()[0]['params']['code'] == 'copy_mismatch'
+    monkeypatch.setattr(snapshots, '_digest', real_digest)
+    # An unplugged drive fails without writing elsewhere; the next good copy resolves the notice.
+    target.rmdir()
+    missing = snapshots.copy_export(exported['id'])
+    assert missing['code'] == 'copy_folder_missing' and not target.exists()
+    target.mkdir()
+    assert snapshots.copy_export(exported['id'])['ok'] and notices()[0]['resolved_at']
+
+
+def test_export_route_copies_after_services_resume_and_retry_route(client, mx, tmp_path):
+    seed(mx)
+    target = tmp_path / 'synced'
+    target.mkdir()
+    assert client.put('/api/backup/instance/copy', json={'folder': str(target)}).json()['folder'] == str(target)
+    bad = client.put('/api/backup/instance/copy', json={'folder': 'nowhere'})
+    assert bad.status_code == 400 and bad.json()['error'] == 'copy_folder'
+    exported = client.post('/api/backup/instance/export', json={'passphrase': PASSWORD}).json()
+    assert exported['copy']['ok'] and Path(exported['copy']['path']).is_file()
+    assert client.get('/api/backup/instance').json()['copy']['last']['path'] == exported['copy']['path']
+    Path(exported['copy']['path']).unlink()
+    again = client.post(f"/api/backup/instance/exports/{exported['id']}/copy").json()
+    assert again['ok'] and Path(again['path']).is_file()
+    assert client.delete('/api/backup/instance/copy').json()['folder'] is None
+    off = client.post(f"/api/backup/instance/exports/{exported['id']}/copy")
+    assert off.status_code == 409 and off.json()['error'] == 'copy_off'
+    assert client.post('/api/backup/instance/export', json={'passphrase': PASSWORD}).json().get('copy') is None
