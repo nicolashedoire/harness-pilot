@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
-
-import pytest
 
 from maxxing import media
 
+from _needs import ffmpeg_webp
 from test_files import tree  # noqa: F401  (fixture)
 
-ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 
-
-@ffmpeg
+@ffmpeg_webp
 def test_preview_heavy_vs_light_images(client, tree):  # noqa: F811
     big = tree / "big.png"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "mandelbrot=size=1600x1200", "-frames:v", "1", str(big)], check=True)
@@ -41,7 +37,7 @@ def test_media_paths_and_warm_up(client, tree, monkeypatch):  # noqa: F811
     assert done == ["/root/a/shot.png", "/root/a/clip.MP4", "/root/b/c.webp", "/root/a/up.jpg"]   # once each
 
 
-@ffmpeg
+@ffmpeg_webp
 def test_warm_one_prepares_thumbnails(client, tree):  # noqa: F811
     from maxxing import config
     big = tree / "big2.png"
@@ -51,7 +47,7 @@ def test_warm_one_prepares_thumbnails(client, tree):  # noqa: F811
     assert len(list(config.state_dir("thumbs").glob("*.webp"))) == before + 3     # 160, 320, preview
 
 
-@ffmpeg
+@ffmpeg_webp
 def test_chat_thumbnail_of_a_gif_moves(client, tree):  # noqa: F811
     """anim=1 (chat): a GIF up to 8 MB is served as it is, so it plays; without it (file grids) a still WebP."""
     gif = tree / "loop.gif"
@@ -62,7 +58,7 @@ def test_chat_thumbnail_of_a_gif_moves(client, tree):  # noqa: F811
     assert r.headers["content-type"] == "image/webp"
 
 
-@ffmpeg
+@ffmpeg_webp
 def test_chat_thumbnail_of_a_big_gif_stays_still(client, tree, monkeypatch):  # noqa: F811
     from maxxing.api import files
     gif = tree / "big.gif"

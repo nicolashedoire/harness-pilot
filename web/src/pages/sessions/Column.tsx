@@ -602,7 +602,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       ),
     compact: () => compact.mutate(sid, { onSuccess: () => toast.success(t('sessions.compacting')) }),
     handoff: async () => {
-      if (!(await confirm({ title: t('sessions.handoff.title'), description: t('sessions.handoff.desc'), confirmText: t('sessions.handoff.confirm') }))) return
+      if (!(await confirm({ title: t('sessions.handoff.title'), description: t(duo ? 'convx.handoffDuo' : 'sessions.handoff.desc'), confirmText: t('sessions.handoff.confirm') }))) return
       handoff.mutate(sid, {
         onSuccess: (s) => {
           seedEmptyLog(s.id)
@@ -737,7 +737,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
+                <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
                 {duo && (
@@ -1435,15 +1435,14 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const validLimits = (!turnLimit || (+turnLimit >= 1 && +turnLimit <= 200 && Number.isInteger(+turnLimit))) && (!durationMinutes || (+durationMinutes >= 1 && +durationMinutes <= 1440 && Number.isInteger(+durationMinutes)))
   // Modes that take written messages only: the composer's attach button is off and says why (voice is dictated).
   const partnerAdapter = provider === 'both' && partner !== 'codex' ? agentProviders.find((p) => p.id === partner) : undefined
-  const noAttach = provider === 'team' ? t('mixedTeam.noAttachments') : (plugin && adapter && !adapter.capabilities.includes('attachments')) || (partnerAdapter && !partnerAdapter.capabilities.includes('attachments')) ? t('agentProviders.textOnly') : null
+  const noAttach = (plugin && adapter && !adapter.capabilities.includes('attachments')) || (partnerAdapter && !partnerAdapter.capabilities.includes('attachments')) ? t('agentProviders.textOnly') : null
   const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined, discussion_partner: partnerAdapter?.id } : provider === 'swarm' ? { swarm_agents: Number(swarmAgents) } : {}
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
       if (plugin && attachments.length && !adapter?.capabilities.includes('attachments')) { toast.error(t('agentProviders.textOnly')); return false }
       if (provider === 'team') {
-        if (attachments.length) { toast.error(t('mixedTeam.noAttachments')); return false }
-        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined })
+        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined, attachments })
         await qc.invalidateQueries({ queryKey: ['sessions'] })
         saveDraft(`new:${col.path}`, '')
         becomeSession(col.key, s.id)
@@ -1464,7 +1463,6 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSendVoice = async (file: File) => {
     try {
-      if (provider === 'team') { toast.error(t('mixedTeam.noAttachments')); return false }
       const up = await uploadAttachment(col.path, file)
       const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' || plugin ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
@@ -1594,7 +1592,8 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
           disabledReason={!valid ? t('sessions.new.pickTopic') : provider === 'both' && !validLimits ? t('sessions.discussionLimitsInvalid') : plugin && !adapter ? t('agentProviders.unavailable') : !plugin && provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null}
           attachDisabledReason={noAttach}
           onSend={onSend}
-          onSendVoice={noAttach ? undefined : onSendVoice}
+          // a mixed team takes a written mission: voice is dictated into it
+          onSendVoice={noAttach || provider === 'team' ? undefined : onSendVoice}
           autoFocus={variant !== 'mobile'}
           placeholder={planMode ? t('plan.placeholder') : t('sessions.new.placeholder')}
         />
