@@ -3194,7 +3194,7 @@ index 1a2b3c4..5d6e7f8 100644
 +++ b/docs/user/notes.md
 @@ -1,3 +1,4 @@
  # Notes
- 
+
  Short notes about the product.
 +- ${prqRemote(item).title}.
 `
