@@ -10,7 +10,7 @@ import { Markdown } from '@/components/ui/markdown'
 import { filePreviewUrl, fileRawUrl, fileThumbUrl, knownFileStamp, prefetchImage, PREVIEW_W } from '@/lib/queries/files'
 import { Thumb } from '@/features/files/Thumb'
 import type { ClaudeModel, ResultField } from '@/lib/types'
-import { costTip, ResultLineMenu, useCostIsBilled, useResultLine } from './resultLine'
+import { costTip, ResultLineMenu, useResultLine } from './resultLine'
 import { isShownTask, taskStatus, type Item } from './log'
 import { TaskDetails, TaskElapsed, TaskStatusIcon, useOpenTaskLine } from './Tasks'
 import type { Seed } from './store'
@@ -755,7 +755,6 @@ function ResultRow({ ev }: { ev: Extract<Item, { kind: 'result' }>['ev'] }) {
   const lang = useLang()
   const { models } = React.useContext(ItemContext)
   const { hidden } = useResultLine()
-  const billed = useCostIsBilled()
   const show = (f: ResultField) => !hidden.includes(f)
   const u = ev.usage
   const ctx = (u?.input || 0) + (u?.cache_read || 0) + (u?.cache_write || 0)
@@ -775,7 +774,7 @@ function ResultRow({ ev }: { ev: Extract<Item, { kind: 'result' }>['ev'] }) {
       {[
         ev.model && show('model') ? part('m', t('sessions.result.modelTip'), modelLabel(ev.model, models)) : null,
         ev.duration_ms > 0 && show('duration') ? part('d', t('sessions.result.durationTip'), fmtMs(ev.duration_ms)) : null,
-        ev.cost_usd > 0 && show('cost') ? part('c', costTip(t, billed), <Sensitive length={4}>{fmtCost(ev.cost_usd)}</Sensitive>) : null,
+        ev.cost_usd > 0 && show('cost') ? part('c', costTip(t), <Sensitive length={4}>≈ {fmtCost(ev.cost_usd)}</Sensitive>) : null,
         hasTokens && show('tokens') ? part('t', tokensTip, `${fmtTokens(ctx)} → ${fmtTokens(u?.output || 0)}`) : null,
         hasTokens && show('cache') ? part('k', t('sessions.result.cacheTip', { share }), t('sessions.cacheShare', { share })) : null,
       ]

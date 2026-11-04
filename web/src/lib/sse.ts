@@ -120,7 +120,7 @@ const BUS_STALE_MS = 7_000
 /** Mount once inside the authenticated shell. */
 export function useGlobalBus(enabled: boolean): SSEStatus {
   const qc = useQueryClient()
-  const shared = typeof BroadcastChannel !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.locks
+  const [shared, setShared] = useState(() => typeof BroadcastChannel !== 'undefined' && typeof navigator !== 'undefined' && !!navigator.locks)
   const [leader, setLeader] = useState(false)
   const [peerStatus, setPeerStatus] = useState<SSEStatus>('connecting')
   const channel = useRef<BroadcastChannel | null>(null)
@@ -128,7 +128,9 @@ export function useGlobalBus(enabled: boolean): SSEStatus {
   const statusRef = useRef<SSEStatus>('connecting')
   useEffect(() => {
     if (!enabled || !shared) return
-    const bc = new BroadcastChannel(BUS_CHANNEL)
+    let bc: BroadcastChannel
+    try { bc = new BroadcastChannel(BUS_CHANNEL) }
+    catch { setShared(false); return }
     channel.current = bc
     let stopped = false
     let trying = false
@@ -157,7 +159,7 @@ export function useGlobalBus(enabled: boolean): SSEStatus {
         announce()
         await new Promise<void>((resolve) => { release = resolve })
         holding = false
-      }).catch(() => { trying = false })
+      }).catch(() => { trying = false; if (!stopped) setShared(false) })
     }
     const tick = setInterval(() => {
       if (holding) announce()

@@ -38,7 +38,7 @@ import { Logo } from '@/components/shell/Logo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useUI } from '@/stores/ui'
 import { openHud } from './Hud'
-import { costTip, useCostIsBilled, useResultLine } from './resultLine'
+import { costTip, useResultLine } from './resultLine'
 import { useT } from '@/i18n'
 import {
   useClaudeStatus,
@@ -902,7 +902,6 @@ function ColumnHeader({
   slim?: boolean
 }) {
   const t = useT()
-  const billed = useCostIsBilled()
   const showCost = !useResultLine().hidden.includes('cost')
   const notifyTip = !tgLinked ? t('sessions.notify.unavailable') : session?.notify ? t('sessions.notify.on') : t('sessions.notify.off')
   const maxxing = useMaxxingEnabled()
@@ -946,9 +945,9 @@ function ColumnHeader({
               {session.source === 'cron' && <Clock className="size-3.5 shrink-0" aria-label={t('sessions.source.cron')} />}
               <span className="ml-auto flex shrink-0 items-center gap-3 tabular-nums">
                 {(!session.provider || session.provider === 'claude') && session.cost_usd > 0 && showCost && (
-                  <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, billed, session.turns)}</span>}>
+                  <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, session.turns)}</span>}>
                     <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <Sensitive length={4}>{fmtCost(session.cost_usd)}</Sensitive>
+                      <Sensitive length={4}>≈ {fmtCost(session.cost_usd)}</Sensitive>
                     </span>
                   </Tooltip>
                 )}
@@ -1033,9 +1032,9 @@ function ColumnHeader({
             )}
             <span className="ml-auto flex shrink-0 items-center gap-2.5 tabular-nums">
               {(!session.provider || session.provider === 'claude') && session.cost_usd > 0 && showCost && (
-                <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, billed, session.turns)}</span>}>
+                <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, session.turns)}</span>}>
                   <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <Sensitive length={4}>{fmtCost(session.cost_usd)}</Sensitive>
+                    <Sensitive length={4}>≈ {fmtCost(session.cost_usd)}</Sensitive>
                   </span>
                 </Tooltip>
               )}

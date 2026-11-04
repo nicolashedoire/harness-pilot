@@ -214,9 +214,7 @@ into another app, the content arrives as plain text (a file as its path).
 - A line under each answer shows the model, the time it took, its **cost**, the tokens (input → output) and the
   share of input served from cache. Hover (or tap) any of them to see what it means: the token count splits
   uncached input, cache reads, cache writes and output.
-- **About the cost**: it is what the answer would cost at Anthropic API prices, computed by Claude Code. Signed in
-  with a **Claude subscription** (Pro, Max or Ultra) it is **not billed** - it only shows how much you used; signed in with
-  an **API key** it is billed to your Anthropic account. The tooltip says which case applies to your server.
+- **About the amount**: Claude Code reports an indicative dollar amount; the display does not establish the actual bill and does not include Codex. Billing depends on your account, plan and credits. For example, [Anthropic's usage credits](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans) can incur additional charges after included usage is exhausted. Check your provider account for actual charges.
 - **Choose what the line shows**: click the ⚙ at its end (it appears on hover; always there on a touch screen),
   or **Settings → General → Line under each answer**. The choice applies to every device; hiding the cost also
   hides the session total in the header.
