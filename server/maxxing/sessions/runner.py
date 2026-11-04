@@ -270,11 +270,12 @@ class Runner:
         if is_debate:
             store.update(self.sid, turn_provider=actor)
             self.note("Codex" if actor == "codex" else "Claude Code")
-            if item.get("plan_approved"):              # the discussion's plan, not this agent's own, is implemented
-                item = {**item, "plan_approved": False, "text": DEBATE_PLAN_APPROVED_PREFACE + str(item.get("text") or "")}
             role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
+
+        if is_debate and item.get("plan_approved"):    # the discussion's plan, not this agent's own, is implemented
+            item = {**item, "plan_approved": False, "text": DEBATE_PLAN_APPROVED_PREFACE + str(item.get("text") or "")}
         swarm_count = meta.get('swarm_agents')
         if actor == 'claude' and kind == 'user' and type(swarm_count) is int and 2 <= swarm_count <= 6:
             team = (f'[Agent team requested by the user]\nAct as the coordinator. When the task can be split into '
