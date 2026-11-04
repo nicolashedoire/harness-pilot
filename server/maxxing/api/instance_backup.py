@@ -55,6 +55,16 @@ async def export(body: ExportIn, request: Request):
             'Could not read or write all snapshot data. Check directory permissions and available disk space.'}) from None
 
 
+@router.get('/exports')
+async def exports():
+    return await _call(snapshots.list_exports)
+
+
+@router.delete('/exports/{ident}')
+async def delete_export(ident: str):
+    return await _call(snapshots.delete_export, ident)
+
+
 @router.get('/download/{ident}')
 async def download(ident: str):
     path = await _call(snapshots.exported, ident)

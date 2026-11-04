@@ -875,6 +875,8 @@ All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persis
 | --- | --- | --- |
 | GET base | — | Data roots, size limit, `restore_hold`, `integrations_paused`, export availability |
 | POST `/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
+| GET `/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes}]` |
+| DELETE `/exports/{id}` | — | `{ok, id}`: removes the export and its metadata · `404 not_found` for an unknown id, anything but 32 lowercase hex characters, or a symbolic link |
 | GET `/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
 | POST `/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
 | POST `/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command; `integrations_paused: true` |

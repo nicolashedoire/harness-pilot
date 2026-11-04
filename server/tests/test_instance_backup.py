@@ -415,3 +415,34 @@ def test_passphrase_is_unicode_normalized_on_export_and_import(mx):
     for exported_with, imported_with in ((composed, decomposed), (decomposed, composed)):
         path = snapshots.exported(snapshots.export(exported_with)['id'])
         assert snapshots.inspect(path, imported_with)['files'] >= 5
+
+
+def test_exports_are_listed_and_deleted_by_id_only(client, mx):
+    seed(mx)
+    first = client.post('/api/backup/instance/export', json={'passphrase': PASSWORD}).json()
+    second = client.post('/api/backup/instance/export', json={'passphrase': PASSWORD}).json()
+    listed = client.get('/api/backup/instance/exports').json()
+    assert [e['id'] for e in listed] == [second['id'], first['id']]
+    assert listed[0]['archive_bytes'] == second['archive_bytes'] and listed[0]['files'] == second['files']
+    exports = mx['state'] / 'instance-backups/exports'
+    # A planted link and a traversal attempt are never followed: the outside file stays.
+    outside = mx['tmp'] / 'outside.pilotbackup'
+    outside.write_bytes(b'not ours')
+    planted = 'c' * 32
+    (exports / f'{planted}.pilotbackup').symlink_to(outside)
+    assert planted not in [e['id'] for e in client.get('/api/backup/instance/exports').json()]
+    for ident in (planted, '..', '..%2F..%2Foutside', 'A' * 32, 'f' * 31, 'f' * 32 + '.json'):
+        response = client.delete('/api/backup/instance/exports/' + ident)
+        assert response.status_code == 404, (ident, response.text)
+    assert client.get('/api/backup/instance/download/' + planted).status_code == 404
+    assert outside.read_bytes() == b'not ours' and (exports / f'{planted}.pilotbackup').is_symlink()
+    deleted = client.delete('/api/backup/instance/exports/' + first['id'])
+    assert deleted.status_code == 200 and deleted.json() == {'ok': True, 'id': first['id']}
+    assert not (exports / f"{first['id']}.pilotbackup").exists() and not (exports / f"{first['id']}.json").exists()
+    assert client.delete('/api/backup/instance/exports/' + first['id']).status_code == 404
+    assert client.get('/api/backup/instance/download/' + first['id']).status_code == 404
+    assert [e['id'] for e in client.get('/api/backup/instance/exports').json()] == [second['id']]
+    assert client.get('/api/backup/instance/download/' + second['id']).status_code == 200
+    client.cookies.clear()
+    assert client.delete('/api/backup/instance/exports/' + second['id']).status_code == 401
+    assert snapshots.exported(second['id']).is_file()

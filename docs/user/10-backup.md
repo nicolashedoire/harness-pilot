@@ -64,7 +64,8 @@ Verified previews temporarily contain decrypted data in the private state direct
 They expire after 24 hours and are removed on the next backup operation or when Settings → Backup is
 next opened; successful restores delete that staged plaintext immediately, and the unencrypted staging
 of an interrupted export is removed at the next backup operation. Encrypted exports remain in `instance-backups/exports` until
-removed by the owner. Keep a downloaded recovery copy outside the machine you are backing up.
+you delete them: **Archives kept on this server** lists them, with a download button and a delete
+button (after a confirmation; copies you already downloaded are not affected). Keep a downloaded recovery copy outside the machine you are backing up.
 This is a file-based application snapshot, not an operating-system snapshot of unrelated services
 or a guarantee against external writers deliberately bypassing filesystem modification metadata.
 

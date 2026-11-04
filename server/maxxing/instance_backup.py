@@ -330,12 +330,38 @@ def export(password: str) -> dict:
 
 
 def exported(ident: str) -> Path:
-    if not _ID.fullmatch(ident):
+    """An encrypted export of this instance, by id only: the request never names a path (no traversal) and a link
+    planted in the exports folder is neither served nor followed."""
+    if not isinstance(ident, str) or not _ID.fullmatch(ident):
         raise SnapshotError('not_found', 'Backup not found.', 404)
-    path = _base() / 'exports' / f'{ident}.pilotbackup'
-    if not path.is_file():
+    folder = _base() / 'exports'
+    path = folder / f'{ident}.pilotbackup'
+    if path.is_symlink() or not path.is_file() or path.resolve().parent != folder.resolve():
         raise SnapshotError('not_found', 'Backup not found.', 404)
     return path
+
+
+def list_exports() -> list[dict]:
+    """The encrypted exports kept on this server, newest first."""
+    folder, result = _base() / 'exports', []
+    for path in folder.glob('*.pilotbackup'):
+        if not _ID.fullmatch(path.stem) or path.is_symlink() or not path.is_file():
+            continue
+        meta = config.read_json(folder / f'{path.stem}.json', {})
+        meta = meta if isinstance(meta, dict) else {}
+        info = path.stat()
+        created = meta.get('created')
+        result.append({'id': path.stem, 'archive_bytes': info.st_size,
+                       'created': created if isinstance(created, (int, float)) else info.st_mtime,
+                       **{k: meta.get(k) for k in ('sha256', 'version', 'files', 'bytes')}})
+    return sorted(result, key=lambda entry: entry['created'], reverse=True)
+
+
+def delete_export(ident: str) -> dict:
+    path = exported(ident)
+    path.unlink()
+    path.with_suffix('.json').unlink(missing_ok=True)
+    return {'ok': True, 'id': ident}
 
 
 def _validate(path: Path) -> dict:
