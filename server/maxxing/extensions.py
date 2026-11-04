@@ -57,6 +57,13 @@ BLOCK_TYPES = {"stat", "stats", "list", "chart", "table", "progress", "markdown"
 # digit or "_" (never "." nor "@", which marks the version segment of /ext/<id>/@<v>/<path>).
 MODULE_TYPES = {".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
                 ".css": "text/css; charset=utf-8", ".json": "application/json"}
+# Files of an HTML widget's folder its frame may load (`/ext/<id>/f/<frame token>/<path>`, api/extframes.py): the
+# module types plus images, fonts, sound and video. Never api.py, a data file of another type, nor a hidden file.
+FRAME_TYPES = {**MODULE_TYPES, ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+               ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml", ".ico": "image/x-icon",
+               ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf",
+               ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav", ".mp4": "video/mp4",
+               ".webm": "video/webm", ".wasm": "application/wasm"}
 MODULE_SEG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 MODULE_SKIP_DIRS = {"node_modules", "__pycache__"}       # never looked at by page_version
 MODULE_SCAN_MAX = 2000                                    # files page_version stats at most
@@ -448,13 +455,13 @@ def set_enabled(eid: str, enabled: bool) -> bool:
 
 
 # ---- page modules ----------------------------------------------------------------------------
-def module_file(ext: Extension, rel: str) -> Path | None:
+def module_file(ext: Extension, rel: str, types: dict[str, str] = MODULE_TYPES) -> Path | None:
     """The file `rel` ("page.js", "lib/chart.js") of a page extension's folder as the app may serve it, or None:
-    a page module (MODULE_TYPES) whose every segment matches MODULE_SEG_RE, and whose real path (links followed) is
-    still such a file inside the folder - a link to ~/.claude/.credentials.json, to api.py or to a hidden file is
-    never served."""
+    a page module (MODULE_TYPES; `types` = FRAME_TYPES for an HTML widget's frame) whose every segment matches
+    MODULE_SEG_RE, and whose real path (links followed) is still such a file inside the folder - a link to
+    ~/.claude/.credentials.json, to api.py or to a hidden file is never served."""
     parts = rel.split("/")
-    if not rel or not all(MODULE_SEG_RE.match(x) for x in parts) or Path(parts[-1]).suffix not in MODULE_TYPES:
+    if not rel or not all(MODULE_SEG_RE.match(x) for x in parts) or Path(parts[-1]).suffix.lower() not in types:
         return None
     try:
         base = ext.dir.resolve(strict=True)
@@ -462,7 +469,7 @@ def module_file(ext: Extension, rel: str) -> Path | None:
         real = p.relative_to(base).parts
     except (OSError, ValueError, RuntimeError):         # missing, outside the folder, a link loop
         return None
-    if not real or not all(MODULE_SEG_RE.match(x) for x in real) or p.suffix not in MODULE_TYPES or not p.is_file():
+    if not real or not all(MODULE_SEG_RE.match(x) for x in real) or p.suffix.lower() not in types or not p.is_file():
         return None
     return p
 
@@ -562,7 +569,10 @@ def widget_card(ext: Extension, force: bool = False) -> dict:
             updated = time.time() if force else (ext.dir / "widget.html").stat().st_mtime
         except OSError:
             updated = time.time()
-        return {"blocks": [], "html": f"/ext/{ext.id}/widget.html", "height": ext.height, "updated": updated}
+        from . import permissions
+        return {"blocks": [], "html": f"/ext/{ext.id}/widget.html", "height": ext.height, "updated": updated,
+                "network": {"state": permissions.network_state(ext),
+                            "hosts": list((ext.permissions or {}).get("network") or [])}}
     if ext.module is None:
         raise RuntimeError("extension is disabled")
     with _lock:

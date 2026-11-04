@@ -26,11 +26,12 @@ export function useClearExtensionErrors() {
     invalidate: [qk.extensions],
   })
 }
-/** Allow (always), Refuse (deny) or ask again (reset) what an extension declares it uses. */
+/** Allow (always), Refuse (deny) or ask again (reset) what an extension declares it uses; once = its HTML widget frame
+ *  may reach the declared sites for one load (`grant`). */
 export function useExtensionConsent() {
   return useMut(
-    ({ id, decision }: { id: string; decision: 'always' | 'deny' | 'reset' }) =>
-      api.post<Ok & { access: ExtensionAccess }>(`/api/extensions/${seg(id)}/consent`, { decision }),
+    ({ id, decision }: { id: string; decision: 'always' | 'once' | 'deny' | 'reset' }) =>
+      api.post<Ok & { access: ExtensionAccess; grant?: string }>(`/api/extensions/${seg(id)}/consent`, { decision }),
     { invalidate: [qk.extensions, qk.dashboard.all] },
   )
 }

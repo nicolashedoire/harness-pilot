@@ -99,5 +99,10 @@ Tips:
   just did into a skill".
 - Custom skills are never overwritten by updates. Skills under `<workspace>/.claude/skills/` are
   included in the backup; user-level skills in `~/.claude/skills/` are not.
+- Codex sessions use your workspace skills too: harness-pilot copies each folder of `<workspace>/.claude/skills/`
+  into Codex's skills folder (next to the product skills) at start and every few minutes, and removes the copy when
+  you delete the skill. A Codex skill of the same name that you wrote yourself there is left alone. Skills of one
+  project (`projects/<p>/.claude/skills/`) are not copied: Codex would load them in every session.
+- The Atelier lists your workspace skills with the agents that see them.
 - Check how your Claude Code version discovers project-level skills (`claude --help`, Claude Code
   docs) if a workspace skill is not picked up in a topic session; the user level always works.

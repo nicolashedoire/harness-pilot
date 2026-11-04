@@ -354,6 +354,7 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
   router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
 
 ## maxxing.permissions - declared permissions of extensions  (owner: organisation)
+Next stages (a sandboxed frame for `page.js`, `api.py` out of process): docs/dev/EXTENSION-ISOLATION.md.
 Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--extensions (Permissions).
 - `parse(raw) -> dict | None`: the manifest's `"permissions"` validated -> `{network, secrets, read}` (lists in the
   manifest's order, duplicates dropped, hosts lowercased, read paths normalised: no trailing `/`, `./` dropped);
@@ -374,7 +375,7 @@ Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--exten
   (`extensions.make_ctx(ext, where=None, record=True)`; `where` defaults to `card` for a Card widget, `api`
   otherwise). Allowed: `vault.get(name)`; a grandfathered extension without a declaration reading a valid key name
   for the first time -> `_record_legacy` (how `legacy`, feed `extension.legacy_secrets` folded per extension, group
-  `ext-legacy:<id>`, params listing every recorded key). Refused: `PermissionDenied(eid, kind, name, reason,
+  `ext-legacy:<id>:secrets`, params listing every recorded key). Refused: `PermissionDenied(eid, kind, name, reason,
   message)` raised after `_record_denied` (state `denied`, one row per kind + name + reason, written again at most once
   a minute; `exterrors.record(id, dir, where, "PermissionDenied: ...")`; bus `extensions`; a log warning).
   `record=False` (`extcheck`) records neither refusals nor grandfathered keys, and still answers a grandfathered
@@ -383,6 +384,32 @@ Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--exten
   a version: every key `perms` declares becomes `accepted`, `refused` cleared), `forget(id)` (an extension deleted).
   `deny` and `reset` drop the `accepted` keys and keep the `legacy` ones.
 - `access(ext)` (`Extension.info()["access"]` for a widget or page), `suggested(ext)`, `detail(ext)`, `since()`.
+- Sites (HTML widgets): grants `extensions.<id>.network` like the keys. `frame_network(ext, grant)` -> `{open, hosts,
+  known}` (open = grandfathered without a declaration and not refused; hosts = declared and accepted, or all declared
+  with a valid `once` grant; known = recorded sites), `network_state(ext)` (the card's `network.state`),
+  `record_hosts(ext, hosts)` (only while grandfathered and undeclared; `LEGACY_HOSTS_MAX` 50; feed
+  `extension.legacy_network`, group `ext-legacy:<id>:network`), `set_consent(..., "once")` -> `grant` (in-memory
+  `_once`, `GRANT_TTL_S` 1 h, 500 at most), `grant_ok(id, token)`, `host_ok(host)`. `accept`, `deny` and `reset` treat
+  sites like keys.
+
+## maxxing.api.extframes - what an HTML widget frame loads by itself  (owner: organisation)
+- Public router (no `require_auth`: the frame's opaque origin gets no cookie), listed in `api.ROUTERS` before
+  `extensions` so its `/ext/{id}/f/...` routes come before the page modules' catch-all; imports `api.extensions` for
+  the `extid` convertor. `extcheck._client()` includes it first too.
+- Frame tokens: `issue(id, report) -> token` (by `api/extensions.widget_frame`, one per load, in `_frames`:
+  `{eid, exp, report, reports}`, `FRAME_TTL_S` 12 h renewed by each use, `FRAMES_MAX` 2000, expired ones dropped on
+  issue). The frame document carries `<base href="/ext/<id>/f/<token>/">` (inserted after `<meta charset>`: no new
+  line, so `_frame_offset` and exterrors' widget.html line numbers are unchanged).
+- `GET /ext/{id}/f/{token}/{rel}`: `extensions.module_file(ext, rel, FRAME_TYPES)` (enabled HTML widget without
+  error), `ASSET_CSP`, `Access-Control-Allow-Origin: *`. `POST .../@csp-report`: body read in chunks up to
+  `REPORT_MAX`, `report_hosts(body)` (both report formats), `permissions.record_hosts`, bus `extensions` when
+  something was recorded; always 204; `REPORTS_PER_FRAME`.
+- `api/extensions.widget_csp(hosts, report_uri=None)`: the limited frame policy, or its report-only form (no
+  `sandbox` / `frame-ancestors`, which a report-only policy ignores). `'self'` matches the frame's URL origin in a
+  sandboxed document (checked in Chrome: own script, image and `fetch` load; another site's script and an undeclared
+  `fetch` are blocked; the report-only policy's reports reach `@csp-report`).
+- `extensions.widget_card` gives an HTML widget's card `network: {state, hosts}`; `extensions.FRAME_TYPES` and
+  `module_file(ext, rel, types)` (suffix compared lowercased).
 - Call sites: `api/dashboard._render` catches `PermissionDenied` before the generic handler (no second exterrors
   record; `permission` in the widget), `api/extensions.forward` maps it to 403, `extcheck._check_card` reports a
   `not_allowed` refusal as a warning (the user has to allow it, the code is fine) and the others as errors.
@@ -434,7 +461,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   template literals and comments skipped) returning the specifiers after `import` / `from` / `import(` and the code
   with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
 - HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
-  position, links); an unclosed `<script>` is detected by the parser never closing it.
+  position, links); an unclosed `<script>` is detected by the parser never closing it. A widget's relative `<script src>` /
+  stylesheet must be a file its frame loads (`_frame_file_ok`: `module_file(..., FRAME_TYPES)`; a block's: none).
+  `_check_widget_network`: with a limited frame (`permissions.frame_network`), a script or stylesheet from another site
+  is an error and a site named in widget.html that `permissions.network` does not cover (`*.` wildcards) a warning;
+  a grandfathered frame gets one warning listing the sites to declare (named + recorded).
 - Permissions (widget, page): step `permissions` = OK with `permissions.summary` of what the manifest declares, WARN
   when it has no `"permissions"` key (block plugins and agents: no step). Result key `permissions` = the declaration
   or None.
@@ -549,8 +580,8 @@ cron jobs through their own modules, no copy of their data).
   (`approval.by: "user"`); an approval or a rollback first keeps them as a `direct` version, so nothing is lost.
 - **Migration**: the first `refresh()` after the Atelier exists (`<state>/atelier/state.json` without `migrated_at`)
   records every extension folder as v1, `approval.by: "migration"`, origin unknown; later, a folder with no record
-  (written outside the Atelier) gets v1 with `approval.by: null` and `unreviewed`. Pins written by `blocks.pin` and
-  extensions installed by packs are recorded as approved by the user (`origin.agent: "user"`).
+  (written outside the Atelier) gets v1 with `approval.by: null` and `unreviewed`. Pins written by `blocks.pin` are
+  recorded as approved by the user (`origin.agent: "user"`).
 - **Retention** (`prune()`): versions older than config `atelier.keep_days` (90) beyond the `keep_versions` (10) newest
   go, never the active one nor a pending draft's base; decided drafts after 30 days; then unreferenced objects.
   After each approval and from the daily server loop.
@@ -558,15 +589,33 @@ cron jobs through their own modules, no copy of their data).
   always taken before `extensions.publishing()`, never inside it.
 - **Bus**: `rev` (`<state>/atelier/rev`, its mtime) is touched by every write; `api/atelier` polls it every 2 s and
   sends `invalidate atelier`, so a proposal registered by the CLI reaches open browsers.
-- **Backup**: the GitHub memory backup adds `_maxxing/atelier.json` (each item's versions and history without the
-  file lists: a few kB); a restore keeps it as metadata (`restorable: false` versions) so provenance survives a move.
-  The extension files themselves are the workspace's (`extensions/` include patterns). The complete instance backup
-  has all of `<state>/atelier/`.
-- **Other kinds** (`items()`): themes = `themes.saved()` (active = the applied palette, else `disabled`; origin from
-  the entry's `source` / `from`); skills = `<workspace>/.claude/skills/*/SKILL.md` and `<workspace>/.agents/skills`
-  (product skills excluded; `agents` = which agent reads it); customizations = `customs.list_customs()` (`review`
-  while a pending update lists it in its conflicts); cron jobs = `crons.list_jobs()` (`disabled`, `error` after a
-  failed last run). Read-only: `actions` is empty, rollback is `422 not_versioned`.
+- **Backup**: the GitHub memory backup adds `_maxxing/atelier.json` (`export_meta()`: each item's versions - `n, at,
+  hash, base, origin, approval, health, error, note, size, file_count` - and its 50 newest history events, never file
+  lists nor contents: a few kB). A restore (`backup._apply`, after the files) calls `import_meta()`: an item this server
+  approved nothing for (no version `approval.by` user / auto) gets the backup's record with `restorable: false`
+  versions and `live.sig` null; the next `refresh()` sees its folder, and when the files hash to the active version's
+  `hash` it snapshots them (that version is restorable again) - no `unreviewed` flag. Older versions stay
+  metadata (`409 not_restorable`). The extension files themselves are the workspace's (`extensions/**` include
+  pattern). The complete instance backup has all of `<state>/atelier/`.
+- **Rollback / diffs**: `rollback(kind, id, n)` (`400 bad_version`, `404`, `409 not_restorable` when a blob is missing,
+  `422 not_versioned`); `version_detail(kind, id, n, against)` diffs blob contents (`diff_files`).
+- **Retention**: `prune(now)` runs inside `approve` and from the API watcher once a day (`prune_due`: `pruned_at` of
+  `state.json` older than `PRUNE_EVERY_S`, checked every hour); it returns the counts dropped.
+- **Other kinds** (`maxxing/atelier_kinds.py`, `items()` / `detail()`): themes = `themes.saved()` (active = the
+  applied palette by `themes._colours`, else `disabled`; origin only for `created` / `received` entries); skills =
+  `<workspace>/.claude/skills/*/SKILL.md` and `<workspace>/.agents/skills` (product skills excluded; `agents` = which
+  agent reads it); customizations = `customs.list_customs()` cached 30 s per `.git/HEAD` mtime (`review` while
+  `customs.pending()` is a `conflict` whose files touch it, or lists its title when it names no file); cron jobs =
+  `crons.list_jobs()` (`disabled`, `error` after a failed last run). Read-only: `actions` is empty, rollback is
+  `422 not_versioned`. One kind failing never hides the others.
+- **Workspace skills for Codex** (`atelier_kinds.mirror_skills()`): Codex reads its personal skills folder
+  (`cmd_core.codex_skills_target()`, where the product skills are) and `.agents/skills` from a session's folder up to
+  its Git root, never Claude's `.claude/skills`. Each `<workspace>/.claude/skills/<name>/` (not a product skill name, not
+  a link) is copied there with a marker `.pilot-workspace-skill` (= the source's stat signature: copied again when it
+  changes); a folder there without the marker (the user's own, a product skill) is never touched; a marked one whose
+  source is gone is removed. Run at the API's startup and every 5 minutes. Project-level skills
+  (`projects/<p>/.claude/skills`, loaded by Claude only in that project's topics) are not mirrored: in Codex's folder
+  they would reach every session - a known gap.
 - **Runner**: every turn's environment carries `MAXXING_SESSION` (the session id) and `MAXXING_AGENT` (`claude`,
   `codex`, `plugin:<id>`): Claude turns, Codex turns and agent plugin turns.
 - **Hooks in `extensions`**: `_load_one(d, load_code=False)` validates a folder without importing `api.py` (drafts;
@@ -1037,9 +1086,15 @@ fails at start ("failed to load AGENTS.md instructions ...: fs sandbox helper fa
 secret path exists; with `codex_plain_sandbox` the turn runs and each command fails ("bwrap: No permissions to create
 new namespace"), the behaviour before.
 Also found, not changed here: on Linux a secret path holding glob characters (`<state [1]>/secrets.json`) is not
-denied, as before (`_glob_literal` fixes it on macOS only); and `exec fork` of a thread started in a write mode keeps
-that thread's writable folder despite `fork_command()`'s read-only profile (a side question can write the topic
-folder; its protected entries stay protected), on main as well.
+denied, as before (`_glob_literal` fixes it on macOS only).
+Side questions and plan turns of a write-mode thread are read-only: `exec --ephemeral fork` with `fork_command()`'s
+profile, and `exec resume` with the plan profile, run the new turn with the profile of their own command line, not the
+one the thread started with (checked on macOS: a fork and a plan resume of a `bypass` thread refuse every write of the
+matrix, including the turn's folder, secrets denied). The stub must answer from the tool outputs after the last user message
+only: a forked or resumed thread carries the earlier turns' outputs in its history (an earlier run of this check read
+the parent turn's results as the fork's, and wrongly concluded that a fork kept its parent's writable folder). Every
+`-c` stays before `fork` / `resume`: `-c` options given after the subcommand replace all those before it (with the
+stub provider before and a profile after `fork`, Codex dropped the provider and tried the OpenAI API).
 Claude in `bypass` can write all of this as the server's user: that is the mode's documented meaning (15-security), a
 separate design point not changed here; Claude's deny rules keep only `.maxxing.json` and `infra.json` out of its edits.
 Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub Responses API and fake secrets:
