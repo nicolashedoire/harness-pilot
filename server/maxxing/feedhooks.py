@@ -10,9 +10,12 @@ secrets.json (`feed_hooks: {id: {token, secret}}`). The hook's name is the event
   generic  optional X-Signature: sha256=hex; JSON {title, body|message|text, level, url, id}
 
 A secret set on a hook is always checked. Stripe, Shopify and GitHub hooks (SIGNED_KINDS) REFUSE every
-delivery until their secret is set (401 secret_required + one folded "security" feed warning): the hook
-can be created first because Stripe only shows the signing secret once the endpoint (its URL) exists.
+delivery until their secret is set (401 secret_required + one folded "security" feed warning, kind
+`webhook.refused`, resolved when the secret is set or the hook removed): the hook can be created first because
+Stripe only shows the signing secret once the endpoint (its URL) exists.
 A generic hook without a secret accepts any POST with the token.
+Each parser gives the event a kind of feed.KINDS (`stripe.sale`, `github.workflow`...) with its params; a generic
+payload is kind `custom` and may carry `actions` (links only: anything else is dropped).
 Payloads are data: they never run anything.
 """
 from __future__ import annotations
@@ -94,6 +97,8 @@ def update(hid: str, secret: str | None = None, regenerate: bool = False) -> dic
         if regenerate:
             s["token"] = _secrets.token_urlsafe(24)
         _save_store(store)
+    if s.get("secret"):
+        feed.system_resolve("security", f"hook-secret-{hid}")
     return public(h, store)
 
 
@@ -104,6 +109,7 @@ def remove(hid: str) -> None:
         store.pop(hid, None)
         _save_store(store)
         feed.save_settings(hooks=[h for h in feed.settings()["hooks"] if h["id"] != hid])
+    feed.system_resolve("security", f"hook-secret-{hid}")
 
 
 def _find(hid: str) -> dict:
@@ -125,7 +131,7 @@ def by_token(token: str) -> tuple[dict, dict] | None:
 def test(hid: str) -> dict | None:
     h = _find(hid)
     return feed.post(f"Test from {h['name']}", "If you can read this, the source works.", "info", h["name"],
-                     notify=True)
+                     notify=True, kind="webhook.test", params={"name": h["name"]})
 
 
 # ---- delivery ------------------------------------------------------------------------------
@@ -189,7 +195,9 @@ def deliver(token: str, headers: dict, body: bytes) -> tuple[int, dict]:
         feed.system(f"Webhook {h['name']} refused: no signing secret",
                     f"Add the {h['kind'].capitalize()} signing secret in Settings -> Notifications "
                     "(source menu -> Set the signing secret); events are refused until then.",
-                    "warning", "security", group=f"hook-secret-{h['id']}")
+                    "warning", "security", group=f"hook-secret-{h['id']}", kind="webhook.refused",
+                    params={"hook_id": h["id"], "name": h["name"], "service": h["kind"]},
+                    actions=[feed.link("add_secret", "Add the secret", f"/settings/notifications?hook={h['id']}")])
         return 401, {"error": "secret_required"}
     if not verify(h["kind"], s.get("secret", ""), headers, body):
         return 401, {"error": "bad_signature"}
@@ -213,10 +221,14 @@ def deliver(token: str, headers: dict, body: bytes) -> tuple[int, dict]:
     # a parser passes some fields through as they came (an "email": 5): text for the feed, never a 500
     title, body_text, url = ("" if v is None else str(v) for v in ev[:2] + ev[3:4])
     level, dedupe = ev[2], ev[4]
+    kind, params = (ev[5], ev[6]) if len(ev) > 6 else ("custom", {})
+    actions = feed.clean_actions(payload.get("actions"), strict=False) \
+        if h["kind"] == "generic" and isinstance(payload, dict) else []
     if h["kind"] in BODY_DEDUPE:                       # their delivery-id header is not signed: a captured body
         dedupe = _replay_key(h["kind"], lower, body)   # replayed with a new id must stay a duplicate
     try:
-        posted = feed.post(title, body_text, level, h["name"], url, dedupe=dedupe)
+        posted = feed.post(title, body_text, level, h["name"], url, dedupe=dedupe, kind=kind,
+                           params=feed.clean_params(params, strict=False), actions=actions)
     except FeedError as e:
         return e.status, {"error": e.code, "message": e.message}
     return 200, {"ok": True, "duplicate": posted is None, "id": posted["id"] if posted else None}
@@ -237,8 +249,8 @@ def _replay_key(kind: str, lower_headers: dict, body: bytes) -> str:
     return f"sha256:{topic}:" + hashlib.sha256(body).hexdigest()
 
 
-# ---- parsers: payload -> (title, body, level, url, dedupe) | None -----------------------------
-Event = tuple[str, str, str, str, "str | None"]
+# ---- parsers: payload -> (title, body, level, url, dedupe, kind, params) | None -----------------
+Event = tuple  # (title, body, level, url, dedupe[, kind, params])
 
 
 def _money(amount: Any, currency: Any, cents: bool = True) -> str:
@@ -255,27 +267,31 @@ def _stripe(p: dict, h: dict) -> Event | None:
     eid = p.get("id")
     email = (obj.get("customer_details") or {}).get("email") or obj.get("receipt_email") or obj.get("customer_email") or ""
     dash = "https://dashboard.stripe.com/"
+    who = {"email": str(email)} if email else {}
     if typ == "checkout.session.completed":
         amt = _money(obj.get("amount_total"), obj.get("currency"))
-        return f"Sale: {amt}".strip(), email, "success", dash + "payments", eid
+        return f"Sale: {amt}".strip(), email, "success", dash + "payments", eid, "stripe.sale", {"amount": amt, **who}
     if typ in ("payment_intent.succeeded", "charge.succeeded"):
         amt = _money(obj.get("amount_received", obj.get("amount")), obj.get("currency"))
-        return f"Payment received: {amt}".strip(), email, "success", dash + "payments", eid
+        return (f"Payment received: {amt}".strip(), email, "success", dash + "payments", eid, "stripe.payment",
+                {"amount": amt, **who})
     if typ in ("charge.refunded", "refund.created"):
         amt = _money(obj.get("amount_refunded", obj.get("amount")), obj.get("currency"))
-        return f"Refund: {amt}".strip(), email, "warning", dash + "payments", eid
+        return f"Refund: {amt}".strip(), email, "warning", dash + "payments", eid, "stripe.refund", {"amount": amt, **who}
     if typ in ("invoice.payment_failed", "payment_intent.payment_failed", "charge.failed"):
         amt = _money(obj.get("amount_due", obj.get("amount")), obj.get("currency"))
-        return f"Payment failed: {amt}".strip(), email, "error", dash + "payments", eid
+        return (f"Payment failed: {amt}".strip(), email, "error", dash + "payments", eid, "stripe.payment_failed",
+                {"amount": amt, **who})
     if typ == "charge.dispute.created":
-        return f"Dispute opened: {_money(obj.get('amount'), obj.get('currency'))}", "", "error", dash + "disputes", eid
+        amt = _money(obj.get("amount"), obj.get("currency"))
+        return f"Dispute opened: {amt}", "", "error", dash + "disputes", eid, "stripe.dispute", {"amount": amt}
     if typ == "customer.subscription.created":
-        return "New subscription", email, "success", dash + "subscriptions", eid
+        return "New subscription", email, "success", dash + "subscriptions", eid, "stripe.subscription_created", who
     if typ == "customer.subscription.deleted":
-        return "Subscription cancelled", email, "warning", dash + "subscriptions", eid
+        return "Subscription cancelled", email, "warning", dash + "subscriptions", eid, "stripe.subscription_cancelled", who
     if not typ:
         return None
-    return f"Stripe: {typ}", "", "info", dash + "events", eid
+    return f"Stripe: {typ}", "", "info", dash + "events", eid, "stripe.event", {"type": typ}
 
 
 def _shopify(p: dict, h: dict) -> Event | None:
@@ -286,35 +302,45 @@ def _shopify(p: dict, h: dict) -> Event | None:
     name = p.get("name") or (f"#{p['order_number']}" if p.get("order_number") else "")
     amt = _money(p.get("total_price"), p.get("currency"), cents=False)
     who = (p.get("customer") or {}).get("email") or p.get("email") or ""
+    order = {"order": str(name), **({"email": str(who)} if who else {})}
     if topic == "orders/create":
-        return f"New order {name}: {amt}".strip(), who, "success", f"{admin}/orders/{p.get('id', '')}" if admin else "", did
+        return (f"New order {name}: {amt}".strip(), who, "success", f"{admin}/orders/{p.get('id', '')}" if admin else "",
+                did, "shopify.order_created", {**order, "amount": amt})
     if topic == "orders/paid":
-        return f"Order paid {name}: {amt}".strip(), who, "success", f"{admin}/orders/{p.get('id', '')}" if admin else "", did
+        return (f"Order paid {name}: {amt}".strip(), who, "success", f"{admin}/orders/{p.get('id', '')}" if admin else "",
+                did, "shopify.order_paid", {**order, "amount": amt})
     if topic == "orders/cancelled":
-        return f"Order cancelled {name}", who, "warning", f"{admin}/orders/{p.get('id', '')}" if admin else "", did
+        return (f"Order cancelled {name}", who, "warning", f"{admin}/orders/{p.get('id', '')}" if admin else "", did,
+                "shopify.order_cancelled", order)
     if topic == "refunds/create":
-        return f"Refund on order {p.get('order_id', '')}", "", "warning", f"{admin}/orders/{p.get('order_id', '')}" if admin else "", did
+        return (f"Refund on order {p.get('order_id', '')}", "", "warning",
+                f"{admin}/orders/{p.get('order_id', '')}" if admin else "", did, "shopify.refund",
+                {"order_id": str(p.get("order_id", ""))})
     if topic == "inventory_levels/update":
         avail = p.get("available")
         level = "warning" if isinstance(avail, int) and avail <= 0 else "info"
-        return f"Stock update: {avail} available", f"Item {p.get('inventory_item_id', '')}", level, f"{admin}/products" if admin else "", did
+        return (f"Stock update: {avail} available", f"Item {p.get('inventory_item_id', '')}", level,
+                f"{admin}/products" if admin else "", did, "shopify.stock",
+                {"available": avail if isinstance(avail, int) else str(avail), "item_id": str(p.get("inventory_item_id", ""))})
     if not topic:
         return None
-    return f"Shopify: {topic}", name, "info", admin, did
+    return f"Shopify: {topic}", name, "info", admin, did, "shopify.event", {"topic": str(topic), "order": str(name)}
 
 
 def _github(p: dict, h: dict) -> Event | None:
     ev = h.get("x-github-event", "")
     did = h.get("x-github-delivery")
     repo = (p.get("repository") or {}).get("full_name", "")
+    r = {"repo": str(repo)}
     if ev == "ping":
-        return f"GitHub connected: {repo or 'webhook'}", "", "success", "", did
+        return f"GitHub connected: {repo or 'webhook'}", "", "success", "", did, "github.ping", r
     if ev == "push":
         commits = p.get("commits") or []
         branch = str(p.get("ref", "")).rsplit("/", 1)[-1]
         first = (commits[0].get("message", "") if commits else "").splitlines()[0:1]
-        return (f"{len(commits)} commit(s) to {branch} - {repo}", first[0] if first else "", "info",
-                p.get("compare", ""), did)
+        msg = first[0] if first else ""
+        return (f"{len(commits)} commit(s) to {branch} - {repo}", msg, "info", p.get("compare", ""), did, "github.push",
+                {**r, "branch": branch, "commits": len(commits), "message": str(msg)})
     if ev == "pull_request":
         pr = p.get("pull_request") or {}
         act = p.get("action", "")
@@ -322,29 +348,39 @@ def _github(p: dict, h: dict) -> Event | None:
             act = "merged"
         if act not in ("opened", "merged", "closed", "reopened", "ready_for_review"):
             return None
-        return f"PR {act}: {pr.get('title', '')} - {repo}", pr.get("user", {}).get("login", ""), "info", pr.get("html_url", ""), did
+        user = pr.get("user", {}).get("login", "")
+        return (f"PR {act}: {pr.get('title', '')} - {repo}", user, "info", pr.get("html_url", ""), did,
+                "github.pull_request", {**r, "action": act, "title": str(pr.get("title", "")), "user": str(user)})
     if ev == "issues":
         iss = p.get("issue") or {}
         if p.get("action") not in ("opened", "closed", "reopened"):
             return None
-        return f"Issue {p.get('action')}: {iss.get('title', '')} - {repo}", "", "info", iss.get("html_url", ""), did
+        return (f"Issue {p.get('action')}: {iss.get('title', '')} - {repo}", "", "info", iss.get("html_url", ""), did,
+                "github.issue", {**r, "action": str(p.get("action")), "title": str(iss.get("title", ""))})
     if ev == "workflow_run":
         run = p.get("workflow_run") or {}
         if p.get("action") != "completed":
             return None
         ok = run.get("conclusion") == "success"
         return (f"{run.get('name', 'Workflow')} {'passed' if ok else run.get('conclusion', 'failed')} - {repo}",
-                run.get("head_branch", ""), "success" if ok else "error", run.get("html_url", ""), did)
+                run.get("head_branch", ""), "success" if ok else "error", run.get("html_url", ""), did,
+                "github.workflow", {**r, "workflow": str(run.get("name", "Workflow")),
+                                    "conclusion": str(run.get("conclusion") or "failed"),
+                                    "branch": str(run.get("head_branch", ""))})
     if ev == "release":
         rel = p.get("release") or {}
         if p.get("action") != "published":
             return None
-        return f"Release {rel.get('tag_name', '')} published - {repo}", rel.get("name", ""), "success", rel.get("html_url", ""), did
+        return (f"Release {rel.get('tag_name', '')} published - {repo}", rel.get("name", ""), "success",
+                rel.get("html_url", ""), did, "github.release",
+                {**r, "tag": str(rel.get("tag_name", "")), "name": str(rel.get("name", ""))})
     if ev == "star":
-        return f"Star {p.get('action', '')} - {repo}", (p.get("sender") or {}).get("login", ""), "info", "", did
+        user = (p.get("sender") or {}).get("login", "")
+        return (f"Star {p.get('action', '')} - {repo}", user, "info", "", did, "github.star",
+                {**r, "action": str(p.get("action", "")), "user": str(user)})
     if not ev:
         return None
-    return f"GitHub: {ev} - {repo}".strip(" -"), "", "info", "", did
+    return f"GitHub: {ev} - {repo}".strip(" -"), "", "info", "", did, "github.event", {**r, "event": str(ev)}
 
 
 def _generic(p: dict, h: dict) -> Event | None:
