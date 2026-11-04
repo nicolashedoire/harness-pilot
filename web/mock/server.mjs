@@ -6,7 +6,8 @@
 //   curl -X POST localhost:8809/__mock/scenario -d '{"name":"login"}'   # reset state at runtime
 //   curl -X POST localhost:8809/__mock/bus -d '{"topics":["sessions","workspace"]}'   # emit a bus event
 //
-// Implements every endpoint of docs/dev/API.md with in-memory state and fake, product-neutral data.
+// Implements the endpoints of docs/dev/API.md with in-memory state and fake, product-neutral data (the routes left out
+// are listed in docs/dev/DESIGN.md, "Mock & visual checks").
 // Serves the built SPA from ../dist (web/dist). Scenarios: setup | login | onboarding | ready | maxxing.
 // maxxing: 30 more sessions that keep finishing at random (Maxxing mode); MOCK_PASSWORD=... asks for that password.
 

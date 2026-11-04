@@ -33,7 +33,7 @@ export type TwoFactorPoll = { ok: boolean; status: 'pending' | 'approved'; expir
 export type ChangePasswordBody = { current: string; new: string }
 
 /* ---------------------------------------------------------------- Onboarding */
-export type OnboardingStepKey = 'password' | 'claude' | 'workspace' | 'telegram' | 'backup' | 'profile'
+export type OnboardingStepKey = 'password' | 'claude' | 'codex' | 'workspace' | 'telegram' | 'backup' | 'profile'
 export type OnboardingState = { completed: boolean; steps: Record<OnboardingStepKey, boolean> }
 
 /* ---------------------------------------------------------------- Claude */
@@ -415,6 +415,8 @@ export type Cron = {
   /** '' = the topic's mode, else the global one. */
   permission_mode?: CronPermissionMode
   enabled: boolean
+  /** Local scheduler: one run at startup when runs were missed while the app was stopped (older servers: absent). */
+  catch_up?: boolean
   notify: CronNotify
   timeout_s: number
   last_run: CronLastRun | null
@@ -572,6 +574,8 @@ export type Settings = {
   /** Settings -> Support: hide the donation links of What's new, Feedback and License (every browser). */
   donation_hidden?: boolean
   donation_url?: string
+  /** Settings -> Companions: Claude Code's OS sandbox for companion commands (off by default). */
+  companion_sandbox?: boolean
 }
 export type ResultField = 'model' | 'duration' | 'cost' | 'tokens' | 'cache'
 
@@ -583,6 +587,8 @@ export type TokenStats = {
   totals: TokenCounts
   providers: Record<string, Omit<TokenCounts, 'cost_usd' | 'sessions'> & {name?:string}>
   unattributed_turns: number
+  /** Older Codex turns recalculated because they counted cached input twice, and the tokens removed. */
+  corrected?: { turns: number; tokens: number }
   projects: (TokenCounts & { name: string })[]
   topics: (TokenCounts & { path: string })[]
   sessions: (Omit<TokenCounts, 'sessions'> & { id: string; title: string; path: string; archived: boolean; updated: number })[]

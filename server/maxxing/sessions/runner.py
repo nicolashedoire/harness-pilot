@@ -338,7 +338,8 @@ class Runner:
         model = (meta.get("model") or cfg.get("default_model") or "").strip()
         mcp_plan = mcp_auto.plan(self.sid, cfg, meta, cwd, item.get("text") or "")   # MCP servers this turn needs
         base = [spawn.claude_bin(), "-p", "--output-format", "stream-json", "--verbose"]
-        base += spawn.permission_args(mode)[0] + spawn.settings_args(cfg) + spawn.agents_args(cfg, mcp_plan.hint)
+        base += spawn.permission_args(mode)[0] + spawn.settings_args(cfg, spawn.companion_sandbox(cfg, meta)) \
+            + spawn.agents_args(cfg, mcp_plan.hint)
         base += ["--model", model] if model else []
         from maxxing import pcbridge                    # not at import: the runner starts with stdlib-only modules
         base += pcbridge.mcp_config_args() + mcp_plan.args

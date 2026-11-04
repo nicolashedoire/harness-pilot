@@ -455,6 +455,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
   of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
   scheduled=True)`): pausing services for the snapshot never cancels it.
+- Copy folder: config `instance_backup_copy` `{folder}`; `instance_backup.set_copy_folder()` (absolute, existing,
+  writable, outside the included roots) / `disable_copy()` / `copy_status()`; `copy_export(id)` streams, fsyncs,
+  reads back and compares size + SHA-256 before the rename, stores the record in the export's `.json` and posts or
+  resolves the feed group `instance-backup-copy`. The app's `export_instance` calls it after services resume and
+  outside the activation lock, for manual and scheduled exports alike.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
@@ -517,9 +522,15 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
-- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.boot()` once (every
-  enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while `integrations_paused`), then
-  `localcron.tick()` every 15 s (the current minute, claimed in `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.catch_up()`, then
+  `localcron.boot()` once (every enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while
+  `integrations_paused`), then `localcron.tick()` every 15 s (the current minute, claimed in
+  `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local scheduler catch-up (`localcron.catch_up(now)`): heartbeat
+  `<state>/local-cron-alive.json` `{at}` written by `tick()` once per minute (also while `integrations_paused`) and by
+  `catch_up` itself before it starts anything (a crash never repeats it). For each enabled job with `catch_up` (not
+  `@reboot`, not due this minute) and at least one `iter_runs` time after max(heartbeat, job `created`, `updated`) and
+  before the current minute: one `spawn_run` + `feed.system` `cron.caught_up` (info). No heartbeat yet = first start: nothing.
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
@@ -723,6 +734,12 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
 `LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
 against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
+
+## maxxing.sessions.spawn - companion sandbox
+`settings_args(cfg, sandbox)` adds `COMPANION_SANDBOX` (`{enabled, failIfUnavailable: true, allowUnsandboxedCommands:
+false, autoAllowBashIfSandboxed: false}`) to the turn's `--settings`; the runner passes `companion_sandbox(cfg, meta)`
+= config `companion_sandbox` and `meta.companion` set (experiments, mission steps, planner). Codex turns and external
+adapters are unchanged. Options and limits: `docs/dev/COMPANION-SANDBOX.md`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission

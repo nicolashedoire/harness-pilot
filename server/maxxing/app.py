@@ -186,8 +186,9 @@ def create_app() -> FastAPI:
                             await module.shutdown()
                             paused.append(module)
                     if scheduled:                     # the schedule's stored key, never a passphrase
-                        return await asyncio.to_thread(instance_backup.export_scheduled)
-                    return await asyncio.to_thread(instance_backup.export, password)
+                        result = await asyncio.to_thread(instance_backup.export_scheduled)
+                    else:
+                        result = await asyncio.to_thread(instance_backup.export, password)
                 finally:
                     for module in reversed(paused):
                         try:
@@ -196,6 +197,13 @@ def create_app() -> FastAPI:
                             log.exception('Could not resume %s after the snapshot', module.__name__)
                             app.state.snapshot_service_errors.append(module.__name__)
                     app.state.snapshot_in_progress = False
+            # Copy to the owner's folder once services run again (a slow drive must not keep them paused).
+            if isinstance(result, dict) and result.get('id') and instance_backup._copy_folder() is not None:
+                try:
+                    result['copy'] = await asyncio.to_thread(instance_backup.copy_export, result['id'])
+                except instance_backup.SnapshotError:          # turned off or deleted meanwhile: the archive stands
+                    log.warning('Instance archive %s was not copied', result['id'], exc_info=True)
+            return result
 
         app.state.export_instance_snapshot = export_instance
         for m in mods if not config.load_config().get('restore_hold') else []:
