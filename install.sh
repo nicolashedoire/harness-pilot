@@ -1554,21 +1554,10 @@ restore_review() {
 }
 
 # ---- access ---------------------------------------------------------------------------------
-setup_caddy() {
-  apt_wait                                      # one apt at a time
-  if ! command -v caddy >/dev/null 2>&1; then
-    command -v gpg >/dev/null 2>&1 || apt_get install -y -qq gnupg >>"$WORK/apt.log" 2>&1 || true
-    caddy_repo || die "Caddy's signing key does not match the expected fingerprint - refused"
-    { apt_get update -qq -o Dir::Etc::sourcelist="$(dep caddy apt_list)" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 \
-        && apt_get install -y -qq caddy; } >>"$WORK/apt.log" 2>&1 \
-      || { tail -n 15 "$WORK/apt.log"; die "Caddy installation failed"; }
-    ok "Caddy installed"
-    manifest "caddy installed"
-  fi
-  (umask 022; mkdir -p /etc/caddy /etc/caddy/maxxing-paths)
-  local before_cf=""
-  [ -f "$CADDYFILE" ] && before_cf=$(cat "$CADDYFILE")
-  (umask 022; cat > "$CADDY_SITE") <<EOF
+# caddy_site_text - the Caddy site of DOMAIN: automatic HTTPS (Caddy gets and renews the certificate), security
+# headers, the upload limit of the app, infra sites under this address, unbuffered proxy to the server (live updates)
+caddy_site_text() {
+  cat <<EOF
 # harness-pilot (written by install.sh - re-run the installer to change it)
 $DOMAIN {
 	encode zstd gzip
@@ -1589,6 +1578,23 @@ $DOMAIN {
 	}
 }
 EOF
+}
+
+setup_caddy() {
+  apt_wait                                      # one apt at a time
+  if ! command -v caddy >/dev/null 2>&1; then
+    command -v gpg >/dev/null 2>&1 || apt_get install -y -qq gnupg >>"$WORK/apt.log" 2>&1 || true
+    caddy_repo || die "Caddy's signing key does not match the expected fingerprint - refused"
+    { apt_get update -qq -o Dir::Etc::sourcelist="$(dep caddy apt_list)" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 \
+        && apt_get install -y -qq caddy; } >>"$WORK/apt.log" 2>&1 \
+      || { tail -n 15 "$WORK/apt.log"; die "Caddy installation failed"; }
+    ok "Caddy installed"
+    manifest "caddy installed"
+  fi
+  (umask 022; mkdir -p /etc/caddy /etc/caddy/maxxing-paths)
+  local before_cf=""
+  [ -f "$CADDYFILE" ] && before_cf=$(cat "$CADDYFILE")
+  (umask 022; caddy_site_text > "$CADDY_SITE")
   # a Caddyfile that is ours (stock welcome page, empty, or only our import): written whole, with Caddy's admin
   # API on a socket only root and caddy can open instead of 127.0.0.1:2019 (any local user could reconfigure it)
   if [ ! -s "$CADDYFILE" ] || grep -q '/usr/share/caddy' "$CADDYFILE" \
