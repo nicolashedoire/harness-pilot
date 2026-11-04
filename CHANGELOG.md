@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- On a Linux server, `pilot deps update` started while another update of the tools is running (the one that follows an installation or `pilot update`) now waits for it and says so, instead of both failing and leaving Node.js and Remotion missing.
 - A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
 - Telegram companion notifications now show the exact proposed changes and let the linked owner approve, reject or reopen the companion conversation. Older buttons cannot approve a changed proposal; decisions never apply or publish code. Large changes stay in the application review. Thread creation no longer produces a spurious unsupported-message reply during synchronization. [Show me](#show:telegram-setup)
 - The inherited license commands no longer contact the original project's license server or code repository: activating or releasing a key now stops with a clear message, and removing a key only forgets it on your computer.
