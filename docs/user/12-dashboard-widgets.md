@@ -59,6 +59,27 @@ mode, on desktop and phone. (Need free-form drawing or interaction - a game, a c
 The fastest way: ask Claude in a session, "create a dashboard widget that shows ...". The
 `pilot-widgets-pages` skill knows everything below.
 
+### Approving what harness-pilot makes (the Atelier)
+
+When Claude or Codex builds a widget, a page or a conversation block plugin, it does not add it to your dashboard by
+itself: it **proposes** it. The proposal waits for you in the **Atelier**, with a notification "… is waiting for your
+approval". There you see what it asks for (the sites it connects to, the keys of Settings -> Keys it reads), its files
+and, for a change, what changed in each file; for a card widget or an HTML widget you can try it first with your real
+data. Then you **activate** it, **ask for a change** (your message goes back to the session that made it, which
+proposes a new version) or **refuse** it (its files go to the trash). Nothing of a proposal runs before you approve
+it.
+
+Every approval is a **version**: the Atelier shows who made each one (which session, Claude or Codex, when, and
+what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. The widgets and pages you
+had before the Atelier are version 1, with an unknown origin. A file of an extension changed by hand (or by Claude
+working directly in `<workspace>/extensions/`) keeps working and is marked **changed outside the Atelier** until you
+accept it as a new version.
+
+In the Atelier settings, **Activate safe creations without asking** (off by default) activates at once a proposal
+that connects to no site and reads no key; you still get a notification. To build one yourself, the steps below still
+apply: a folder you write by hand in `<workspace>/extensions/` works at once (and shows as changed outside the
+Atelier); `pilot ext draft` and `pilot ext propose` ([CLI reference](cli-reference)) give you the same review.
+
 ### 1. Create the folder
 
 ```
