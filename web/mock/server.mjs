@@ -2010,6 +2010,146 @@ R('DELETE', '/api/secrets/:name', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- agent engines and resident companions (server/maxxing/companions.py: persistent roles, runs in a disposable
+   copy of the source whose proposal the owner reviews, approves or rejects, then may publish as a draft PR) */
+const AGENT_PROVIDERS = [
+  { id: 'claude', name: 'Claude Code', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+  { id: 'codex', name: 'Codex', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+]
+R('GET', '/api/agent-providers', () => AGENT_PROVIDERS)
+
+const COMPANION_ROLES = [
+  { id: 'observer', name: 'Platform observer', provider: 'codex', role: 'Inspect the platform, identify a small useful improvement, implement it in the isolated copy, run relevant tests and explain the change, evidence and limitations.' },
+  { id: 'security', name: 'Security and dependencies', provider: 'codex', role: 'Inspect the platform for security weaknesses and outdated or vulnerable dependencies. Use available evidence, prepare a narrowly scoped fix or dependency update, and run relevant tests. Report when an advisory database, network access, or further review is needed.' },
+  { id: 'architect', name: 'Application architect and router', provider: 'codex', role: 'Understand how the platform components and features connect. Use the source import map, documentation and code to identify relevant modules and guide other companions with precise file paths, dependencies and verification steps.' },
+  { id: 'reverse-engineer', name: 'Reverse engineering investigator', provider: 'codex', role: 'Investigate source, application behavior and dependencies. Keep evidence and internal maps, distinguish observations from hypotheses, and guide tested improvements.' },
+]
+// What every mock run proposes (a real run's diff comes from git in its copy): a tracked change and one new file.
+const COMPANION_PATCH = `diff --git a/server/maxxing/api/files.py b/server/maxxing/api/files.py
+index 3f2a1c4..8b9d0e7 100644
+--- a/server/maxxing/api/files.py
++++ b/server/maxxing/api/files.py
+@@ -212,5 +212,7 @@ async def rename(body: RenameIn):
+     src = _resolve(body.path)
++    if '/' in body.name or body.name in ('.', '..'):
++        raise HTTPException(400, {'error': 'bad_name', 'message': 'A name cannot contain a slash.'})
+     dst = src.with_name(body.name)
+     if dst.exists():
+         raise HTTPException(409, {'error': 'exists', 'message': 'A file with this name already exists.'})
+     src.rename(dst)
+`
+const COMPANION_NEW = [{ path: 'server/tests/test_rename_names.py', executable: false,
+  content: "def test_a_name_with_a_slash_is_refused(client, mx):\n    r = client.post('/api/files/rename', json={'path': str(mx['files'] / 'a.txt'), 'name': 'x/y'})\n    assert r.status_code == 400 and r.json()['error'] == 'bad_name'\n" }]
+const COMPANION_REPORT = 'Renaming a file to a name with a slash moved it into another folder. The rename route now refuses such names (`400 bad_name`), with a test.\n\n**Verified:** `uv run pytest tests/test_rename_names.py tests/test_files.py` (all passed).\n\n**Not verified:** the Files page message for this error.'
+const companionFingerprint = () => {
+  const h = crypto.createHash('sha256').update(COMPANION_PATCH)
+  for (const f of COMPANION_NEW) h.update(`${f.path}\0${f.content}\0${f.executable ? 'x' : '-'}`)
+  return h.digest('hex')
+}
+function companionsState() {
+  if (S.companions) return S.companions
+  S.companions = { roles: clone(COMPANION_ROLES), runs: {} } // runs: session id -> { base, decision, pull_request }
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') { // one finished run waiting for the owner's review
+    const t = now(), path = topicPath('ops', 'server')
+    const s = { id: uuid(), title: 'Platform observer — platform review', path, state: 'idle', queue: 0, created: t - 50 * MIN, updated: t - 38 * MIN,
+      turns: 1, cost_usd: 0, model: '', real_model: 'gpt-5.5-codex', context_tokens: 41000, context_window: 400000, archived: false, notify: false,
+      source: 'web', unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200), error: null, provider: 'codex',
+      companion: { id: 'observer', name: 'Platform observer', decision: null } }
+    S.sessions.push(s)
+    S.events[s.id] = [
+      { type: 'user', text: 'You are Platform observer, a resident companion. Additional mission: Find a useful, small improvement.', attachments: [], at: s.created, source: 'companion' },
+      { type: 'init', model: 'gpt-5.5-codex', cwd: `${ROOT}/${path}`, at: s.created + 1 },
+      { type: 'assistant', text: COMPANION_REPORT, at: s.updated },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 690000, model: 'gpt-5.5-codex', usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: s.updated },
+    ]
+    S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  }
+  return S.companions
+}
+// A run's turn: the agent edits its copy, runs the tests and reports (startTurn's generic answer would echo the role).
+function companionTurn(s, text) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model, tu = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  s.state = 'running'; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'companion' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, 1200, () => addEvents(s, { type: 'tool_use', id: tu, name: 'Bash', input: { command: 'uv run pytest tests/test_rename_names.py tests/test_files.py' }, summary: 'Bash: uv run pytest', at: now() }))
+  later(s, 2600, () => addEvents(s, { type: 'tool_result', tool_use_id: tu, text: '38 passed in 4.21s', is_error: false, at: now() }))
+  later(s, 3400, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: COMPANION_REPORT, at: now() },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 3400, model, usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: now() })
+    bus('companions', 'sessions', 'workspace')
+  })
+  bus('sessions', 'workspace')
+}
+const companionRun = (sid) => {
+  const s = findSession(sid), run = companionsState().runs[sid]
+  if (!run) fail(404, 'not_found', 'Companion run not found.')
+  return { s, run }
+}
+const companionReview = (sid) => {
+  const { s, run } = companionRun(sid)
+  const done = s.state !== 'running' && s.turns > 0 // the copy is unchanged until the agent worked in it
+  return { target: 'acme/platform', session: s, fingerprint: done ? companionFingerprint() : crypto.createHash('sha256').digest('hex'),
+    patch: done ? COMPANION_PATCH : '', untracked: done ? clone(COMPANION_NEW) : [], has_changes: done, base: run.base,
+    decision: run.decision, pull_request: run.pull_request }
+}
+function companionSave(body, ident) {
+  const name = String(body.name || '').trim(), role = String(body.role || '').trim()
+  if (!name || !role || name.length > 80 || role.length > 4000) fail(400, 'bad_role', 'A name and role are required.')
+  const st = companionsState()
+  const previous = ident ? st.roles.find((p) => p.id === ident) || fail(404, 'not_found', 'Companion not found.') : null
+  if (!ident && st.roles.length >= 99 + COMPANION_ROLES.length) fail(400, 'limit', 'Maximum number of companions reached.')
+  const provider = body.provider || previous?.provider || 'codex'
+  if (!AGENT_PROVIDERS.some((p) => p.id === provider && p.capabilities.includes('source-edit'))) fail(400, 'bad_provider', 'Choose an available coding agent for this companion.')
+  const item = { id: ident || uuid(), name, role, provider }
+  if (previous) Object.assign(previous, item); else st.roles.push(item)
+  bus('companions')
+  return item
+}
+R('GET', '/api/companions', () => {
+  const st = companionsState()
+  return { companions: st.roles, runs: S.sessions.filter((s) => st.runs[s.id]).sort((a, b) => b.created - a.created).slice(0, 100) }
+})
+R('POST', '/api/companions', ({ body }) => companionSave(body, null))
+R('PUT', '/api/companions/:id', ({ params, body }) => companionSave(body, params.id))
+R('POST', '/api/companions/:id/runs', ({ params, body }) => {
+  const p = companionsState().roles.find((x) => x.id === params.id) || fail(404, 'not_found', 'Companion not found.')
+  if (!S.projects.some((pr) => pr.topics.some((tp) => topicPath(pr.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const mission = String(body.mission || '')
+  if (mission.length > 6000) fail(400, 'bad_mission', 'Mission is too long.')
+  const t = now()
+  const s = { id: uuid(), title: `${p.name} — platform review`, path: body.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0,
+    model: '', real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '',
+    error: null, provider: p.provider, companion: { id: p.id, name: p.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  companionTurn(s, `You are ${p.name}, a resident companion. Your persistent role:\n${p.role}\n\nAdditional mission: ${mission.trim() || 'Find a useful, small improvement.'}`)
+  bus('companions', 'sessions', 'workspace')
+  return s
+})
+R('GET', '/api/companions/runs/:sid/review', ({ params }) => companionReview(params.sid))
+R('POST', '/api/companions/runs/:sid/decision', ({ params, body }) => {
+  if (!['approved', 'rejected'].includes(body.decision)) fail(400, 'bad_decision', 'Invalid decision.')
+  const { s, run } = companionRun(params.sid)
+  if (s.state === 'running') fail(409, 'running', 'Wait until the experiment stops.')
+  const review = companionReview(params.sid)
+  if (!review.has_changes || review.fingerprint !== body.fingerprint) fail(409, 'changed', 'The proposal changed; review it again.')
+  run.decision = { value: body.decision, fingerprint: body.fingerprint, at: now() }
+  s.companion.decision = run.decision
+  bus('companions', 'sessions')
+  return companionReview(params.sid)
+})
+R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => {
+  const { run } = companionRun(params.sid)
+  const title = String(body.title || '').trim()
+  if (!title || title.length > 180 || String(body.body || '').length > 12000) fail(400, 'bad_request', 'Invalid pull request title or body.')
+  if (run.decision?.value !== 'approved' || run.decision.fingerprint !== body.fingerprint || body.fingerprint !== companionFingerprint()) fail(409, 'not_approved', 'Approve the current finished proposal first.')
+  await sleep(1200)
+  run.pull_request ||= { url: `https://github.com/acme/platform/pull/${140 + Object.keys(S.companions.runs).length}`, fingerprint: body.fingerprint }
+  bus('companions')
+  return { url: run.pull_request.url, target: 'acme/platform' }
+})
+
 /* ---- system */
 R('GET', '/api/system/health', () => healthObj())
 R('GET', '/api/system/services', () => S.services)
