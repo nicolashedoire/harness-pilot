@@ -17,8 +17,8 @@ cannot, and a direct change by Claude is flagged "changed outside the Atelier" f
 
 - **widget**: `manifest.json` + `api.py` with `card(ctx)` returning a **Card** (JSON). The UI draws
   it with the built-in design system - no HTML/CSS to write, consistent look guaranteed.
-- **HTML widget**: `manifest.json` (`"type": "widget"`, optional `"height"`) + `widget.html` (one
-  self-contained file) + optional `api.py` with `handle(...)`. For games, canvas, custom drawings:
+- **HTML widget**: `manifest.json` (`"type": "widget"`, optional `"height"`) + `widget.html` (+ the
+  files of its folder it loads: `lib/x.js`, `style.css`, images) + optional `api.py` with `handle(...)`. For games, canvas, custom drawings:
   anything a Card cannot show. Drawn in a sandboxed frame (see below).
 - **page**: `manifest.json` + `page.js` (ES module, `mount(el, ctx)`) + optional `api.py` with
   `handle(ctx, method, path, query, body)` served at `/api/ext/<id>/<path>`. Listed under
@@ -234,8 +234,14 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
   `var(--card)`, `--foreground`, `--muted-foreground`, `--border`, `--primary`… (older names `--mx-fg`, `--mx-muted`,
   `--mx-border`, `--mx-accent`, `--mx-card`, `--mx-bg` still work). No icon helper in the frame: inline an `<svg>`.
 - The frame is sandboxed (scripts yes, same-origin no): no cookies, no localStorage, no access to
-  the app or `/api/...` - persist through `api.py` + `ctx["state_dir"]`. Only `widget.html` is
-  served: inline CSS/JS, or load a library from a CDN with an absolute https URL.
+  the app or `/api/...` - persist through `api.py` + `ctx["state_dir"]`.
+- Files: `widget.html` loads the files of its folder with a relative path (`<script src="lib/chart.js">`,
+  `<link rel="stylesheet" href="style.css">`, `<img src="icons/x.svg">`, `fetch("data.json")`): scripts, styles,
+  JSON, images, fonts, sound, video. Scripts and styles from another site (a CDN) are blocked: download the library
+  into the folder (`curl -fsSLo lib/chart.min.js https://...`) and load it relatively.
+- Network: the frame reaches only the sites of `permissions.network` the user allowed (the card asks Allow / Allow
+  once / Refuse); `fetch`, WebSocket, images, sound, video and fonts from them work, over https. Declare every site
+  the widget calls, nothing more.
 - Keyboard games: make the canvas focusable (`tabindex="0"`) and start on click; add touch/swipe
   for phones.
 
@@ -262,9 +268,10 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    pilot ext propose <id> --summary "Shows today's orders and revenue from the Shopify store."
    ```
    The summary is what the user reads first: what it does, in one or two plain sentences (for a change: what
-   changed). Exit `1` = its check failed, nothing was submitted. Otherwise tell the user the creation is **waiting
-   for them in the Atelier** (they see what it asks for - network hosts, secrets - and the files, then add it to the
-   dashboard, ask for a change or refuse it). Do not say it is on the dashboard: it is not until they approve it.
+   changed). Exit `1` = its check failed, nothing was submitted. Otherwise it prints a ```` ```proposal ```` block:
+   put it in your answer as it is, and tell the user the creation is **waiting for them in the Atelier** (the card
+   shows what it asks for - network hosts, secrets - and its files; they add it to the dashboard, ask for a change or
+   refuse it). Do not say it is on the dashboard: it is not until they approve it.
 5. A message starting with `[Atelier] The user asked for a change` is the user's review: make the change in the same
    draft folder, check it again and propose again (the new proposal replaces the old one).
 6. To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the

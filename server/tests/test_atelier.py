@@ -87,6 +87,11 @@ def test_propose_then_approve_a_new_widget(client, mx, capsys, monkeypatch):
     assert code == 0, err
     did = _draft_id(out)
     assert "waiting for the user's approval" in out and "waiting for them in the Atelier" in out
+    assert '```proposal\n{"draft": "' + did + '", "title": "Weather"}\n```' in out
+    from maxxing import blocks
+    p = next(b for b in blocks.BUILTINS if b["type"] == "proposal")
+    assert blocks.validate(p["schema"], {"draft": did, "title": "Weather"}) == []
+    assert blocks.validate(p["schema"], {"draft": "nope"}) != []
     assert not (folder / atelier.REQUEST).exists()                 # registered in this process
     # nothing installed, nothing on the dashboard
     assert not (mx["ws"] / "extensions" / "weather").exists()
@@ -380,6 +385,141 @@ def test_pins_are_recorded_as_approved_by_the_user(client, mx):
     it = next(i for i in client.get("/api/atelier").json()["items"] if i["id"] == eid)
     assert it["type"] == "pin" and it["approval"]["by"] == "user" and not it["unreviewed"]
 
+
+def _version_of(client, eid, value, capsys, monkeypatch):
+    _, out, _ = _cli(capsys, monkeypatch, "draft", eid)
+    folder = Path(out.strip())
+    (folder / "api.py").write_text(CARD % value)
+    _, out, _ = _cli(capsys, monkeypatch, "propose", eid)
+    r = client.post(f"/api/atelier/drafts/{_draft_id(out)}/approve")
+    assert r.status_code == 200, r.text
+    return r.json()["version"]
+
+
+def test_rollback_restores_a_kept_version(client, mx, capsys, monkeypatch):
+    d = _write(mx["ws"] / "extensions" / "meter", "meter", 1)
+    _premigration(mx)
+    client.get("/api/atelier")
+    assert _version_of(client, "meter", 2, capsys, monkeypatch) == 2
+    assert _version_of(client, "meter", 3, capsys, monkeypatch) == 3
+    r = client.post("/api/atelier/extension/meter/rollback", json={"version": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["version"] == 1 and r.json()["item"]["version"] == 1
+    assert (d / "api.py").read_text() == CARD % 1 and extensions.get("meter").error is None
+    det = client.get("/api/atelier/extension/meter").json()
+    assert [(v["n"], v["active"]) for v in det["versions"]] == [(3, False), (2, False), (1, True)]
+    assert det["history"][0]["action"] == "rollback" and det["history"][0]["note"] == "from v3"
+    assert not det["item"]["unreviewed"]
+    # the same version again: nothing to do
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": 1}).json()["version"] == 1
+    # files changed by hand are kept as a version before a rollback replaces them
+    (d / "api.py").write_text(CARD % 42)
+    _reset()
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": 3}).json()["version"] == 3
+    vs = client.get("/api/atelier/extension/meter").json()["versions"]
+    assert vs[0]["n"] == 4 and vs[0]["note"] == "changed outside the Atelier" and not vs[0]["active"]
+    assert (d / "api.py").read_text() == CARD % 3
+    # diffs between versions
+    v = client.get("/api/atelier/extension/meter/versions/3").json()
+    assert v["against"] == 2 and "+    return {'title': 'Hi', 'blocks': [{'type': 'stat', 'label': 'N', 'value': 3}]}" \
+        in next(f for f in v["files"] if f["path"] == "api.py")["diff"]
+    assert client.get("/api/atelier/extension/meter/versions/1", params={"against": "active"}).json()["against"] == 3
+    assert client.get("/api/atelier/extension/meter/versions/99").status_code == 404
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": 99}).json()["error"] == "not_found"
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": "x"}).json()["error"] == "bad_version"
+    assert client.post("/api/atelier/theme/x/rollback", json={"version": 1}).json()["error"] == "not_versioned"
+
+
+def test_retention_keeps_recent_or_newest_versions(client, mx, capsys, monkeypatch):
+    _write(mx["ws"] / "extensions" / "keep", "keep", 0)
+    _premigration(mx)
+    client.get("/api/atelier")
+    for i in range(1, 5):
+        _version_of(client, "keep", i, capsys, monkeypatch)        # v2..v5, v5 active
+    client.put("/api/atelier/settings", json={"keep_days": 1, "keep_versions": 2})
+    later = __import__("time").time() + 3 * 86400
+    res = atelier.prune(now=later)
+    assert res["versions"] == 3 and res["objects"] >= 1
+    assert [v["n"] for v in client.get("/api/atelier/extension/keep").json()["versions"]] == [5, 4]
+    assert client.post("/api/atelier/extension/keep/rollback", json={"version": 4}).status_code == 200
+    assert (mx["ws"] / "extensions" / "keep" / "api.py").read_text() == CARD % 3
+    assert not atelier.prune_due(now=later + 10) and atelier.prune_due(now=later + 2 * 86400)
+
+
+def test_memory_backup_keeps_the_provenance(client, mx, capsys, monkeypatch):
+    _write(mx["ws"] / "extensions" / "prov", "prov", 1)
+    _premigration(mx)
+    client.get("/api/atelier")
+    _version_of(client, "prov", 2, capsys, monkeypatch)
+    meta = atelier.export_meta()
+    assert set(meta["items"]) == {"extension:prov"}
+    blob = json.dumps(meta)
+    assert len(blob) < 8000 and "def card" not in blob                 # no file contents
+    from maxxing import backup
+    assert json.loads(backup.snapshot()["_maxxing/atelier.json"]) == meta
+    # a new server: the files come back with the workspace, the provenance with _maxxing/atelier.json
+    shutil.rmtree(mx["state"] / "atelier")
+    _reset()
+    assert atelier.import_meta(meta) == 1
+    _reset()
+    det = client.get("/api/atelier/extension/prov").json()
+    assert [(v["n"], v["approval"]["by"]) for v in det["versions"]] == [(2, "user"), (1, "migration")]
+    assert det["versions"][0]["restorable"] and not det["versions"][1]["restorable"]   # its files are on disk again
+    assert not det["item"]["unreviewed"]
+    assert client.post("/api/atelier/extension/prov/rollback", json={"version": 1}).json()["error"] == "not_restorable"
+    assert atelier.import_meta(meta) == 0                              # approved here: this server's record wins
+
+
+def test_read_only_kinds_are_listed(client, mx, monkeypatch):
+    import os
+    from maxxing import atelier_kinds, customs, themes
+    # a saved theme, applied
+    pal = themes.clean_theme({"name": "Harbour", "base": "slate", "accent": "blue"})
+    entry = themes.save_theme(pal, "created")
+    rows = {i["id"]: i for i in client.get("/api/atelier", params={"kind": "theme"}).json()["items"]}
+    assert rows[entry["id"]]["state"] == "disabled" and rows[entry["id"]]["name"] == "Harbour"
+    config.update_config(look={"theme": "dark", "palette": pal, "rev": 1})
+    rows = {i["id"]: i for i in client.get("/api/atelier", params={"kind": "theme"}).json()["items"]}
+    assert rows[entry["id"]]["state"] == "active" and rows[entry["id"]]["actions"] == []
+    # a workspace skill, mirrored for Codex
+    sk = mx["ws"] / ".claude" / "skills" / "invoice-reminders"
+    sk.mkdir(parents=True)
+    (sk / "SKILL.md").write_text("---\nname: invoice-reminders\ndescription: Remind clients.\n---\nBody\n")
+    it = client.get("/api/atelier/skill/invoice-reminders").json()["item"]
+    assert it["agents"] == ["claude"] and it["description"] == "Remind clients."
+    codex_dir = Path(os.environ["MAXXING_CODEX_SKILLS_DIR"])
+    (codex_dir / "mine").mkdir(parents=True)                       # the user's own Codex skill: never touched
+    (codex_dir / "mine" / "SKILL.md").write_text("mine")
+    assert atelier_kinds.mirror_skills()["copied"] == ["invoice-reminders"]
+    assert (codex_dir / "invoice-reminders" / "SKILL.md").read_text().endswith("Body\n")
+    assert atelier_kinds.mirror_skills()["copied"] == []          # unchanged: nothing copied
+    assert client.get("/api/atelier/skill/invoice-reminders").json()["item"]["agents"] == ["claude", "codex"]
+    (mx["ws"] / ".claude" / "skills" / "mine").mkdir()
+    (mx["ws"] / ".claude" / "skills" / "mine" / "SKILL.md").write_text("---\nname: mine\n---\n")
+    atelier_kinds.mirror_skills()
+    assert (codex_dir / "mine" / "SKILL.md").read_text() == "mine"
+    shutil.rmtree(sk)
+    assert atelier_kinds.mirror_skills()["removed"] == ["invoice-reminders"] and (codex_dir / "mine").is_dir()
+    # customizations: one conflicts with a pending update
+    monkeypatch.setattr(atelier_kinds, "_list_customs", lambda: [
+        {"id": "c-1", "title": "Telegram threads", "why": "more", "saved": "2026-10-20", "files": ["server/a.py"]},
+        {"id": "c-2", "title": "Other", "why": "", "saved": "", "files": ["server/b.py"]}])
+    monkeypatch.setattr(customs, "pending", lambda: {"reason": "conflict", "target_version": "2.0.0a109",
+                                                     "conflicts": ["server/a.py"], "customs": ["Telegram threads"]})
+    rows = {i["id"]: i for i in client.get("/api/atelier", params={"kind": "customization"}).json()["items"]}
+    assert rows["c-1"]["state"] == "review" and "2.0.0a109" in rows["c-1"]["error"]["message"]
+    assert rows["c-2"]["state"] == "active"
+    # cron jobs
+    r = client.post("/api/crons", json={"name": "Nightly", "schedule": "0 3 * * *", "kind": "shell", "command": "true"})
+    jid = r.json()["id"]
+    it = client.get(f"/api/atelier/cron/{jid}").json()["item"]
+    assert it["state"] == "active" and it["href"] == f"/crons?job={jid}"
+    client.patch(f"/api/crons/{jid}", json={"enabled": False})
+    assert client.get(f"/api/atelier/cron/{jid}").json()["item"]["state"] == "disabled"
+    counts = client.get("/api/atelier").json()["counts"]
+    assert counts["review"] == 1 and counts["disabled"] >= 1
+    assert client.post(f"/api/atelier/cron/{jid}/rollback", json={"version": 1}).json()["error"] == "not_versioned"
+    assert client.get("/api/atelier/skill/nope").status_code == 404
 
 def test_a_link_never_brings_a_file_from_outside(client, mx, topic, capsys, monkeypatch):
     secret = mx["tmp"] / "secret.txt"

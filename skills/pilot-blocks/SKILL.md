@@ -136,6 +136,13 @@ raw HTML.
 `kind`: `task` (link to `/tasks?task=<id>`), `cron` (`/crons?job=<id>`), `notification`, `file` (`path`),
 `session` (`id`), `project`, `extension`, `other` (`href`).
 
+```proposal
+{"draft": "d_1a2b3c4d5e6f", "title": "Weather board"}
+```
+A widget, page or block plugin you proposed, waiting for the user's approval: `pilot ext propose` prints this block
+with the right id - copy it as it is. The card shows what the creation asks for and lets the user approve it, ask
+for a change or refuse it. Never write one for something you did not propose.
+
 ## Block plugins (new block types)
 
 A user may want a block the app does not have (map, kanban, calendar, formula...). Build it as a **block
@@ -170,5 +177,5 @@ the list above (this skill is rendered again) and the Codex context. Example: `{
 Test it with `pilot ext check <id> --dir <draft folder>` (`--json` for details) and fix until it exits `0`: it
 validates block.json and the schema as the server does, checks that the frame is served, that every inline script of
 the entry parses (`node --check`, lines of the entry file) and that it calls `maxxing.onData`. Then submit it with
-`pilot ext propose <id> --summary "..."` and tell the user it waits for them in the Atelier: once they approve it,
-answer with a ```kanban block to show it drawn.
+`pilot ext propose <id> --summary "..."`, put the ```` ```proposal ```` block it prints in your answer and tell the user
+it waits for them in the Atelier: once they approve it, answer with a ```kanban block to show it drawn.

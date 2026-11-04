@@ -64,6 +64,7 @@ EXAMPLES = {
     "checklist": {"items": ["Pick the visual", {"label": "Proofread", "checked": True}]},
     "app": {"title": "Price simulator", "html": "<input type=range><script>1</script>", "height": 300},
     "created": {"items": [{"kind": "task", "title": "Proofread the email", "id": "t_1234"}]},
+    "proposal": {"draft": "d_1a2b3c4d5e6f", "title": "Weather board"},
 }
 
 

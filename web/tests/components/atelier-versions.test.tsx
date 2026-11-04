@@ -155,7 +155,9 @@ describe('Atelier creation and versions', () => {
     const access = {
       state: 'declared',
       secrets: [{ name: 'SHOP_TOKEN', status: 'pending', how: null, at: null }],
-      legacy: { secrets: [{ name: 'OLD_KEY', at: now - DAY }] },
+      network: [],
+      network_open: false,
+      legacy: { secrets: [{ name: 'OLD_KEY', at: now - DAY }], network: [{ host: 'old.example.com', at: now - DAY }] },
       pending: true,
       refused: false,
       denied: [{ kind: 'secret', name: 'SHOP_TOKEN', reason: 'not_allowed', at: now - 120, count: 3 }],
@@ -167,6 +169,7 @@ describe('Atelier creation and versions', () => {
     })
     const block = await screen.findByTestId('atelier-access')
     expect(within(block).getByTestId('atelier-legacy').textContent).toContain('OLD_KEY')
+    expect(within(block).getByTestId('atelier-legacy').textContent).toContain('old.example.com')
     expect(within(block).getByText('Refused while it ran')).toBeTruthy()
     expect(within(block).getByText('waits for your permission')).toBeTruthy()
     expect(within(block).getByText(/3 times/)).toBeTruthy()

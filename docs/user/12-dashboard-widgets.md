@@ -70,7 +70,9 @@ proposes a new version) or **refuse** it (its files go to the trash). Nothing of
 it.
 
 Every approval is a **version**: the Atelier shows who made each one (which session, Claude or Codex, when, and
-what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. The widgets and pages you
+what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. **Back to this version**
+puts an earlier one back in one step (a version that ran without error is marked as working), and you can compare
+any two versions file by file. The widgets and pages you
 had before the Atelier are version 1, with an unknown origin. A file of an extension changed by hand (or by Claude
 working directly in `<workspace>/extensions/`) keeps working and is marked **changed outside the Atelier** until you
 accept it as a new version.
@@ -152,7 +154,7 @@ The manifest says what the extension uses, so you can see it before you turn it 
 
 | Key | Lists |
 |---|---|
-| `network` | the sites an HTML widget reaches (host names such as `api.example.com` or `*.example.com`, no `https://`, at most 8) |
+| `network` | the sites the extension reaches (host names such as `api.example.com` or `*.example.com`, no `https://`, at most 8); an HTML widget's frame reaches only these, over https, once you allow them |
 | `secrets` | the keys of Settings -> Keys that `api.py` reads with `ctx["secret"](name)` (at most 32) |
 | `read` | the files and folders of your workspace that `api.py` reads, relative to the workspace (`projects/shop`, `tasks.json`; `.` = all of it; at most 32) |
 
@@ -175,8 +177,10 @@ lists them on its row with **Permissions not declared**. Once its manifest gets 
 keys it was already reading stay allowed without asking. An extension created later with no `permissions` block
 reads no key.
 
-The other permissions are shown, not enforced yet: `read` describes the files `api.py` opens, and `network` the sites
-it reaches - `api.py` runs inside the server with its rights (see [Security](security#what-extensions-can-do)).
+**Sites are limited for HTML widgets**: their frame only reaches the sites `network` lists and you allowed (see
+[HTML widgets](#html-widgets-games-custom-drawings)). The rest is shown, not enforced: `read` describes the files
+`api.py` opens, and `network` the sites `api.py` or a page reaches - `api.py` runs inside the server with its rights
+(see [Security](security#what-extensions-can-do)).
 
 ### 4. The Card schema
 
@@ -257,7 +261,7 @@ widget in HTML instead. Same folder, with `widget.html` instead of (or next to) 
 ```
 /root/maxxing/extensions/snake-widget/
   manifest.json     {"type": "widget", "name": "Snake", "icon": "gamepad-2", "height": 300, "permissions": {}}
-  widget.html       one self-contained file: inline <style> and <script>
+  widget.html       the widget: inline <style> and <script>, or files of the folder (lib/game.js)
   api.py            optional: handle(ctx, method, path, query, body) for data it saves or fetches
 ```
 
@@ -273,8 +277,24 @@ through a small bridge that is injected for you:
 | `class="ui-card"`, `ui-btn`, `ui-input`, `ui-badge`, `ui-stat`... | the app's **UI kit** (see [Page extensions](page-extensions#styling)), already loaded in the frame |
 | `var(--card)` `--foreground` `--muted-foreground` `--border` `--primary`... (and the older `--mx-fg` `--mx-muted` `--mx-border` `--mx-accent` `--mx-card` `--mx-bg`) | the app's colors, updated with the theme and the accent color |
 
-Rules: one file only (no other file of the folder is served to the frame - inline everything, or
-load libraries from a CDN `<script src="https://...">`); no `localStorage`/cookies (the sandbox has
-none: save through `api.py` and `ctx["state_dir"]`). The refresh button of the card reloads the
-frame. `pilot ext check snake-widget` checks that the frame is served and that every script of `widget.html`
-parses, and warns about what the sandbox does not have. Full example: `examples/extensions/snake-widget/` in the code directory.
+Rules:
+
+- **Files**: `widget.html` loads the other files of its folder with a relative path - `<script
+  src="lib/chart.js">`, `<link rel="stylesheet" href="style.css">`, `<img src="icons/star.svg">`,
+  `fetch("data.json")` (scripts, styles, JSON, images, fonts, sound, video). `api.py`, hidden files and HTML files are
+  never served to the frame.
+- **Scripts and styles** come from `widget.html` itself or from those files, never from another site: to use a
+  library, copy its file into the folder.
+- **Other sites**: the frame reaches a site only when the manifest lists it in `permissions.network` and you allow
+  it. Until then the card shows **This widget asks to reach ...** with **Allow**, **Allow once** (this time only) and
+  **Refuse** (also in Settings -> Extensions). Images, sound, video, fonts and connections (`fetch`, WebSocket) to an
+  allowed site work; anything else is blocked by the frame.
+- An HTML widget you had **before permissions** and whose manifest declares none keeps reaching any site, as before.
+  Each site it reaches is recorded as *granted before permissions existed* and you are told in the notifications;
+  Settings -> Extensions lists them. When its manifest declares them, they stay allowed.
+- No `localStorage`/cookies (the sandbox has none: save through `api.py` and `ctx["state_dir"]`).
+
+The refresh button of the card reloads the frame. `pilot ext check snake-widget` checks that the frame is served, that
+every script of `widget.html` parses, that the files it loads are served, and the sites it names against its
+`permissions`, and warns about what the sandbox does not have. Full example: `examples/extensions/snake-widget/` in
+the code directory.

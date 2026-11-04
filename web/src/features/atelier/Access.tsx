@@ -1,6 +1,6 @@
 // What an extension may use now (GET /api/extensions `access`, API.md Permissions -> Access), under what it declares
-// on a creation's page: the keys it was granted before permissions existed (amber: nothing limits them until it
-// declares them), the reads refused while it ran, and the decision buttons of Settings -> Extensions (Allow / Refuse /
+// on a creation's page: the keys and sites it was granted before permissions existed (amber: nothing limits them
+// until it declares them), the reads refused while it ran, and the decision buttons of Settings -> Extensions (Allow / Refuse /
 // Ask again / Withdraw: features/extensions/Permissions.tsx).
 import { KeyRound, ShieldAlert } from 'lucide-react'
 import type { Extension, ExtPermissionRefusal } from '@/lib/types'
@@ -21,29 +21,20 @@ export function AccessBlock({ ext }: { ext: Extension }) {
   const a = ext.access
   if (!a) return null
   const legacy = a.legacy.secrets.map((s) => s.name)
+  const sites = (a.legacy.network ?? []).map((n) => n.host)
   return (
     <div className="grid gap-2" data-testid="atelier-access">
-      {(a.state === 'legacy' || legacy.length > 0) && (
-        <p className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning" data-testid="atelier-legacy">
+      {(a.state === 'legacy' || legacy.length > 0 || sites.length > 0) && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning" data-testid="atelier-legacy">
           <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <span>
-            {legacy.length ? (
-              <>
-                {t('atelier.access.legacyKeys')}{' '}
-                {legacy.map((n, i) => (
-                  <code key={n} className="font-mono text-xs">
-                    {i > 0 && ', '}
-                    <Sensitive length={8}>{n}</Sensitive>
-                  </code>
-                ))}
-                {'. '}
-              </>
-            ) : (
-              <>{t('atelier.access.legacy')} </>
-            )}
-            <span className="text-muted-foreground">{t('atelier.access.legacyHint')}</span>
-          </span>
-        </p>
+          <div className="grid min-w-0 gap-0.5">
+            {legacy.length > 0 && <Names label={t('atelier.access.legacyKeys')} names={legacy} />}
+            {sites.length > 0 && <Names label={t('atelier.access.legacySites')} names={sites} />}
+            {!legacy.length && !sites.length && <p>{t('atelier.access.legacy')}</p>}
+            {a.network_open && ext.type === 'widget' && <p>{t('ext.perm.networkOpen')}</p>}
+            <p className="text-muted-foreground">{t('atelier.access.legacyHint')}</p>
+          </div>
+        </div>
       )}
       {a.denied.length > 0 && (
         <div className="grid gap-1.5 rounded-lg border px-3 py-2 text-[13px]">
@@ -67,5 +58,21 @@ export function AccessBlock({ ext }: { ext: Extension }) {
       )}
       <ExtensionPermissions ext={ext} summary={false} legacyNote={false} />
     </div>
+  )
+}
+
+/** "Granted before permissions existed: KEY_A, KEY_B." */
+function Names({ label, names }: { label: string; names: string[] }) {
+  return (
+    <p>
+      {label}{' '}
+      {names.map((n, i) => (
+        <code key={n} className="font-mono text-xs">
+          {i > 0 && ', '}
+          <Sensitive length={8}>{n}</Sensitive>
+        </code>
+      ))}
+      .
+    </p>
   )
 }

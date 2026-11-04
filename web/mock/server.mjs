@@ -22,7 +22,7 @@ import crypto from 'node:crypto'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
-import { atelierState, installAtelier, serveDraftFrame } from './atelier.mjs'
+import { atelierHasExtension, atelierSetEnabled, atelierState, installAtelier, serveDraftFrame } from './atelier.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -180,7 +180,7 @@ function buildState(scenario) {
     blocks: blocksState(),
     // what the user allowed (server: <state>/extension-permissions.json); legacy = existed before permissions
     extPerms: { since: t - 2 * DAY, legacy: ['shop-sales', 'notes', 'broken-widget'],
-      grants: { 'shop-sales': { secrets: { SHOP_TOKEN: { at: t - 2 * DAY + 600, how: 'legacy' } }, refused: null, denied: [] } } },
+      grants: { 'shop-sales': { secrets: { SHOP_TOKEN: { at: t - 2 * DAY + 600, how: 'legacy' } }, network: {}, refused: null, denied: [] } } },
   }
 
   if (scenario !== 'setup' && scenario !== 'onboarding') {
@@ -4043,17 +4043,21 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
 // Access of a widget or page (API.md, Permissions): what it may use now and what waits for the user.
 function extAccess(e) {
   if (!e || (e.type !== 'widget' && e.type !== 'page')) return null
-  const g = S.extPerms.grants[e.id] || { secrets: {}, refused: null, denied: [] }
+  const g = S.extPerms.grants[e.id] || { secrets: {}, network: {}, refused: null, denied: [] }
   const legacy = S.extPerms.legacy.includes(e.id)
   const refused = !!g.refused
   const state = e.permissions ? 'declared' : legacy ? 'legacy' : 'undeclared'
-  const secrets = e.permissions
-    ? e.permissions.secrets.map((name) => { const x = g.secrets[name]; return { name, status: refused ? 'refused' : x ? 'allowed' : 'pending', how: x?.how ?? null, at: x?.at ?? null } })
-    : state === 'legacy' ? Object.entries(g.secrets).map(([name, x]) => ({ name, status: refused ? 'refused' : 'allowed', how: x.how, at: x.at })) : []
+  const rows = (kind, label) => {
+    const got = g[kind] || {}
+    const names = e.permissions ? e.permissions[kind] : state === 'legacy' ? Object.keys(got).sort() : []
+    return names.map((n) => { const x = got[n]; return { [label]: n, status: refused ? 'refused' : x ? 'allowed' : 'pending', how: x?.how ?? null, at: x?.at ?? null } })
+  }
+  const secrets = rows('secrets', 'name'), network = rows('network', 'host')
+  const old = (kind, label) => Object.entries(g[kind] || {}).filter(([, x]) => x.how === 'legacy').map(([n, x]) => ({ [label]: n, at: x.at }))
   return {
-    state, secrets, refused,
-    legacy: { secrets: Object.entries(g.secrets).filter(([, x]) => x.how === 'legacy').map(([name, x]) => ({ name, at: x.at })) },
-    pending: secrets.some((x) => x.status === 'pending'),
+    state, secrets, network, refused, network_open: state === 'legacy' && !refused,
+    legacy: { secrets: old('secrets', 'name'), network: old('network', 'host') },
+    pending: [...secrets, ...network].some((x) => x.status === 'pending'),
     denied: g.denied || [],
   }
 }
@@ -4061,7 +4065,8 @@ const extPermDetail = (e) => {
   const a = extAccess(e)
   const base = e.permissions || { network: [], secrets: [], read: [] }
   const keep = a.legacy.secrets.map((x) => x.name).filter((n) => !base.secrets.includes(n))
-  return { id: e.id, name: e.name, type: e.type, permissions: e.permissions ?? null, access: a, suggested: { ...base, secrets: [...base.secrets, ...keep] } }
+  const sites = a.legacy.network.map((x) => x.host).filter((n) => !base.network.includes(n))
+  return { id: e.id, name: e.name, type: e.type, permissions: e.permissions ?? null, access: a, suggested: { ...base, network: [...base.network, ...sites], secrets: [...base.secrets, ...keep] } }
 }
 const permTarget = (id) => {
   const e = S.extensions.find((x) => x.id === id)
@@ -4072,14 +4077,19 @@ R('GET', '/api/extensions/permissions', () => ({ since: S.extPerms.since, items:
 R('GET', '/api/extensions/:id/permissions', ({ params }) => extPermDetail(permTarget(params.id)))
 R('POST', '/api/extensions/:id/consent', ({ params, body }) => {
   const e = permTarget(params.id)
-  if (!['always', 'deny', 'reset'].includes(body.decision)) fail(422, 'invalid', 'decision must be always, deny or reset')
-  const g = (S.extPerms.grants[e.id] ||= { secrets: {}, refused: null, denied: [] })
+  if (!['always', 'once', 'deny', 'reset'].includes(body.decision)) fail(422, 'invalid', 'decision must be always, once, deny or reset')
+  const g = (S.extPerms.grants[e.id] ||= { secrets: {}, network: {}, refused: null, denied: [] })
+  g.network ||= {}
+  if ((body.decision === 'always' || body.decision === 'once') && !e.permissions) fail(400, 'not_declared', 'this extension declares no "permissions": nothing to allow')
+  if (body.decision === 'once') {
+    if (!e.permissions.network.length) fail(400, 'no_network', 'this extension declares no site to reach')
+    return { ok: true, access: extAccess(e), grant: `mock-grant-${now()}` }
+  }
   if (body.decision === 'always') {
-    if (!e.permissions) fail(400, 'not_declared', 'this extension declares no "permissions": nothing to allow')
-    for (const n of e.permissions.secrets) g.secrets[n] ||= { at: now(), how: 'accepted' }
+    for (const kind of ['secrets', 'network']) for (const n of e.permissions[kind]) g[kind][n] ||= { at: now(), how: 'accepted' }
     g.refused = null
   } else {
-    g.secrets = Object.fromEntries(Object.entries(g.secrets).filter(([, x]) => x.how === 'legacy'))
+    for (const kind of ['secrets', 'network']) g[kind] = Object.fromEntries(Object.entries(g[kind]).filter(([, x]) => x.how === 'legacy'))
     g.refused = body.decision === 'deny' ? now() : null
   }
   bus('extensions')
@@ -4166,14 +4176,14 @@ for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) for (const patte
   return handler(req.method, p, body || {})
 })
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
-  // an extension the Atelier mock (atelier.mjs) knows is turned on / off there too
-  const a = S.atelier?.items?.[`extension:${params.id}`]
-  const e = S.extensions.find((x) => x.id === params.id) || (a ? null : fail(404, 'not_found', 'Unknown extension'))
+  // an extension of the Atelier's seeded rows (web/mock/atelier.mjs) is turned on / off there too
+  const known = atelierHasExtension(S, params.id)
+  const e = S.extensions.find((x) => x.id === params.id) || (known ? null : fail(404, 'not_found', 'Unknown extension'))
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
   if (body.enabled && e?.error) fail(409, 'broken', `Cannot enable: ${e.error}`)
   if (e) e.enabled = body.enabled
-  if (a) {
-    a.enabled = body.enabled
+  if (known) {
+    atelierSetEnabled(S, params.id, body.enabled)
     bus('atelier')
   }
   bus('extensions')
@@ -4213,7 +4223,6 @@ for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
     fail(404, 'not_found', 'Unknown extension route')
   })
 }
-
 
 /* =================================================================== feed (notifications) + web push */
 // docs/dev/API.md#feed-notifications and #web-push. In-memory: S.feed = {events, nextId, settings, hooks}, S.push.

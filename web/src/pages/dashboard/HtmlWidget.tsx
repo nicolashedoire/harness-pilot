@@ -9,11 +9,16 @@
 // the latest one under the frame with "Ask for a fix" (features/extensions/AskFix.tsx).
 // and the app's theme variables (--background, --card, --primary, --border… and the older --mx-bg --mx-card --mx-fg
 // --mx-muted --mx-border --mx-accent) follow the app theme; the UI kit (`ui-*` classes) is inlined by the server.
+// Network: the frame's own policy only lets it reach the sites its manifest declares and the user allowed (card
+// `network`); while a declared site waits for the user, the card asks first (Always / Once / Refuse, FrameConsent),
+// and "Once" loads the frame with a one-hour grant (`?grant=`).
 import * as React from 'react'
 import { TriangleAlert, X } from 'lucide-react'
 import { ApiError, request, seg } from '@/lib/api'
 import { reportExtensionError } from '@/features/extensions/report'
 import { AskFixButton } from '@/features/extensions/AskFix'
+import { FrameConsent } from '@/features/extensions/Permissions'
+import type { CardNetwork } from '@/lib/types'
 import { useExtensions } from '@/lib/queries'
 import { useUI, resolveTheme } from '@/stores/ui'
 import { useT } from '@/i18n'
@@ -66,6 +71,7 @@ export function HtmlWidget({
   frameUrl,
   apiBase,
   onError,
+  network,
 }: {
   id: string
   src: string
@@ -77,6 +83,8 @@ export function HtmlWidget({
   apiBase?: string
   /** a script error of the widget (default: recorded against the installed extension) */
   onError?: (message: string, stack: string) => void
+  /** what the frame may reach (the card's `network`): `ask` shows FrameConsent first */
+  network?: CardNetwork
 }) {
   const t = useT()
   const theme = resolveTheme(useUI((s) => s.theme))
@@ -91,9 +99,14 @@ export function HtmlWidget({
   const [h, setH] = React.useState(height)
   const errorRef = React.useRef(onError)
   errorRef.current = onError
-  // The frame URL is fixed at mount (theme changes go by message): a new fragment would not reload it anyway.
-  const [frameSrc] = React.useState(
-    () => `${frameUrl ?? src.replace(/widget\.html$/, 'widget-frame')}#${encodeURIComponent(JSON.stringify({ theme: resolveTheme(useUI.getState().theme), vars: themeVars() }))}`,
+  const [grant, setGrant] = React.useState<string | null>(null)
+  const [decided, setDecided] = React.useState(false)
+  const asking = network?.state === 'ask' && !grant && !decided
+  // The frame URL is fixed once it shows (theme changes go by message): a new fragment would not reload it anyway.
+  const frameSrc = React.useMemo(
+    () =>
+      `${frameUrl ?? src.replace(/widget\.html$/, 'widget-frame')}${grant ? `?grant=${encodeURIComponent(grant)}` : ''}#${encodeURIComponent(JSON.stringify({ theme: resolveTheme(useUI.getState().theme), vars: themeVars() }))}`,
+    [src, frameUrl, grant],
   )
 
   // A missing or disabled widget: say so instead of an empty frame.
@@ -150,6 +163,8 @@ export function HtmlWidget({
     return () => cancelAnimationFrame(r)
   }, [theme, palette, density])
 
+  if (asking && network)
+    return <FrameConsent id={id} hosts={network.hosts} onGrant={setGrant} onDecided={() => setDecided(true)} />
   if (error)
     return (
       <div className="flex min-h-24 flex-col items-center justify-center gap-2 text-center">

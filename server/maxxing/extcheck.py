@@ -9,8 +9,10 @@ deadline), then, by kind:
   exception. An "error" the card returns (`extensions.card_error`, as `pilot update --verify`) is an error;
   warnings: no block left, blocks of an unknown type dropped, a card whose status is "error".
 - HTML widget: `GET /ext/<id>/widget-frame` through the real route, then widget.html is parsed: a document with
-  content, every `<script>` closed, `node --check` of each inline script (line numbers of widget.html), no `src` of
-  the folder (only widget.html is served), `maxxing.api()` needs `handle()` in api.py, storage the sandbox lacks.
+  content, every `<script>` closed, `node --check` of each inline script (line numbers of widget.html), a relative
+  `src` must be a file its frame loads (api/extframes.py), `maxxing.api()` needs `handle()` in api.py, storage the
+  sandbox lacks; then its network against `permissions.frame_network` (another site's script or style, a site it names
+  that is not declared).
 - page: `GET /ext/<id>/@<page_v>/page.js` (the URL the app imports) through the real route, `node --check` as an ES
   module, `mount` exported, and every module it imports, resolved as the browser does (`urljoin`): a file of the
   folder that the server serves with the type the import needs (a GET through the same routes, so the server's own
@@ -102,7 +104,9 @@ def _client() -> Any:
         from . import security
         from .api import blocks as api_blocks
         from .api import extensions as api_ext
+        from .api import extframes as api_frames
         app = FastAPI()
+        app.include_router(api_frames.router)              # before the page modules' catch-all, as the server does
         app.include_router(api_ext.router)
         app.include_router(api_blocks.router)
         app.dependency_overrides[security.require_auth] = lambda: None
@@ -284,9 +288,10 @@ def _check_document(run: _Run, name: str, raw: bytes, *, api_ok: bool, bridge: s
     for s in doc.scripts:
         src, typ = s["attrs"].get("src", ""), s["attrs"].get("type", "").strip().lower()
         if src:
-            if _local(src):
-                run.add("scripts", ERROR, f"{name}:{s['line']}: <script src=\"{src}\"> - only {name} is served to the "
-                                          "frame: inline the code, or load it from an https:// address")
+            if _local(src) and not _frame_file_ok(run, bridge, src):
+                run.add("scripts", ERROR, f"{name}:{s['line']}: <script src=\"{src}\"> - " + (
+                    f"not a file of the folder its frame can load (.js .mjs, a path inside the folder)" if bridge == "widget"
+                    else f"only {name} is served to the frame: inline the code"))
             continue
         if typ not in ("", "text/javascript", "application/javascript", "module"):
             continue
@@ -299,9 +304,11 @@ def _check_document(run: _Run, name: str, raw: bytes, *, api_ok: bool, bridge: s
         code_all.append(_scan_js(s["code"])[1])
     for link in doc.links:
         href = link.get("href", "")
-        if "stylesheet" in link.get("rel", "").lower() and href and _local(href):
-            run.add("scripts", WARN, f"{name}: <link href=\"{href}\"> - only {name} is served to the frame: inline "
-                                     "the styles in a <style>")
+        if "stylesheet" in link.get("rel", "").lower() and href and _local(href) and not _frame_file_ok(run, bridge,
+                                                                                                         href):
+            run.add("scripts", WARN, f"{name}: <link href=\"{href}\"> - " + (
+                "not a file of the folder its frame can load" if bridge == "widget"
+                else f"only {name} is served to the frame: inline the styles in a <style>"))
     code = "\n".join(code_all)
     if node_missing and doc.scripts:
         run.add("scripts", WARN, "Node.js is not installed: the inline scripts were not checked")
@@ -317,6 +324,67 @@ def _check_document(run: _Run, name: str, raw: bytes, *, api_ok: bool, bridge: s
     if bridge == "block" and code_all and not re.search(r"\bmaxxing\s*\.\s*onData\s*\(", code):
         run.add("data", WARN, f"{name} never calls maxxing.onData(fn): it does not receive the block's data")
     return html
+
+
+def _frame_file_ok(run: _Run, bridge: str, url: str) -> bool:
+    """A relative URL of widget.html that its frame loads from the folder (api/extframes.py serves it)."""
+    if bridge != "widget":
+        return False
+    path = posixpath.normpath(unquote(urlsplit(url.strip()).path)).lstrip("/")
+    if path.startswith("..") or not path or path == ".":
+        return False
+    ok = extensions.module_file(run.ext, path, extensions.FRAME_TYPES) is not None
+    if ok:
+        run.file(path)
+    return ok
+
+
+_URL = re.compile(r"""\b(?:https?|wss?)://([A-Za-z0-9.-]+(?::\d{1,5})?)""")
+
+
+def _covered(host: str, allowed: list[str]) -> bool:
+    for a in allowed:
+        if a == host or (a.startswith("*.") and host.endswith(a[1:])):
+            return True
+    return False
+
+
+def _check_widget_network(run: _Run, html: str) -> None:
+    """What widget.html reaches against what its frame may reach (permissions.frame_network): scripts and styles from
+    another site are blocked once it declares permissions; another site it names must be declared."""
+    from . import permissions
+    ext = run.ext
+    net = permissions.frame_network(ext)
+    doc = _Doc()
+    try:
+        doc.feed(html)
+        doc.close()
+    except Exception:  # noqa: BLE001 - _check_document reported it
+        return
+    outside = [(s["line"], s["attrs"]["src"]) for s in doc.scripts if s["attrs"].get("src") and not _local(s["attrs"]["src"])]
+    outside += [(0, link["href"]) for link in doc.links
+                if "stylesheet" in link.get("rel", "").lower() and link.get("href") and not _local(link["href"])]
+    hosts = sorted({m.group(1).lower() for m in _URL.finditer(html)})
+    if net["open"]:
+        names = sorted(set(hosts) | set(net["known"]))
+        if names:
+            run.add("network", WARN, "no \"permissions\": it existed before permissions, so its frame still reaches any "
+                                     f"site - declare the ones it uses: \"network\": [{', '.join(chr(34) + h + chr(34) for h in names)}]"
+                                     + (" (scripts and styles from another site will then have to be copied into the folder)"
+                                        if outside else ""))
+        return
+    for line, url in outside:
+        run.add("network", ERROR, f"widget.html{':' + str(line) if line else ''}: {url} - scripts and styles load only "
+                                  "inline or from the widget's own files: copy it into the folder and use a relative path")
+    declared = (ext.permissions or {}).get("network") or []
+    script_hosts = {(urlsplit(u).hostname or "").lower() for _, u in outside}
+    for h in hosts:
+        if h in script_hosts or _covered(h, declared):
+            continue
+        run.add("network", WARN, f"widget.html names {h}: its frame cannot reach a site that permissions.network does "
+                                 "not declare")
+    if declared and not outside and not any(st["step"] == "network" for st in run.steps):
+        run.add("network", OK, f"its frame may reach {', '.join(net['hosts']) or 'no site yet (waiting for the user)'}")
 
 
 # ---- per kind -------------------------------------------------------------------------------------------------------
@@ -386,7 +454,8 @@ def _check_html_widget(run: _Run) -> None:
         return
     run.add("served", OK, f"/ext/{ext.id}/widget-frame")
     raw = (ext.dir / "widget.html").read_bytes()
-    _check_document(run, "widget.html", raw, api_ok=_has_handle(ext), bridge="widget")
+    html = _check_document(run, "widget.html", raw, api_ok=_has_handle(ext), bridge="widget")
+    _check_widget_network(run, html)
 
 
 def _check_block(run: _Run) -> None:
@@ -542,9 +611,12 @@ def _check_permissions(run: _Run) -> None:
                                      "refuses them all")
     else:
         waiting = [x["name"] for x in access["secrets"] if x["status"] == "pending"]
-        if waiting:
-            run.add("permissions", WARN, f"waits for the user's permission to read {', '.join(waiting)}: ask them to "
-                                         "allow it (Settings -> Extensions -> Allow)")
+        sites = [x["host"] for x in access["network"] if x["status"] == "pending"]
+        if waiting or sites:
+            what = " and ".join(x for x in (f"read {', '.join(waiting)}" if waiting else "",
+                                             f"reach {', '.join(sites)}" if sites else "") if x)
+            run.add("permissions", WARN, f"waits for the user's permission to {what}: ask them to allow it "
+                                         "(Settings -> Extensions -> Allow)")
 
 
 # ---- entry points ---------------------------------------------------------------------------------------------------

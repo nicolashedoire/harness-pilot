@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from maxxing import config, security  # noqa: E402
 
-ORG_ROUTERS = ["auth", "tasks", "crons", "settings", "secrets", "system", "docs", "dashboard", "extensions", "git", "infra", "mcp"]
+ORG_ROUTERS = ["auth", "tasks", "crons", "settings", "secrets", "system", "docs", "dashboard", "extframes", "extensions", "git", "infra", "mcp"]
 PASSWORD = "correct-horse"
 
 
