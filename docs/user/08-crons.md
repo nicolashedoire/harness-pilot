@@ -6,7 +6,7 @@ section: Using harness-pilot
 The **Crons** page runs things on a schedule: a **shell command** or a **Claude Code prompt** in a
 topic. Each run is recorded (status, duration, output) and can be reported on Telegram.
 
-In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed; `@reboot` is not supported in local mode. Scheduled prompts currently use Claude Code.
+In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed, unless the job has **Catch up a missed run** on (below); `@reboot` is not supported in local mode. Scheduled prompts currently use Claude Code.
 
 ## Creating a job
 
@@ -22,6 +22,7 @@ Click **New job** and fill in:
 | Reuse session | Claude: keep one session across runs (it accumulates context) instead of a new session each time |
 | Notify | Telegram report: never, on failure (default), always |
 | Timeout | maximum duration (default 1 hour) |
+| Catch up a missed run | local app only, off by default: when the app starts again after missing at least one run of the job, the job runs **once** (not once per missed run) and a notification says how many runs were missed. A job due in the very minute the app starts just runs on time |
 
 **Run now** starts a job immediately. The history shows the last runs with their output tail; for
 Claude jobs, a link opens the session.

@@ -405,6 +405,8 @@ export type Cron = {
   /** '' = the topic's mode, else the global one. */
   permission_mode?: CronPermissionMode
   enabled: boolean
+  /** Local scheduler: one run at startup when runs were missed while the app was stopped (older servers: absent). */
+  catch_up?: boolean
   notify: CronNotify
   timeout_s: number
   last_run: CronLastRun | null

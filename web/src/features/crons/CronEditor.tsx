@@ -3,7 +3,7 @@ import * as React from 'react'
 import { Bot, Terminal } from 'lucide-react'
 import { useT } from '@/i18n'
 import { isApiError } from '@/lib/api'
-import { useClaudeStatus, useSaveCron, useTelegram, useWorkspace } from '@/lib/queries'
+import { useClaudeStatus, useSaveCron, useTelegram, useVersion, useWorkspace } from '@/lib/queries'
 import type { Cron, CronKind, CronNotify, CronPermissionMode } from '@/lib/types'
 import {
   Button,
@@ -42,6 +42,7 @@ type Form = {
   permission_mode: CronPermissionMode
   schedule: string
   enabled: boolean
+  catch_up: boolean
   notify: CronNotify
   timeout: string
   unit: TimeoutUnit
@@ -61,6 +62,7 @@ function initial(seed: EditorSeed, copyName: (n: string) => string): Form {
       permission_mode: '',
       schedule: '0 7 * * *',
       enabled: true,
+      catch_up: false,
       notify: 'failure',
       timeout: '1',
       unit: 'h',
@@ -78,6 +80,7 @@ function initial(seed: EditorSeed, copyName: (n: string) => string): Form {
     permission_mode: j.permission_mode || '',
     schedule: j.schedule,
     enabled: seed.mode === 'duplicate' ? false : j.enabled,
+    catch_up: !!j.catch_up,
     notify: j.notify,
     timeout: String(to.value),
     unit: to.unit,
@@ -122,6 +125,7 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
   const { data: claude } = useClaudeStatus()
   const { data: ws } = useWorkspace()
   const { data: tg } = useTelegram()
+  const { data: version } = useVersion()
   const set = <K extends keyof Form>(k: K, v: Form[K]) => {
     setF((cur) => ({ ...cur, [k]: v }))
     const fk = (k === 'topic_path' ? 'topic' : k === 'unit' ? 'timeout' : k) as Field
@@ -167,6 +171,7 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
       kind: f.kind,
       schedule: f.schedule.trim(),
       enabled: f.enabled,
+      ...(version?.local_mode ? { catch_up: f.catch_up } : {}),
       notify: f.notify,
       timeout_s: Math.round(Number(f.timeout) * UNIT_S[f.unit]),
       ...(f.kind === 'shell'
@@ -303,6 +308,18 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
           </div>
         </div>
       </div>
+
+      {version?.local_mode && (
+        <div className="grid content-start gap-2">
+          <Label htmlFor="cron-catch-up">{t('crons.field.catchUp')}</Label>
+          <div className="flex min-h-9 items-center gap-3">
+            <Switch id="cron-catch-up" checked={f.catch_up} onCheckedChange={(v) => set('catch_up', v)} aria-describedby="cron-catch-up-hint" />
+            <span id="cron-catch-up-hint" className="text-[13px] text-muted-foreground">
+              {f.catch_up ? t('crons.catchUpOn') : t('crons.catchUpOff')}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-2">
         <Label>{t('crons.field.notify')}</Label>

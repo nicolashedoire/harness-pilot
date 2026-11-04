@@ -499,6 +499,7 @@ DEFAULTS: dict[str, Any] = {
     "name": "", "schedule": "0 5 * * *", "kind": "shell", "command": "", "topic_path": "",
     "prompt": "", "model": "", "reuse_session": False, "enabled": True, "notify": "failure",
     "timeout_s": DEFAULT_TIMEOUT, "permission_mode": "",     # "" = the topic's / global permission mode
+    "catch_up": False,                 # local scheduler: one run at startup when runs were missed while it was stopped
 }
 PERMISSION_MODES = ("", "bypass", "acceptEdits", "default")
 
@@ -520,7 +521,7 @@ def _clean(job: dict) -> dict:
         raise CronError("timeout_s must be a number of seconds", "invalid_timeout") from None
     if not 10 <= j["timeout_s"] <= 7 * 86400:
         raise CronError("timeout_s must be between 10 s and 7 days", "invalid_timeout")
-    for b in ("enabled", "reuse_session"):
+    for b in ("enabled", "reuse_session", "catch_up"):
         j[b] = bool(j[b])
     for s in ("command", "topic_path", "prompt", "model", "permission_mode"):
         j[s] = str(j[s] or "")

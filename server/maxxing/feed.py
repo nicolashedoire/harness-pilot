@@ -63,6 +63,7 @@ KINDS: dict[str, tuple[str, str]] = {
     "discussion.paused": ("sessions", "warning"),
     "cron.succeeded": ("crons", "success"),
     "cron.failed": ("crons", "error"),
+    "cron.caught_up": ("crons", "info"),
     "update.available": ("system", "info"),
     "update.attention": ("system", "warning"),
     "update.review": ("system", "info"),

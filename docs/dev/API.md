@@ -260,6 +260,7 @@ Cron = {id, name, schedule,            // 5-field cron expression
         topic_path, prompt, model, reuse_session:bool,  // claude
         permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode
         enabled, notify:"never"|"failure"|"always", timeout_s,
+        catch_up:bool,                 // local scheduler: one run at startup if runs were missed while stopped (default false)
         last_run:{at, ok, code, duration_s}|null, next_run:float|null, human:string,  // human: in the UI language (settings.language, en|fr), times HH:MM
         running:bool}                  // a run is in progress (flock held); overlapping runs are skipped
 Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|null}   (output_tail: a Claude job keeps the first 2048 characters of its answer, a command the last 2048 of its output)
@@ -744,6 +745,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `session.failed` | sessions | error | `session_id, title, path, provider, error` | `open_session` | the next `session.done` of that session |
 | `discussion.paused` | sessions | warning | `session_id, title, path, provider ("discussion"\|"debate"), turns, turn_limit, duration_s, duration_limit_s` (limits: number or null) | `resume` (post), `open_session` | resume, a new message, Stop or deletion of that session |
 | `cron.succeeded` | crons | success | `cron_id, name, run_id, duration_s` (folded over all jobs, group `ok`: params of the latest run) | – | – |
+| `cron.caught_up` | crons | info | `cron_id, name, missed` (count, at most 1000), `since` (first missed run, Unix s): the local scheduler started one catch-up run at startup | – | – |
 | `cron.failed` | crons | error | `cron_id, name, run_id, code, duration_s` (folded per job) | `open_run`, `rerun` (post) | the next successful run of that job |
 | `update.available` | system | info | `version, current, topic` | `open` | – |
 | `update.attention` | system | warning | – (the body explains: customizations, roll-back) | `open` | – |

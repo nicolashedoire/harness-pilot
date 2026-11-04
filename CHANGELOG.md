@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A scheduled job can **catch up a missed run** in the local app (off by default): when the app starts again after missing at least one of its runs, the job runs once and a notification says how many runs were missed.
 - The Sessions guide and Settings → Codex now say what works with Codex and which features are still for Claude Code only (side questions, MCP servers, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota).
 - Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.
 - An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
