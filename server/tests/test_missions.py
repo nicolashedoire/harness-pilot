@@ -284,3 +284,28 @@ def test_malformed_unicode_from_an_agent_cannot_break_persisted_plan_state(clien
     missions.tick();missions.tick()
     assert missions.get(ident)['phase']=='paused' and missions.get(ident)['reason']=='invalid_plan'
     assert not missions.get(ident)['steps'] and len(agents[1])==1
+
+
+def test_restored_state_pauses_only_automatic_work_and_says_so(client,topic,agents):
+    from maxxing import feed
+    draft=create(client,topic,[step(1)])
+    stopped=create(client,topic,[step(1)]);start(stopped);missions.tick();missions.control(stopped,'stop')
+    active=create(client,topic,[step(1)]);start(active)
+    for ident in (draft,stopped,active):
+        with missions._edit(ident) as data:data['origin_state']='/old/state'
+    missions.tick()
+    assert missions.get(draft)['phase']=='draft' and missions.get(stopped)['phase']=='stopped'
+    assert missions.get(stopped)['reason']=='owner'
+    assert missions.get(active)['phase']=='paused' and missions.get(active)['reason']=='restored'
+    notices=[e for e in feed.list_events()['events'] if e.get('kind')=='mission.review']
+    assert [e['url'] for e in notices]==['/settings/missions?mission='+active]
+
+
+def test_a_terminal_mission_cannot_be_revived_by_skipping_a_step(client,topic,agents):
+    ident=create(client,topic,[step(1),step(2)])
+    start(ident);missions.tick();missions.control(ident,'stop')
+    assert missions.get(ident)['steps'][0]['state']=='interrupted'
+    refused=client.post('/api/missions/'+ident+'/steps/step-1/skip')
+    assert refused.status_code==409 and refused.json()['error']=='busy'
+    assert missions.get(ident)['phase']=='stopped'
+    assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':missions.get(ident)['plan_fingerprint']}).status_code==409

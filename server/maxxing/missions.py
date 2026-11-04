@@ -179,6 +179,9 @@ def control(ident, action, fingerprint=None):
 def acknowledge(ident, step_id):
     """Interrupted/error steps need an explicit decision to skip; never silently retry code work."""
     with _edit(ident) as data:
+        if data['phase'] != 'paused':
+            # Stopped, budget and completed are terminal: a skip must not turn them back into a resumable pause.
+            raise service.SessionError(409, 'busy', 'Only a paused mission can skip a step.')
         step = next((s for s in data['steps'] if s['id'] == step_id), None)
         if step is None or step['state'] not in ('interrupted', 'failed', 'rejected'):
             raise service.SessionError(409, 'busy', 'Only an interrupted or failed step can be skipped.')
@@ -294,18 +297,34 @@ def _notify(data):
                 kind='mission.completed' if data['phase'] == 'completed' else 'mission.review', params={'title': data['title']})
 
 
-def advance(ident):
-    launch = None
-    stops = []
+def _relocated(ident):
+    """State restored or moved from another installation: pause automatic work only. Drafts, plans under review and
+    terminal missions keep their phase (a restore must not revive a stopped or completed mission)."""
+    current = str(config.STATE.resolve())
+    if get(ident)['origin_state'] == current:
+        return
     notification = None
     with _edit(ident) as data:
-        if data['origin_state'] != str(config.STATE.resolve()):
+        if data['origin_state'] == current:
+            return
+        data['origin_state'] = current
+        if data['phase'] in ('active', 'planning'):
             _bank(data)
-            data.update(origin_state=str(config.STATE.resolve()), phase='paused', reason='restored')
+            data.update(phase='paused', reason='restored')
             for step in data['steps'] + ([data['planner']] if data.get('planner') else []):
                 if step['state'] in ('starting', 'running'):
                     step['state'] = 'interrupted'
             notification = copy.deepcopy(data)
+    if notification:
+        _notify(notification)
+
+
+def advance(ident):
+    _relocated(ident)
+    launch = None
+    stops = []
+    notification = None
+    with _edit(ident) as data:
         if data['phase'] not in ('active', 'planning'):
             return
         _reconcile(data)

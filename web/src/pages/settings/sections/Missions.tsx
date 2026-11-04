@@ -94,7 +94,7 @@ export function MissionsSection() {
           <p className="text-xs text-muted-foreground">{profiles.data?.companions.find((r) => r.id === s.role)?.name || s.role}</p><details className="text-muted-foreground"><summary className="cursor-pointer text-xs">{t('resident.instruction')}</summary><p className="mt-2 whitespace-pre-wrap break-words">{s.instruction}</p></details>
           {!!s.after.length && <p className="text-xs text-muted-foreground">{t('resident.after', { names: s.after.map((id) => data.steps.find((d) => d.id === id)?.title || id).join(', ') })}</p>}
           <div className="flex flex-wrap gap-3">{s.session && <><Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(s.session)}`}>{t('resident.session')}</Link><Link className="text-primary underline" to={`/settings/companions?run=${encodeURIComponent(s.session)}`}>{t('resident.review')}</Link></>}
-            {['failed', 'interrupted', 'rejected'].includes(s.state || '') && <Button variant="outline" size="sm" loading={skip.isPending} onClick={() => skip.mutate(s.id)}>{t('resident.skip')}</Button>}
+            {data.phase === 'paused' && ['failed', 'interrupted', 'rejected'].includes(s.state || '') && <Button variant="outline" size="sm" loading={skip.isPending} onClick={() => skip.mutate(s.id)}>{t('resident.skip')}</Button>}
           </div>
         </div>)}
       </div>
