@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- `companions._notify` returns early for a session whose `companion.purpose` is `plan` (a mission's architect run): no `companion.ready/empty/error` notice; the mission's `mission.review` covers plan ready and failures.
 - Missions: `_review` caches `companions.review` per step (`step.review`, keyed by the session's `turns` and `updated`), so a step awaiting a decision no longer runs git in its copy every ~2 s; new `companions.decision(sid)` reads the decision from the session record. The cache is dropped when a cycle restarts.
 - Missions: `_Aborted` (guard or shutdown before the first message) and reservations without any session after 180 s are released (`launches[].aborted`, `_runs()` excludes them; step back to `pending`, planner requested again) instead of `failed`/`launch_uncertain`. New `retry(id, step)` and `POST /api/missions/{id}/steps/{step}/retry`. `start` refuses with `unresolved` while a step needs a decision and resets interrupted steps without a session; `plan` is accepted from `paused` when no step ran.
 - Missions: `active_since` is set only while a step or the planner is `starting`/`running` (`_track_work` at the end of each `advance`; `start` and `plan` leave it null), so `max_seconds` bounds working time, not cycle or decision waits. `missions._now` is the clock tests replace.
