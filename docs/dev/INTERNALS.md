@@ -389,8 +389,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer
   or the phone with the authenticator app is lost (`off` turns both methods off).
 - `required()` = `enabled()` or `totp.is_on()` (what `POST /api/auth/login` checks). A `login` challenge carries
-  `methods`: `"totp"` when the app is on, `"telegram"` when Telegram is on and linked (an `enable` challenge is
-  Telegram only). Telegram is sent only with `"telegram"`; when that send fails and the app is on, the challenge
+  `methods`: `"totp"` when the app is on, `"telegram"` when the app is off (as before) or Telegram is on and linked
+  (an `enable` challenge is Telegram only). Telegram is sent only with `"telegram"`; when that send fails and the app is on, the challenge
   keeps `("totp",)`. A TOTP-only challenge lives `TOTP_TTL` (300 s). `check(id, code)` tries `totp.verify(code)` first
   (`via` `totp` | `recovery`), then the Telegram code; wrong ones share `CODE_TRIES` and `BAD_MAX`.
 

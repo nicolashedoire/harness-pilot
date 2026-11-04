@@ -211,8 +211,9 @@ def start(purpose: str, ip: str, ua: str) -> Challenge:
     """New challenge + its Telegram message (blocking: call it from a thread). Raises Refused. A sign-in challenge
     takes the authenticator app too when it is on; then Telegram is only asked when it is on as well."""
     now = time.time()
-    methods = ("totp",) if purpose == "login" and totp.is_on() else ()
-    if purpose != "login" or enabled():
+    app = purpose == "login" and totp.is_on()
+    methods = ("totp",) if app else ()
+    if not app or enabled():                    # without the app: Telegram, as before
         methods += ("telegram",)
     with _lock:
         _prune(now)
