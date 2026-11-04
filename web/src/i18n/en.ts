@@ -1648,6 +1648,8 @@ export const en = {
   'pc.candidateNo': "Refuse",
   'pc.title': 'Browser of my PC',
   'pc.desc': 'Let Claude use a browser on your own computer: a separate profile of your browser, opened only while Claude needs it.',
+  'pc.unavailableTitle': 'Not available yet',
+  'pc.unavailable': 'harness-pilot PC, the small program that lets Claude use a browser on your computer, is not published for download yet, so no computer can be connected. This card will offer the download once it is.',
   'pc.whichOs': 'Your computer',
   'pc.whichBrowser': 'Browser Claude will use',
   'pc.isolated': 'Claude gets its own {browser} profile: your usual tabs, passwords and history are never touched. Sign in to sites there once if Claude needs them.',

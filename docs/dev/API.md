@@ -389,8 +389,8 @@ McpServer = {id:"<scope>|<folder>|<name>", name, scope:"user"|"local"|"project",
 PcStatus = {available, device:{id,name,os,arch,browser,browsers,version,created,last_seen}|null, online,
   browser_running, mcp_running, last_use|null, mcp_registered, pairing:{expires_at,browser,os}|null,
   candidate, settings:{idle_min}, browsers:[…], targets:[…], actions:[{at,tool,ok,ms,args:{url?,…}}]}   (newest first, 20)
-available = a Harness PC can be downloaded (MAXXING_PC_BIN_DIR, or files listed in pc_agent.json); the UI hides the
-  card while it is false and no PC is paired
+available = a Harness PC can be downloaded (MAXXING_PC_BIN_DIR, or files listed in pc_agent.json); while it is false
+  and no PC is paired, the card only says that harness-pilot PC is not published for download yet (no setup, no poll)
 candidate = {id,name,os,arch,version,created,ip}|null in PcStatus: a PC that paired with a code and waits for the user
 PcPairing = {code, expires_at, expires_in, server, downloads:{<target>:url}, commands:{windows,darwin,linux}}
 target = windows-amd64|windows-arm64|darwin-arm64|darwin-amd64|linux-amd64|linux-arm64
@@ -407,7 +407,7 @@ target = windows-amd64|windows-arm64|darwin-arm64|darwin-amd64|linux-amd64|linux
 | POST | `/api/pc/mcp/register` | – | `{ok}` · `409 not_paired` |
 | DELETE | `/api/pc` | – | `{ok}` - unpairs (the agent removes its autostart and exits), MCP removed |
 | POST | `/api/pc/pair` | `{code, name, os, arch, version, browsers}` | `{device_id, token}` - the PC is a `candidate` until `/confirm` · public, `403 bad_code\|expired` |
-| GET | `/api/pc/download/{target}?code=` | – | the agent binary + config trailer, streamed from the cached agent (`Content-Length` set) · public, `403`, `404` |
+| GET | `/api/pc/download/{target}?code=` | – | the agent binary + config trailer, streamed from the cached agent (`Content-Length` set) · public, `403 bad_code\|expired`, `404 no_agent` (no agent for this target: not in `pc_agent.json` nor in `MAXXING_PC_BIN_DIR`), `502 download_failed` (the release file could not be fetched: HTTP error, network) \| `checksum` (it does not match `pc_agent.json`) |
 | GET | `/api/pc/install.{ps1\|sh}?code=&target=` | – | install script (downloads, starts) · public |
 | WS | `/api/pc/ws` | `Authorization: Bearer <device token>` | agent control + DevTools frames (PROTOCOL.md) · close `4401` |
 | WS | `/api/pc/cdp` | `X-PC-Secret` | loopback only: DevTools relay for chrome-devtools-mcp · close `4403` |
