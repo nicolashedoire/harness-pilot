@@ -38,7 +38,8 @@ KDF_MAX_MEMORY = 128 * CHUNK              # 128·N·r bytes
 KDF_MAX_WORK = 1 << 21                    # N·r·p
 MAX_ENTRIES = 100000
 MANIFEST_MAX = 32 * CHUNK
-PREVIEW_TTL = 24 * 60 * 60
+PREVIEW_TTL = 60 * 60            # a verified preview holds decrypted data (credentials included): one hour at most
+PURGE_EVERY = 10 * 60            # the server's purge pass runs at least this often, and right when a preview expires
 _ID = re.compile(r'^[a-f0-9]{32}$')
 _STATE_RUNTIME = {'instance-backups', 'instance-restores', 'tools', 'node', 'nodejs',
                   'search.db', 'search.db-wal', 'search.db-shm'}
@@ -562,10 +563,25 @@ def _retarget(destination: Path, manifest: dict):
     config.write_json(state / 'space-labels' / 'labels.json', labels, mode=0o600)
 
 
-def status() -> dict:
-    with contextlib.suppress(SnapshotError):          # opening Settings -> Backup also clears expired plaintext
+def purge_expired() -> float:
+    """Remove expired previews (and interrupted export staging) unless an operation holds the lock; returns the seconds
+    until the next preview expires, at most PURGE_EVERY. Run at startup, then by the server's purge pass, and when
+    Settings -> Backup is opened. Never creates the backup folder."""
+    imports = config.STATE / 'instance-backups' / 'imports'
+    if not imports.parent.is_dir():
+        return PURGE_EVERY
+    with contextlib.suppress(SnapshotError):
         with _lock():
             _purge_previews()
+    now, delay = time.time(), PURGE_EVERY
+    for directory in imports.glob('*') if imports.is_dir() else ():
+        with contextlib.suppress(OSError):
+            delay = min(delay, PREVIEW_TTL - (now - directory.stat().st_mtime))
+    return max(1.0, delay)
+
+
+def status() -> dict:
+    purge_expired()                                    # opening Settings -> Backup also clears expired plaintext
     try:
         roots, error = _roots(), None
     except SnapshotError as problem:

@@ -885,7 +885,10 @@ All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persis
 
 A full snapshot pauses pausable services and rejects concurrent HTTP mutations/WebSocket activity.
 Changed sources or active/queued sessions abort export. Restored instances defer service startup,
-allow authentication and reads, and reject mutations until explicit activation. A restored copy's
+allow authentication and reads, and reject mutations until explicit activation. A verified preview (decrypted, under the
+private state folder) expires after 1 hour (`PREVIEW_TTL`): the module's startup hook purges expired previews
+and interrupted export staging at startup and then again as soon as the next preview expires (at least every
+10 minutes), and `GET` base and every operation purge them too; `/restore` of an expired preview is `409 changed`. A restored copy's
 config also carries `integrations_paused: true`, which survives activation: the Telegram poller does not start
 and automatic Telegram notifications are dropped, the managed crontab block stays empty, the local scheduler
 and scheduled `pilot cron run` invocations skip, and `POST /api/backup/run` returns `409 paused`, so two live
