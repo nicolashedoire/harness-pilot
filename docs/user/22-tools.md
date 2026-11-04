@@ -3,10 +3,13 @@ section: Extending
 ---
 # Videos, PDFs and images
 
-The installer prepares the tools Claude needs for everyday work, so you can ask for a video, a PDF
-or a batch of images in any session - no setup.
+Claude can make a video, a PDF or a batch of images in any session when the tools below are on the
+computer. **This project does not install them for you**: the inherited Linux installer that prepared them is
+disabled until it is validated, and the local macOS setup (`scripts/dev-local.sh`) installs none of them. Without
+them, `pilot video new` and `pilot pdf` stop and say what is missing; the `image-edit` skill works as soon as you
+install ImageMagick and ffmpeg yourself (for example with Homebrew).
 
-| Installed | Used for |
+| Tool | Used for |
 |---|---|
 | Node.js 22 + **Remotion** | motion design videos written in React (skill `video-motion-design`) |
 | Chromium (one for everything) | HTML -> PDF (`pilot pdf`, skill `pdf-document`), video renders and Scrapling share the same browser |
@@ -20,7 +23,7 @@ or a batch of images in any session - no setup.
 Ask "make a 20-second vertical video announcing our summer sale". Claude creates a project
 (`pilot video new <topic>/videos/<name>`), writes the scenes, checks a few frames, renders an MP4
 and gives you its path (open it in Files). Remotion is installed once in
-`/var/lib/claude-maxxing/tools/remotion`; each project links to it, so it takes a second to create
+`<state>/tools/remotion` (`/var/lib/claude-maxxing` on a Linux server); each project links to it, so it takes a second to create
 and weighs a few MB.
 
 ## PDFs
@@ -37,7 +40,7 @@ for one page (plain HTTP, or a real browser for JavaScript pages), or a short Py
 with the script, so the job can be re-run or scheduled. It respects `robots.txt` and goes slowly by
 default; personal or login-protected data only with your explicit say-so. No MCP server is added
 (it would cost context in every session): Claude calls the command line.
-Installed in `/var/lib/claude-maxxing/tools/scrapling` (every package pinned with its checksum) and `tools/browsers` (Chromium, shared with videos and PDFs), ~750 MB.
+On a Linux server, installed in `/var/lib/claude-maxxing/tools/scrapling` (every package pinned with its checksum) and `tools/browsers` (Chromium, shared with videos and PDFs), ~750 MB.
 
 ## Images and SEO
 
@@ -51,6 +54,7 @@ prioritized report in the topic.
 ```bash
 pilot video status                          # Node.js, Remotion, headless browser, Scrapling
 pilot deps list                             # versions of every component
-pilot deps update                           # (re)install the tools, as root
+pilot deps update                           # (re)install the tools, as root (Linux server only)
 ```
-`pilot doctor` warns (never fails) when they are missing.
+`pilot doctor` warns (never fails) when they are missing. `pilot deps update` downloads Linux builds and needs
+root: it does not install anything in the local macOS setup.
