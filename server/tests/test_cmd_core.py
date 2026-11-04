@@ -271,6 +271,22 @@ def test_local_setup_installs_the_product_skills_beside_its_workspace():
     assert "cmd_core.install_skills()" in script
 
 
+def test_local_cli_runs_with_the_state_of_the_local_app(tmp_path):
+    """`dev-local.sh cli <args>` = `pilot <args>` with the local app's settings; a bare `uv run pilot` has no
+    MAXXING_STATE and reads /var/lib/claude-maxxing (the docs used to suggest it)."""
+    import shutil
+    if not shutil.which("uv"):
+        pytest.skip("uv not installed")
+    local = tmp_path / "local"
+    env = {k: v for k, v in os.environ.items() if k != "MAXXING_STATE"}
+    env["HARNESS_PILOT_LOCAL_DIR"] = str(local)
+    r = subprocess.run(["bash", str(config.CODE / "scripts" / "dev-local.sh"), "cli", "status", "--json"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr
+    st = json.loads(r.stdout)
+    assert st["state"] == str(local / "state") and st["workspace"] == str((local / "workspace").resolve())
+
+
 def test_init_installs_the_product_skills_for_codex_too(env, monkeypatch):
     """Codex reads personal skills from ~/.agents/skills: init installs the same rendered copies there, with its own
     record, so a same-named skill of the user is moved to the trash, an obsolete one dropped, a stale one reported."""
@@ -842,6 +858,21 @@ def test_update_check_not_a_git_clone(env, tmp_path, monkeypatch, capsys):
     (tmp_path / "plain").mkdir()
     assert run_cli("update", "--check", "--notify") == 0
     assert "not a git clone" in capsys.readouterr().out
+
+
+def test_update_is_refused_in_local_mode(env, released, monkeypatch, capsys):
+    """Like the Update button (POST /api/system/update -> 409): the local setup updates its clone with git, never by a
+    fetch, rebase and service restart. Checking, which changes nothing, still works."""
+    monkeypatch.setenv("HARNESS_PILOT_LOCAL_MODE", "1")
+    clone = released["clone"]
+    _release(released["work"], "1.2.0", "shiny feature")
+    head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    for argv in (["update"], ["update", "--rollback"], ["update", "--resume"], ["update", "--branch", "main"]):
+        assert run_cli(*argv) == 1
+        out = capsys.readouterr().out
+        assert "unavailable in local mode" in out and f"git -C {clone} pull" in out, argv
+    assert subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True).stdout == head
+    assert run_cli("update", "--check") == 0 and "1.2.0" in capsys.readouterr().out
 
 
 def test_update_lists_upgrade_notes(env, released, monkeypatch, capsys):

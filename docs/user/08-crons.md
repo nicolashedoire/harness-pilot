@@ -27,6 +27,10 @@ Click **New job** and fill in:
 **Run now** starts a job immediately. The history shows the last runs with their output tail; for
 Claude jobs, a link opens the session.
 
+A run killed before its end (the app or the computer stopped, out of memory) is recorded as *interrupted* by the
+next run of the job, which also stops the command it left running - on macOS as on Linux - but only when it is
+still the same process: a process number reused by another program is never touched.
+
 ## Schedule syntax
 
 Five fields: `minute hour day-of-month month day-of-week`.

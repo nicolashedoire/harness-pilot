@@ -25,6 +25,7 @@ This audit lists the gaps observed in the local interface and in the code. It is
 
 ## Priority 3 — general consistency and documentation
 
+<<<<<<< HEAD
 - [x] **System on macOS**: estimated memory, load and uptime are read on the Mac. Unavailable data is no longer shown as zero; the systemd commands and the unvalidated automatic updates are hidden and blocked in local mode.
 - [x] **Dashboard**: the server card distinguishes unavailable measurements, the card texts no longer name the agents with the old name, and the Claude quota no longer claims that the account is signed out.
 - [x] **Local scheduled tasks**: a scheduler independent of the system crontab runs the tasks while the application is running. Missed runs are skipped unless a job is set to catch up (one run at the next start); `@reboot` jobs run each time the application starts. Scheduled prompts use Claude Code.
@@ -41,3 +42,6 @@ This audit lists the gaps observed in the local interface and in the code. It is
 - [ ] **Development mock**: `web/mock` answers about half of the API routes (141 of 304 on 4 November, see `docs/dev/DESIGN.md`), so the pages that use the missing routes cannot be checked against it.
 - [ ] Verify the screens on computer and mobile, the error states, accessibility and translations. The two-agent discussion form was checked visually at mobile width; a first width check was also made on the statistics, Codex, Telegram, Support and the sessions guide. The other paths remain to be examined. Progress: block numbers and schedule descriptions follow the interface language (#38, #67), the companions error state is translated (#29), form choices wrap on a phone (#25).
 - [ ] Add targeted tests for the fixes, then validate the paths in the local interface.
+=======
+- [x] **Recovery after an interruption on macOS**: without `/proc`, the identity of an orphaned task process is checked with its start date read by `ps` (in UTC). The next run of the task stops it only when it is still the same process; a process number reused by another program is never killed. Tested for real on this Mac: `tests/test_cron_orphans.py`.
+>>>>>>> origin/main

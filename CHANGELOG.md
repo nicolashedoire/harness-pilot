@@ -7,6 +7,10 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - A scheduled job can **catch up a missed run** in the local app (off by default): when the app starts again after missing at least one of its runs, the job runs once and a notification says how many runs were missed.
+- A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
+- Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
+- On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.
+- Local setup: `bash scripts/dev-local.sh cli <command>` runs the `pilot` command with the settings of your local app, for example `bash scripts/dev-local.sh cli doctor`. The guides no longer suggest `uv run pilot` in `server/`, which looked at the folder of a server installation instead of your local one.
 - The Sessions guide and Settings → Codex now say what works with Codex and which features are still for Claude Code only (side questions, MCP servers, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota).
 - Scheduled jobs can run **At startup** (`@reboot`) in the local app: they start each time the application starts. The Crons page shows *At the next start* for them.
 - Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.

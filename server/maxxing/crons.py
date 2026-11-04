@@ -1167,14 +1167,36 @@ def _turn_ok(res: dict) -> bool:
 _live_locks: dict[str, tuple] = {}                   # cron id -> (open lock file, start) while it runs here
 
 
+BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
+
+
 def _proc_start(pid: int) -> str | None:
-    """Boot id + start time (clock ticks) of a process: who it is, not just its number (numbers are reused)."""
+    """Who a process is, not just its number (numbers are reused): boot id + start time in clock ticks from /proc
+    (Linux), else (macOS, no /proc) its start date to the second from `ps`, read in UTC: "ps:<date>". None when the
+    process is gone or cannot be identified: it is then never killed."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return None
     try:
-        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        boot = BOOT_ID.read_text().strip()
+    except OSError:
+        return _ps_start(pid)
+    try:
         stat = Path(f"/proc/{pid}/stat").read_text()
         return f"{boot}:{stat.rsplit(')', 1)[1].split()[19]}"
     except (OSError, IndexError):
         return None
+
+
+def _ps_start(pid: int) -> str | None:
+    """`ps -o lstart=` (macOS, BSD, Linux procps): an absolute start date, the same in every process that reads it
+    (TZ and locale fixed), so a server restarted meanwhile still recognises the job shell."""
+    try:
+        r = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
+                           env={**os.environ, "TZ": "UTC", "LC_ALL": "C"})
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    start = " ".join(r.stdout.split())
+    return f"ps:{start}" if r.returncode == 0 and start else None
 
 
 def _mark(lockf, start: float, pgid: int | None = None) -> None:
