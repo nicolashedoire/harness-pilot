@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - The architect's planning run for a resident mission no longer sends a "companion review finished without changes" notification; the mission tells you when its plan is ready.
+- A resident mission waiting for your decision on a proposal no longer re-examines that proposal every two seconds, which lowers background load.
 - A resident mission step stopped before its agent received the assignment now runs again when you resume, without using a run. A step interrupted afterwards, failed or rejected offers **Retry** next to **Skip**.
 - A resident mission's time limit now counts working time only: waiting between cycles or for your decision on a proposal is free, so long intervals still reach their next cycle. The mission shows its working minutes and the date of its next cycle.
 - Stopping a resident mission now asks for confirmation and explains that it is final, unlike a pause.
