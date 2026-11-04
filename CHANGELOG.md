@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - **Protect the secrets** now also keeps the agents' own sign-ins out of their reach: Claude's tools and the commands Codex runs can no longer read Codex's `auth.json` or Claude Code's `.credentials.json`. Both agents still sign in as before. On a Mac, Claude Code keeps its sign-in in the Keychain, which this setting does not cover.
+- **Compact when you come back** and **Smart resume** (Settings → Claude) now apply to Codex sessions too: back to a long Codex session after its cache expired, harness-pilot first has Codex summarize it (for the message you just sent, with Smart resume), and your message runs in a fresh, much smaller conversation.
 - Fixed on Linux servers: rarely, a change to a session saved twice within the same millisecond went unnoticed: a finished turn sent no Telegram reply or notification, or a message sent to a continued session waited up to 10 minutes after its summary failed.
 
 - Codex sessions are now compacted automatically when their context gets large, like Claude Code sessions: at the automatic compaction threshold (Settings → Claude) or at 80 % of Codex's context window, whichever comes first. In a discussion, a Codex reply near its limit now leads to the summary too, instead of waiting for Codex to refuse a reply.

@@ -154,6 +154,8 @@ def test_idle_summary_still_applies_to_codex_but_never_to_plugins_or_debates(mon
     monkeypatch.setattr(r, 'note', lambda *a, **k: None)
     cfg = {'idle_compact_tokens': 5000, 'idle_compact_after_s': 3600}
     for provider, summarized in (('claude', True), ('codex', True), ('plugin:local-agent', False), ('debate', False)):
-        m = {'provider': provider, 'context_tokens': 25000, 'finished_at': 1000.0, 'fresh': False}
+        # a Codex session's thread is its codex_thread_id (its meta `fresh` stays true)
+        m = {'provider': provider, 'context_tokens': 25000, 'finished_at': 1000.0, 'fresh': False,
+             **({'fresh': True, 'codex_thread_id': 'codex-thread-1'} if provider == 'codex' else {})}
         item = r._take(m, [{'kind': 'user', 'source': 'web', 'text': 'Back again'}], cfg, 1000 + 7200)
         assert (item.get('kind') == 'compact') is summarized, provider

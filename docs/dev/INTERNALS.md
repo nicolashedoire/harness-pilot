@@ -80,7 +80,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `models()`, `uploads_dir(path)`. Blocking functions raise `SessionError(status, code, message)`.
 - Compaction in the runner (`sessions/runner.py`): `_auto_compact` after a turn above `auto_compact_tokens` (Claude and Codex turns, not plan mode; for Codex, whose `Attempt.context_window` is set, also from `DEBATE_COMPACT_RATIO` of that window, whichever comes first: its 258 400 window is below the 400 000 default; never when the thread's first call - `Attempt.first_context` for a turn that started it, else meta `base_tokens` - already reached that limit: the continuation would start above it and be compacted again, turn after turn, as an end-to-end run with a stub whose fresh threads started at 280k did before this rule); idle
   compaction in `_pop` - `_idle_compact(meta, item, cfg, now)` returns `(away, k_tokens)` when a `user` item (not
-  cron/system source, steer, plan approval) pops for a non-fresh, non-cron session whose last call
+  cron/system source, steer, plan approval) pops for a non-fresh (`resume.thread_open(meta)`: Claude `fresh` false, Codex a `codex_thread_id`), non-cron session whose last call
   (`max(finished_at, cache_at)`; `cache_at` = last side question, it warms the thread too) is older than
   `idle_compact_after_s` with `context_tokens >= max(idle_compact_tokens, IDLE_COMPACT_MIN)`, unless
   `context_tokens - base_tokens` (meta `base_tokens` = context of the first call of the current thread, i.e. its
