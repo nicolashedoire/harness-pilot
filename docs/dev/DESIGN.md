@@ -60,8 +60,9 @@ exceptions are chart series (`--series-1..6`) and brand-neutral swatches in the 
   `data-buttons`, `data-tint` and `data-accent` (the nearest named accent) on `<html>` say what is shown; no CSS
   depends on them.
 - **Never pick between `primary` and `action` by look**: a filled control the user clicks or checks is `action`;
-  a mark that points at something (link, dot, focus, current item) is `primary`. The notification badges / counters
-  stay on `primary`.
+  a mark that points at something (link, dot, focus, current item) is `primary`. The notification marks keep their
+  tokens (unread / activity dots and the selected row `primary`, "To handle" counts `destructive`); their buttons,
+  switches, checkboxes and the volume slider are controls (`action`).
 
 - **Fonts**: 23 interface fonts in groups (`FONT_GROUPS`: modern, character, rounded, serif, readable, mono, system; default `inter`) and 11 code fonts (default `system`) (`lib/fonts.ts`, mirrored in the `index.html` inline script, all bundled with `@fontsource-variable`; only Inter is in the entry CSS, the others are loaded on demand by `loadFont`, applied as `--mx-font-sans` / `--mx-font-mono` on `<html>`).
 - **Radius**: `--radius` 10 px → `rounded-sm/md/lg/xl`. Cards `rounded-xl`, controls `rounded-md`.
@@ -377,7 +378,8 @@ is skipped — the tour never blocks. Keep these attributes when refactoring the
 onboarding (`mx-tour-pending` in sessionStorage, `tourDone` in the UI store) and is replayable from the Help
 group of the user menu, the palette and Settings › General. The closing card links to the
 `projects/tutorial/topics/1-first-steps` topic when it exists (else to the docs).
-- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round, sky for unread, accent for running; they
+- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round, green for unread answers, accent for running, red
+  for notifications to handle (`attention`), an accent dot for unread activity (`notice`); they
   pulse (`.mx-badge-pulse`) only when the user turned on Settings -> Notifications -> "Pulsing badge".
 
 ## 11. Motion & performance

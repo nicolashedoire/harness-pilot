@@ -10,6 +10,7 @@ Create project sessions, work with either agent, or let both exchange ideas auto
 
 - Organize persistent conversations by project and topic.
 - Select Claude Code, Codex, or both for an automatic collaborative discussion or debate.
+- Request a Claude Code subagent team and inspect the agents actually launched in an agent map.
 - Pause after the current answer, resume, intervene during a turn, stop the conversation, or set an optional response or time limit.
 - Work with files, tasks, schedules, and project memory from the web interface.
 - Optionally configure Telegram, voice features, and GitHub backups.
@@ -39,6 +40,8 @@ The local script uses an isolated workspace and does not change your system cron
 In **Sessions**, create a session and select **Claude Code + Codex**. Choose a collaborative discussion or a debate, optionally set a maximum number of replies or a time limit, and send your topic. You can pause after the current reply, resume, send an intervention immediately, or stop the exchange. Resuming after a limit starts a new period. Each response may use the allowance associated with the relevant agent's account.
 
 You can assign roles to each agent, save reusable role configurations, and choose a Claude model and a separate Codex model identifier. Model availability depends on the corresponding account; leaving a field empty uses that agent's default.
+
+For a task that benefits from parallel work, select **Claude Code — agent team**, request two to six subagents, and open **Agent map** in the session to inspect detected assignments, statuses, and results. Claude decides whether and how to delegate; the requested count is not a hard limit. This mode currently uses Claude's native subagents, not a mixed Claude–Codex team. All work uses the session's permissions and Claude account allowance.
 
 The session menu can generate a reviewable summary, decisions, and suggested actions using Codex. Select the proposed actions you want before adding them to the task board. You can also review and edit the summary before explicitly saving it to the topic's shared `memory.md`. Codex reads this memory on its next turn; Claude normally loads it when starting a new thread. Summary requests use the connected Codex account and are not yet included in the turn statistics.
 

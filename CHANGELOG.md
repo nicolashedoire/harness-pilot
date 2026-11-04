@@ -1,9 +1,27 @@
 # Changelog
 
-All notable changes to Harness Maxxing. Versions follow semantic versioning.
-`maxxing update` prints the lines added here since your installed version.
+Changes to harness-pilot are recorded here. Older version entries below are inherited project history and do not imply that every feature is verified in the current local setup.
 
 ## 2.0.0-alpha.108 - 2026-11-03
+
+### Current project changes (unreleased, 2026-11-04)
+
+- Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
+- Get notified when a session finishes or fails, and when a Claude Code + Codex discussion pauses on its limit. Notifications are shown in your language.
+- Choose per kind of event what reaches this browser (with or without sound), push notifications on a phone or computer, and Telegram. Push delivery has not yet been verified end to end. Repeated cron failures now fold into one row per job.
+- Choose your colours in Settings -> Appearance: a ready-made palette (Zinc & blue, Graphite, Marine) or your own, with any accent colour, neutral or coloured buttons and a neutral or tinted background. A live preview and a contrast check show the result in light and dark before you leave the page. The palette follows you on every device, and you can export it to a file or import one. [Show me](#show:palettes)
+- Some colours were adjusted so text stays readable in every palette: secondary text, warnings and errors, and accent links in light mode, and deeper blue and rose buttons in dark mode, where text on accent badges is now dark. Colours you had picked are kept; a browser that never picked any now starts with Zinc & blue.
+- Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate; mixed Claude–Codex teams are not yet available.
+- Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
+- Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
+- View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.
+- Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
+- Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
+- Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
+- The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
+- Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
+
+### Inherited version history
 
 This version brings to every install the Team and session list changes of 2.0.0-alpha.103 and 2.0.0-alpha.104
 (details below, under those versions).

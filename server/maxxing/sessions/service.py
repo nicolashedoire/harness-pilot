@@ -128,6 +128,7 @@ def public(meta: dict) -> dict:
             "turns": int(_num(m.get("turns"))), "cost_usd": round(_num(m.get("cost_usd")), 4),
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
+            "swarm_agents": m.get("swarm_agents"),
             "debate_telegram": bool(m.get("debate_telegram")),
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
@@ -238,12 +239,24 @@ def _handoff_held(m: dict) -> bool:
     return bool(pending) and time.time() - pending < HANDOFF_HOLD_S
 
 
+def _resolve_paused(sid: str) -> None:
+    """The discussion runs again (resumed, a new message, stopped, deleted): its `discussion.paused` feed warning is
+    resolved. Never raises."""
+    try:
+        from .. import feed
+        feed.system_resolve("sessions", f"discussion:{sid}")
+    except Exception:  # noqa: BLE001 - the feed never breaks a session
+        log.debug("feed resolve failed", exc_info=True)
+
+
 def _enqueue(sid: str, item: dict, *, reset_cron: bool = False) -> bool:
     """Append to the queue and start a runner if none is alive. Returns True when queued behind
     a running turn (or behind a hand-off summary that is coming)."""
+    resumed = False
     with store.edit(sid) as m:
         if m.get("provider") in ("discussion", "debate") and item.get("kind", "user") == "user":
             was_active, was_paused = bool(m.get("debate_active")), bool(m.get("debate_paused"))
+            resumed = was_paused
             # An intervention replaces the queued automatic prompt but keeps the peer's latest answer.
             pending = next((x for x in m.get("queue") or [] if x.get("kind") == "debate"), None) or m.pop("debate_pending", None)
             if pending:
@@ -271,6 +284,8 @@ def _enqueue(sid: str, item: dict, *, reset_cron: bool = False) -> bool:
         busy = busy or held
     if not busy:
         _spawn(sid)
+    if resumed:
+        _resolve_paused(sid)
     bus.invalidate("sessions", "workspace")
     return busy
 
@@ -300,7 +315,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
                    permission_mode: str = "", auto_title: bool = False, voice_path: str | None = None,
                    provider: str = "claude", discussion_turn_limit: int | None = None,
                    discussion_duration_seconds: int | None = None,
-                   claude_role: str = '', codex_role: str = '', codex_model: str | None = None) -> dict:
+                   claude_role: str = '', codex_role: str = '', codex_model: str | None = None,
+                   swarm_agents: int | None = None) -> dict:
     """`auto_title`: `title` was made from the first message by the caller (Telegram) - still worth a short title."""
     try:
         p = workspace.normalize_path(path)
@@ -311,6 +327,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         raise SessionError(400, "bad_provider", "Unknown agent")
     if provider in ("discussion", "debate") and plan_mode:
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
+    if swarm_agents is not None and (provider != 'claude' or type(swarm_agents) is not int or not 2 <= swarm_agents <= 6):
+        raise SessionError(400, 'bad_swarm', 'Agent teams require Claude and a requested count between 2 and 6.')
     files = _check_attachments(attachments)
     audio = _check_voice(voice_path)
     given = (title or "").strip()[:120]
@@ -319,6 +337,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
     meta = store.new_meta(p, given or _default_title(p, message), model=model or "",
                           source=source, notify=notify, cron=cron, env=env, timeout_s=timeout_s, plan_mode=plan_mode,
                           permission_mode=permission_mode, provider=provider)
+    if swarm_agents is not None:
+        meta['swarm_agents'] = swarm_agents
     if provider in ("discussion", "debate"):
         if discussion_turn_limit is not None and not 1 <= discussion_turn_limit <= 200:
             raise SessionError(400, "bad_limit", "The response limit must be between 1 and 200.")
@@ -451,8 +471,10 @@ def stop(sid: str) -> None:
     """Clear the queue and abort the running turn (blocks up to ~10 s for the runner to settle). A message held
     behind an idle-compaction summary (`held`) stays queued: only the summary is cancelled."""
     _require(sid)
+    was_paused = False
     with store.edit(sid) as m:
         if m.get("provider") in ("discussion", "debate"):
+            was_paused = bool(m.get("debate_paused"))
             m["debate_active"] = False
             m["debate_paused"] = False
             m.pop("debate_pending", None)
@@ -462,6 +484,8 @@ def stop(sid: str) -> None:
         m["queue"] = [x for x in m.get("queue") or [] if x.get("held")]
         turns0, running = int(m.get("turns") or 0), m.get("state") == "running"
     _drop_voice_jobs(sid, *dropped)
+    if was_paused:
+        _resolve_paused(sid)
     if not running:
         bus.invalidate("sessions")
         return
@@ -543,6 +567,7 @@ def resume_debate(sid: str) -> dict:
         m["updated"] = time.time()
     if start:
         _spawn(sid)
+    _resolve_paused(sid)
     bus.invalidate("sessions")
     return get_session(sid) or {}
 
@@ -685,6 +710,12 @@ def delete_session(sid: str) -> None:
     from .. import trash
     trash.trash_session(sid)
     _models_seen.pop(sid, None)
+    try:                                        # what the feed still asks about this session is moot
+        from .. import feed
+        feed.system_resolve("sessions", f"discussion:{sid}")
+        feed.system_resolve("sessions", f"session:{sid}")
+    except Exception:  # noqa: BLE001
+        pass
     bus.invalidate("sessions", "workspace")
 
 
@@ -724,6 +755,8 @@ def handoff(sid: str) -> dict:
                          model=old["model"], source=old["source"], notify=old["notify"],
                          env=meta.get("env"), timeout_s=meta.get("timeout_s"),
                          provider=meta.get("provider") or "claude")
+    if type(meta.get('swarm_agents')) is int and 2 <= meta['swarm_agents'] <= 6:
+        new['swarm_agents'] = meta['swarm_agents']
     if meta.get("favorite"):                 # the continuation stays in the user's favorites
         new["favorite"] = True
     new["handoff_pending"] = time.time()     # messages sent to it wait for the summary seed (runner._handoff)
@@ -1172,6 +1205,7 @@ def trash_sessions(ids: list[str], dest: Path) -> None:
 
 # ---- turn-end watcher ----------------------------------------------------------------------
 _turn_cbs: list[Callable[..., Any]] = []
+_stop_cbs: list[Callable[..., Any]] = []
 _watch_task: asyncio.Task | None = None
 _known: dict[str, tuple[int, int, str, bool]] = {}      # sid -> (mtime_ns, turns, state, unread)
 
@@ -1180,6 +1214,15 @@ def on_turn_end(cb: Callable[[dict, dict | None], Any]) -> None:
     """Register `cb(session, result)` (sync or async), called on the event loop when a turn of
     any session ends (the turn counter grows, or running -> error)."""
     _turn_cbs.append(cb)
+
+
+def on_session_stop(cb: Callable[[dict], Any]) -> None:
+    """Register `cb(session)` (sync or async; registering the same callback twice keeps one), called on the event
+    loop when a session stops running: running -> idle | error, a turn that ran and ended between two passes, a
+    turn that failed to start, or one that ended while the server was down (first pass). `session` = the API Session
+    + `last_turn` (as for on_turn_end) + `discussion_elapsed` (seconds the discussion ran before its pause)."""
+    if cb not in _stop_cbs:
+        _stop_cbs.append(cb)
 
 
 # A meta change wakes the watcher at once (wake.py: inotify); it also passes every WATCH_WAKE_RUNNING_S while a session
@@ -1218,8 +1261,14 @@ def _ended(s: dict, m: dict) -> dict:
     return {**s, "last_turn": m.get("last_turn") if isinstance(m.get("last_turn"), dict) else {}}
 
 
-def _scan(primed: bool) -> tuple[list[tuple[dict, dict | None]], bool, bool]:
-    """One pass over the meta files -> (turn ends, sessions changed, workspace changed)."""
+def _stopped(s: dict, m: dict) -> dict:
+    """The Session given to on_session_stop callbacks."""
+    return {**_ended(s, m), "discussion_elapsed": _num(m.get("discussion_elapsed"))}
+
+
+def _scan(primed: bool, stops: list | None = None) -> tuple[list[tuple[dict, dict | None]], bool, bool]:
+    """One pass over the meta files -> (turn ends, sessions changed, workspace changed). Sessions that stopped
+    running are appended to `stops` when given."""
     ends: list[tuple[dict, dict | None]] = []
     since = 0.0 if primed else _last_pass()
     now = time.monotonic()
@@ -1261,6 +1310,8 @@ def _scan(primed: bool) -> tuple[list[tuple[dict, dict | None]], bool, bool]:
                 _known[sid] = cur
                 if s["state"] != "running" and _num(m.get("finished_at")) > since:
                     ends.append((_ended(s, m), last_result(sid)))
+                    if stops is not None:
+                        stops.append(_stopped(s, m))
                 continue
             prev = (0, 0, "idle", False)      # new session: its turns all happened since
             ws_changed = True
@@ -1274,6 +1325,10 @@ def _scan(primed: bool) -> tuple[list[tuple[dict, dict | None]], bool, bool]:
         # ever saw it running: systemd-run refusing within one pass)
         if cur[1] > prev[1] or (prev[2] != "error" and cur[2] == "error" and cur[1] == prev[1]):
             ends.append((_ended(s, m), last_result(sid)))
+        # stopped running: seen running before, or turns that ran (or failed to start) between two passes
+        if stops is not None and cur[2] != "running" and (
+                prev[2] == "running" or cur[1] > prev[1] or (cur[2] == "error" and prev[2] != "error")):
+            stops.append(_stopped(s, m))
     for sid in [k for k, until in _held.items() if k not in alive or until <= time.time()]:
         _held.pop(sid, None)
         if sid in alive:
@@ -1297,6 +1352,22 @@ async def _fire(session: dict, result: dict | None) -> None:
                 await res
         except Exception:
             log.exception("on_turn_end callback failed")
+
+
+async def _fire_stop(session: dict) -> None:
+    for cb in list(_stop_cbs):
+        try:
+            res = cb(session)
+            if inspect.isawaitable(res):
+                await res
+        except Exception:
+            log.exception("on_session_stop callback failed")
+
+
+def _task(coro: Any) -> None:
+    t = asyncio.get_running_loop().create_task(coro)
+    _firing.add(t)                         # keep a reference: an unreferenced task can be collected mid-run
+    t.add_done_callback(_firing.discard)
 
 
 # The watcher records its last pass (STATE/session-watcher.json): after the first pass, at once after a report (a
@@ -1338,7 +1409,8 @@ async def _watch(interval: float) -> None:
         ev = wake.mark(wake.ANY)                         # before the pass: a change made during it wakes the next one
         try:
             t0 = time.time()
-            ends, changed, ws = await asyncio.to_thread(_scan, primed)
+            stops: list[dict] = []
+            ends, changed, ws = await asyncio.to_thread(_scan, primed, stops)
             primed = True
             dirty = dirty or changed
             if ends or dirty and t0 - stamped >= PASS_STAMP_S:
@@ -1347,9 +1419,9 @@ async def _watch(interval: float) -> None:
             if changed:
                 bus.invalidate(*(("sessions", "workspace") if ws else ("sessions",)))
             for s, r in ends:
-                t = asyncio.get_running_loop().create_task(_fire(s, r))
-                _firing.add(t)                 # keep a reference: an unreferenced task can be collected mid-run
-                t.add_done_callback(_firing.discard)
+                _task(_fire(s, r))
+            for s in stops:
+                _task(_fire_stop(s))
         except asyncio.CancelledError:
             raise
         except Exception:

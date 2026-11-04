@@ -35,6 +35,13 @@ Python modules call each other only through these functions. Keep signatures sta
   session stream skip reading anything on quiet ticks. `compact_log(sid, dry_run=False)` clips an existing log (sessions/clip.py: tool outputs, `system/init` reduced
   to `INIT_KEEP`, `DROP_SUBTYPES` lines removed - the runner applies the same at write time).
 - `last_assistant_text(sid) -> str`
+- `on_session_stop(cb)` - `cb(session: dict)` (sync or async; the same callback registered twice is kept once) on the
+  event loop when a session stops running: running -> idle | error seen across passes, turns that ran (or failed to
+  start) between two passes, or ended while the server was down (first pass, same rule as below). `session` = API
+  Session + `last_turn` + `discussion_elapsed`. `_scan(primed, stops=None)` appends them to `stops` (the watcher
+  passes a list; tests may call `_scan(primed)` as before). Used by `sessionfeed.on_stop` (registered by
+  `api/feed.startup`). `resume_debate`, a message to a paused discussion (`_enqueue`), `stop` and `delete_session`
+  resolve the session's `discussion.paused` feed event (`_resolve_paused`, never raises).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
@@ -166,15 +173,41 @@ Python modules call each other only through these functions. Keep signatures sta
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
 
 ## maxxing.feed / maxxing.feedhooks  (owner: organisation)
-- `feed.post(title, body="", level="info", source="custom", url="", dedupe=None, group=None, notify=True) -> dict | None`
-  (None = duplicate). Usable from any process (sqlite WAL `<state>/feed.db`); the server's `api/feed` watcher turns
-  outside writes into the bus topic "feed". `feed.system(...)` = same, never raises (built-in events: `crons._feed`,
-  `cmd_core.notify_update` / `_notify`, `api/auth._alert`).
-- `feed.rule_for(source, level)`, `settings()` / `save_settings(telegram, rules, hooks)` (config `feed`).
+- `feed.post(title, body="", level="info", source="custom", url="", dedupe=None, group=None, notify=True, *,
+  kind="custom", params=None, actions=None, trusted=False) -> dict | None` (None = duplicate). Usable from any process
+  (sqlite WAL `<state>/feed.db`); the server's `api/feed` watcher turns outside writes into the bus topic "feed".
+  `trusted` = a built-in producer: reserved kinds (`KINDS` whose source is not ""), `post` actions (only
+  `POST_ACTIONS`), params coerced instead of refused; external callers (API, CLI, webhooks) are not trusted
+  (`clean_kind` / `clean_params(strict)` / `clean_actions(trusted, strict)` raise `FeedError 400 bad_kind|bad_params|
+  bad_action`; feedhooks drops a generic payload's bad actions with `strict=False`).
+  `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
+  raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
+  `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
+  `api/auth._alert`, `feedhooks`, `infra._alerts` (trusted `feed.post`)). `feed.link(id, label, url)` /
+  `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
+  and documented with its params in API.md.
+- Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
+  after 2.0.0a108: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
+  `ALTER TABLE` (a "duplicate column" from a concurrent process is ignored) and the index `events_grp(source, grp)`.
+  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`. A fold (`group`) only matches an unread, unresolved row of
+  the same level younger than 24 h and pushes the previous state into `occurrences` (seeded with the row itself).
+- `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
+  `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,
+  `session:<sid>`, `discussion:<sid>`, `hook-secret-<hook id>`, `health:<issue id>`, `down:<resource id>`,
+  `claude-update-failed`.
+- `feed.list_events(source, unread, before, limit, *, category, kind, pending)` + `counts()` (`{unread, pending,
+  sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
+  stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
+  `new_since(after_id, limit)` / `max_id()` (push), `last_id()` / `watch_id()` -> `(max id, sum read, sum count,
+  resolved count)` tuple (changes on posts, folds, reads, resolutions).
+- `feed.rule_for(source, level, s=None, kind=None)` (kind rule, else source rule, else `default_rule`), `event_kinds(s)`
+  (rows of the settings matrix), `settings()` / `save_settings(telegram, rules, hooks, kind_rules)` (config `feed`:
+  `rules`, `kind_rules`, `telegram`, `hooks`).
 - `feedhooks.create/update/remove/test`, `deliver(token, headers, body) -> (status, json)`, parsers per kind
-  (`PARSERS`); tokens + secrets in secrets.json `feed_hooks`. `SIGNED_KINDS` (stripe, shopify, github) need a
-  secret to accept deliveries (`401 secret_required`, feed.system warning grouped `hook-secret-<id>`); creating
-  one without a secret stays allowed (Stripe shows its whsec only once the endpoint URL exists).
+  (`PARSERS`: `(title, body, level, url, dedupe[, kind, params])`); tokens + secrets in secrets.json `feed_hooks`.
+  `SIGNED_KINDS` (stripe, shopify, github) need a secret to accept deliveries (`401 secret_required`, feed.system
+  `webhook.refused` warning grouped `hook-secret-<id>`, resolved by `update` with a non-empty secret and by `remove`);
+  creating one without a secret stays allowed (Stripe shows its whsec only once the endpoint URL exists).
   `BODY_DEDUPE` (shopify, github): their delivery-id headers are not covered by the signature, so `deliver` replaces
   the parser's dedupe with `_replay_key` = `sha256:<topic>:<sha256(body)>` (Shopify: a known topic of
   `_SHOPIFY_TOPICS`, else `other`; GitHub: no topic). Stripe signs a timestamp (5 min tolerance) and keeps the event
@@ -183,6 +216,25 @@ Python modules call each other only through these functions. Keep signatures sta
   list authorizes nobody; `_try_link` always records the linking account and refuses a message without `from`).
 - Telegram: `gateway.feed_notify(ev, loud)` / `feed_message(ev)` (body cut at 700 characters BEFORE HTML escaping); thread key `#feed` (`NOTIFY_ONLY` = Crons, Alerts,
   Notifications: never treated as topic threads by the legacy migration); callback `f:<id>` = Ask Claude.
+
+## maxxing.sessionfeed  (owner: organisation)
+- `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
+  cron sessions; a discussion / debate paused with `discussion_pause_reason == "limit"` -> `discussion.paused`; state
+  `error` -> `session.failed`; else (unless the last turn was a summary: compact / handoff / seed) resolve
+  `session:<sid>` and post `session.done`. Source `sessions` (in `feed.OWN_THREAD`: Telegram off by default).
+
+## maxxing.push  (owner: organisation)
+- Web Push (RFC 8030 / 8291 aes128gcm / 8292 VAPID) with `cryptography` (ECDH, ECDSA, AES-GCM; HKDF by hmac) and httpx.
+  Blocking: call through `asyncio.to_thread`. `available()` (the library imports), `public_key()` (VAPID key made on
+  first use: `<state>/push-vapid.json`, mode 600, under `ProcessLock("push")`), `vapid_header(endpoint)`,
+  `encrypt(plaintext, p256dh, auth, *, salt=None, private_key=None)` (test vector of RFC 8291 appendix A in the tests).
+- Subscriptions in `<state>/push.json` (mode 600, max 50): `subscriptions()`, `subscribe(endpoint, keys, label, prefs)`
+  (upsert by endpoint), `update(id, label, prefs)`, `remove(id)`, `test(id)`; errors `PushError(status, code, msg)`.
+  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}}`: `wants(prefs, ev)`, `sound(prefs, ev)`.
+- `prime()` (cursor = feed max id, at server start) and `dispatch()` (rows after the cursor, oldest first, at most 50
+  per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
+  by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:
+  params, actions, body dropped in that order when too long). Tests set `push.http_transport` (httpx.MockTransport).
 
 ## maxxing.backup  (owner: connectivity)
 - `run() -> dict`, `restore(ref=None) -> dict`, `restore_from(repo, token, ref=None)`, `status()`,
@@ -210,7 +262,11 @@ Python modules call each other only through these functions. Keep signatures sta
 - Used by maxxing.api.voice, maxxing.telegram.gateway (`_voice`), cmd_core (doctor, update), cmd_voice (CLI).
 
 ## maxxing.health  (owner: organisation)
-- `collect() -> dict` - the GET /api/system/health payload (cached 30 s).
+- `collect() -> dict` - the GET /api/system/health payload (cached 30 s). Each evaluation (`_collect`) also calls
+  `_to_feed(issues)`: a new warn / error issue (not `FEED_SKIP`: cron_failed, login_failures) -> one `health.issue`
+  feed event grouped `health:<issue id>`, an issue gone -> resolved; `<state>/health-feed.json` {issue id: posted at}
+  under `ProcessLock("health-feed")`. Never raises. No loop of its own: health is evaluated when asked (UI every 60 s,
+  widgets, heartbeat).
 - `services(force=False)` - GET /api/system/services: ONE `systemctl show <all units>` (blocks split on blank
   lines, matched by `Id`), cached 10 s; `invalidate_services()` after a start / stop / restart.
 

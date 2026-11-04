@@ -20,6 +20,7 @@ import {
   ListChecks,
   Minimize2,
   MoreHorizontal,
+  Network,
   Sparkles,
   Trash2,
   Upload,
@@ -90,11 +91,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { TaskBar } from './Tasks'
 import { forgetLog, getLog, loadEarlier, loadLog, seedEmptyLog, useLogSelect, useSessionLog, useSessionStream } from './log'
 import { PlanChip, PlanNotice } from './Plan'
+import { PausedBanner, pausedOnLimit } from './PausedBanner'
 import { MaxxingControls, MaxxingMeter } from './MaxxingMeter'
 import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
 import { MobileTabsSlot, TabsToggle } from './Tabs'
 import { AsidePanel, useAside } from './Aside'
 import { SessionSummary } from './Summary'
+import { AgentMap } from './AgentMap'
 import { LayoutPicker } from './LayoutPicker'
 import { MIN_W } from './layouts'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
@@ -437,6 +440,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const body = React.useRef<HTMLDivElement>(null)
   const [dragFiles, setDragFiles] = React.useState(false)
   const [summaryOpen, setSummaryOpen] = React.useState(false)
+  const [agentMapOpen, setAgentMapOpen] = React.useState(false)
 
   const notFound = (isError && isApiError(error) && error.status === 404) || deleted
   const running = session?.state === 'running'
@@ -677,6 +681,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={!session?.turns} onSelect={() => setSummaryOpen(true)}>
                   <ListChecks /> {t('summary.title')}
                 </DropdownMenuItem>
+                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={actions.archive}>
                   {session?.archived ? <ArchiveRestore /> : <Archive />} {session?.archived ? t('sessions.menu.unarchive') : t('sessions.menu.archive')}
                 </DropdownMenuItem>
@@ -744,6 +749,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
           onNotify={actions.notify}
         />
         <SessionSummary key={sid} sid={sid} path={path} open={summaryOpen} onOpenChange={setSummaryOpen} />
+        {agentMapOpen && <AgentMap key={`agents-${sid}`} sid={sid} running={running} open onOpenChange={setAgentMapOpen} />}
         {session?.archived && (
           <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
             <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
@@ -752,6 +758,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
             </Button>
           </div>
         )}
+        {session && pausedOnLimit(session) && <PausedBanner session={session} />}
         <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
           {notFound ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
@@ -840,7 +847,8 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
               session ? (
                 <>
                   {session.provider === 'codex' || session.provider === 'debate' || session.provider === 'discussion' ? <span className="text-xs font-medium">{session.provider === 'codex' ? 'Codex' : 'Claude Code ↔ Codex'}</span> : <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} />}
-                  {session.debate_paused && <span className="text-xs text-muted-foreground">{t(session.discussion_pause_reason === 'limit' ? 'sessions.discussionLimitReached' : 'sessions.discussionPaused')}</span>}
+                  {!!session.swarm_agents && <Button type="button" variant="ghost" size="sm" onClick={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</Button>}
+                  {session.debate_paused && !pausedOnLimit(session) && <span className="text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
                   {(session.provider === 'discussion' || session.provider === 'debate') && (running || session.debate_paused) && (
                     <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
                       <Button variant="ghost" size="icon-sm" aria-label={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')} loading={pauseDiscussion.isPending || resumeDiscussion.isPending} onClick={() => session.debate_paused ? resumeDiscussion.mutate(sid) : pauseDiscussion.mutate(sid)}>
@@ -1213,7 +1221,8 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [title, setTitle] = React.useState('')
   const [model, setModel] = React.useState('')
   const [codexModel, setCodexModel] = React.useState('')
-  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both'>('claude')
+  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm'>('claude')
+  const [swarmAgents, setSwarmAgents] = React.useState('3')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
   const [durationMinutes, setDurationMinutes] = React.useState('')
@@ -1253,11 +1262,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const options = topics.map((tp) => ({ value: tp.path, label: mask(`${tp.project} / ${tp.name}`, 10) }))
   const valid = topics.some((tp) => tp.path === col.path)
   const validLimits = (!turnLimit || (+turnLimit >= 1 && +turnLimit <= 200 && Number.isInteger(+turnLimit))) && (!durationMinutes || (+durationMinutes >= 1 && +durationMinutes <= 1440 && Number.isInteger(+durationMinutes)))
-  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : {}
+  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : provider === 'swarm' ? { swarm_agents: Number(swarmAgents) } : {}
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
-      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, attachments, plan_mode: planMode || undefined })
+      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, attachments, plan_mode: planMode || undefined })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text, attachments, queued: false })
       saveDraft(`new:${col.path}`, '')
@@ -1273,7 +1282,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const onSendVoice = async (file: File) => {
     try {
       const up = await uploadAttachment(col.path, file)
-      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
+      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text: '', attachments: [], queued: false, voice: true })
       becomeSession(col.key, s.id)
@@ -1337,8 +1346,13 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }]} />
+              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('swarm.provider') }]} />
             </div>
+            {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
+              <Label htmlFor={`swarm-count-${col.key}`}>{t('swarm.count')}</Label>
+              <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
+              <p className="text-xs text-muted-foreground">{t('swarm.hint')}</p>
+            </div>}
             {provider === 'both' && <div className="grid gap-1.5">
               <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>
               <Select id={`conversation-mode-${col.key}`} value={conversationMode} onValueChange={(v) => setConversationMode(v as 'discussion' | 'debate')} options={[{ value: 'discussion', label: t('sessions.discussion') }, { value: 'debate', label: t('sessions.debate') }]} />
@@ -1363,7 +1377,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
                 <ModelPicker chosen={model} onChange={setModel} />
               </div>
             </div>}
-            {provider !== 'claude' && <div className="grid gap-1.5">
+            {(provider === 'codex' || provider === 'both') && <div className="grid gap-1.5">
               <Label htmlFor={`codex-model-${col.key}`}>{t('sessions.codexModel')}</Label>
               <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
               <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>

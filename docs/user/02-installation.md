@@ -21,4 +21,4 @@ Open that link and choose a password. The server listens only on the local compu
 
 The local setup disables upstream registration and license communication and starts with restrictive agent permissions. The telemetry counter is off by default. Telegram, voice and backup connections are optional and require separate configuration.
 
-The legacy Linux installer, server deployment and automatic update paths have not yet been validated for this repository. The inherited `install.sh` refuses normal execution until it is adapted; it must not install the upstream project by mistake. Do not use upstream install commands to install this version. See the [audit](../AUDIT.md) for current work and known limitations.
+The legacy Linux installer, server deployment and automatic update paths have not yet been validated for this repository. The inherited `install.sh` refuses normal execution until it is adapted; it must not install the upstream project by mistake. Do not use upstream install commands to install this version. See the [audit](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/AUDIT.md) for current work and known limitations.

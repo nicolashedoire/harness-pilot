@@ -1214,16 +1214,24 @@ def run_job(cid: str) -> dict | None:
 
 
 def _feed(job: dict, run: dict) -> None:
-    """Every run goes to the notifications feed: failures one by one, successes folded into one row."""
+    """Every run goes to the notifications feed: successes folded into one row (all jobs), failures folded per job
+    (group `failed:<id>`, pending until the job's next successful run resolves them)."""
     from . import feed
-    url = f"/crons?job={run['cron_id']}"
+    cid = run["cron_id"]
+    url = f"/crons?job={cid}"
+    params = {"cron_id": cid, "name": job["name"], "run_id": run.get("id"), "duration_s": run.get("duration_s")}
     if run["ok"]:
+        feed.system_resolve("crons", f"failed:{cid}")
         feed.system("Cron jobs succeeded", f"{job['name']} ({fmt_duration(run['duration_s'])})", "success",
-                    "crons", url, group="ok")
+                    "crons", url, group="ok", kind="cron.succeeded", params=params)
     else:
         out = run.get("output_tail") or ""
         body = _clip_head(out, 600) if job.get("kind") == "claude" else _clip_tail(out, 600)
-        feed.system(f"Cron failed: {job['name']}", body, "error", "crons", url)
+        run_url = f"{url}&run={run.get('id')}"
+        feed.system(f"Cron failed: {job['name']}", body, "error", "crons", url, group=f"failed:{cid}",
+                    kind="cron.failed", params={**params, "code": run.get("code")},
+                    actions=[feed.link("open_run", "Open the run", run_url),
+                             feed.post_action("rerun", "Run again", f"/api/crons/{cid}/run")])
 
 
 def _clip_head(text: str, n: int) -> str:

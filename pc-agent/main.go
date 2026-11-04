@@ -1,4 +1,4 @@
-// Harness PC: lets Claude sessions on a Harness Maxxing server drive an isolated browser on this computer.
+// harness-pilot PC: lets Claude sessions on a harness-pilot server drive an isolated browser on this computer.
 // See PROTOCOL.md.
 package main
 
@@ -33,7 +33,7 @@ func realMain(args []string) int {
 		return 2
 	}
 	if *showVersion {
-		cliOutput("Harness PC " + version + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")\n")
+		cliOutput("harness-pilot PC " + version + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")\n")
 		return 0
 	}
 	dir, err := configDir()
@@ -55,7 +55,7 @@ func realMain(args []string) int {
 	}
 	unlock, err := lockInstance(filepath.Join(dir, lockName))
 	if err != nil {
-		fatal("Harness PC is already running on this computer.")
+		fatal("harness-pilot PC is already running on this computer.")
 		return 1
 	}
 	defer unlock()
@@ -83,7 +83,7 @@ type runOpts struct {
 
 func runAgent(ctx context.Context, o runOpts) int {
 	logf := o.logf
-	logf("Harness PC %s starting (%s/%s)", version, runtime.GOOS, runtime.GOARCH)
+	logf("harness-pilot PC %s starting (%s/%s)", version, runtime.GOOS, runtime.GOARCH)
 	cfg, err := loadConfig(o.dir)
 	if err != nil {
 		logf("saved config ignored: %v", err)
@@ -108,7 +108,7 @@ func runAgent(ctx context.Context, o runOpts) int {
 		}
 	}
 	if cfg == nil {
-		fatal("Harness PC is not paired. Download it from Harness Maxxing and run the downloaded copy: it pairs by itself.")
+		fatal("harness-pilot PC is not paired. Download it from harness-pilot and run the downloaded copy: it pairs by itself.")
 		return 2
 	}
 	if o.autostart {
@@ -130,7 +130,7 @@ func runAgent(ctx context.Context, o runOpts) int {
 					b = l[0]
 				}
 			}
-			notify("Harness PC is linked. Confirm \"It is my PC\" in Harness Maxxing (Settings > MCP); Claude can then use " +
+			notify("harness-pilot PC is linked. Confirm \"It is my PC\" in harness-pilot (Settings > MCP); Claude can then use " +
 				browserName(b) + " (separate profile). You can close this window.")
 		}
 	}
@@ -145,7 +145,7 @@ func runAgent(ctx context.Context, o runOpts) int {
 			_ = removeAutostart(o.dir)
 		}
 		if errors.Is(err, errRevoked) {
-			fatal("Disconnected from Harness Maxxing: this computer was removed. Download Harness PC again to reconnect it.")
+			fatal("Disconnected from harness-pilot: this computer was removed. Download harness-pilot PC again to reconnect it.")
 			return 3
 		}
 		return 0
@@ -160,16 +160,16 @@ func pairFailText(err error) string {
 	if errors.As(err, &pe) {
 		switch pe.Code {
 		case "bad_code", "expired":
-			return "This Harness PC download was already used or has expired. Download it again from Harness Maxxing."
+			return "This harness-pilot PC download was already used or has expired. Download it again from harness-pilot."
 		}
-		return "Pairing refused by Harness Maxxing: " + pe.Error()
+		return "Pairing refused by harness-pilot: " + pe.Error()
 	}
-	return "Cannot reach Harness Maxxing to pair this computer: " + err.Error()
+	return "Cannot reach harness-pilot to pair this computer: " + err.Error()
 }
 
 func statusText(dir string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Harness PC %s\nconfig dir: %s\n", version, dir)
+	fmt.Fprintf(&b, "harness-pilot PC %s\nconfig dir: %s\n", version, dir)
 	cfg, err := loadConfig(dir)
 	switch {
 	case err != nil:
@@ -196,11 +196,11 @@ func doUninstall(dir string) int {
 		problems = append(problems, "files: "+err.Error())
 	}
 	if len(problems) > 0 {
-		cliOutput("Harness PC: pairing and autostart removed; some files are still in use (quit Harness PC and the browser, then retry):\n" +
+		cliOutput("harness-pilot PC: pairing and autostart removed; some files are still in use (quit harness-pilot PC and the browser, then retry):\n" +
 			strings.Join(problems, "\n") + "\n")
 		return 1
 	}
-	cliOutput("Harness PC removed (autostart, configuration, profiles and installed copy).\n")
+	cliOutput("harness-pilot PC removed (autostart, configuration, profiles and installed copy).\n")
 	return 0
 }
 

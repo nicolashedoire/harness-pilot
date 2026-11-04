@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { openPalette } from '@/commands/registry'
 import { Button, CountBadge, CountDot, Kbd, MOD, Tooltip } from '@/components/ui'
-import { navTourId, useNav } from './nav'
+import { navItemClass, navTourId, useNav } from './nav'
 import { Logo } from './Logo'
 import { HealthIndicator } from './HealthIndicator'
 import { UsageIndicator } from './UsageIndicator'
@@ -19,6 +19,8 @@ import { useShowSessions } from '@/features/notify/showSessions'
 import { usePrefetchLink } from '@/pages/pageData'
 import { PresentationToggle, ThemeToggle, UserMenu } from './UserMenu'
 import { useFeedbackDialog } from './feedback-store'
+import { NotificationsNavItem } from '@/features/notifications/NotificationsNavItem'
+import { useServerNotifies } from '@/features/notifications/capability'
 import { useDonationUrl, useDonationShown } from '@/features/donation/Donation'
 
 /** Unread/running counters for the Sessions nav item (from the workspace tree). */
@@ -120,6 +122,8 @@ export function Sidebar() {
   const showSessions = useShowSessions()
   const width = useUI((s) => s.sidebarWidth) ?? SIDEBAR_W.default
   const side = React.useRef<HTMLElement>(null)
+  // a server that posts its health issues as notifications: the "N issues" line goes (they are in Notifications)
+  const healthInFeed = useServerNotifies()
 
   return (
     <aside
@@ -130,6 +134,7 @@ export function Sidebar() {
       )}
       style={collapsed ? undefined : { width }}
       aria-label={t('shell.navigation')}
+      data-sidebar
     >
       {!collapsed && <ResizeEdge side={side} />}
       <div className={cn('flex h-14 items-center gap-2 px-3', collapsed && 'justify-center px-0')}>
@@ -161,6 +166,10 @@ export function Sidebar() {
         </Tooltip>
       </div>
 
+      <div className={cn('px-3 pt-1', collapsed && 'px-2.5')}>
+        <NotificationsNavItem collapsed={collapsed} />
+      </div>
+
       <nav data-tour="nav" className={cn('grid gap-0.5 px-3 py-2', collapsed && 'px-2.5')}>
         {nav.map((item, idx) => {
           const label = t(item.label)
@@ -174,13 +183,7 @@ export function Sidebar() {
                 end={item.end}
                 data-tour={navTourId(item)}
                 style={{ '--i': idx } as React.CSSProperties}
-                className={({ isActive }) =>
-                  cn(
-                    'mx-boot-item group relative flex h-9 items-center gap-3 rounded-md px-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
-                    isActive && 'bg-accent text-foreground',
-                    collapsed && 'justify-center px-0',
-                  )
-                }
+                className={({ isActive }) => navItemClass(isActive, collapsed)}
               >
                 {({ isActive }) => (
                   <>
@@ -223,7 +226,7 @@ export function Sidebar() {
 
       <div className={cn('grid gap-1 border-t border-sidebar-border p-3 pb-[calc(0.75rem+var(--safe-bottom))]', collapsed && 'px-2.5')}>
         <UpdateIndicator collapsed={collapsed} />
-        <HealthIndicator collapsed={collapsed} />
+        {!healthInFeed && <HealthIndicator collapsed={collapsed} />}
         <UsageIndicator collapsed={collapsed} />
         <FeedbackButton collapsed={collapsed} />
         <div className={cn('flex items-center gap-1', collapsed ? 'flex-col' : 'justify-between')}>

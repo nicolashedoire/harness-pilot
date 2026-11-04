@@ -70,10 +70,13 @@ export const qk = {
   trash: ['trash'] as const,
   feed: {
     all: ['feed'] as const,
-    list: (source: string | null, unread: boolean, limit: number) => ['feed', 'list', source, unread, limit] as const,
-    pages: (source: string | null, unread: boolean) => ['feed', 'pages', source, unread] as const,
+    list: (category: string | null, pending: boolean, unread: boolean, limit: number) => ['feed', 'list', category, pending, unread, limit] as const,
+    pages: (category: string | null, pending: boolean, unread: boolean) => ['feed', 'pages', category, pending, unread] as const,
+    summary: ['feed', 'summary'] as const,
+    one: (id: number) => ['feed', 'one', id] as const,
     settings: ['feed', 'settings'] as const,
   },
+  push: ['push'] as const,
 }
 
 /** Global bus topic → query key prefixes to invalidate (minus what `busSkips` leaves to the streams). */
