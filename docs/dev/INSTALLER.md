@@ -1,14 +1,16 @@
 # Linux server installer: state and plan
 
 `install.sh` is the Linux server installer inherited from the original project. This page records what it does,
-what was verified for harness-pilot, what still points to the original project, and the steps to turn it back on.
+what was verified for harness-pilot, what pointed to the original project, and the steps that turned it back on.
 Update it with each step.
 
 ## State (2026-11-04)
 
-- **Disabled.** `install.sh` exits at its first lines unless `MAXXING_INSTALL_LIB=1` (library mode: functions only,
-  used by the tests). No Linux server install is offered, so there is no HTTPS domain either: mobile push, webhooks
-  (Stripe, Shopify, GitHub) and Team, which need a public HTTPS address, cannot be used on a server yet.
+- **Enabled (step 3)** for Debian 12 and Ubuntu 24.04. The gate is gone; the script refuses only a shell that is not
+  bash 4 or newer. `MAXXING_INSTALL_LIB=1` still loads the functions without running anything (tests). HTTPS with a
+  domain (needed by mobile push, webhooks and Team) is the next step.
+- **Before step 3**, the script exited at its first lines unless `MAXXING_INSTALL_LIB=1`; the runs below up to step
+  2 bypassed that gate through library mode.
 - **Tests.** `server/tests/test_install_reliability.py` and `test_install_security.py` (37 tests, 91 cases with their
   parameters) source the script in library mode. They need bash 4 or newer (associative arrays): they fail on the bash
   3.2 of macOS and pass on Linux (91 passed in `debian:12`, bash 5.2.15, arm64).
@@ -30,9 +32,21 @@ Update it with each step.
   `origin` set) and finished the 9 steps in 1 min 06 s. `pilot update --check` saw the newer commits of `main`;
   `pilot update` moved the code, synced the dependencies, refreshed the skills and restarted the service (it answered
   again); `pilot uninstall --yes --purge` was clean.
-- **Not verified yet:** Ubuntu 24.04, x86_64, `ACCESS=domain` (Caddy and its certificate), `ACCESS=tailscale`, the
-  firewall and SSH hardening (a container leaves them to its host), swap, `TOOLS=background|foreground` (Node.js,
-  Chromium, Remotion, Scrapling), local voice, `RESTORE_FROM`.
+- **Step 3, no bypass**, `bash /root/install.sh` run directly in fresh arm64 systemd containers:
+  - `sh install.sh` is refused with a message; `--check` reported a fresh server and changed nothing.
+  - Debian 12, defaults (`ASSUME_YES=1` only: local access, local voice, `TOOLS=background`): 9 steps in 52 s, then
+    the background unit `maxxing-deps-install` installed Node.js, Scrapling, Remotion and the Whisper `small` model.
+    The first sign-in worked (`POST /api/auth/setup` with the token of `pilot setup-link`, then `authenticated:
+    true`). `install.sh --update` updated and restarted the service; `install.sh --uninstall --purge` left no unit,
+    crontab line, command, code or state behind (workspace kept).
+  - Ubuntu 24.04 (`VOICE=off TOOLS=foreground`): 10 steps in 1 min 43 s, then `pilot doctor` and the same uninstall.
+  - Chromium on arm64 is reported as failed because Playwright's arm64 folder (`chrome-linux-arm64`) was not looked
+    at; fixed separately in `deps.CHROMIUM_DIRS`.
+  - A minimal image without tzdata gave `UTC` then `Etc/UTC` (doctor warning): the installer now reads the system zone
+    after installing tzdata.
+- **Not verified yet:** x86_64 (no amd64 emulation here), a real server (firewall and SSH hardening are left to the
+  host in a container, swap is skipped there), `ACCESS=domain` (Caddy and its certificate), `ACCESS=tailscale`,
+  `RESTORE_FROM`.
 
 ## What pointed to the original project
 
@@ -90,7 +104,7 @@ Renaming them needs a migration of existing installs; it is not part of this pla
 1. This audit (no behaviour change). Done.
 2. Sources: default `REPO` and `BRANCH` of this repository, product name, no license server; still disabled. Done.
 3. Re-enable for Debian 12 and Ubuntu 24.04: remove the gate, run install, `pilot doctor` and uninstall end to end in
-   systemd containers of both, the installer tests green on Linux.
+   systemd containers of both, the installer tests green on Linux. Done.
 4. HTTPS with a domain (`ACCESS=domain`, Caddy): verified as far as possible without a real domain (configuration
    generated and validated by Caddy), documented as the condition for mobile push, webhooks and Team.
 5. User docs (`docs/user/02-installation.md`, `README.md`, `docs/user/22-tools.md`) aligned with what was verified.
@@ -106,8 +120,7 @@ docker build -t pilot-systemd:debian12 .
 docker run -d --name pilot-test --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   --tmpfs /run --tmpfs /run/lock pilot-systemd:debian12
 git ls-files -z -co --exclude-standard | tar --null -cf - -T - | docker exec -i pilot-test sh -c 'mkdir /src && tar -xf - -C /src'
-docker exec -e ASSUME_YES=1 -e ACCESS=local -e TOOLS=0 -e VOICE=off -e SOURCE_DIR=/src pilot-test \
-  bash -c 'MAXXING_INSTALL_LIB=1; source /src/install.sh; MAXXING_INSTALL_LIB=0; main'
+docker exec -e ASSUME_YES=1 -e ACCESS=local -e TOOLS=0 -e VOICE=off -e SOURCE_DIR=/src pilot-test bash /src/install.sh
 docker exec pilot-test pilot doctor
 docker exec pilot-test pilot uninstall --yes --purge
 docker rm -f pilot-test

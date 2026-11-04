@@ -224,6 +224,15 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - Uses from sessions.service: `create_session`, `get_session`, `list_sessions`, `send_message`, `stop`,
   `update_session(sid, model=…)` (/model), `read_events` / `end_offset` (progress mode), `last_assistant_text`, `models()`.
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
+- `telegram.reviews` (companion decisions): `buttons(ev)` gives a built-in `companion.ready` event (source `system`,
+  params `session_id` + 64-hex `fingerprint`; the companion kinds are reserved against external producers) Review and
+  Discuss buttons, `c:<feed id>:<v|a|r|d>`. `handle()` runs after `_on_callback`'s linked-owner check (linked private
+  chat and owner user id), re-reads `companions.review` and refuses a running or changed proposal (fingerprint other
+  than the event's), an already decided one, and a binary one or one whose complete text (Git patch + new files as
+  `+` lines) exceeds `MAX_REVIEW` (12000). Review sends that text as `<pre>` blocks, then Approve / Reject only when
+  every part was delivered. A decision is `companions.decide(sid, value, <event fingerprint>)`: recorded, never
+  applied, published or merged (a mission step's dependents may start, as after a web approval). Discuss reopens the
+  session's thread (`reopen_thread`) without a model request; messages there follow the normal session path.
 
 ## maxxing.feed / maxxing.feedhooks  (owner: organisation)
 - `feed.post(title, body="", level="info", source="custom", url="", dedupe=None, group=None, notify=True, *,
@@ -238,7 +247,7 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
   raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
   `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
-  `api/auth._alert`, `feedhooks`, `infra._alerts` (trusted `feed.post`)). `feed.link(id, label, url)` /
+  `api/auth._alert`, `feedhooks`, `infra._alerts` and `api/tasks.check_reminders` (trusted `feed.post`)). `feed.link(id, label, url)` /
   `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
   and documented with its params in API.md.
 - Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
@@ -249,7 +258,7 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
   `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,
   `session:<sid>`, `discussion:<sid>`, `hook-secret-<hook id>`, `health:<issue id>`, `down:<resource id>`,
-  `claude-update-failed`.
+  `claude-update-failed`, `task:<task id>`.
 - `feed.list_events(source, unread, before, limit, *, category, kind, pending)` + `counts()` (`{unread, pending,
   sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
   stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
@@ -403,8 +412,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   so a write by any process is seen on the next call.
 - `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
   `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
-  `crons.managed_lines()`, `localcron.tick()`, scheduled `pilot cron run` (detached or `--if-due`) and `backup.run()`
-  (code `paused`, not recorded in the history) do nothing.
+  `crons.managed_lines()`, `localcron.tick()`, `api/tasks.check_reminders()`, scheduled `pilot cron run` (detached or
+  `--if-due`) and `backup.run()` (code `paused`, not recorded in the history) do nothing.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
@@ -656,6 +665,8 @@ The optional Enterprise key: `activate(key)`, `release()`, `remove_key()`, `stat
 the key) talk to `{API}/v1/activate|release` (activation token kept as `license_seat`, only to free the seat;
 machine = sha256("harness-maxxing:" + /etc/machine-id)). Also `API`, `USER_AGENT`, `disk_version()` (used by
 `register.py`, `feedback.py`).
+The HTTP routes `/api/settings/register|feedback|license` depend on `api/settings._legacy_cloud`: `404 not_found`
+while `register._offline()` (`MAXXING_LICENSE_PING` is not `1`); the modules are kept for the update and CLI paths.
 Installs from before 2.0.0a87 (`enabled()` = `license_token` in secrets.json) run the code of a signed archive
 imported by their old code as a commit on `refs/remotes/origin/<branch>`. `move_to_git()` makes them a clone of
 `GIT_URL` on `stable` (the `stable` commit with the same tree, else the same `__version__`; customizations
@@ -664,6 +675,9 @@ rebased; `license_token` -> `license_seat`). Triggers: `api/system._after_update
 failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stops with the reason if the move
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
+Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
+`LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
+against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
