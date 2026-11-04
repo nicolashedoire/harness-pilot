@@ -2675,7 +2675,7 @@ def _lock() -> asyncio.Lock:
 
 
 def _should_run() -> bool:
-    if not token():
+    if not token() or config.integrations_paused():     # a restored copy never polls the original's bot
         return False
     link = load_state().get("link") or {}
     linking = bool(link.get("code")) and time.time() < float(link.get("expires") or 0)
@@ -3059,8 +3059,9 @@ def _send_sync(key: str, parts: list[str], silent: bool, markup: dict | None = N
 
 
 def _post(key: str, parts: list[str], silent: bool, markup: dict | None = None) -> None:
-    """Route a notification: running gateway (any thread) > direct send (thread or blocking)."""
-    if not token() or not tg_config().get("chat_id"):
+    """Route a notification: running gateway (any thread) > direct send (thread or blocking). None while the
+    integrations of a restored copy are paused (the original instance still notifies the same chat)."""
+    if not token() or not tg_config().get("chat_id") or config.integrations_paused():
         return
     gw = _gw
     if gw is not None and gw.running and gw.loop is not None and not gw.loop.is_closed():

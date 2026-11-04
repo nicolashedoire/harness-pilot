@@ -41,6 +41,10 @@ def _handler(a) -> int:
         if a.if_due and not crons.is_due(crons._raw_job(a.id).get("schedule", "")):
             return 0
         detach = getattr(a, "detach", False) or os.environ.pop(crons.DETACH_ENV, "") == "1"   # read once: never inherited
+        if (detach or a.if_due) and config.integrations_paused():
+            # a crontab line left from before a restore: scheduled runs wait until the owner resumes them
+            print(f"job {a.id}: scheduled jobs are paused on this restored copy (Settings > Backup)", file=sys.stderr)
+            return 0
         # installed before 2.0.0a70 (cron_keep_background): scheduled runs stay in the cron process, as they were -
         # the background programs a job leaves keep living, and no unit name stays taken by them
         if detach and config.load_config().get("cron_keep_background"):

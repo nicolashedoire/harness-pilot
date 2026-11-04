@@ -829,6 +829,8 @@ DETACH_ENV = "MAXXING_CRON_DETACH"   # set by the crontab lines = `--detach` (a 
 
 
 def managed_lines(jobs: list[dict]) -> list[str]:
+    if config.integrations_paused():                    # a restored copy: no job is scheduled until resumed
+        return []
     exe, env = _shq(maxxing_bin()), _env_prefix()
     guard = guarded()
     whole = guard and _whole_hours_apart()

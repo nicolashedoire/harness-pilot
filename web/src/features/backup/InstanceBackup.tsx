@@ -1,12 +1,12 @@
 import * as React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, FolderCheck, LockKeyhole, Upload } from 'lucide-react'
+import { Download, FolderCheck, LockKeyhole, CirclePause, Upload } from 'lucide-react'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { useT } from '@/i18n'
-import { Button, FormField, Input, Sensitive, Skeleton } from '@/components/ui'
+import { Button, FormField, Input, Sensitive, Skeleton, confirm } from '@/components/ui'
 import { CopyButton } from '@/components/ui/code-block'
 
-type Status = { max_bytes: number; restore_hold: boolean; roots: Record<string, { source: string }>; export_error?: string; service_resume_errors?: string[] }
+type Status = { max_bytes: number; restore_hold: boolean; integrations_paused?: boolean; roots: Record<string, { source: string }>; export_error?: string; service_resume_errors?: string[] }
 type Snapshot = { id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string }
 type Restored = Snapshot & { destination: string; state: string; launch_command: string; background_services_paused: boolean }
 const queryKey = ['instance-backup'] as const
@@ -62,6 +62,16 @@ export function InstanceBackupPanel() {
         await queries.invalidateQueries()
       })}>{t('instanceBackup.activate')}</Button></div>
     </div> : <>
+      {status.data.integrations_paused && <div className="grid gap-3 rounded-lg border border-warning/40 bg-warning/5 p-4" role="status">
+        <strong className="flex items-center gap-2"><CirclePause className="size-4" />{t('instanceBackup.integrations.paused')}</strong>
+        <p className="text-sm">{t('instanceBackup.integrations.body')}</p>
+        <div><Button variant="outline" disabled={!!busy} loading={busy === 'resume'} onClick={() => void run('resume', async () => {
+          if (!await confirm({ title: t('instanceBackup.integrations.confirmTitle'), description: t('instanceBackup.integrations.confirmBody'),
+            confirmText: t('instanceBackup.integrations.resume') })) return
+          await api.post('/api/backup/instance/resume-integrations', {})
+          await queries.invalidateQueries()
+        })}>{t('instanceBackup.integrations.resume')}</Button></div>
+      </div>}
       {status.data.export_error && <p role="alert" className="text-sm text-destructive">{status.data.export_error}</p>}
       <form className="grid gap-3" onSubmit={event => {
         event.preventDefault()

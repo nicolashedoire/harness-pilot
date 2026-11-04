@@ -390,6 +390,10 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `load_config()` keeps the merged result (pickled) while config.json's (inode, mtime, size, ctime) and the
   defaults are unchanged and returns a fresh copy each call (callers may change it); saves are atomic renames,
   so a write by any process is seen on the next call.
+- `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
+  `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
+  `crons.managed_lines()`, `localcron.tick()`, scheduled `pilot cron run` (detached or `--if-due`) and `backup.run()`
+  (code `paused`, not recorded in the history) do nothing.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault

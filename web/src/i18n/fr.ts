@@ -3723,7 +3723,7 @@ export const fr: Record<keyof typeof en, string> = {
   "instanceBackup.excluded": "Les binaires de l’application, les moteurs d’agents et les cibles des liens symboliques externes ne sont pas embarqués. Les liens externes sont signalés avant restauration.",
   "instanceBackup.limit": "Plafond des données : {mb} Mio (instance_backup_max_mb).",
   "instanceBackup.hold": "Instance restaurée — mode de vérification",
-  "instanceBackup.holdBody": "Vos données sont consultables. Les services et les modifications sont en pause. Vérifiez les réglages restaurés avant de relancer les intégrations et tâches planifiées configurées.",
+  "instanceBackup.holdBody": "Vos données sont consultables. Les services et les modifications sont en pause. Telegram, les tâches planifiées et la sauvegarde GitHub restent en pause après l’activation des services, jusqu’à ce que vous les réactiviez.",
   "instanceBackup.activate": "Activer les services de cette instance",
   "instanceBackup.export": "Créer une archive chiffrée",
   "instanceBackup.passphrase": "Phrase secrète de sauvegarde",
@@ -3755,6 +3755,11 @@ export const fr: Record<keyof typeof en, string> = {
   "instanceBackup.error.large": "L’archive dépasse la limite de sauvegarde ou d’envoi configurée. Vérifiez les dossiers inclus et les limites du serveur.",
 
   "instanceBackup.resumeError": "Certains services n’ont pas pu redémarrer après la sauvegarde. Consultez les journaux du serveur et redémarrez l’application avant de continuer.",
+  "instanceBackup.integrations.paused": "Telegram, tâches planifiées et sauvegarde GitHub en pause",
+  "instanceBackup.integrations.body": "Cette copie restaurée n’interroge pas le bot Telegram, ne lance aucune tâche planifiée et n’envoie pas la sauvegarde de la mémoire : elle ne peut pas entrer en conflit avec l’instance d’origine. Arrêtez d’abord l’instance d’origine, puis réactivez-les ici.",
+  "instanceBackup.integrations.resume": "Réactiver les intégrations",
+  "instanceBackup.integrations.confirmTitle": "L’instance d’origine est-elle arrêtée ?",
+  "instanceBackup.integrations.confirmBody": "Réactivez-les seulement une fois l’instance d’origine arrêtée. Sinon les deux copies répondent au même bot Telegram, lancent chaque tâche planifiée deux fois et envoient leur sauvegarde dans le même dépôt GitHub.",
   "agentProviders.textOnly": "Ce moteur accepte uniquement du texte. Les pièces jointes ne sont pas prises en charge.",
   "agentProviders.unavailable": "Ce moteur est indisponible ou désactivé. Choisissez-en un autre ou vérifiez les extensions.",
 
