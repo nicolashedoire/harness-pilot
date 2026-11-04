@@ -136,6 +136,8 @@ def public(meta: dict) -> dict:
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
             "swarm_agents": m.get("swarm_agents"),
+            "team_phase": (m.get("team") or {}).get("phase"),
+            "team_parent": m.get("team_parent"),
             "debate_telegram": bool(m.get("debate_telegram")),
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
@@ -421,7 +423,13 @@ def send_message(sid: str, text: str, attachments: list[str] | None = None, sour
                  hud: bool = False, voice_path: str | None = None, ref: str | None = None) -> dict:
     """`ref`: an id the caller (Telegram) finds again in the meta of the turn that ran this message
     (`turn_refs` while it runs, `last_turn.refs` once it ended; see live_refs)."""
-    _require(sid)
+    meta = _require(sid)
+    if source != 'team' and (meta.get('team') or {}).get('phase') in ('launching', 'working', 'synthesizing'):
+        raise SessionError(409, 'team_running', 'Wait for the team to finish or stop it before sending a message.')
+    if source != 'team' and meta.get('team_parent'):
+        parent = store.read(meta['team_parent']) or {}
+        if (parent.get('team') or {}).get('phase') in ('launching', 'working'):
+            raise SessionError(409, 'team_running', 'Wait for the team to finish before messaging a worker.')
     files = _check_attachments(attachments)
     audio = _check_voice(voice_path)
     if not (text or "").strip() and not files and not audio:
@@ -477,10 +485,20 @@ def hide_message(sid: str, at: float, hidden: bool = True) -> None:
     store.append_log(sid, {"type": "mx_hide", "ref": at, "hidden": bool(hidden), "at": time.time()})
 
 
-def stop(sid: str) -> None:
+def stop(sid: str, *, _team_internal: bool = False) -> None:
     """Clear the queue and abort the running turn (blocks up to ~10 s for the runner to settle). A message held
     behind an idle-compaction summary (`held`) stays queued: only the summary is cancelled."""
-    _require(sid)
+    meta = _require(sid)
+    if not _team_internal and (meta.get('team') or {}).get('phase') in ('launching', 'working', 'synthesizing'):
+        from . import teams
+        teams.stop(sid)
+        return
+    if not _team_internal and meta.get('team_parent'):
+        parent = store.read(meta['team_parent']) or {}
+        if (parent.get('team') or {}).get('phase') == 'working':
+            from . import teams
+            teams.stop_agent(meta['team_parent'], sid)
+            return
     was_paused = False
     with store.edit(sid) as m:
         if m.get("provider") in ("discussion", "debate"):
@@ -752,7 +770,7 @@ def approve_plan(sid: str, text: str = "") -> dict:
 def delete_session(sid: str) -> None:
     """Moves the session to the trash (Settings -> Trash restores it)."""
     m = _require(sid)
-    if m.get("state") == "running":
+    if m.get("state") == "running" or (m.get('team') or {}).get('phase') in ('launching', 'working', 'synthesizing'):
         stop(sid)
     from .. import trash
     trash.trash_session(sid)
@@ -1458,6 +1476,8 @@ async def _watch(interval: float) -> None:
             t0 = time.time()
             stops: list[dict] = []
             ends, changed, ws = await asyncio.to_thread(_scan, primed, stops)
+            from . import teams
+            await asyncio.to_thread(teams.advance_all)
             primed = True
             dirty = dirty or changed
             if ends or dirty and t0 - stamped >= PASS_STAMP_S:

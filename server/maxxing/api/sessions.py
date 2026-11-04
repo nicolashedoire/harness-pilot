@@ -64,6 +64,12 @@ class CreateIn(_Text):
     voice: str | None = None          # absolute path of a voice message sent directly (transcribed afterwards)
 
 
+class TeamIn(_Text):
+    path: str
+    message: str = Field(min_length=1, max_length=24000)
+    title: str | None = Field(default=None, max_length=120)
+
+
 class DiscussionPresetIn(_Text):
     name: str = Field(min_length=1, max_length=80)
     claude_role: str = Field(default='', max_length=2000)
@@ -142,6 +148,30 @@ async def shutdown() -> None:
 
 
 # ---- collection ----------------------------------------------------------------------------
+@router.post('/teams')
+async def create_team(body: TeamIn):
+    from ..sessions import teams
+    return await _call(teams.create, body.path, body.message, body.title)
+
+
+@router.get('/teams/{sid}')
+async def get_team(sid: str):
+    from ..sessions import teams
+    return await _call(teams.get, sid)
+
+
+@router.post('/teams/{sid}/agents/{agent_id}/stop')
+async def stop_team_agent(sid: str, agent_id: str):
+    from ..sessions import teams
+    return await _call(teams.stop_agent, sid, agent_id)
+
+
+@router.post('/teams/{sid}/stop')
+async def stop_team(sid: str):
+    from ..sessions import teams
+    return await _call(teams.stop, sid)
+
+
 @router.get('/discussion-presets')
 async def list_discussion_presets():
     return await asyncio.to_thread(presets.list_presets)
