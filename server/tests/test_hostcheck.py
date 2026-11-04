@@ -7,14 +7,16 @@ from maxxing import config, hostcheck
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.1:8787", "[::1]:8787", "::1", "100.101.102.103:8787",
-                                  "192.168.1.20", "localhost", "LOCALHOST:5173", "localhost.", "app.localhost:8801"])
+                                  "192.168.1.20", "localhost", "LOCALHOST:5173", "localhost.", "app.localhost:8801",
+                                  "box.tailnet-abcd.ts.net", "Box.Tailnet-ABCD.TS.NET.:8787", "macbook.local", "MacBook.Local.:8787"])
 def test_addresses_and_loopback_names_are_always_served(host, monkeypatch):
     monkeypatch.delenv("MAXXING_ALLOWED_HOSTS", raising=False)
     assert hostcheck.allowed(host, {})
 
 
 @pytest.mark.parametrize("host", ["evil.example", "evil.example:8787", "127.0.0.1.evil.example", "localhost.evil.example",
-                                  "ui.example.com.evil.example", "0x7f.1", ""])
+                                  "ui.example.com.evil.example", "0x7f.1", "", "ts.net.evil.example", "local.evil.example",
+                                  "evil-ts.net", "evillocal", "box.ts.network", "box.locals"])
 def test_other_names_are_refused(host, monkeypatch):
     monkeypatch.delenv("MAXXING_ALLOWED_HOSTS", raising=False)
     assert not hostcheck.allowed(host, {"public_url": "https://ui.example.com", "bind": "127.0.0.1"})

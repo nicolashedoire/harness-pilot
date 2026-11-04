@@ -7,6 +7,8 @@ setup, state) would answer. Only these `Host` values are served (port, case and 
 - an IP address (127.0.0.1, ::1, the Tailscale or LAN address): a page whose origin is an address of this server
   is not a rebinding attack;
 - `localhost` and `*.localhost` (browsers resolve them to loopback themselves);
+- `*.ts.net` (Tailscale MagicDNS: names Tailscale assigns to the tailnet's own machines) and `*.local` (mDNS, which
+  only resolves on the local network): an attacker's site cannot be served under them;
 - the host of config `public_url` (the domain behind Caddy) and config `bind` when it is a name;
 - the names of config `allowed_hosts` and of MAXXING_ALLOWED_HOSTS (comma separated): another name in front of this
   server (reverse proxy, tunnel). `*` there turns the check off.
@@ -21,6 +23,9 @@ from urllib.parse import urlsplit
 from fastapi.responses import JSONResponse
 
 from . import config
+
+
+_OWN_SUFFIXES = (".localhost", ".ts.net", ".local")   # loopback, Tailscale MagicDNS, mDNS: not an attacker's names
 
 
 def hostname(value: str) -> str:
@@ -63,7 +68,7 @@ def allowed(host: str | None, cfg: dict | None = None) -> bool:
     name = hostname(host)
     if not name:
         return False
-    if _is_ip(name) or name == "localhost" or name.endswith(".localhost"):
+    if _is_ip(name) or name == "localhost" or name.endswith(_OWN_SUFFIXES):
         return True
     names = _names(config.load_config() if cfg is None else cfg)
     return "*" in names or name in names
@@ -87,5 +92,5 @@ class HostCheck:
         return await JSONResponse(status_code=421, content={
             "error": "bad_host",
             "message": f"This server does not answer to the name {name!r}. Open it at its own address (127.0.0.1, "
-                       "localhost or its public URL), or add the name: pilot init --public-url https://<name>, "
+                       "localhost, its Tailscale or .local name, or its public URL), or add the name: pilot init --public-url https://<name>, "
                        "or allowed_hosts in config.json, or MAXXING_ALLOWED_HOSTS."})(scope, receive, send)

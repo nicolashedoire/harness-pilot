@@ -373,7 +373,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 ## maxxing.hostcheck (DNS rebinding)
 `HostCheck` (ASGI, inside `_SecurityHeaders`, outside every other middleware) refuses an HTTP request with `421
 bad_host` and closes a WebSocket (1008) before it is accepted when `allowed(host)` is false. `allowed`: no Host, an IP
-literal, `localhost` / `*.localhost`, else the hostnames of config `public_url`, `bind`, `allowed_hosts` (list or one
+literal, `localhost` / `*.localhost` / `*.ts.net` / `*.local` (`_OWN_SUFFIXES`), else the hostnames of config `public_url`, `bind`, `allowed_hosts` (list or one
 string) and `MAXXING_ALLOWED_HOSTS` (comma separated, `*` = off); `hostname()` drops port, case and a trailing dot.
 Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=testserver,t` (the test clients' hosts).
 
