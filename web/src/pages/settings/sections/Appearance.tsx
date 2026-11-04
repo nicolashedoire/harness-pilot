@@ -50,7 +50,7 @@ function PresetCards({ mode }: { mode: Mode }) {
   return (
     <fieldset className="grid gap-2.5" data-tour="color-palette">
       <legend className="pb-2.5 text-sm font-medium">{t('colors.presets')}</legend>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2.5">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-2.5">
         {items.map(({ id, theme }) => {
           const on = current === id
           return (
