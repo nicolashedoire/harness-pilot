@@ -133,12 +133,12 @@ Session = {
 | DELETE | `/api/discussion-presets/{id}` | – | `{ok}` · `404 not_found` |
 | GET | `/api/sessions/{id}` | – | `Session` |
 | PATCH | `/api/sessions/{id}` | `{title?, model?, archived?, notify?, plan_mode?, favorite?, path?}` | `Session` (`plan_mode:false` also clears `plan_ready`; `favorite` is carried over by a hand-off; `path` moves the session to another topic and its Claude transcript with it - `400 bad_path`, `409 busy` while a turn runs or messages wait; `model`: an id of letters, digits and `._:@/[]-`, 100 characters at most, not starting with `-`, else `400 bad_model`, also on create) |
-| POST | `/api/sessions/{id}/plan/approve` | `{text?}` (shown in the thread as the user's message) | `{queued:bool, session:Session}` — plan mode off, then a turn that tells Claude to implement its latest plan (queue item flag `plan_approved`, kept by steer like `hud`) |
+| POST | `/api/sessions/{id}/plan/approve` | `{text?}` (shown in the thread as the user's message) | `{queued:bool, session:Session}` — plan mode off, then a turn that tells Claude to implement its latest plan (queue item flag `plan_approved`, kept by steer like `hud`). A discussion / debate (`plan_mode` accepted on create and PATCH: both agents run read-only - Claude `--permission-mode plan`, Codex sandbox `read-only` - with a plan preface for the exchange, and `plan_ready` follows each reply): the agent whose turn is next implements the latest plan, then the discussion pauses (reason `user`) with the other agent's review pending (Resume) |
 | DELETE | `/api/sessions/{id}` | – | `{ok}` (stops a running turn, moves the session to the trash) |
 | POST | `/api/sessions/{id}/messages` | `{text, attachments?:[filepath], hud?:bool, voice?:filepath}` (`hud`: sent from the HUD - the prompt gets a short preface: answer short, annotate the screen capture if useful; `voice`: a voice message sent directly - uploaded first with `/api/uploads`, queued at once, transcribed by the server, then its transcript is the prompt) | `{queued:bool, session:Session}` · `409 voice_off` (transcription not ready) |
 | DELETE | `/api/sessions/{id}/queue` | – | clears queued messages |
 | POST | `/api/sessions/{id}/ask` | `{question}` | `{answer, cost_usd, duration_ms}` — side question: Claude answers from a throwaway copy of the session's thread (read-only, nothing saved: the running turn, queue and log are untouched). 409 `no_thread` (never answered yet) / `busy` (one already running for this session), 429 (2 running), 504 (240 s) |
-| POST | `/api/sessions/{id}/summary` | – | `{summary, decisions:[str], actions:[{title, notes}], truncated:bool}`: a reviewable summary of the conversation (its last 200 events, at most 50 000 characters; `truncated` when the beginning is missing) written by Codex (`codex exec`, plan mode, JSON output schema, 180 s); nothing is saved, no task is created · `400 empty_session` · `409 no_topic`, `409 codex_unavailable` (Codex not signed in), `409 summary_busy` (one per session), `429 summary_limit` (two at a time) · `502 summary_unavailable\|summary_failed\|summary_invalid` · `504 summary_timeout` |
+| POST | `/api/sessions/{id}/summary` | – | `{summary, decisions:[str], actions:[{title, notes}], truncated:bool, engine:"codex"\|"claude", cost_usd}`: a reviewable summary of the conversation (its last 200 events, at most 50 000 characters; `truncated` when the beginning is missing) written by Codex when it is signed in (`codex exec`, plan mode, JSON output schema), else by Claude Code when it has a sign-in method (`claude -p`, no tools, no saved thread, JSON answer), 180 s; its tokens (and Claude's indicative `cost_usd`; 0 for Codex) are added to the session's statistics under that engine without counting a turn; nothing else is saved, no task is created · `400 empty_session` · `409 no_topic`, `409 summary_no_agent` (neither Codex nor Claude Code is signed in), `409 summary_busy` (one per session), `429 summary_limit` (two at a time) · `502 summary_unavailable\|summary_failed\|summary_invalid` · `504 summary_timeout` |
 | POST | `/api/sessions/{id}/summary/memory` | `{text}` (1-12000 characters) | `{ok}`: appends `## Discussion — <UTC date>` and the text, as approved by the user, to the existing `memory.md` of the session's topic · `400 empty_memory` · `409 no_topic`, `409 memory_unavailable` (missing or not openable), `409 invalid_memory` (not a regular file), `409 memory_full` (the file would pass 32 KiB, what Codex reads) |
 | POST | `/api/sessions/{id}/queue/take` | – | `{messages:[{text, attachments}], session}` — removes the queued user messages and returns them (the composer's **Edit**: they come back in the composer and are sent again as a normal message) |
 | POST | `/api/sessions/{id}/hide` | `{at, hidden=true}` | `{ok}` — hides (or shows again) the user message whose `at` is given: appends `{type:"mx_hide", ref, hidden}` to the raw log (nothing is erased; Claude's own thread is untouched), streamed as a `hide` event; 404 when no user message has that `at`, nothing written when it is already in that state. The UI offers it for a message whose turn ended without any answer (stopped) and drops that turn's rows |
@@ -148,7 +148,7 @@ Session = {
 | POST | `/api/sessions/{id}/discussion/resume` | – | `Session` — continues from the saved next prompt (see *Discussion periods*) · `400 unsupported`, `409 not_paused` |
 | PATCH | `/api/sessions/{id}/discussion` | `{turn_limit?: int\|null, duration_minutes?: int\|null}` | `Session` — changes the limits of a discussion / debate (running, paused or stopped): `turn_limit` 1-200 replies, `duration_minutes` 1-1440 (stored as `discussion_duration_seconds`); a field left out keeps its value, `null` removes that limit. They apply to the current period: while it runs, a limit already reached pauses it after the current reply; paused on its limit, Resume continues the period once no limit is reached any more · `400 unsupported` (not a discussion), `422 invalid` (out of range, not an integer) |
 | POST | `/api/sessions/{id}/compact` | – | `{ok}` summary → fresh Claude context, same session. A discussion / debate (also while paused, it stays paused): Claude summarizes the exchanges in a throwaway read-only thread, then Claude Code and Codex both continue in fresh threads seeded with it (see *Discussion compaction*) · `409 busy` while running · `400 empty_session` · `409 unsupported` (agent plugin) |
-| POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails) |
+| POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails). A discussion / debate (also while paused): a new discussion with the same provider, objective, roles, models and limits (a new period); the summary of the exchanges (as for *Discussion compaction*) is shown in it as a system `user` event and seeds both agents' first replies; paused with a reply pending, the new one is paused on that reply (reason `user`, Resume asks it) and the old one is no longer paused · `409 busy` while running · `409 unsupported` (agent plugin) |
 | POST | `/api/sessions/{id}/seen` | – | `{ok}` |
 | GET | `/api/sessions/{id}/events?tail=N` | – | last events, read backwards from the end (whole log lines, at least N events when available, max 5000): `{events, start, next, more_before:bool, state}` — `start` = offset of the first line returned, `next` = end offset (start the stream there). What the UI uses to open a thread |
 | GET | `/api/sessions/{id}/events?before=<offset>&limit=N` | – | events strictly before `offset` (backward paging, "Show earlier messages"): `{events, start, next:offset, more_before, state}` · `{events:[], reset:true, state}` when `offset` is not a line boundary of the current log |
@@ -202,7 +202,7 @@ previous night — open streams then receive `reset`. **Event** (normalised):
 
 ## Space labels
 
-`GET /api/space-labels` returns explicit labels keyed by absolute path. `PUT /api/space-labels` accepts `{path, label}` with `label` one of `personal`, `agents`, `shared`, or `unclassified`. Paths must exist inside the configured workspace or files root. Labels express the user's organization, not verified authorship, and do not grant or restrict access. Unlabelled or replaced items are `unclassified`; paths moved through the app retain their labels. Labels live in local state and are not automatically inherited by children.
+`GET /api/space-labels` returns explicit labels keyed by absolute path. `PUT /api/space-labels` accepts `{path, label}` with `label` one of `personal`, `agents`, `shared`, or `unclassified`. Paths must exist inside the configured workspace or files root. Labels express the user's organization, not verified authorship, and do not grant or restrict access. Unlabelled or replaced items are `unclassified`; paths moved through the app retain their labels. Labels live in local state and are not automatically inherited by children. The complete instance backup keeps all of them. The GitHub memory backup keeps the valid labels of the files it saves and of the folders holding them in `_maxxing/space-labels.json` (`{workspace-relative path: label}`, never a file it leaves out); a restore sets them on the items that exist under the workspace once the files are written (identity of the restored item; other labels stay, unsafe or unknown entries are skipped).
 
 ## Files
 Every `path` is absolute and inside `files_root` (else `400 bad_path` / `403 forbidden`); a path with a NUL byte or a symlink loop is `400 bad_path`.
@@ -274,14 +274,15 @@ weekly without `days`, a day outside 0-6, a monthly `day` outside 1-31 (`422` fo
 
 ## Crons
 ```
-Cron = {id, name, schedule,            // 5-field cron expression
-        kind:"shell"|"claude", command, // shell
-        topic_path, prompt, model, reuse_session:bool,  // claude
-        permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode
+Cron = {id, name, schedule,            // 5-field cron expression, a shortcut, or @reboot (next_run null)
+        kind:"shell"|"claude"|"codex", command, // shell
+        topic_path, prompt, model, reuse_session:bool,  // claude, codex: the prompt runs as a session turn of that agent
+        permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude, codex; "" = the topic's, else the global mode
+                                                              // (Codex: read-only sandbox for "default", workspace write otherwise)
         enabled, notify:"never"|"failure"|"always", timeout_s,
         last_run:{at, ok, code, duration_s}|null, next_run:float|null, human:string,  // human: in the UI language (settings.language, en|fr), times HH:MM
         running:bool}                  // a run is in progress (flock held); overlapping runs are skipped
-Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|null}   (output_tail: a Claude job keeps the first 2048 characters of its answer, a command the last 2048 of its output)
+Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|null}   (output_tail: a Claude or Codex job keeps the first 2048 characters of its answer, a command the last 2048 of its output)
 ```
 | GET | `/api/crons` | – | `{jobs:[Cron], external:[{schedule, command, human}]}` (external = crontab lines outside the managed block, read-only) |
 | POST | `/api/crons` | Cron fields | `Cron` (validates expression; syncs crontab) · `409 damaged_jobs` (jobs.json cannot be read: nothing is written) |
@@ -324,8 +325,8 @@ On completion, a proposal is posted to the existing notifications feed with a li
 | PUT | `/api/backup/settings` | `{schedule?, include?}` | `{ok}` |
 | POST | `/api/backup/run` | – | `{ok, commit, files, changed?, error?, code?, leaks?:[{file, kinds}]}` (`code`: `secret_found`, `public_repo`, `not_configured`, `file_too_large`, `read_failed`, `git_failed`…; `409 busy`; `409 paused` while the integrations of a restored instance copy are paused, see Complete instance backup). Selected files that cannot be read or are too large, and failed MCP exports, abort the snapshot before push. |
 | GET | `/api/backup/history?limit=100` | – | `[{at, ok, commit, files, changed, error, code?, duration_s}]` newest first |
-| POST | `/api/backup/preview` | `{ref?}` | Read a backup revision without changing workspace files. Returns the resolved commit SHA, counts and a bounded list of workspace files to create, replace, leave unchanged, hold aside, or skip, plus flags for saved settings, jobs and MCP. Preview is advisory: local files can change before restore. Restore the returned SHA to pin the reviewed revision. |
-| POST | `/api/backup/restore` | `{ref?}` | restores whitelisted files (current files saved to trash first) + cron jobs + server-independent settings → `{ok, files, restored:[path], unchanged, skipped:[path], skipped_count, crons:bool, mcp:int, held:{crons, extensions, hooks, mcp, review, outside?}, warnings:["crons"\|"mcp"\|"settings"], trash}` (`skipped` is capped at 200 paths; `skipped_count` is the full count; local MCP servers and new jobs/extension code are held, see Backup docs) · `409 not_configured\|empty\|busy` |
+| POST | `/api/backup/preview` | `{ref?}` | Read a backup revision without changing workspace files. Returns the resolved commit SHA, counts and a bounded list of workspace files to create, replace, leave unchanged, hold aside, or skip, plus flags for saved settings, jobs and MCP and `labels` (how many space labels the revision holds). Preview is advisory: local files can change before restore. Restore the returned SHA to pin the reviewed revision. |
+| POST | `/api/backup/restore` | `{ref?}` | restores whitelisted files (current files saved to trash first) + cron jobs + server-independent settings → `{ok, files, restored:[path], unchanged, skipped:[path], skipped_count, crons:bool, mcp:int, labels:int, held:{crons, extensions, hooks, mcp, review, outside?}, warnings:["crons"\|"mcp"\|"settings"\|"labels"], trash}` (`skipped` is capped at 200 paths; `skipped_count` is the full count; local MCP servers and new jobs/extension code are held, see Backup docs) · `409 not_configured\|empty\|busy` |
 | DELETE | `/api/backup` | – | forget repo + token (`409 busy` while a backup or restore runs) |
 
 ## Settings & secrets
@@ -425,6 +426,7 @@ Telegram: voice notes and video notes in a session thread (not audio files: atta
 | POST | `/api/system/services/{name}/{start\|stop\|restart}` | – | `{ok}` (self restart deferred 2 s) |
 | GET | `/api/system/logs?unit=&lines=200` | – | `{lines:[str]}` |
 | GET | `/api/system/version?refresh=1` | – | `{version, commit, latest_commit\|null, behind:int\|null, checking:bool, checked_at:float\|null, custom:{count, titles, dirty, rebase}, pending:{at, reason:"conflict"\|"health"\|"dependencies", target_version?, conflicts?}\|null, license:{enabled, key_hint, email, kind, updates_until, expires_at, channel, latest, message, max_servers, moved_to_git, move_error}, report:{at, version, ok, problems}\|null, after:{to, at, notes_session?, notes_path?, done}\|null, local_mode:bool, auto_update:{enabled, tried, last_check}}` (`local_mode`: started by `scripts/dev-local.sh`, `HARNESS_PILOT_LOCAL_MODE=1`; remote checked every 10 min with git and the update token; nothing on an install still on archives until it has moved to git; `refresh=1` checks now and waits; `commit` and `custom` count/titles/dirty are cached 30 s and while the clone's HEAD / branch ref / index are unchanged, `refresh=1` re-reads them, `rebase` and `pending` are always fresh) |
+| GET | `/api/system/media-tools` | – | `{ok, ffmpeg:{path\|null, webp:bool}, pdftoppm:{path\|null}, missing:["ffmpeg"\|"ffmpeg_webp"\|"pdftoppm"], install:[command]}`: the tools of thumbnails and previews (`maxxing/mediatools.py`; `webp` = ffmpeg lists the `libwebp` encoder, cached per binary and mtime). `install`: `brew install ffmpeg-full` / `brew install poppler` on macOS, one `sudo apt-get install -y ...` elsewhere; nothing is installed. Settings -> System shows a notice while `ok` is false |
 | PUT | `/api/system/auto-update` | `{enabled}` | `{ok, enabled}`: config `auto_update` (Settings -> System, see `maxxing/auto_update.py`) · `409 local_update_unsupported` when turning it on in local mode |
 | POST | `/api/system/update` | – | `{ok}` starts `pilot update --smart` in a transient unit (after the restart the server verifies, then opens the upgrade-notes session) · `409 local_update_unsupported` in local mode (`HARNESS_PILOT_LOCAL_MODE=1`), like `pilot update` itself (exit `1`) |
 | GET | `/api/system/update/preflight?refresh=` | – | `Preflight` = `{ok, verdict: up_to_date\|simple\|adapt, current, latest, behind, customs:[{id, title, why, files, status: ok\|review\|included\|conflict\|unknown, conflicts, overlap}], unsaved, unsaved_overlap?, web_changes, extensions:[{id, name, api, reason}], notes:[{version}], changelog}` - the update simulated in a throw-away git worktree; cached until HEAD / target / unsaved files change; `refresh` fetches first · `502 preflight_failed` |
@@ -785,6 +787,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
 | `webhook.refused` | security | warning | `hook_id, name, service ("stripe"\|"shopify"\|"github")` | `add_secret` | its signing secret set, or the hook deleted |
 | `backup.restore_held` | security | warning | `extensions, hooks, mcp, review, outside` (counts) | `open` | – |
+| `instance_backup.failed` | system | error | `code, message` (a scheduled instance archive could not be made; `code` = the export error code) | `open` | the next scheduled archive made |
 | `infra.down` | infra | error | `resource_id, name, reason` | `open` | `infra.up` of that resource |
 | `infra.up` | infra | success | `resource_id, name` | – | – |
 | `infra.cert_expiring` | infra | warning | `resource_id, name, days` | `open` | – |
@@ -907,13 +910,16 @@ executable protocol and trust model. Provider token totals use dynamic keys in `
 ## Complete instance backup
 
 Authenticated endpoints under `/api/backup/instance` are independent of selective GitHub backups.
-All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persisted.
+All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persisted: a schedule stores a key
+derived from it instead (see Scheduled archives below).
 
 | Method/path | Request | Result |
 | --- | --- | --- |
-| GET `/api/backup/instance` | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`) |
+| GET `/api/backup/instance` | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`), `schedule` (below) |
 | POST `/api/backup/instance/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
-| GET `/api/backup/instance/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes}]` |
+| GET `/api/backup/instance/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes, scheduled}]` |
+| PUT `/api/backup/instance/schedule` | `{frequency: "daily"\|"weekly", hour: 0–23, keep: 1–30, passphrase?, store_key?}` | The `schedule` object · `400 consent_required` when `passphrase` comes without `store_key: true` · `400 passphrase_required` when no key is stored yet · `400 schedule` for another value |
+| DELETE `/api/backup/instance/schedule` | — | The `schedule` object, now off: the stored key is removed; archives already made stay |
 | DELETE `/api/backup/instance/exports/{id}` | — | `{ok, id}`: removes the export and its metadata · `404 not_found` for an unknown id, anything but 32 lowercase hex characters, or a symbolic link |
 | GET `/api/backup/instance/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
 | POST `/api/backup/instance/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
@@ -943,6 +949,21 @@ the crontab block and starts the Telegram poller; resident missions keep their o
 (`reason: restored`) and are never restarted by it. Preview hashes are
 rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
 and recovery limits are documented in [the backup guide](../user/10-backup.md).
+
+**Scheduled archives.** `schedule` = `{enabled, frequency, hour, keep, next_run, paused, last_success, last_id,
+error: {code, message, at} | null}` (`next_run` and the times are Unix seconds; `next_run` is null when off or paused).
+Settings live in config `instance_backup_schedule` `{frequency ("off" when disabled), hour, keep, since}`. The
+passphrase is never stored: `PUT` derives the archive key once (scrypt with the default cost and a fresh salt,
+as an export would) and keeps `{salt, kdf, key}` in `secrets.json` (`instance_backup_schedule_key`, mode 0600,
+never exposed to agents, unlike a Keys vault entry). Scheduled archives carry that salt in their header, so the
+passphrase alone opens them with the usual preview/restore. An in-process scheduler runs the same snapshot as
+`POST /export` (services paused, mutations gated) at `hour` in config `timezone`, the first time after it is
+enabled, then once a day or once a week (at least 12 hours less than the interval after the last success). A run
+blocked by activity (`sessions_active`, `crons_active`, `busy`, `snapshot_busy`, `source_changed`) is retried
+30 minutes later; another failure waits for the next day's slot. After a success, the scheduled archives
+(`scheduled: true`) beyond the newest `keep` are deleted; manual archives are never. A failure posts the feed
+kind `instance_backup.failed` once per series of failures (a blocked run only after 6 hours), resolved by the
+next success. Nothing runs while `restore_hold` or `integrations_paused` is set.
 
 `.pilotbackup` file: a 43-byte header, then the AES-256-GCM ciphertext of the ZIP, then the 16-byte GCM tag.
 Header (big-endian): magic `PILOTBK\n` (8 bytes), format version `u8` = 2, KDF identifier `u8` (1 = scrypt),

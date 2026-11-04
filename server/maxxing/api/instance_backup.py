@@ -27,6 +27,14 @@ class RestoreIn(BaseModel):
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class ScheduleIn(BaseModel):
+    frequency: str
+    hour: int = 3
+    keep: int = 7
+    passphrase: SecretStr | None = Field(default=None, min_length=12, max_length=1024)
+    store_key: bool = False
+
+
 _purger: asyncio.Task | None = None
 
 
@@ -54,6 +62,31 @@ async def shutdown() -> None:
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await _purger
         _purger = None
+
+
+async def scheduler(export) -> None:
+    """Scheduled archives. `export` is the app's snapshot wrapper (services paused, mutations gated); this task lives
+    outside the pausable modules, so pausing them for the snapshot never cancels it."""
+    while True:
+        try:
+            delay = await asyncio.to_thread(snapshots.schedule_delay)
+            if delay is not None and delay <= 0:
+                code = message = ''
+                try:
+                    result = await export(None, scheduled=True)
+                except snapshots.SnapshotError as error:
+                    result, code, message = None, error.code, str(error)
+                except OSError:
+                    result, code, message = None, 'snapshot_io', 'Could not read or write all snapshot data.'
+                except Exception as error:                 # recorded, so the next try waits for its slot
+                    log.exception('Scheduled instance archive failed')
+                    result, code, message = None, 'internal', str(error) or type(error).__name__
+                await asyncio.to_thread(snapshots.record_scheduled, result, code, message)
+                continue
+        except Exception:
+            log.exception('Could not check the instance archive schedule')
+            delay = None
+        await asyncio.sleep(snapshots.SCHEDULE_POLL if delay is None else min(delay, snapshots.SCHEDULE_POLL))
 
 
 async def _call(function, *args):
@@ -93,6 +126,17 @@ async def exports():
 @router.delete('/exports/{ident}')
 async def delete_export(ident: str):
     return await _call(snapshots.delete_export, ident)
+
+
+@router.put('/schedule')
+async def put_schedule(body: ScheduleIn):
+    passphrase = body.passphrase.get_secret_value() if body.passphrase else None
+    return await _call(snapshots.set_schedule, body.frequency, body.hour, body.keep, passphrase, body.store_key)
+
+
+@router.delete('/schedule')
+async def delete_schedule():
+    return await _call(snapshots.disable_schedule)
 
 
 @router.get('/download/{ident}')
