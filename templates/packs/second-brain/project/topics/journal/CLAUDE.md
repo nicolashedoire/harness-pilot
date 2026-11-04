@@ -34,7 +34,7 @@ Your daily notes, typed or spoken from the phone: "today: shipped the report, sl
 - Gratitude and lessons: when a note clearly contains one, file it in the right section too.
 - People: write names as said; if a person appears often, suggest a line about them in `memory.md`.
 - Tasks hidden in notes ("I must call the plumber"): propose to add them to the task board with
-  the `maxxing-tasks` skill; add only after a yes.
+  the `pilot-tasks` skill; add only after a yes.
 - Ideas hidden in notes: propose to copy them to the `ideas` topic inbox, with a link back.
 - Weekly review: read Monday to Sunday, write `YYYY/YYYY-Www-review.md` (ISO week): highlights,
   wins, hard moments, lessons, themes that repeat, energy trend, open loops, one focus for next week.
@@ -53,5 +53,5 @@ Your daily notes, typed or spoken from the phone: "today: shipped the report, sl
 
 - "Weekly journal review" (Sunday 18:00, this topic): summarizes the week's entries into the review file and
   sends a short summary. Created disabled, enable it on the Crons page or ask here.
-- Possible additions on request (`maxxing-cron` skill): an evening reminder "anything to note
+- Possible additions on request (`pilot-crons` skill): an evening reminder "anything to note
   today?", a monthly look-back on the 1st.

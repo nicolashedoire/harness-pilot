@@ -50,4 +50,4 @@ command to the template", "start a new app from the template".
 ## Automations
 
 - None by default. A monthly "dependency check" (outdated or vulnerable packages in the starter and
-  each app, report only) can be created with the `maxxing-cron` skill if the user asks.
+  each app, report only) can be created with the `pilot-crons` skill if the user asks.

@@ -11,6 +11,35 @@
 - First-load dictionary (test_web_first_load budget 20 000 brotli bytes): settings-only feed keys renamed `nset.hook.*`, centre / page keys `ncentre.*` (new group, loaded with the centre chunk and the /notifications route), namespaces `codex` and `update` moved to the settings group (`update.reload` -> `shell.updateReload`), `notify.testBody` / `notify.unsupported` -> `nset.device.*`. fr /sessions 21 895 -> 19 858, en 18 819 -> 16 970.
 - Conversation blocks (API.md#conversation-blocks, INTERNALS.md maxxing.blocks): `maxxing/blocks.py` (14 built-in types with JSON-schema-subset schemas, block extensions `extensions/<id>/block.json` = new extension type `block`, consent config `blocks.consent`, built-ins off in config `blocks.disabled`), `api/blocks.py` (`/api/blocks`, `PATCH /api/blocks/{id}`, `/consent`, `/pin`, frames `/ext/_blocks/app-frame` and `/ext/_blocks/{id}/frame` with a per-frame CSP: sandbox, inline code only, network only to consented hosts). Agents: product skill `pilot-blocks` rendered with the enabled list (`cmd_core._skill_vars`), `<state>/blocks/agents.md` appended to the Codex context by `sessions/codex.workspace_context`, `<state>/blocks/reference.md`. `extensions.on_change()` listeners. Web: `features/blocks` (lazy chunk + dictionary group `blocks`), hook in `components/ui/markdown.tsx`, Settings section `blocks`, `BlockHostProvider` for the conversation view. Mock: `web/mock/blocks.mjs` (+ `blocks-builtins.json`, checked against BUILTINS by the tests). No migration: missing config keys mean everything on, no consent.
 - Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory; mixed-provider teams are not yet implemented. Existing session permissions and stop handling are unchanged.
+- Product skills `maxxing-*` -> `pilot-*`, command `pilot` (`maxxing` kept as a permanent alias):
+  - Skills renamed (folders, front matter `name:`, every cross-reference in skills, templates, docs, code, tests):
+    setup, doctor, telegram, backup, tasks, mcp, customize, infra keep their suffix (`maxxing-x` -> `pilot-x`);
+    `maxxing-cron` -> `pilot-crons`, `maxxing-feed` -> `pilot-notifications`, `maxxing-extension` -> `pilot-widgets-pages`.
+    Mapping: `server/maxxing/renames.py` `SKILL_RENAMES` (keep every pair). The other skills keep their names.
+    Skill texts name the product `harness-pilot` and show `pilot ...` commands (one line per skill: `maxxing` still works).
+  - `cmd_core.install_skills()`: product skills = `PRODUCT_SKILL_PREFIXES` (`pilot-`, `maxxing-`) + `PRODUCT_SKILLS_EXTRA`
+    (`is_product_skill()`). Upgrade: the new folders are installed, the old copies listed in install.json `skills` are
+    deleted (as any obsolete product skill), an old-named folder that is not listed (manual copy, install older than the
+    manifest) is moved to `<state>/trash/skills/` (reported in `backed_up`). Test: `test_renames.py`.
+  - `renames.migrate(ws)`, run by every `init` after the default jobs (report key `renamed: {files, jobs}`, printed when
+    not empty): exact old skill names -> new ones, only in product text - a workspace line copied from a template whose
+    renamed text equals a line of the current rendered template (CLI name and product name ignored in the comparison;
+    starter packs mapped to `projects/<project>` and `<project>-N`), and job prompts equal, once renamed, to a shipped
+    prompt (`COMPACTION_JOB`, new `cmd_core.MORNING_TASKS_PROMPT`, packs' `crons[].prompt`). User-written lines and job
+    prompts are untouched (left to Claude with the user). Idempotent; atomic writes keep the file mode.
+  - Command `pilot`: pyproject `[project.scripts]` has `pilot` and `maxxing` -> `maxxing.cli:main` (no uv.lock change;
+    `uv sync` creates `.venv/bin/pilot`). argparse `prog` = the name called (`cli.prog_name()`, `pilot` for `python -m
+    maxxing`); description names the alias. `cmd_core.ensure_cli_alias()` (every init, report key `cli`): symlink
+    `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing` next to install.sh's `BIN_LINK` (venv link or state-dir wrapper:
+    same program, same state); never replaces a foreign `pilot`; skipped with `MAXXING_SPAWN=direct` or without
+    BIN_LINK. `uninstall` removes PILOT_LINK only when it is that link. Unchanged on purpose: crontab lines and default
+    job commands (`crons.maxxing_bin()`), `python -m maxxing`, the package, `MAXXING_*`, state paths, unit names
+    (`maxxing-cron-<id>`, `maxxing-<sid8>`), User-Agents. `scripts/dev-local.sh` runs `uv run pilot`; install.sh's
+    final hints show `pilot`; `conftest.py` points BIN_LINK / PILOT_LINK into tmp for every test.
+  - `web/src/features/infra/InfraPage.tsx` ("Ask Claude" text: `pilot infra list --json`, skill `pilot-infra`);
+    `web/dist` rebuilt with it.
+  - `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old skill name back
+    outside the history files (CHANGELOG.md, this file, docs/upgrade/<version>.md): re-apply the rename there.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users
 (what changes for them, plain language), shown in the app ("What's new" after an update) and by

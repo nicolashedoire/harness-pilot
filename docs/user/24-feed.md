@@ -66,7 +66,7 @@ signing secret if you have it, **Create**: copy the URL into the service. The di
 ## From any script
 
 ```bash
-maxxing feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
+pilot feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
   --body "From billing@acme.example" --dedupe "msg-1234"
 ```
 
@@ -76,7 +76,7 @@ no push notification, no sound or notice in the app) ·
 `--kind NAME` (your own type of event, e.g. `backup.offsite`: it gets its own row in the Telegram and push settings) ·
 `--param NAME=VALUE` (details kept with the event) · `--link "Label=https://..."` (a button under the event, up to 4;
 an address starting with `https://` or a page of the app such as `/files?path=...`).
-`maxxing feed list` (`--pending`: what needs attention), `maxxing feed read-all`. Run the script with a cron job.
+`pilot feed list` (`--pending`: what needs attention), `pilot feed read-all`. Run the script with a cron job.
 
 Just ask Claude: *"notify me when an e-mail from my accountant arrives"*, *"tell me when the site is
 down"*, *"connect my Shopify orders"* - it writes the script and the job, or sets up the webhook.

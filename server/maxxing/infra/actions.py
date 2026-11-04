@@ -1,4 +1,4 @@
-"""Recipes that create things on this server, the standard way (CLI `maxxing infra`, skill `maxxing-infra`):
+"""Recipes that create things on this server, the standard way (CLI `maxxing infra`, skill `pilot-infra`):
 
 - PostgreSQL: `db install` (apt, listens on localhost only), `db create NAME` (one role + one database per app, its
   URL in the vault as DB_<NAME>_URL), `db backup` (pg_dump of every database + the declared SQLite files into

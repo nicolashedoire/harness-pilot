@@ -12,7 +12,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Change the reply and time limits of a Claude Code + Codex discussion paused on its limit, right from its banner (or at any time from the session's **…** menu): raise the limit and resume to continue the same period, or keep the limits and resume to start a new one.
 - See when a discussion paused and which limit it reached (*Paused at 03:12 · limit of 20 replies*), in its banner and at the end of the conversation.
 - Unticking a webhook or a script in Settings -> Notifications now also stops its push notifications; a ticked one is pushed with all its events, sales ringing by default.
-- `maxxing feed post --quiet` keeps an event in the notifications only: no Telegram message, no push notification, and no sound or notice in an open tab.
+- `pilot feed post --quiet` keeps an event in the notifications only: no Telegram message, no push notification, and no sound or notice in an open tab.
 - Answers can show conversation blocks: charts, tables you can sort and export, key figures, timelines, terminal output, diffs, file previews, forms whose answers go back to the agent, checklists, mini-apps and cards of what the agent created. Each kind is a plugin you can turn on or off in Settings -> Conversation blocks; the agents only use the enabled ones. Plugins you add run in an isolated frame, with network access only to the hosts you allow. **Open beside** shows a block larger in a panel next to the conversation, one tab per block.
 - Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate; mixed Claude–Codex teams are not yet available.
 - Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
@@ -22,6 +22,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
 - Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
 - Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
+- Use `pilot` as the server command, for example `pilot doctor` or `pilot feed post`. `maxxing` remains the same command, so existing scripts and scheduled jobs keep working.
+- Find the built-in skills under clearer names starting with `pilot-`, such as `pilot-crons`, `pilot-notifications` and `pilot-widgets-pages`. An update installs the new names, removes the old copies and updates the product's own text in your workspace; your own notes and jobs are not changed.
 - The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
 - Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
 

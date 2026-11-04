@@ -500,7 +500,7 @@ unless public (no DNS rebinding to a local address). `team_insecure` / MAXXING_T
   single-node layout; bucket + own key, vault `S3_<NAME>_*`, `--public` = path site proxied to the web endpoint with
   `Host: <name>.web.garage.localhost`), `server_add` (probe first).
 - API `api/infra.py` (loop: first run 60 s after start, then every minute checks period / stale), CLI `cmd_infra.py`,
-  skill `maxxing-infra`. Web: `features/infra/` (InfraPage = route `/infra`, nav `useNav()` when `infra_page`;
+  skill `pilot-infra`. Web: `features/infra/` (InfraPage = route `/infra`, nav `useNav()` when `infra_page`;
   InfraBlock = ```infra in `components/ui/markdown.tsx`, lazy; bus topic `infra`).
 
 ## maxxing.mcp  (owner: organisation)
@@ -596,6 +596,16 @@ fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. 
 is gone (2.0.0a93): the old code that still runs on those servers does it.
 
 ## CLI
+Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in
+pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog` = the name it was called by
+(`cli.prog_name()`, `pilot` for `python -m maxxing`). On a server, install.sh writes `/usr/local/bin/maxxing`
+(`cmd_core.BIN_LINK`: a link to the venv's script, or a wrapper exporting `MAXXING_STATE`) and every `init`
+(so every update) runs `cmd_core.ensure_cli_alias()`: `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing`, the
+same program and state; a `pilot` that is not ours is never replaced (report: `{cli: created|ok|skipped ...}`;
+skipped with `MAXXING_SPAWN=direct` or without BIN_LINK). Uninstall removes it only when it is that link.
+The crontab lines, the default jobs' commands (`crons.maxxing_bin()`) and the Python package keep the
+`maxxing` name on purpose: an existing line never changes. User-facing text (docs, skills, templates, help)
+says `pilot`.
 `maxxing.cli.register(name, help, configure(parser), handler(args) -> int)`, called from
 `maxxing/cmd_core.py` (init, doctor, update, status, harden, uninstall), `cmd_cron.py` (cron run/sync/list),
 `cmd_backup.py` (backup run/restore/status), `cmd_telegram.py` (telegram status/test),
@@ -605,17 +615,30 @@ Startup speed: `configure(parser)` runs only for the command being run (the firs
 and the `cmd_*` modules import their domain module (crons, feed, license, urllib...) inside the handler,
 never FastAPI (`maxxing.security` / `maxxing.app`): `maxxing --help` ~85 ms. Keep new commands that way.
 cmd_core also exposes `copy_templates(ws)` (renders `{{CODE_DIR}}`/`{{WORKSPACE}}`/`{{STATE_DIR}}`/`{{VERSION}}`, seeds each
-default project/topic once - install.json `seeded`), `install_skills()` (copies `skills/*` to `<claude_dir>/skills`
+default project/topic once - install.json `seeded`), `install_skills()` (copies the product skills - `pilot-*` and
+`PRODUCT_SKILLS_EXTRA`; `maxxing-*` still counts as a product name so the copies of earlier versions are dropped:
+install.json `skills` lists what was installed, an obsolete listed one is deleted, an old-named folder of
+`renames.SKILL_RENAMES` that is not listed goes to `trash/skills/` - from `skills/*` to `<claude_dir>/skills`
 and renders the same placeholders in their `.md`/`.json`/`.txt` files, so shipped skills never hard-code
 `/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`; `skills_status()` compares with the rendered
 text), `default_jobs()` / `ensure_default_crons()` (install.json
-`default_crons`), `check_update(branch) -> {ok, current, latest, behind, available, changelog}` (no change to the
+`default_crons`; the morning job's prompt is `MORNING_TASKS_PROMPT`), `check_update(branch) -> {ok, current, latest, behind, available, changelog}` (no change to the
 code; `update_source()` = "license" | "git" (clone with an `origin` remote) | None - None: `{ok: true, git: false,
 message: "no license, no remote"}`, `update --check` exits 0 with "updates unavailable (no license, no remote)", and
 `default_jobs()` creates "Check for updates" disabled). "Memory compaction" is created disabled; its id goes into
 install.json `enable_after_onboarding`; `enable_pending_jobs()` (called by POST /api/onboarding/complete when
 `claude_auth.status().ok`) enables each listed job still disabled and never edited (`created == updated`), then
 clears the list - jobs of existing installs are never touched (their key is already in `default_crons`), `notify_update(info)` (gateway.notify_cron), `version_key(v)`, `upgrade_notes(old, new)` (docs/upgrade).
+`renames.py` (called by `do_init` after the default jobs, report `renamed: {files, jobs}`): `SKILL_RENAMES`
+(old -> new skill name, keep every pair), `rename_skills(text)`, `migrate(ws)`. It rewrites only the exact old
+skill names, and only in what the product generated: a line of a workspace file copied from a template
+(`templates/workspace/**`, `templates/packs/<id>/project/**` for `projects/<project>` and `<project>-N`)
+changes when, renamed, it equals a line of the current rendered template (comparison ignores the CLI name
+`maxxing`/`pilot` and the product name `Harness Maxxing`/`harness-pilot`); a job prompt changes when, renamed,
+it equals a shipped prompt (`COMPACTION_JOB`, `MORNING_TASKS_PROMPT`, the packs' `crons[].prompt`). Lines and
+prompts written or edited by the user are left (upgrade notes ask Claude to propose them to the user).
+Idempotent, runs on every init (cheap: only template-mapped files that still contain an old name are read
+twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old name back.
 
 ## Service sandboxing (`maxxing harden`)
 - `cmd_core.HARDENING` = drop-in `/etc/systemd/system/claude-maxxing.service.d/10-hardening.conf`

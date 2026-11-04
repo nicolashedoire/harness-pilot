@@ -13,8 +13,8 @@
  * nothing when a window of the app is focused (the app shows its own notice). `notificationclick` runs an action
  * (a link, or one of the allowed POSTs) or opens the event's page in the running app.
  */
-const VERSION = "1ea841fc914d"
-const PRECACHE = ["/assets/index-DQ-8O2aQ.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-Bw5fIhDM.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-WH50PDjO.js","/assets/download-Dbj3Xqwo.js","/assets/vendor-query-CthOliPc.js","/assets/files-E3qrG_pX.js","/assets/queries-BLtGqpl-.js","/assets/sessions-CuWXItQG.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-DAa4PsLR.js","/assets/button-CMnxMQ0D.js","/assets/sensitive-eESyswSC.js","/assets/viewerStore-CG9Ixbtf.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/util-CQEKwclt.js","/assets/index-BLDsR4T1.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
+const VERSION = "e9291f220468"
+const PRECACHE = ["/assets/index-8Tci4EET.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-Bw5fIhDM.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-WH50PDjO.js","/assets/download-Dbj3Xqwo.js","/assets/vendor-query-CthOliPc.js","/assets/files-E3qrG_pX.js","/assets/queries-BLtGqpl-.js","/assets/sessions-CuWXItQG.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-DAa4PsLR.js","/assets/button-CMnxMQ0D.js","/assets/sensitive-eESyswSC.js","/assets/viewerStore-CG9Ixbtf.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/util-CQEKwclt.js","/assets/index-BLDsR4T1.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
 const SHELL = `mx-shell-${VERSION}`
 const ASSETS = `mx-assets-${VERSION}`
 const OFFLINE = '/offline.html'

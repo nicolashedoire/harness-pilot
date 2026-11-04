@@ -37,7 +37,7 @@ Your mini CRM, one file per client: "add a client: Jane Doe at Example Ltd, met 
 - Emails: short, specific, one clear ask; reuse context from the history; keep a copy of the draft
   in the history once the user says it was sent.
 - Quotes and invoices are made in `proposals`; prospects are researched in `prospecting`.
-- Tasks that come out of a call: propose them for the task board (`maxxing-tasks` skill).
+- Tasks that come out of a call: propose them for the task board (`pilot-tasks` skill).
 
 ## Connect
 
