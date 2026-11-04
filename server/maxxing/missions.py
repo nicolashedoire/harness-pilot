@@ -7,6 +7,7 @@ import copy
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -267,7 +268,11 @@ def _plan_result(step):
         raise ValueError('oversized plan')
     if text.startswith('```'):
         text = text.split('\n', 1)[1].rsplit('```', 1)[0].strip()
-    return _validate_steps(json.loads(text)['steps'])
+    try:
+        value = json.loads(text)
+    except RecursionError:  # deeply nested agent output: not a ValueError
+        raise ValueError('nested plan') from None
+    return _validate_steps(value['steps'])
 
 
 def _prepare(data, step, purpose):
@@ -432,7 +437,10 @@ def tick():
         for data in listing():
             if _stop.is_set():
                 break
-            advance(data['id'])
+            try:
+                advance(data['id'])
+            except Exception:  # one mission's failure must not stop the limits and progress of the others
+                logging.getLogger(__name__).exception('Resident mission %s advance failed', data['id'])
 
 
 async def startup():
@@ -445,7 +453,6 @@ async def startup():
             try:
                 await asyncio.to_thread(tick)
             except Exception:
-                import logging
                 logging.getLogger(__name__).exception('Resident mission advance failed')
             for _ in range(20):
                 if _stop.is_set():

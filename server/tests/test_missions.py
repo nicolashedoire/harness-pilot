@@ -309,3 +309,25 @@ def test_a_terminal_mission_cannot_be_revived_by_skipping_a_step(client,topic,ag
     assert refused.status_code==409 and refused.json()['error']=='busy'
     assert missions.get(ident)['phase']=='stopped'
     assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':missions.get(ident)['plan_fingerprint']}).status_code==409
+
+
+def test_a_deeply_nested_agent_plan_is_invalid_and_does_not_block_other_missions(client,topic,agents):
+    first=create(client,topic,[step(1)])
+    planned=create(client,topic);missions.control(planned,'plan');missions.tick()
+    finish(agents,text='{"steps":'+'['*14000+']'*14000+'}')  # under the 30000-character cap, deeper than recursion
+    start(first);missions.tick()
+    assert missions.get(planned)['phase']=='paused' and missions.get(planned)['reason']=='invalid_plan'
+    assert missions.get(first)['steps'][0]['state']=='running'
+
+
+def test_one_failing_mission_does_not_stop_the_others(client,topic,agents,monkeypatch):
+    healthy=create(client,topic,[step(1)]);start(healthy)
+    broken=create(client,topic,[step(1)]);start(broken)
+    assert missions.listing()[0]['id']==broken  # newest first: processed before the healthy one
+    original=missions.advance
+    def advance(ident):
+        if ident==broken:raise RuntimeError('simulated')
+        return original(ident)
+    monkeypatch.setattr(missions,'advance',advance)
+    missions.tick()
+    assert missions.get(healthy)['steps'][0]['state']=='running'
