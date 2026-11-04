@@ -15,6 +15,7 @@ import { FeaturesSection } from './sections/Features'
 import { SecuritySection } from './sections/Security'
 import { ClaudeSection } from './sections/Claude'
 import { CodexSection } from './sections/Codex'
+import { PullRequestsSection } from './sections/PullRequests'
 import { CompanionsSection } from './sections/Companions'
 import { TelegramSection } from './sections/Telegram'
 import { BackupSection } from './sections/Backup'
@@ -46,6 +47,7 @@ const COMPONENTS: Record<Exclude<SettingsSectionId, 'docs'>, React.ComponentType
   claude: ClaudeSection,
   codex: CodexSection,
   companions: CompanionsSection,
+  'pull-requests': PullRequestsSection,
   telegram: TelegramSection,
   voice: VoiceSection,
   backup: BackupSection,

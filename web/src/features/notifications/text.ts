@@ -21,7 +21,7 @@ export function paramVars(p?: FeedParams): TVars {
 }
 
 /** Kind prefix -> its key prefix and dictionary group: `companion.ready` -> `companions.kind.ready.title`. */
-const KIND_KEYS: [prefix: string, key: string, group: Group][] = [['companion.', 'companions.kind.', 'companions']]
+const KIND_KEYS: [prefix: string, key: string, group: Group][] = [['companion.', 'companions.kind.', 'companions'], ['pr_queue.', 'prQueue.kind.', 'settings']]
 
 /** The dictionary key of a kind's `title` / `body` / `bodyLimit`. */
 function kindKey(kind: string, suffix: string): string {

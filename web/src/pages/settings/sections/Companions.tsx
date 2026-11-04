@@ -76,7 +76,7 @@ export function CompanionsSection() {
             {recorded?.value === 'approved' && <div className="grid gap-3 rounded-lg border p-4">
               <h4 className="font-semibold">{t('companions.prTitle')}</h4>
               <p className="text-muted-foreground">{data.target ? t('companions.prTarget', { repo: data.target }) : t('companions.prNoTarget')}</p>
-              {data.pull_request?.fingerprint === data.fingerprint ? <a className="text-primary underline" href={data.pull_request.url} target="_blank" rel="noopener noreferrer">{t('companions.prOpen')}</a> : <>
+              {data.pull_request?.fingerprint === data.fingerprint ? <div className="flex flex-wrap gap-3"><a className="text-primary underline" href={data.pull_request.url} target="_blank" rel="noopener noreferrer">{t('companions.prOpen')}</a><Link className="text-primary underline" to={`/settings/pull-requests?url=${encodeURIComponent(data.pull_request.url)}`}>{t('prQueue.add')}</Link></div> : <>
                 <FormField label={t('companions.prName')}><Input value={prTitle} maxLength={180} onChange={(e) => setPrTitle(e.target.value)} /></FormField>
                 <FormField label={t('companions.prBody')}><Textarea minRows={5} maxLength={12000} value={prBody} onChange={(e) => setPrBody(e.target.value)} /></FormField>
                 <div><Button disabled={!data.target || !prTitle.trim()} loading={publish.isPending} onClick={() => publish.mutate()}>{t('companions.prCreate')}</Button></div>

@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Review pull requests from all channels in Settings → Pull requests, arrange prerequisites and approve an exact commit for integration. The queue starts paused and requires successful checks and repository rules; changed commits require another review. [Show me](#show:pull-requests)
+
 - Space labels: unclassified items (the default) no longer carry an *Unclassified* badge on every row of the session list and of Files; **Personal**, **Agents** and **Shared** still show theirs, and the *Space* menu still sets and ticks every label.
 - Settings: in a short window, the list of sections fades at the edge it can still scroll to, so the last visible section no longer looks cut off.
 - Settings -> Backup: the *What this backup covers* card is spaced like the other cards.

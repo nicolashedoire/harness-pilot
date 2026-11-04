@@ -2,6 +2,8 @@
 
 ## Unreleased - 2026-11-04
 
+- Added `pr_queue.py` and authenticated `/api/pr-queue` routes: private atomic state, process locks, bounded rotating worker, exact head/base/diff/prerequisite approvals, read-only refresh, fail-closed CI/review gates and SHA-pinned GitHub merge requests via `gh api`. Pause/cancel revisions protect against stale worker writes. Restart reconciles remote results without automatically retrying an ambiguous merge. Settings → Pull requests reuses `ProposalDiff`, has EN/FR texts and normal feed notifications; companion PR links prefill the queue form. GitHub writes are simulated in tests. See `docs/user/32-pull-requests.md`.
+
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
 - `SettingsCard` (`pages/settings/sections/ui.tsx`): `children` optional; without them the description is the card's text (no body, the header takes the bottom padding). Backup's *What this backup covers* uses it instead of a paragraph in the body, whose top padding made a larger gap under the title than in the other cards.
