@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import tempfile
 from pathlib import Path
@@ -24,6 +25,35 @@ class ExportIn(BaseModel):
 class RestoreIn(BaseModel):
     id: str = Field(pattern=r'^[a-f0-9]{32}$')
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+_purger: asyncio.Task | None = None
+
+
+async def startup() -> None:
+    """Decrypted previews expire after PREVIEW_TTL: purge them at startup and again as soon as one expires."""
+    global _purger
+
+    async def purge_pass():
+        while True:
+            try:
+                delay = await asyncio.to_thread(snapshots.purge_expired)
+            except Exception:
+                log.exception('Could not purge expired instance backup previews')
+                delay = snapshots.PURGE_EVERY
+            await asyncio.sleep(delay)
+
+    if _purger is None or _purger.done():
+        _purger = asyncio.create_task(purge_pass(), name='instance-backup-purge')
+
+
+async def shutdown() -> None:
+    global _purger
+    if _purger is not None:
+        _purger.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await _purger
+        _purger = None
 
 
 async def _call(function, *args):

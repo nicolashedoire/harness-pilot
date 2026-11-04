@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 import zipfile
 
 import pytest
@@ -446,3 +447,34 @@ def test_exports_are_listed_and_deleted_by_id_only(client, mx):
     client.cookies.clear()
     assert client.delete('/api/backup/instance/exports/' + second['id']).status_code == 401
     assert snapshots.exported(second['id']).is_file()
+
+
+def test_decrypted_previews_last_one_hour_and_are_purged_at_startup_and_on_expiry(mx, monkeypatch):
+    from fastapi.testclient import TestClient
+    from conftest import wait_for
+    from maxxing.app import create_app
+    seed(mx)
+    archive = snapshots.exported(snapshots.export(PASSWORD)['id'])
+    imports = snapshots._base() / 'imports'
+    assert snapshots.PREVIEW_TTL == 3600
+    # 59 minutes old: kept, and the purge pass wakes up when it expires; 61 minutes old: removed.
+    young = imports / snapshots.inspect(archive, PASSWORD)['id']
+    old = imports / snapshots.inspect(archive, PASSWORD)['id']
+    now = time.time()
+    os.utime(young, (now - 59 * 60, now - 59 * 60))
+    os.utime(old, (now - 61 * 60, now - 61 * 60))
+    assert 55 <= snapshots.purge_expired() <= 60
+    assert young.exists() and not old.exists()
+    # At startup: an expired preview and the plaintext staging of an interrupted export are gone before any request.
+    os.utime(young, (1, 1))
+    leftover = snapshots._base() / 'export-interrupted'
+    leftover.mkdir()
+    (leftover / 'snapshot.zip').write_bytes(b'plaintext')
+    monkeypatch.setattr(snapshots, 'PREVIEW_TTL', 2)
+    monkeypatch.setattr(snapshots, 'PURGE_EVERY', 1)
+    with TestClient(create_app()):
+        wait_for(lambda: not young.exists() and not leftover.exists(), timeout=10)
+        # On expiry: a new preview disappears once its time is up, with nobody opening Settings -> Backup.
+        fresh = imports / snapshots.inspect(archive, PASSWORD)['id']
+        assert (fresh / 'snapshot.zip').is_file()
+        wait_for(lambda: not fresh.exists(), timeout=15)

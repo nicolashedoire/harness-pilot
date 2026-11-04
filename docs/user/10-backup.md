@@ -61,9 +61,10 @@ loaded into browser memory. A dedicated workspace and files directory is require
 root or the whole home directory cannot be used as a complete-backup root.
 
 Verified previews temporarily contain decrypted data in the private state directory (mode 0700).
-They expire after 24 hours and are removed on the next backup operation or when Settings → Backup is
-next opened; successful restores delete that staged plaintext immediately, and the unencrypted staging
-of an interrupted export is removed at the next backup operation. Encrypted exports remain in `instance-backups/exports` until
+They expire after one hour. The server removes an expired preview as soon as its hour is up, when it
+starts (if it was stopped meanwhile), when Settings → Backup is opened and before any backup operation, so
+inspect an archive only when you are ready to restore it. Successful restores delete that staged plaintext
+immediately, and the unencrypted staging of an interrupted export is removed the same way. Encrypted exports remain in `instance-backups/exports` until
 you delete them: **Archives kept on this server** lists them, with a download button and a delete
 button (after a confirmation; copies you already downloaded are not affected). Keep a downloaded recovery copy outside the machine you are backing up.
 This is a file-based application snapshot, not an operating-system snapshot of unrelated services
