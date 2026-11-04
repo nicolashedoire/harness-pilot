@@ -17,7 +17,7 @@ import importlib
 import logging
 import mimetypes
 import re
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -171,7 +171,7 @@ def create_app() -> FastAPI:
         app.state.snapshot_in_progress = False
         app.state.snapshot_service_errors = []
 
-        async def export_instance(password):
+        async def export_instance(password, scheduled=False):
             from . import instance_backup
             # The app's mutations are gated before pausing services. External filesystem writers are
             # still checked by the snapshot inventory; a changed source is never published.
@@ -185,6 +185,8 @@ def create_app() -> FastAPI:
                         if hasattr(module, 'shutdown'):
                             await module.shutdown()
                             paused.append(module)
+                    if scheduled:                     # the schedule's stored key, never a passphrase
+                        return await asyncio.to_thread(instance_backup.export_scheduled)
                     return await asyncio.to_thread(instance_backup.export, password)
                 finally:
                     for module in reversed(paused):
@@ -203,7 +205,12 @@ def create_app() -> FastAPI:
                     started.append(m)
                 except Exception:
                     log.exception("startup of %s failed", m.__name__)
+        from .api import instance_backup as snapshot_api
+        archive_schedule = asyncio.create_task(snapshot_api.scheduler(export_instance), name='instance-backup-schedule')
         yield
+        archive_schedule.cancel()
+        with suppress(asyncio.CancelledError, Exception):
+            await archive_schedule
         for m in reversed(started):
             if hasattr(m, "shutdown"):
                 try:
