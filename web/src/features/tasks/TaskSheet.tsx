@@ -9,7 +9,7 @@ import { useLang, useT } from '@/i18n'
 import { api, seg } from '@/lib/api'
 import { fmtDate } from '@/lib/format'
 import { qk, usePatchTask, useDeleteTask, useSettings, useTopics } from '@/lib/queries'
-import type { Task, TaskInput, TaskPriority, TaskProject, TaskStatus } from '@/lib/types'
+import type { Task, TaskInput, TaskPriority, TaskProject, TaskRepeat, TaskStatus } from '@/lib/types'
 import {
   Button,
   EmptyState,
@@ -211,6 +211,20 @@ function TaskEditor({
     [topics, t, mask],
   )
   const topicKnown = !task.topic_path || topics.some((x) => x.path === task.topic_path)
+  const shortDays = React.useMemo(() => {
+    const f = new Intl.DateTimeFormat(lang, { weekday: 'short', timeZone: 'UTC' })
+    return Array.from({ length: 7 }, (_, i) => f.format(new Date(Date.UTC(2023, 0, 1 + i)))) // 2023-01-01: a Sunday
+  }, [lang])
+  const repeatDays = task.repeat?.days ?? []
+  const setRepeat = (every: string) => {
+    if (every === '__none') return void save({ repeat: null })
+    if (every === 'weekly') return void save({ repeat: { every, days: [new Date(`${task.due || today}T00:00:00Z`).getUTCDay()] } })
+    void save({ repeat: { every } as TaskRepeat })
+  }
+  const toggleDay = (d: number) => {
+    const days = repeatDays.includes(d) ? repeatDays.filter((x) => x !== d) : [...repeatDays, d]
+    if (days.length) void save({ repeat: { every: 'weekly', days: days.sort((a, b) => a - b) } })
+  }
   const st = dueState(task, today)
 
   return (
@@ -338,6 +352,43 @@ function TaskEditor({
             <p id="task-remind-hint" className="w-full text-xs text-muted-foreground">
               {t('tasks.remindHint')}
             </p>
+          </dd>
+
+          <dt className="text-muted-foreground sm:self-start sm:pt-1.5">{t('tasks.field.repeat')}</dt>
+          <dd className="grid min-w-0 gap-2">
+            <Select
+              value={task.repeat?.every ?? '__none'}
+              onValueChange={setRepeat}
+              aria-label={t('tasks.field.repeat')}
+              className="max-w-56"
+              options={[
+                { value: '__none', label: t('tasks.repeat.none') },
+                { value: 'daily', label: t('tasks.repeat.daily') },
+                { value: 'weekly', label: t('tasks.repeat.weekly') },
+                { value: 'monthly', label: t('tasks.repeat.monthly') },
+              ]}
+            />
+            {task.repeat?.every === 'weekly' && (
+              <div role="group" aria-label={t('tasks.repeat.days')} className="flex flex-wrap gap-1">
+                {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                  const on = repeatDays.includes(d)
+                  return (
+                    <Button
+                      key={d}
+                      type="button"
+                      size="sm"
+                      variant={on ? 'secondary' : 'outline'}
+                      aria-pressed={on}
+                      className={cn('min-w-11 px-2', on && 'ring-1 ring-ring')}
+                      onClick={() => toggleDay(d)}
+                    >
+                      {shortDays[d]}
+                    </Button>
+                  )
+                })}
+              </div>
+            )}
+            {task.repeat && <p className="text-xs text-muted-foreground">{t('tasks.repeat.hint')}</p>}
           </dd>
 
           <dt className="text-muted-foreground">{t('tasks.field.project')}</dt>

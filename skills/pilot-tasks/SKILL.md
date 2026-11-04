@@ -25,6 +25,9 @@ in the UI within seconds.
 - `status`: `todo` | `doing` | `done`. `priority`: 0 (none) … 3 (urgent). `due`: `YYYY-MM-DD` or null.
 - `remind_at`: `YYYY-MM-DDTHH:MM` in the configured time zone, or null: harness-pilot notifies the user once at that
   time (not for a done task). To remind again, set a new value.
+- `repeat`: null, `{"every": "daily"}`, `{"every": "weekly", "days": [1, 4]}` (0 = Sunday) or `{"every": "monthly"}`.
+  Just mark a recurring task done: harness-pilot adds the next occurrence itself within 30 s (never create it yourself,
+  it would be there twice).
 - `project_id` refers to `projects[].id`. Every workspace project has its task project, linked by
   `"workspace": "<project folder name>"` (created by harness-pilot, renamed with the project): to file a task under
   workspace project `acme`, use the id of the project whose `workspace` is `acme`. Projects without `workspace`

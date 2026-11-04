@@ -10,6 +10,8 @@ The file is plain JSON that Claude may edit at any time, so:
 A watcher notices external edits (mtime poll every 2 s) and invalidates the "tasks" bus topic.
 A reminder loop (every REMIND_EVERY_S) posts a `task.reminder` notification for each open task whose `remind_at` has
 come, once per (task, remind_at): the reminders already sent are kept in `<state>/task-reminders.json`.
+A task with a `repeat` that is marked done gets its next occurrence (`_recur`): by the API at once, and by the same loop
+for a task marked done in the file. The recurrence moves to the new task, so it is created once.
 
 Every workspace project has a linked task project (`workspace: <project name>`), created on demand (`sync_workspace`, run
 by GET and by the workspace change hook), renamed with it and unlinked (kept, as a free project) when it is deleted.
@@ -18,6 +20,7 @@ Free task projects (no `workspace`) are still allowed, and so are tasks without 
 from __future__ import annotations
 
 import asyncio
+import calendar
 import contextlib
 import copy
 import datetime as dt
@@ -50,6 +53,7 @@ _cache: dict[str, Any] = {"sig": None, "data": None}
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _REMIND = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")     # local wall-clock time, in the configured time zone
 REMIND_EVERY_S = 30.0
+REPEATS = ("daily", "weekly", "monthly")
 
 
 class CorruptFile(Exception):
@@ -163,6 +167,7 @@ def _norm_task(t: dict) -> dict:
         out["due"] = None
     if not (isinstance(out.get("remind_at"), str) and _remind_ts(out["remind_at"], dt.timezone.utc) is not None):
         out["remind_at"] = None
+    out["repeat"] = _norm_repeat(out.get("repeat"))
     for key in ("project_id", "topic_path"):
         out[key] = _text(out.get(key)) or None
     labels = out.get("labels")
@@ -176,6 +181,24 @@ def _norm_task(t: dict) -> dict:
             out["order"] = 0.0
     except (TypeError, ValueError, OverflowError):
         out["order"] = 0.0
+    return out
+
+
+def _int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _norm_repeat(v: Any) -> dict | None:
+    """`repeat`: {"every": "daily"} | {"every": "weekly", "days": [0-6, 0 = Sunday]} | {"every": "monthly", "day"?: 1-31
+    (the day of the month it keeps, so the 31st comes back after a short month)}; anything else is no recurrence."""
+    if not isinstance(v, dict) or v.get("every") not in REPEATS:
+        return None
+    out: dict = {"every": v["every"]}
+    if v["every"] == "weekly":
+        days = v.get("days") if isinstance(v.get("days"), list) else []
+        out["days"] = sorted({d for d in map(_int, days) if d is not None and 0 <= d <= 6})
+    elif v["every"] == "monthly" and (day := _int(v.get("day"))) is not None and 1 <= day <= 31:
+        out["day"] = day
     return out
 
 
@@ -451,6 +474,13 @@ class _Text(BaseModel):
         return v
 
 
+class RepeatIn(BaseModel):
+    model_config = {"extra": "ignore"}
+    every: Literal["daily", "weekly", "monthly"]
+    days: Optional[list[int]] = None
+    day: Optional[int] = None
+
+
 class TaskIn(_Text):
     model_config = {"extra": "ignore"}
     title: Optional[str] = None
@@ -459,6 +489,7 @@ class TaskIn(_Text):
     priority: Optional[int] = None
     due: Optional[str] = None
     remind_at: Optional[str] = None
+    repeat: Optional[RepeatIn] = None
     project_id: Optional[str] = None
     topic_path: Optional[str] = None
     labels: Optional[list[str]] = None
@@ -505,6 +536,12 @@ def _apply(task: dict, body: TaskIn, data: dict, fields: set[str]) -> None:
         if remind is not None and _remind_ts(remind, dt.timezone.utc) is None:
             raise _err(400, "invalid_remind_at", "remind_at must be YYYY-MM-DDTHH:MM")
         task["remind_at"] = remind
+    if "repeat" in fields:
+        r = body.repeat
+        if r is not None and (r.every == "weekly" and (not r.days or any(not 0 <= d <= 6 for d in r.days))
+                              or r.day is not None and not 1 <= r.day <= 31):
+            raise _err(400, "invalid_repeat", "repeat: weekly needs days (0-6, 0 = Sunday); a monthly day is 1-31")
+        task["repeat"] = _norm_repeat(r.model_dump(exclude_none=True)) if r is not None else None
     if "project_id" in fields:
         pid = body.project_id or None
         if pid and not any(p["id"] == pid for p in data["projects"]):
@@ -581,6 +618,7 @@ def create_task(body: TaskIn):
         while any(t["id"] == task["id"] for t in data["tasks"]):
             task["id"] = _new_id("t_", 6)
         data["tasks"].append(task)
+        _recur(data)
         save(data)
     return task
 
@@ -711,6 +749,7 @@ def bulk_tasks(body: BulkIn):
                 for i, t in enumerate(moving):
                     t["order"] = end + 1.0 + i
         if targets:
+            _recur(data)
             save(data)
     return {"ok": True, "updated": len(targets), "deleted": 0}
 
@@ -725,6 +764,7 @@ def patch_task(tid: str, body: TaskIn):
             raise _err(404, "not_found", f"no task {tid}")
         _apply(task, body, data, set(body.model_fields_set))
         task["updated"] = time.time()
+        _recur(data)
         save(data)
     return task
 
@@ -740,6 +780,86 @@ def delete_task(tid: str):
             raise _err(404, "not_found", f"no task {tid}")
         save(data)
     return {"ok": True}
+
+
+# ---- recurrence -----------------------------------------------------------------------------
+def _next_due(repeat: dict, base: dt.date, today: dt.date) -> dt.date:
+    """The next date of a recurrence, strictly after the done occurrence's date (`base`: its due date, else today) and
+    after today: a late task does not come back already overdue."""
+    ref = max(base, today)
+    if repeat["every"] == "daily":
+        return ref + dt.timedelta(days=1)
+    if repeat["every"] == "weekly":
+        days = set(repeat.get("days") or []) or {base.isoweekday() % 7}
+        d = ref + dt.timedelta(days=1)
+        while d.isoweekday() % 7 not in days:
+            d += dt.timedelta(days=1)
+        return d
+    want = repeat.get("day") or base.day                 # monthly: the 31st is the last day of a shorter month
+    y, m = ref.year, ref.month
+    while True:
+        d = dt.date(y, m, min(want, calendar.monthrange(y, m)[1]))
+        if d > ref:
+            return d
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+
+
+def _recur(data: dict, today: dt.date | None = None) -> list[dict]:
+    """Every done task with a `repeat` gets its next occurrence: same title, notes, priority, project, topic, labels and
+    recurrence, status todo, the next due date, its reminder moved by as many days. The recurrence moves to the new
+    task (the done one keeps none): reopening it and closing it again never makes a second one. -> the new tasks."""
+    made: list[dict] = []
+    for t in list(data["tasks"]):
+        rep = t.get("repeat")
+        if t.get("status") != "done" or not rep:
+            continue
+        today = today or _today()
+        try:
+            base = dt.date.fromisoformat(t["due"]) if t.get("due") else today
+        except ValueError:
+            base = today
+        nxt = _next_due(rep, base, today)
+        if rep["every"] == "monthly" and "day" not in rep:
+            rep = {**rep, "day": base.day}
+        remind = None
+        if t.get("remind_at"):
+            try:
+                at = dt.datetime.fromisoformat(t["remind_at"]) + (nxt - base)
+                remind = at.strftime("%Y-%m-%dT%H:%M")
+            except (ValueError, OverflowError):
+                remind = None
+        now = time.time()
+        new = _norm_task({"id": _new_id("t_", 6), "title": t["title"], "notes": t["notes"], "priority": t["priority"],
+                          "due": nxt.isoformat(), "remind_at": remind, "repeat": rep, "project_id": t["project_id"],
+                          "topic_path": t["topic_path"], "labels": list(t["labels"]), "created": now, "updated": now})
+        while any(x["id"] == new["id"] for x in data["tasks"]):
+            new["id"] = _new_id("t_", 6)
+        new["order"] = max([x["order"] for x in data["tasks"] if x["status"] == "todo"], default=0.0) + 1.0
+        t["repeat"] = None
+        data["tasks"].append(new)
+        made.append(new)
+    return made
+
+
+def apply_recurrences() -> list[str]:
+    """The loop's pass: the next occurrence of tasks marked done in the file itself (Claude, an editor). -> new ids."""
+    if config.integrations_paused():
+        return []
+    for _ in range(3):
+        with _lock:
+            try:
+                if not any(t["status"] == "done" and t.get("repeat") for t in load(copy_=False)["tasks"]):
+                    return []
+                data = load()
+            except CorruptFile:
+                return []
+            made = _recur(data)
+            try:
+                save(data)
+            except _Changed:
+                continue
+            return [t["id"] for t in made]
+    return []
 
 
 # ---- reminders ------------------------------------------------------------------------------
@@ -811,6 +931,7 @@ def check_reminders(now: float | None = None) -> list[str]:
 async def _remind(interval: float = REMIND_EVERY_S) -> None:
     while True:
         try:
+            await asyncio.to_thread(apply_recurrences)
             await asyncio.to_thread(check_reminders)
         except Exception:                            # noqa: BLE001 - the loop must survive one bad pass
             log.exception("task reminders failed")

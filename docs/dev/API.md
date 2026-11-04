@@ -236,6 +236,7 @@ Everything deleted (files, folders, topics and projects with their sessions, sin
 ```
 Task    = {id, title, notes, status:"todo"|"doing"|"done", priority:0|1|2|3, due:"YYYY-MM-DD"|null,
            remind_at:"YYYY-MM-DDTHH:MM"|null,   // local time in the configured time zone
+           repeat:{every:"daily"} | {every:"weekly", days:[0-6]} | {every:"monthly", day?:1-31} | null,  // 0 = Sunday
            project_id|null, topic_path|null, labels:[str] (max 50, 40 chars each), created, updated, done_at|null, order:float}
 TaskProject = {id, name, color, workspace?: str, hidden?: true}
 ```
@@ -254,6 +255,12 @@ come, including one missed while the server was stopped; never twice for the sam
 (`<state>/task-reminders.json` + feed dedupe `task-reminder:<id>:<remind_at>`). Marking the task done, deleting it or
 changing its `remind_at` resolves that notification; a new `remind_at` reminds again. Nothing is posted while
 `integrations_paused` (a restored copy). A `remind_at` that is not `YYYY-MM-DDTHH:MM`: `400 invalid_remind_at` (by hand: read as null).
+Recurrence: when a task with a `repeat` is done (POST / PATCH / bulk at once; marked done in the file: within 30 s), a
+new task is added: same title, notes, priority, project, topic, labels and `repeat`, status `todo` at the bottom of the
+column, `due` = the next date strictly after max(its due date or today, today) (weekly: the next listed weekday, none =
+the due date's; monthly: `day`, else the due date's day, kept in the new `repeat`, the last day of a shorter month),
+`remind_at` moved by as many days. The done task's `repeat` becomes null, so it is created once. `400 invalid_repeat`:
+weekly without `days`, a day outside 0-6, a monthly `day` outside 1-31 (`422` for an unknown `every`); by hand: read as null.
 | GET | `/api/tasks` | – | `{projects:[TaskProject], tasks:[Task]}` |
 | POST | `/api/tasks` | partial Task (title required) | `Task` · `422` when `order` is not a finite number |
 | PATCH | `/api/tasks/{id}` | partial Task | `Task` · `422` when `order` is not a finite number |
