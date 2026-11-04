@@ -358,6 +358,8 @@ export type FileSearchHit = { path: string; name: string; type: 'file' | 'dir' }
 /* ---------------------------------------------------------------- Tasks */
 export type TaskStatus = 'todo' | 'doing' | 'done'
 export type TaskPriority = 0 | 1 | 2 | 3
+/** `days`: weekly, 0 = Sunday; `day`: monthly, the day of the month it keeps. */
+export type TaskRepeat = { every: 'daily' | 'weekly' | 'monthly'; days?: number[]; day?: number }
 export type Task = {
   id: string
   title: string
@@ -365,6 +367,10 @@ export type Task = {
   status: TaskStatus
   priority: TaskPriority
   due: string | null
+  /** Local date and time (`YYYY-MM-DDTHH:MM`, configured time zone) of a `task.reminder` notification, or null. */
+  remind_at: string | null
+  /** Recurrence: when the task is marked done, the next occurrence is added (and takes the recurrence over). */
+  repeat: TaskRepeat | null
   project_id: string | null
   topic_path: string | null
   labels: string[]

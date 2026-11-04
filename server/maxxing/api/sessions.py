@@ -66,8 +66,9 @@ class CreateIn(_Text):
 
 class TeamIn(_Text):
     path: str
-    message: str = Field(min_length=1, max_length=24000)
+    message: str = Field(default='', max_length=24000)   # empty -> 400 bad_mission (teams.create says why)
     title: str | None = Field(default=None, max_length=120)
+    attachments: list[str] = Field(default_factory=list)
 
 
 class DiscussionPresetIn(_Text):
@@ -151,7 +152,7 @@ async def shutdown() -> None:
 @router.post('/teams')
 async def create_team(body: TeamIn):
     from ..sessions import teams
-    return await _call(teams.create, body.path, body.message, body.title)
+    return await _call(teams.create, body.path, body.message, body.title, body.attachments)
 
 
 @router.get('/teams/{sid}')

@@ -120,7 +120,7 @@ Session = {
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
 | POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6}` | `Session` (starts the first turn if message or voice). `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
-| POST | `/api/teams` | `{path, message, title?}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. |
+| POST | `/api/teams` | `{path, message, title?, attachments?:[filepath]}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. `attachments` (absolute paths of uploaded files, as for a message; `400 bad_attachment` when one is missing) go with the mission to both workers - Claude opens them with its Read tool, Codex gets the images it can take inline (PNG/GIF/WebP/JPEG inside the workspace, 3.5 MB and 8000 px at most) and the path of every other file - and with the synthesis request to the coordinator; the mission message of the coordinator shows them. An empty `message` -> `400 bad_mission`. |
 | GET | `/api/teams/{sid}` | – | `{id, phase, created, agents: [{id, provider, role, stopped, state, session: Session\|null, started_at, finished_at, activity: [{kind: "read"\|"search"\|"run"\|"edit"\|"web"\|"say"\|"other", target}], report: string\|null}]}`: team phase and its two worker sessions, including individual status and links. `started_at` is the team's start, `finished_at` when the worker stopped running (null while it runs). `activity` = the last 3 actions of the worker's latest turn, oldest first: a tool call (`target`: a file path relative to the topic, a pattern, a command or a URL) or the first line of what it said (`say`), 120 characters at most. `report` = the first 600 characters of its final answer once it stopped running, else null. Read from the last 128 kB of the worker's log only, again only when that log changed. The team is retained with the coordinator session. |
 | POST | `/api/teams/{sid}/agents/{agent_id}/stop` | – | Stop one independently launched team worker; other workers continue. Returns 404 for sessions outside this team. |
 | POST | `/api/teams/{sid}/stop` | – | Stop the team, including any running workers and coordinator. |
@@ -134,7 +134,7 @@ Session = {
 | POST | `/api/sessions/{id}/messages` | `{text, attachments?:[filepath], hud?:bool, voice?:filepath}` (`hud`: sent from the HUD - the prompt gets a short preface: answer short, annotate the screen capture if useful; `voice`: a voice message sent directly - uploaded first with `/api/uploads`, queued at once, transcribed by the server, then its transcript is the prompt) | `{queued:bool, session:Session}` · `409 voice_off` (transcription not ready) |
 | DELETE | `/api/sessions/{id}/queue` | – | clears queued messages |
 | POST | `/api/sessions/{id}/ask` | `{question}` | `{answer, cost_usd, duration_ms}` — side question: Claude answers from a throwaway copy of the session's thread (read-only, nothing saved: the running turn, queue and log are untouched). 409 `no_thread` (never answered yet) / `busy` (one already running for this session), 429 (2 running), 504 (240 s) |
-| POST | `/api/sessions/{id}/summary` | – | `{summary, decisions:[str], actions:[{title, notes}], truncated:bool}`: a reviewable summary of the conversation (its last 200 events, at most 50 000 characters; `truncated` when the beginning is missing) written by Codex (`codex exec`, plan mode, JSON output schema, 180 s); nothing is saved, no task is created · `400 empty_session` · `409 no_topic`, `409 codex_unavailable` (Codex not signed in), `409 summary_busy` (one per session), `429 summary_limit` (two at a time) · `502 summary_unavailable\|summary_failed\|summary_invalid` · `504 summary_timeout` |
+| POST | `/api/sessions/{id}/summary` | – | `{summary, decisions:[str], actions:[{title, notes}], truncated:bool, engine:"codex"\|"claude", cost_usd}`: a reviewable summary of the conversation (its last 200 events, at most 50 000 characters; `truncated` when the beginning is missing) written by Codex when it is signed in (`codex exec`, plan mode, JSON output schema), else by Claude Code when it has a sign-in method (`claude -p`, no tools, no saved thread, JSON answer), 180 s; its tokens (and Claude's indicative `cost_usd`; 0 for Codex) are added to the session's statistics under that engine without counting a turn; nothing else is saved, no task is created · `400 empty_session` · `409 no_topic`, `409 summary_no_agent` (neither Codex nor Claude Code is signed in), `409 summary_busy` (one per session), `429 summary_limit` (two at a time) · `502 summary_unavailable\|summary_failed\|summary_invalid` · `504 summary_timeout` |
 | POST | `/api/sessions/{id}/summary/memory` | `{text}` (1-12000 characters) | `{ok}`: appends `## Discussion — <UTC date>` and the text, as approved by the user, to the existing `memory.md` of the session's topic · `400 empty_memory` · `409 no_topic`, `409 memory_unavailable` (missing or not openable), `409 invalid_memory` (not a regular file), `409 memory_full` (the file would pass 32 KiB, what Codex reads) |
 | POST | `/api/sessions/{id}/queue/take` | – | `{messages:[{text, attachments}], session}` — removes the queued user messages and returns them (the composer's **Edit**: they come back in the composer and are sent again as a normal message) |
 | POST | `/api/sessions/{id}/hide` | `{at, hidden=true}` | `{ok}` — hides (or shows again) the user message whose `at` is given: appends `{type:"mx_hide", ref, hidden}` to the raw log (nothing is erased; Claude's own thread is untouched), streamed as a `hide` event; 404 when no user message has that `at`, nothing written when it is already in that state. The UI offers it for a message whose turn ended without any answer (stopped) and drops that turn's rows |
@@ -144,7 +144,7 @@ Session = {
 | POST | `/api/sessions/{id}/discussion/resume` | – | `Session` — continues from the saved next prompt (see *Discussion periods*) · `400 unsupported`, `409 not_paused` |
 | PATCH | `/api/sessions/{id}/discussion` | `{turn_limit?: int\|null, duration_minutes?: int\|null}` | `Session` — changes the limits of a discussion / debate (running, paused or stopped): `turn_limit` 1-200 replies, `duration_minutes` 1-1440 (stored as `discussion_duration_seconds`); a field left out keeps its value, `null` removes that limit. They apply to the current period: while it runs, a limit already reached pauses it after the current reply; paused on its limit, Resume continues the period once no limit is reached any more · `400 unsupported` (not a discussion), `422 invalid` (out of range, not an integer) |
 | POST | `/api/sessions/{id}/compact` | – | `{ok}` summary → fresh Claude context, same session. A discussion / debate (also while paused, it stays paused): Claude summarizes the exchanges in a throwaway read-only thread, then Claude Code and Codex both continue in fresh threads seeded with it (see *Discussion compaction*) · `409 busy` while running · `400 empty_session` · `409 unsupported` (agent plugin) |
-| POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails) |
+| POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails). A discussion / debate (also while paused): a new discussion with the same provider, objective, roles, models and limits (a new period); the summary of the exchanges (as for *Discussion compaction*) is shown in it as a system `user` event and seeds both agents' first replies; paused with a reply pending, the new one is paused on that reply (reason `user`, Resume asks it) and the old one is no longer paused · `409 busy` while running · `409 unsupported` (agent plugin) |
 | POST | `/api/sessions/{id}/seen` | – | `{ok}` |
 | GET | `/api/sessions/{id}/events?tail=N` | – | last events, read backwards from the end (whole log lines, at least N events when available, max 5000): `{events, start, next, more_before:bool, state}` — `start` = offset of the first line returned, `next` = end offset (start the stream there). What the UI uses to open a thread |
 | GET | `/api/sessions/{id}/events?before=<offset>&limit=N` | – | events strictly before `offset` (backward paging, "Show earlier messages"): `{events, start, next:offset, more_before, state}` · `{events:[], reset:true, state}` when `offset` is not a line boundary of the current log |
@@ -235,6 +235,8 @@ Everything deleted (files, folders, topics and projects with their sessions, sin
 ## Tasks (`<workspace>/tasks.json`)
 ```
 Task    = {id, title, notes, status:"todo"|"doing"|"done", priority:0|1|2|3, due:"YYYY-MM-DD"|null,
+           remind_at:"YYYY-MM-DDTHH:MM"|null,   // local time in the configured time zone
+           repeat:{every:"daily"} | {every:"weekly", days:[0-6]} | {every:"monthly", day?:1-31} | null,  // 0 = Sunday
            project_id|null, topic_path|null, labels:[str] (max 50, 40 chars each), created, updated, done_at|null, order:float}
 TaskProject = {id, name, color, workspace?: str, hidden?: true}
 ```
@@ -248,6 +250,17 @@ A hand-written file is normalised on read (missing fields filled in, `id` / `tit
 another type turned into text, non-numeric `created` / `updated` / `done_at` replaced). Every write (POST / PATCH / DELETE
 below) is a read-modify-write under one lock; when the file changed on disk between the read and the write (Claude edited it),
 the change is re-applied on the fresh file (3 tries), then `409 conflict`. Not valid JSON: every route `409 corrupt_file`.
+Reminders: every 30 s the server posts one `task.reminder` (Kinds below) for each task not `done` whose `remind_at` has
+come, including one missed while the server was stopped; never twice for the same (task, `remind_at`), restarts included
+(`<state>/task-reminders.json` + feed dedupe `task-reminder:<id>:<remind_at>`). Marking the task done, deleting it or
+changing its `remind_at` resolves that notification; a new `remind_at` reminds again. Nothing is posted while
+`integrations_paused` (a restored copy). A `remind_at` that is not `YYYY-MM-DDTHH:MM`: `400 invalid_remind_at` (by hand: read as null).
+Recurrence: when a task with a `repeat` is done (POST / PATCH / bulk at once; marked done in the file: within 30 s), a
+new task is added: same title, notes, priority, project, topic, labels and `repeat`, status `todo` at the bottom of the
+column, `due` = the next date strictly after max(its due date or today, today) (weekly: the next listed weekday, none =
+the due date's; monthly: `day`, else the due date's day, kept in the new `repeat`, the last day of a shorter month),
+`remind_at` moved by as many days. The done task's `repeat` becomes null, so it is created once. `400 invalid_repeat`:
+weekly without `days`, a day outside 0-6, a monthly `day` outside 1-31 (`422` for an unknown `every`); by hand: read as null.
 | GET | `/api/tasks` | – | `{projects:[TaskProject], tasks:[Task]}` |
 | POST | `/api/tasks` | partial Task (title required) | `Task` · `422` when `order` is not a finite number |
 | PATCH | `/api/tasks/{id}` | partial Task | `Task` · `422` when `order` is not a finite number |
@@ -739,7 +752,7 @@ else off). Effective rule of an event: its kind's rule unless auto, else its sou
 default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
-`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
+`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`, `review` (a companion proposal).
 
 | kind | source | level | params | actions | resolved by |
 |---|---|---|---|---|---|
@@ -759,8 +772,12 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `deps.vulnerable` | system | warning | `count` | `open` | – |
 | `deps.update_failed` | system | warning | `count, names` | `open` | – |
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `companion.ready` | system | warning | `session_id, fingerprint` (a finished companion experiment with a proposal; `fingerprint` = the exact proposal reviewed; Telegram review buttons are bound to it) | `review` | – |
+| `companion.empty` | system | info | `session_id, fingerprint` (finished without a code change) | `review` | – |
+| `companion.error` | system | warning | – (the experiment stopped with an error, or its result cannot be reviewed) | – | – |
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
+| `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
 | `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
