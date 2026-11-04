@@ -1634,6 +1634,8 @@ export const fr: Record<keyof typeof en, string> = {
   'pc.candidateNo': "Refuser",
   'pc.title': 'Navigateur de mon PC',
   'pc.desc': 'Claude utilise un navigateur sur votre propre ordinateur : un profil séparé de votre navigateur, ouvert seulement quand Claude en a besoin.',
+  'pc.unavailableTitle': 'Pas encore disponible',
+  'pc.unavailable': "harness-pilot PC, le petit programme qui permet à Claude d'utiliser un navigateur de votre ordinateur, n'est pas encore publié en téléchargement : aucun ordinateur ne peut donc être connecté. Cette carte proposera le téléchargement dès qu'il le sera.",
   'pc.whichOs': 'Votre ordinateur',
   'pc.whichBrowser': 'Navigateur utilisé par Claude',
   'pc.isolated': 'Claude a son propre profil {browser} : vos onglets, mots de passe et historique habituels ne sont jamais touchés. Connectez-vous-y une fois aux sites dont Claude a besoin.',

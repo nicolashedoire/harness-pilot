@@ -779,6 +779,10 @@ first call; `_idle_watch` (30 s) closes the browser (`close`) and stops the chil
 an agent disconnect ends every channel and the child. `BLOCKED_TOOLS` (upload_file, screencast, lighthouse) and
 unknown names are refused; the offline answer is a normal tool result (`isError`). One retry when the child dies
 mid-call. Agent binaries: `MAXXING_PC_BIN_DIR`, else `bin/`, else the release in `pc_agent.json` (sha256 checked);
+`pc_agent.json` = `{version, url ("…/releases/download/pc-agent-v{version}/{name}" of this repository), files:
+{<file name of TARGETS>: sha256}}`, written by `pc-agent/build.sh` (`dist/pc_agent.json`, docs/dev/PC-AGENT.md);
+empty `files` = nothing to download (`available()` false, `PcError 409 no_agent` / `404 no_agent`); a release file
+that cannot be fetched is `PcError 502 download_failed`, one that does not match is `502 checksum`.
 `personalised()` appends `<json><uint32 BE len>HMPCCFG1` (server, pairing code, browser, autostart).
 `pc_tools.json` = the tool list shipped for `tools/list` before the first start.
 Security boundaries: `pair()` stores a `candidate` (15 min); `WS /api/pc/ws` holds a candidate's socket
