@@ -7,13 +7,27 @@ import subprocess
 from pathlib import Path
 
 
+def privacy_args() -> list[str]:
+    """Per-process settings shared by status checks and execution; never rewrite personal config."""
+    args = []
+    # Keep app-owned turns private even if the CLI's built-in analytics default changes.
+    # analytics.enabled alone does not disable explicitly configured OTLP exporters.
+    for key, value in (
+        ('analytics.enabled', 'false'), ('otel.exporter', '"none"'),
+        ('otel.metrics_exporter', '"none"'), ('otel.trace_exporter', '"none"'),
+        ('otel.log_user_prompt', 'false'), ('otel.log_agent_responses', 'false'),
+    ):
+        args += ['-c', f'{key}={value}']
+    return args
+
+
 def status() -> dict:
     """Check the same CLI and account used by sessions without exposing its output."""
     binary = os.environ.get('MAXXING_CODEX_BIN') or shutil.which('codex')
     if not binary:
         return {'installed': False, 'authenticated': False, 'reason': 'not_installed'}
     try:
-        result = subprocess.run([binary, 'login', 'status'], stdin=subprocess.DEVNULL,
+        result = subprocess.run([binary, *privacy_args(), 'login', 'status'], stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
         return {'installed': True, 'authenticated': result.returncode == 0,
                 'reason': None if result.returncode == 0 else 'not_authenticated'}
@@ -61,6 +75,7 @@ def command(thread_id: str, mode: str, model: str = "", images: list[str] | None
     # Never silently give Codex unrestricted machine access, including when Claude's default is bypass.
     sandbox = "read-only" if mode in ("default", "plan") else "workspace-write"
     args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--sandbox", sandbox]
+    args += privacy_args()
     if model:
         args += ["--model", model]
     for image in images or []:

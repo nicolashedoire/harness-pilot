@@ -64,6 +64,15 @@ def public() -> dict:
 
 
 # ---- probes (replaced in tests) --------------------------------------------------------------
+def _env() -> dict[str, str]:
+    """The process environment, without the quiet-start variable: it turns off Claude Code's own update check, and an
+    update the server was asked to install must never be skipped by it."""
+    from .sessions import spawn
+    env = spawn.base_env()
+    env.pop(spawn.QUIET_START_ENV, None)
+    return env
+
+
 def _bin() -> str | None:
     from .api import claude as claude_api
     return claude_api._resolved_bin()
@@ -71,12 +80,11 @@ def _bin() -> str | None:
 
 def installed_version() -> str | None:
     """`claude --version`, read fresh (no cache: called right after an update)."""
-    from .sessions import spawn
     b = _bin()
     if not b:
         return None
     try:
-        r = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=20, env=spawn.base_env())
+        r = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=20, env=_env())
     except (OSError, subprocess.TimeoutExpired):
         return None
     m = _VERSION.search(r.stdout or "") if r.returncode == 0 else None
@@ -112,7 +120,6 @@ def install_method() -> tuple[str, list[str]] | None:
 
 def run_update(version: str) -> tuple[bool, str]:
     """Install exactly `version` the way Claude Code is installed -> (exit code 0, output tail)."""
-    from .sessions import spawn
     how = install_method()
     if how is None:
         return False, "Claude Code is not installed by the official installer or npm: update it by hand"
@@ -120,7 +127,7 @@ def run_update(version: str) -> tuple[bool, str]:
     arg = version if kind == "native" else f"@anthropic-ai/claude-code@{version}"
     try:
         r = subprocess.run([*cmd, arg], capture_output=True, text=True, timeout=UPDATE_TIMEOUT_S,
-                           env=spawn.base_env(), stdin=subprocess.DEVNULL, cwd=str(config.STATE))
+                           env=_env(), stdin=subprocess.DEVNULL, cwd=str(config.STATE))
     except subprocess.TimeoutExpired:
         return False, f"No end within {UPDATE_TIMEOUT_S // 60} min"
     except OSError as e:
