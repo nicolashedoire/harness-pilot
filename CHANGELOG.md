@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
+- Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.
 - The Settings menu groups its sections under headings (You, Agents, Data, Integrations, Platform) with Support last, and a search above it on a computer finds a setting by name or keyword.
 - The agent map of a running agent team now says that its subagents cannot be stopped one by one, and that stopping the session interrupts the coordinator and all its subagents.
@@ -37,7 +39,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Preview a memory backup before restoring, restore the latest version without local history, and review skipped or held items afterward. A selected file that cannot be read or exceeds the size limit now stops the backup instead of silently dropping it. [Show me](#show:backup-preview)
 - Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
 - Get notified when a session finishes or fails, and when a Claude Code + Codex discussion pauses on its limit. Notifications are shown in your language.
-- Choose per kind of event what reaches this browser (with or without sound), push notifications on a phone or computer, and Telegram. Push delivery has not yet been verified end to end. Repeated cron failures now fold into one row per job.
+- Choose per kind of event what reaches this browser (with or without sound), push notifications on a phone or computer, and Telegram. Push delivery is tested end to end against a local push service (signed and encrypted messages, a device that unsubscribes is forgotten); delivery through the push services of real browsers has not yet been verified. Repeated cron failures now fold into one row per job.
 - Change the reply and time limits of a Claude Code + Codex discussion paused on its limit, right from its banner (or at any time from the session's **…** menu): raise the limit and resume to continue the same period, or keep the limits and resume to start a new one.
 - See when a discussion paused and which limit it reached (*Paused at 03:12 · limit of 20 replies*), in its banner and at the end of the conversation.
 - Unticking a webhook or a script in Settings -> Notifications now also stops its push notifications; a ticked one is pushed with all its events, sales ringing by default.
