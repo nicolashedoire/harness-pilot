@@ -3,7 +3,7 @@ section: Extending
 ---
 # Skills
 
-Skills are instructions Claude Code and Codex may load when a task matches their description. The inherited Linux setup installs the product skills in Claude's skills directory (`~/.claude/skills`) and in Codex's personal skills directory (`~/.agents/skills`), so a Codex session can use them too. The local startup script installs them in `.harness-pilot-local/.claude/skills` and `.harness-pilot-local/.agents/skills` at every start: Claude Code and Codex read them for the sessions of the local workspace only, and your personal skills (`~/.claude/skills`, `~/.agents/skills`) are never changed. With Claude Code, a personal skill with the same name as a product skill wins; Codex lists both.
+Skills are instructions Claude Code and Codex may load when a task matches their description. On a [Linux server](installation), the installer installs the product skills in Claude's skills directory (`~/.claude/skills`) and in Codex's personal skills directory (`~/.agents/skills`), so a Codex session can use them too. The local startup script installs them in `.harness-pilot-local/.claude/skills` and `.harness-pilot-local/.agents/skills` at every start: Claude Code and Codex read them for the sessions of the local workspace only, and your personal skills (`~/.claude/skills`, `~/.agents/skills`) are never changed. With Claude Code, a personal skill with the same name as a product skill wins; Codex lists both.
 
 ## Shipped skills
 
