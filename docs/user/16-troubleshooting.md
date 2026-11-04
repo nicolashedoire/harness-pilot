@@ -26,6 +26,7 @@ checks and the logs, explains, and fixes what is safe to fix.
 | Check | Meaning |
 |---|---|
 | python, uv | runtime and toolchain |
+| cli | the `pilot` your terminal and the sessions run is this product. Some systems ship another program called `pilot`: the doctor then names it, and `maxxing` (the same command under its earlier name) works instead, for example `maxxing doctor` |
 | claude_cli, claude_auth | Claude Code installed and signed in |
 | claude_version | Claude Code behind its latest release (info; releases carry security fixes). With Settings -> Claude -> Update Claude Code automatically (off by default) the server installs the stable release by itself when nothing has run for 10 min; the hint says why it did not - fix: `claude update` |
 | skill_listing | how many skills Claude sees in every prompt and their size; past Claude Code's budget the least used ones lose their description (info) - see [Skills](skills) |

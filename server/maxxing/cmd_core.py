@@ -815,6 +815,63 @@ def check_uv() -> Check:
     return _c("uv", OK if code == 0 else WARN, out.strip() or "uv", b)
 
 
+CLI_SCRIPT_MARKERS = (b"maxxing.cli", b"claude-maxxing CLI wrapper")   # uv's console script, install.sh's wrapper
+
+
+def _is_our_cli(found: str) -> bool:
+    """`found` (a `pilot` on a PATH) is this program: it resolves to the installed command or to the venv's script,
+    or it is a small script starting `maxxing.cli` (another checkout's venv, the state-dir wrapper)."""
+    try:
+        real = Path(found).resolve()
+    except (OSError, RuntimeError):
+        return False
+    venv_bin = Path(sys.executable).parent
+    for ours in (BIN_LINK, venv_bin / "pilot", venv_bin / "maxxing"):
+        try:
+            if ours.exists() and ours.resolve() == real:
+                return True
+        except (OSError, RuntimeError):
+            pass
+    try:
+        with open(real, "rb") as f:
+            head = f.read(4096)
+    except OSError:
+        return False
+    return head.startswith(b"#!") and any(m in head for m in CLI_SCRIPT_MARKERS)
+
+
+def check_cli_name() -> Check | None:
+    """The `pilot` that a shell and the sessions run first must be ours: some systems ship an unrelated program of
+    that name. `maxxing` is the same command under its earlier name, the way round."""
+    from .sessions import spawn
+    paths = {"this shell": os.environ.get("PATH", "")}
+    try:
+        paths["sessions"] = spawn.base_env()["PATH"]
+    except Exception:  # noqa: BLE001 - the shell's answer is still worth giving
+        pass
+    found = {where: shutil.which("pilot", path=p) for where, p in paths.items()}
+    for where, f in found.items():
+        if f and not _is_our_cli(f):
+            ours_in = [w for w, g in found.items() if g and w != where and _is_our_cli(g)]
+            if _pilot_link_is_ours() and Path(f).parent != PILOT_LINK.parent:
+                other = f"or put {PILOT_LINK.parent} before {Path(f).parent} in the PATH"
+            elif BIN_LINK.is_symlink() or BIN_LINK.exists():
+                other = f"or remove that program, then `maxxing init` links {PILOT_LINK} to this one"
+            else:
+                other = "or remove that program"
+            return _c("cli", WARN, f"another `pilot` comes first on the PATH ({where}): {f}",
+                      "a program of the same name that is not harness-pilot (some systems ship one)"
+                      + (f"; for {', '.join(ours_in)}, `pilot` is ours" if ours_in else ""),
+                      f"use `maxxing`, the same command (e.g. `maxxing doctor`) - {other}")
+    if not any(found.values()):
+        if not (BIN_LINK.is_symlink() or BIN_LINK.exists()):
+            return None                                  # a checkout run without `uv run`: nothing installed to name
+        return _c("cli", INFO, "command `pilot` not found on the PATH", f"`maxxing` works ({BIN_LINK})",
+                  f"maxxing init  (creates {PILOT_LINK})")
+    first = next(f for f in found.values() if f)
+    return _c("cli", OK, "command `pilot` (alias `maxxing`)", first)
+
+
 def check_claude_cli() -> Check:
     b = claude_bin()
     if not b:
@@ -1501,7 +1558,7 @@ def check_setup() -> Check:
 def collect_checks(live: bool = False, fetch: bool = True, deps: bool = False) -> list[Check]:
     cfg = config.load_config()
     steps: list[Callable[[], Check | None]] = [
-        check_python, check_uv, check_claude_cli, lambda: check_claude_version(fetch), lambda: check_claude_auth(live),
+        check_python, check_uv, check_cli_name, check_claude_cli, lambda: check_claude_version(fetch), lambda: check_claude_auth(live),
         lambda: check_skill_listing(cfg), check_setup,
         check_service, check_hardening, lambda: check_caddy_site(cfg), check_infra_paths, lambda: check_bind(cfg), lambda: check_http(cfg), lambda: check_public_url(cfg),
         lambda: check_caddy(cfg), check_crontab, lambda: check_timezone(cfg), lambda: check_telegram(cfg), lambda: check_backup(cfg), check_voice, check_tools, check_managed_deps, check_security, check_state_files,
