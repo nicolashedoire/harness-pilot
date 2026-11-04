@@ -177,7 +177,7 @@ function SelectDot({ checked, visible, label, onToggle, className }: { checked: 
       <span
         className={cn(
           'flex size-5 shrink-0 items-center justify-center rounded-full border transition-opacity group-focus-visible/dot:opacity-100 group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-ring',
-          checked ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 bg-card',
+          checked ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40 bg-card',
           !checked && !visible && 'opacity-0 group-hover:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100',
         )}
       >

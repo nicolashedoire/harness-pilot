@@ -99,6 +99,8 @@ export const BUS_KEYS: Record<BusTopic, readonly (readonly unknown[])[]> = {
   /** someone started / stopped writing, came online: the list and the faces only */
   team_live: [['team', 'state']],
   mcp: [['mcp']],
+  /** the palette changed on another device: the auth state carries the new one */
+  look: [qk.authState],
 }
 
 /** Data the bus keeps fresh on its own (file watchers + every write path): no refetch when the tab is shown

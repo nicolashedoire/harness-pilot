@@ -321,6 +321,14 @@ Python modules call each other only through these functions. Keep signatures sta
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
   itself - same result) and into shell cron jobs.
 
+## maxxing.themes
+- `clean_theme(data) -> dict` - structural validation of a palette (Theme object, DESIGN.md "Themes"), the server
+  mirror of `web/src/lib/theme/validate.ts`: unknown keys dropped, defaults filled, colours only (`is_color`), 16 KB
+  at most; raises `ThemeError` (-> 422 `invalid_theme`). No colour maths: derivation and contrast stay in the browser.
+- `legacy_theme(accent, tint, keep)` - the palette of a client from before palettes; `nearest_accent(theme)`.
+- Used by `PUT /api/settings/look` (config `look` = `{theme, accent, tint, palette, rev}`, `rev` + bus `look` on a
+  palette change) and `GET /api/auth/state`.
+
 ## maxxing.crons  (owner: organisation)
 - `run_job(id) -> Run | None` (blocking; None = unknown or already running) · `spawn_run(id)` · `sync_crontab()`
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.

@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "mock": "node mock/server.mjs"
+    "mock": "node mock/server.mjs",
+    "test": "node --import ./scripts/ts-resolve.mjs --test 'tests/*.test.ts'"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
