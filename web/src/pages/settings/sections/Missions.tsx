@@ -7,7 +7,7 @@ import { useT, useLang, tDyn } from '@/i18n'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { fmtNumber } from '@/lib/format'
 import { useWorkspace } from '@/lib/queries'
-import { Button, Checkbox, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
+import { Badge, Button, Checkbox, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 
 type Role = { id: string; name: string }
@@ -75,7 +75,7 @@ export function MissionsSection() {
     </SettingsCard>
     {data && <SettingsCard title={data.title} description={data.goal} key={data.id}>
       <div className="grid gap-4 text-sm">
-        <div className="flex flex-wrap items-center gap-3"><span className="rounded-full border px-3 py-1">{stateText(data.phase)}</span><span className="text-xs text-muted-foreground">{t('resident.progress', { runs: data.launches.length, max: data.max_runs, cycle: data.cycle, cycles: data.max_cycles })}</span></div>
+        <div className="flex flex-wrap items-center gap-3"><Badge variant="outline">{stateText(data.phase)}</Badge><span className="text-xs text-muted-foreground">{t('resident.progress', { runs: data.launches.length, max: data.max_runs, cycle: data.cycle, cycles: data.max_cycles })}</span></div>
         {!!data.reason && <p role="status" className="text-muted-foreground">{tDyn(t, `resident.reason.${data.reason}`, data.reason)}</p>}
         <p className="text-xs text-muted-foreground">{t('resident.usage', { count: fmtNumber(data.tokens, lang), max: fmtNumber(data.max_tokens, lang), minutes: Math.round(data.max_seconds / 60), elapsed: Math.floor((data.spent_seconds + (data.active_since ? Math.max(0, Date.now() / 1000 - data.active_since) : 0)) / 60) })}</p>
         <div className="flex flex-wrap gap-2">
