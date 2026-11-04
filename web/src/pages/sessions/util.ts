@@ -20,6 +20,8 @@ import type { ClaudeModel, Session, Topic, WorkspaceTree } from '@/lib/types'
 
 /** Fallback context window when the server does not know it yet (no turn reported it). */
 export const CONTEXT_MAX = 200_000
+/** Codex's usable window when the server reports none: 272k x 95 % for every model of codex-cli 0.150.1. */
+export const CODEX_CONTEXT_MAX = 258_400
 /**
  * The window to measure against, from the most to the least specific:
  * 1. the model chosen for the NEXT turn, when it differs from the last one (its window as Claude Code
@@ -27,13 +29,16 @@ export const CONTEXT_MAX = 200_000
  * 2. the window reported by the last turn of this session;
  * 3. the window known for the last turn's model;
  * 4. a fallback: 200k, or 1M once the tokens already exceed 200k.
+ * A Codex session (`agent: 'codex'`) uses the window Codex recorded for its last turn, else Codex's own default:
+ * Claude's models and windows never apply to it.
  */
 export function contextWindow(
   tokens: number,
   reported: number | null | undefined,
-  opts: { chosen?: string | null; real?: string | null; windows?: Record<string, number | null | undefined> } = {},
+  opts: { chosen?: string | null; real?: string | null; windows?: Record<string, number | null | undefined>; agent?: 'claude' | 'codex' } = {},
 ): number {
-  const { chosen, real, windows = {} } = opts
+  const { chosen, real, windows = {}, agent } = opts
+  if (agent === 'codex') return reported && reported > 0 ? reported : CODEX_CONTEXT_MAX
   if (chosen && chosen !== real && windows[chosen]) return windows[chosen]!
   if (reported && reported > 0) return reported
   if (real && windows[real]) return windows[real]!

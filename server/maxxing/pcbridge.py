@@ -278,11 +278,12 @@ def agent_file(target: str) -> Path:
         f = Path(local) / name
         if f.is_file():
             return f
-        raise PcError(404, "not_found", f"{name} is not built")
+        raise PcError(404, "no_agent", f"{name} is not built")
     man = _manifest()
     want = (man.get("files") or {}).get(name)
     if not want:
-        raise PcError(404, "not_found", "this server has no agent for this computer yet")
+        raise PcError(404, "no_agent",
+                      f"harness-pilot PC is not published for {target} yet: there is nothing to download")
     cache = _dir() / "bin" / f"{man.get('version')}-{name}"
     if cache.is_file():
         with cache.open("rb") as f:
@@ -290,8 +291,17 @@ def agent_file(target: str) -> Path:
                 return cache
     import httpx
     url = str(man.get("url") or "").format(version=man.get("version"), name=name)
-    r = httpx.get(url, follow_redirects=True, timeout=60)
-    r.raise_for_status()
+    try:
+        r = httpx.get(url, follow_redirects=True, timeout=60)
+        r.raise_for_status()
+    except httpx.HTTPStatusError as e:                 # a release without this file, or a wrong URL
+        log.warning("harness-pilot PC download %s: HTTP %s", url, e.response.status_code)
+        raise PcError(502, "download_failed", "harness-pilot PC could not be downloaded from its release "
+                                              f"(HTTP {e.response.status_code}): try again later") from None
+    except (httpx.HTTPError, ValueError) as e:         # network, TLS, timeout, a malformed URL
+        log.warning("harness-pilot PC download %s: %s", url, e)
+        raise PcError(502, "download_failed", "harness-pilot PC could not be downloaded from its release "
+                                              "(network error): try again later") from None
     if hashlib.sha256(r.content).hexdigest() != want:
         raise PcError(502, "checksum", "the downloaded agent does not match its checksum")
     cache.parent.mkdir(parents=True, exist_ok=True)

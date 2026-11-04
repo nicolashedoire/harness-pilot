@@ -1,5 +1,5 @@
 {
   "version": "",
-  "url": "https://github.com/makushingu/harness-maxxing/releases/download/pc-agent-v{version}/{name}",
+  "url": "https://github.com/nicolashedoire/harness-pilot/releases/download/pc-agent-v{version}/{name}",
   "files": {}
 }
