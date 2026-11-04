@@ -467,7 +467,7 @@ class Runner:
             if tools == "writes":                      # once, until the mode changes
                 self.note("MCP servers: in this permission mode Codex only uses the tools a server marks as "
                           "read-only; the others are refused (Full access allows them).")
-        args = codex.command(thread, mode, str(codex_model or ''), images, mcp_args)
+        args = codex.command(thread, mode, str(codex_model or ''), images, mcp_args, cwd=cwd)
         context = codex.workspace_context(root, Path(cwd))
         context_prefix = ("[Shared workspace and topic instructions/memory]\n" + context + "\n\n") if context else ""
         prompt = context_prefix + ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)
@@ -485,6 +485,8 @@ class Runner:
             a.context_tokens, a.first_context, a.context_window = ctx["tokens"], ctx["first"], ctx["window"]
         if a.stopped:
             self.note("Stopped." if not a.timed_out else "Turn stopped (timeout).", "warn")
+        elif a.rc and codex.sandbox_failed(a.stderr):    # bubblewrap without user namespaces: say the way out
+            self.note(codex.SANDBOX_HINT, "warn")
         store.append_log(self.sid, {"type": "mx_done", "code": a.rc, "stderr": a.stderr[-STDERR_TAIL:],
                                     "stopped": a.stopped and not a.timed_out,
                                     "timed_out": a.timed_out, "at": time.time()})

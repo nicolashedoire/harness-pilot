@@ -61,6 +61,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "smart_resume_tokens": 100000,
     # Claude's tools refuse to read or edit secrets.json and ~/.ssh (deny rules, every permission mode) + extra rules.
     "protect_secrets": True,
+    # Way out for a machine where Codex's sandbox cannot start with a permission profile (bubblewrap without user
+    # namespaces): Codex runs with the plain `--sandbox`, WITHOUT Protect the secrets nor the read-only server code
+    # and folder settings (sessions/codex.py sandbox_args).
+    "codex_plain_sandbox": False,
     # A new session without a title gets a short one (2-5 words) from a small model call, else from its first message.
     "short_titles": True,
     "short_titles_model": False,          # short titles by the smallest model (a call per new session) rather than locally

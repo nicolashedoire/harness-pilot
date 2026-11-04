@@ -83,9 +83,11 @@ no operating-system isolation between harness-pilot and the agents it starts. Wh
   harness-pilot or Claude would run outside Codex's sandbox: the extensions (their `api.py` runs inside the server,
   as its user), the saved customization patches and `infra.json`, nor the settings of any topic or project folder:
   its permission mode (`.maxxing.json`), Claude Code's settings and hooks (`.claude/settings.json`,
-  `.claude/settings.local.json`, `.claude/hooks/`) and `.mcp.json`. In the folders other than its own, Codex cannot
-  read those settings either. So Codex cannot build or fix an extension: ask Claude. Claude in `bypass` can still
-  write anywhere as your user, extensions included: that is what `bypass` means, so keep it for topics you trust.
+  `.claude/settings.local.json`, `.claude/hooks/`) and `.mcp.json`. So Codex cannot build or fix an extension: ask
+  Claude. On Linux, a topic folder Codex creates during a turn is covered from its next turn. The way out for a
+  machine where Codex's sandbox cannot start, `"codex_plain_sandbox": true` in config.json, removes all of this and
+  Protect the secrets for Codex ([Sessions](sessions)). Claude in `bypass` can still write anywhere as your user,
+  extensions included: that is what `bypass` means, so keep it for topics you trust.
 - **Resident companions and missions**: each experiment works in a disposable copy of the committed source
   (`<state>/companions/runs/<id>/repo`, mode 700), with Claude's `acceptEdits` mode or Codex's workspace-write
   sandbox; an architect's plan runs read-only. The copy keeps ordinary edits away from the running app, but it is

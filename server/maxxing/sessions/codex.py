@@ -229,25 +229,28 @@ def mcp_config(cwd: str, env: dict[str, str], mode: str = "default") -> tuple[li
 PROFILE = "protected"                          # Codex permission profile name (":..." names are Codex's built-ins)
 # Kept read-only inside the writable folder: `.git` / `.codex` / `.agents` as `--sandbox workspace-write` does (a
 # profile extending ":workspace" loses that, checked with codex-cli 0.150.1, so they are listed again), and the
-# folder's SESSION_CONFIG.
+# folder's own SESSION_CONFIG.
 WORKSPACE_READ_ONLY = (".git", ".codex", ".agents", ".claude", ".mcp.json", ".maxxing.json")
 # What the server or Claude runs or obeys outside Codex's sandbox, as the server's user (root on a server
 # installation): a write-mode Codex turn never changes it, whatever folder it runs in (the workspace root included).
-# - SERVER_CODE, read-only: `extensions/` (api.py the server imports, agent providers it starts, block plugins),
+# - SERVER_CODE: `extensions/` (api.py the server imports, agent providers it starts, block plugins),
 #   `customizations/` (patches `pilot custom restore` applies to the product code), `infra.json` (servers the server
 #   reaches over ssh; Claude's deny rules have it too).
 # - SESSION_CONFIG of every folder a session runs in (the root, projects/<p>, projects/<p>/topics/<t>): its
-#   permission mode (`.maxxing.json`: bypass would free Claude there), Claude Code's settings (hooks, MCP servers,
-#   helpers) and hook scripts, the folder's `.mcp.json`. Read-only at the root and in the turn's own folder
-#   (WORKSPACE_READ_ONLY); in the other folders through patterns, which a profile only accepts as "deny"
-#   (codex-cli 0.150.1): Codex can neither read nor change those files there.
+#   permission mode (`.maxxing.json`: bypass would free Claude there), Claude Code's folder (settings with hooks, MCP
+#   servers and helpers, hook scripts, skills) and the folder's `.mcp.json`.
+# All as exact "read" entries: codex-cli 0.150.1 takes a glob only as "deny", and on Linux (bubblewrap) a "deny"
+# pattern protected nothing against writes in our checks, while exact entries (existing or not) work on both systems.
 SERVER_CODE = ("extensions", "customizations", "infra.json")
-SESSION_CONFIG = (".maxxing.json", ".claude/settings.json", ".claude/settings.local.json", ".claude/hooks/**",
-                  ".mcp.json")
-SESSION_FOLDERS = ("projects/*", "projects/*/topics/*")
-
-
+SESSION_CONFIG = (".maxxing.json", ".claude", ".mcp.json")
+# macOS only (Seatbelt matches patterns as the turn runs): also the folders made during the turn. Codex can neither
+# read nor write them there; on Linux these entries do nothing.
+SESSION_PATTERNS = tuple(f"{d}/{c}" for d in ("projects/*", "projects/*/topics/*")
+                         for c in (".maxxing.json", ".claude/settings.json", ".claude/settings.local.json",
+                                   ".claude/hooks/**", ".mcp.json"))
+_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}\Z")         # workspace._PATH_RE: the only session folder names
 _GLOB_CHARS = re.compile(r"([*?\[\]{}])")
+PROFILE_MAX = 120_000          # characters of the profile argument (Linux refuses one argument over 128 KiB)
 
 
 def _glob_literal(path: str) -> str:
@@ -256,66 +259,117 @@ def _glob_literal(path: str) -> str:
     return _GLOB_CHARS.sub(r"[\1]", path)
 
 
-def _read_only(path: str) -> tuple[str, str]:
-    """A "read" entry for `path` (and below); for a path holding glob characters, which Codex refuses as "read",
-    a "deny" of the literal path and everything under it: never readable then, but never writable either."""
-    if not _GLOB_CHARS.search(path):
-        return path, "read"
-    lit = _glob_literal(path)
-    return (f"{lit}/**" if os.path.isdir(path) or not os.path.splitext(path)[1] else lit), "deny"
-
-
 def _deny(path: str) -> dict[str, str]:
     """"deny" entries for a secret path: the path itself; written as a pattern (glob characters in it), a pattern
-    of a folder does not cover what is inside, so `<folder>/**` is denied too."""
+    of a folder does not cover what is inside, so `<folder>/**` is denied too (macOS; see INTERNALS for Linux)."""
     if not _GLOB_CHARS.search(path):
         return {path: "deny"}
     lit = _glob_literal(path)
     return {lit: "deny", **({f"{lit}/**": "deny"} if os.path.isdir(path) else {})}
 
 
-def _server_side(ws: str) -> dict[str, str]:
-    """The filesystem entries that keep SERVER_CODE and every SESSION_CONFIG out of a write-mode turn's reach."""
+def _session_folders_below(ws: str, cwd: str) -> list[str] | None:
+    """The session folders below the turn's folder, relative to it (the root: every project and topic; a project:
+    its topics; elsewhere: none). None when the turn's folder is not in the workspace."""
+    try:
+        rel = os.path.relpath(os.path.realpath(cwd), os.path.realpath(ws))
+    except ValueError:
+        return None
+    if rel.startswith(".."):
+        return None
+    parts = [] if rel == "." else rel.split(os.sep)
+
+    def subdirs(path: str) -> list[str]:
+        try:
+            return sorted(e.name for e in os.scandir(path) if _SLUG.match(e.name) and e.is_dir(follow_symlinks=False))
+        except OSError:
+            return []
+    if not parts:
+        out = []
+        for p in subdirs(os.path.join(ws, "projects")):
+            out.append(f"projects/{p}")
+            out += [f"projects/{p}/topics/{t}" for t in subdirs(os.path.join(ws, "projects", p, "topics"))]
+        return out
+    if len(parts) == 2 and parts[0] == "projects":
+        return [f"topics/{t}" for t in subdirs(os.path.join(cwd, "topics"))]
+    return []
+
+
+def _write_entries(ws: str, cwd: str | None) -> dict[str, str]:
+    """The filesystem entries of a write-mode profile that keep SERVER_CODE and every SESSION_CONFIG read-only."""
     try:                                               # an existing folder: its rule never depends on Codex's handling
         os.makedirs(os.path.join(ws, "extensions"), exist_ok=True)   # of a missing path
     except OSError:
         pass
-    fs = dict(_read_only(os.path.join(ws, p)) for p in (*SERVER_CODE, ".maxxing.json", ".claude", ".mcp.json"))
+    roots = {".": "write", **{d: "read" for d in WORKSPACE_READ_ONLY}}
+    below = _session_folders_below(ws, cwd) if cwd else None
+    if below is not None:                              # relative to the turn's folder: no glob issue with the path
+        roots.update({f"{d}/{c}": "read" for d in below for c in SESSION_CONFIG})
+        if os.path.realpath(cwd or "") == os.path.realpath(ws):
+            roots.update({p: "read" for p in SERVER_CODE})
+    fs: dict = {":workspace_roots": roots}
+    if not _GLOB_CHARS.search(ws):                     # Codex refuses "read" on a path it reads as a glob
+        fs.update({os.path.join(ws, p): "read" for p in (*SERVER_CODE, *SESSION_CONFIG)})
     base = _glob_literal(ws)
-    fs.update({f"{base}/{d}/{c}": "deny" for d in SESSION_FOLDERS for c in SESSION_CONFIG})
+    fs.update({f"{base}/{p}": "deny" for p in SESSION_PATTERNS})
     return fs
 
 
-def sandbox_args(mode: str) -> list[str]:
+def sandbox_args(mode: str, cwd: str | None = None) -> list[str]:
     """Codex's sandbox for a permission mode: read-only in default / plan, workspace-write otherwise - never
     unrestricted machine access, even when Claude's mode is bypass. Workspace-write is always a permission profile
-    that also keeps the server's code and the sessions' settings read-only (SERVER_CODE, SESSION_CONFIG): changing
-    them would run code outside Codex's sandbox. With config `protect_secrets` (default on), the profile also denies
+    that also keeps the server's code and the sessions' settings read-only (SERVER_CODE, SESSION_CONFIG of the
+    workspace root, of the turn's folder `cwd` and of every session folder below it): changing them would run code
+    outside Codex's sandbox. A profile over PROFILE_MAX (hundreds of topics below the folder): read-only instead.
+    With config `protect_secrets` (default on), the profile also denies
     `spawn.secret_paths()` (read-only modes too): Codex's OS sandbox then refuses reading or changing them to every
     command it runs. No `--sandbox` with a profile: that flag silently replaces it. Only existing secret paths are
-    passed; read-only with none: plain `--sandbox read-only`.
+    passed; read-only with none: plain `--sandbox read-only`. Config `codex_plain_sandbox` (a way out where bubblewrap
+    cannot start a profile's sandbox, SANDBOX_START_ERRORS): always the plain `--sandbox`, none of those protections.
     INTERNALS.md `maxxing.sessions.codex` has what was checked and what it does not cover (MCP servers)."""
     from .. import config
     from . import spawn
     write = mode not in ("default", "plan")
+    if config.load_config().get("codex_plain_sandbox"):
+        return ["--sandbox", "workspace-write" if write else "read-only"]
     paths = [os.path.abspath(p) for p in spawn.secret_paths() if os.path.lexists(p)] \
         if config.load_config().get("protect_secrets", True) else []
     if not paths and not write:
         return ["--sandbox", "read-only"]
-    fs: dict = {}
-    if write:
-        fs[":workspace_roots"] = {".": "write", **{d: "read" for d in WORKSPACE_READ_ONLY}}
-        fs.update(_server_side(os.path.abspath(str(config.workspace()))))
+    denied: dict = {}
     for p in paths:
-        fs.update(_deny(p))
-    profile = {"extends": ":workspace" if write else ":read-only", "filesystem": fs}
+        denied.update(_deny(p))
+    if write:
+        profile = {"extends": ":workspace", "filesystem": {
+            **_write_entries(os.path.abspath(str(config.workspace())), cwd), **denied}}
+        if len(_toml(profile)) > PROFILE_MAX:          # hundreds of topics below a root / project turn: read-only
+            write = False
+    if not write:
+        if not denied:
+            return ["--sandbox", "read-only"]
+        profile = {"extends": ":read-only", "filesystem": denied}
     return ["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}={_toml(profile)}"]
 
 
+# What codex-cli 0.150.1 prints when its Linux sandbox cannot start (bubblewrap without user namespaces): with a
+# permission profile the turn fails at start, with the plain `--sandbox` every command fails.
+SANDBOX_START_ERRORS = ("fs sandbox helper failed", "No permissions to create new namespace")
+SANDBOX_HINT = ("Codex's sandbox cannot start on this machine (bubblewrap without user namespaces, as in some "
+                "containers). Allow user namespaces, or set \"codex_plain_sandbox\": true in config.json: Codex then "
+                "runs with its plain sandbox, without Protect the secrets and without keeping the extensions and the "
+                "folders' settings read-only (see Security).")
+
+
+def sandbox_failed(text: str) -> bool:
+    """A Codex error or output saying its sandbox could not start (SANDBOX_START_ERRORS)."""
+    return any(e in (text or "") for e in SANDBOX_START_ERRORS)
+
+
 def command(thread_id: str, mode: str, model: str = "", images: list[str] | None = None,
-            mcp: list[str] | None = None) -> list[str]:
+            mcp: list[str] | None = None, cwd: str | None = None) -> list[str]:
+    """`cwd`: the turn's folder (the session folders below it get their settings read-only in write modes)."""
     binary = os.environ.get("MAXXING_CODEX_BIN") or shutil.which("codex") or "codex"
-    args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", *sandbox_args(mode)]
+    args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", *sandbox_args(mode, cwd)]
     args += privacy_args() + list(mcp or [])
     if model:
         args += ["--model", model]

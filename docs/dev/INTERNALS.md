@@ -830,36 +830,51 @@ not resolved: Codex canonicalizes). `_deny`: codex-cli 0.150.1 reads a path hold
 `<state [1]>/secrets.json` as is matched `<state 1>/...` and protected nothing (checked); `_glob_literal` brackets
 those characters, and a folder written that way also gets `<folder>/**` (a pattern of a folder does not cover its
 files, checked). No `--sandbox` then: it silently replaces `default_permissions`.
-Workspace-write is ALWAYS that profile (whatever `protect_secrets`), with `":workspace_roots" = {"." = "write",
-".git" / ".codex" / ".agents" / ".claude" / ".mcp.json" / ".maxxing.json" = "read"}` (`WORKSPACE_READ_ONLY`) and
-`_server_side(<workspace>)`: what the server or Claude runs outside Codex's sandbox, as the server's user (root on a
-server installation), so that a write there would escape it. A Codex session can run at the workspace root
-(`topic_dir("")`), whose writable folder holds all of it:
-- `SERVER_CODE` = `extensions` (api.py imported by the server, agent providers it starts, block plugins),
-  `customizations` (patches `pilot custom restore` applies to the code), `infra.json` (ssh targets of the server;
-  Claude's deny rules have it too), plus the root's `.maxxing.json`, `.claude`, `.mcp.json`: `"read"` (a folder:
-  itself and below; `extensions/` is created first, so the rule never depends on how Codex treats a missing path).
-- `SESSION_CONFIG` of every other session folder (`SESSION_FOLDERS` `projects/*`, `projects/*/topics/*`):
-  `.maxxing.json` (the folder's permission mode: setting `bypass` frees Claude there), `.claude/settings.json`,
-  `.claude/settings.local.json`, `.claude/hooks/**` (commands Claude runs), `.mcp.json`: `"deny"` patterns
-  (`<workspace>/projects/*/topics/*/.maxxing.json`...): a profile takes a glob only as `deny` ("filesystem glob path
-  ... only supports `deny` access"), so Codex can neither read nor write them there; in its own folder the same files
-  are read-only by `WORKSPACE_READ_ONLY` too, and deny wins where both apply. Claude's skills (`.claude/skills`) of
-  other folders stay writable: instructions, not code that runs by itself.
-- A workspace path holding glob characters: Codex refuses `"read"` on it ("only supports `deny`") and the turn would
-  fail at start, so `_read_only` gives `"deny"` on the literal path (`/**` for a folder) instead.
-Checked with codex-cli 0.150.1 on macOS (Seatbelt): `codex exec` with the argv of `command()` against a stub Responses
-API (temporary `CODEX_HOME` and `HOME`, workspace outside `/tmp` and `$TMPDIR`, which stay writable), a shell tool call
-trying each write. Before, a turn at the workspace root wrote `extensions/x/api.py`, created `extensions/new/`, renamed
-`extensions/`, wrote `.claude/settings.json`, `.mcp.json`, `infra.json` and every `.maxxing.json`. After, in `bypass` /
-`acceptEdits` at the root, at `projects/p` and at `projects/p/topics/t`, with and without secrets: all refused (write,
-create, rename, delete, through a symlink, a new topic's `.maxxing.json`, another topic's `.claude/settings.json`,
-`.claude/hooks/x.sh` and `.mcp.json`, `customizations/*.patch`), while the turn's folder, another topic's ordinary
-files and its `.claude/skills/` stay writable and `ls` works; the same in a workspace path with `[ ]` and a space.
-Side effect: renaming or deleting a folder that holds a denied file (a topic folder, from a project-level turn) is
-refused too. `default` / `plan`: unchanged. Not checked on Linux (bubblewrap) in this change: the binary's
-`glob_scan_max_depth` suggests deny patterns are resolved against the files that exist at start there, so a settings
-file created during a turn in another folder may not be covered (the turn's own folder and the root use exact paths).
+Workspace-write is ALWAYS that profile (whatever `protect_secrets`; `command(..., cwd=)` gets the turn's folder from
+`runner._codex_turn`), with `_write_entries(<workspace>, cwd)`: what the server or Claude runs outside Codex's
+sandbox, as the server's user (root on a server installation), so that a write there would escape it. A Codex session
+can run at the workspace root (`topic_dir("")`) or a project, whose writable folder holds other session folders:
+- `":workspace_roots"` (relative to the turn's folder): `"." = "write"`, `WORKSPACE_READ_ONLY` = `.git`, `.codex`,
+  `.agents` and the folder's own `SESSION_CONFIG` (`.maxxing.json`: its permission mode, setting `bypass` frees Claude
+  there; `.claude`: Claude Code's settings with hooks / MCP servers / helpers, hook scripts, skills; `.mcp.json`) =
+  `"read"`; plus `SESSION_CONFIG` of every session folder below it, listed when the turn starts
+  (`_session_folders_below`: at the root every `projects/<p>` and `projects/<p>/topics/<t>`, at a project its
+  topics; slug names only), and at the root `SERVER_CODE` = `extensions` (api.py imported by the server, agent
+  providers it starts, block plugins), `customizations` (patches `pilot custom restore` applies to the code),
+  `infra.json` (ssh targets of the server; Claude's deny rules have it too).
+- The same `SERVER_CODE` and root `SESSION_CONFIG` as absolute `"read"` entries (they also cover a workspace under
+  `/tmp`, writable to every turn), except for a workspace path holding glob characters: Codex refuses `"read"` on it
+  ("filesystem glob path ... only supports `deny` access") and the turn would not start; the relative entries cover
+  it from the root. `extensions/` is created first.
+- `SESSION_PATTERNS`, `"deny"` patterns `<workspace>/projects/*[/topics/*]/{.maxxing.json, .claude/settings.json,
+  .claude/settings.local.json, .claude/hooks/**, .mcp.json}`: on macOS they also cover a folder made during the turn
+  (and Codex cannot read those files there); on Linux they protected nothing in our checks.
+- A profile longer than `PROFILE_MAX` (120 000 characters: Linux refuses one argument over 128 KiB), i.e. hundreds of
+  topics below a root or project turn: that turn gets the read-only sandbox instead of an unprotected one.
+- Way out: config `codex_plain_sandbox` (default false, set by hand in config.json) gives the plain `--sandbox` in
+  every mode, without the secrets denied and without any of the entries above, for a machine where bubblewrap cannot
+  start a profile's sandbox. `runner._codex_turn` notes `codex.SANDBOX_HINT` (namespaces, or that key and what it
+  loses) when a failed Codex turn's stderr has one of `SANDBOX_START_ERRORS` ("fs sandbox helper failed", "No
+  permissions to create new namespace").
+Checked with codex-cli 0.150.1, `codex exec` with the argv of `command()` / `fork_command()` against a stub Responses
+API (no model call; temporary `CODEX_HOME` and `HOME`, workspace outside `/tmp` and `$TMPDIR`), a shell tool call
+trying 27 reads and writes from the root, `projects/p` and `projects/p/topics/t`, in every mode, with secrets, and in a
+workspace path with `[ ]` and a space; on macOS (Seatbelt) and in Debian 12 arm64 containers (codex-cli from npm,
+bubblewrap 0.8.0) as root in a privileged container and as uid 1000. Before (the same matrix on main), a write turn at
+the root wrote `extensions/x/api.py`, created `extensions/new/`, renamed `extensions/`, wrote `customizations/`,
+`infra.json`, every folder's `.maxxing.json`, `.claude/settings*.json`, `.claude/hooks/x.sh` and `.mcp.json`. After:
+every turn starts; all of those are refused (write, create, rename, delete, through a symlink) at every level, while
+the turn's folder and the ordinary files of the folders below stay writable and reads work; the same in the `[ ]`
+path. Left: on Linux, a session folder created during the turn (`projects/p/topics/n/.maxxing.json` from a root or
+project turn) is writable until the next turn lists it (macOS: refused by the patterns). Side effect: renaming or
+deleting a folder that holds a protected file is refused. In a default (unprivileged) container every profile turn
+fails at start ("failed to load AGENTS.md instructions ...: fs sandbox helper failed"), read-only ones too when a
+secret path exists; with `codex_plain_sandbox` the turn runs and each command fails ("bwrap: No permissions to create
+new namespace"), the behaviour before.
+Also found, not changed here: on Linux a secret path holding glob characters (`<state [1]>/secrets.json`) is not
+denied, as before (`_glob_literal` fixes it on macOS only); and `exec fork` of a thread started in a write mode keeps
+that thread's writable folder despite `fork_command()`'s read-only profile (a side question can write the topic
+folder; its protected entries stay protected), on main as well.
 Claude in `bypass` can write all of this as the server's user: that is the mode's documented meaning (15-security), a
 separate design point not changed here; Claude's deny rules keep only `.maxxing.json` and `infra.json` out of its edits.
 Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub Responses API and fake secrets:
