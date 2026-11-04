@@ -14,6 +14,7 @@ import { Page } from '@/components/shell/Page'
 import { useRegisterCommands } from '@/commands/registry'
 import { BlockView, InView, SmartLink } from './blocks'
 import { HtmlWidget } from './HtmlWidget'
+import { CardConsent } from '@/features/extensions/Permissions'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
 
@@ -96,6 +97,8 @@ const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; ind
       <div className={cn('flex-1 px-[var(--pad-card)] pt-2 pb-[var(--pad-card)] transition-opacity', refresh.isPending && 'opacity-60')}>
         {w.pending ? (
           <SkeletonText lines={3} className="py-1" />
+        ) : w.permission?.reason === 'not_allowed' && !card ? (
+          <CardConsent id={w.id} refusal={w.permission} />
         ) : w.error && !card && w.source === 'extension' ? (
           <BrokenWidget w={w} onRetry={() => refresh.mutate(w.id)} retrying={refresh.isPending} />
         ) : w.error && !card ? (
