@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.
+- The Settings menu groups its sections under headings (You, Agents, Data, Integrations, Platform) with Support last, and a search above it on a computer finds a setting by name or keyword.
 - The agent map of a running agent team now says that its subagents cannot be stopped one by one, and that stopping the session interrupts the coordinator and all its subagents.
 - A resident mission step that would be too long for one agent request is now refused when you save or start the plan, naming the step and how many characters to remove, instead of failing at launch. Prerequisite reports are shortened so a reviewed plan always fits.
 - The architect's planning run for a resident mission no longer sends a "companion review finished without changes" notification; the mission tells you when its plan is ready.
