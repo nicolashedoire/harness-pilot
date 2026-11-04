@@ -35,13 +35,12 @@ You may also review and edit the summary before saving it to the topic's `memory
 
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
 are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact** and
-**Hand off** ([Compact vs hand off](#compact-vs-hand-off)). It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+**Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
 
 These features are for Claude Code only for now:
 
-- **Side questions**: not offered for Codex sessions, discussions or debates.
 - **MCP servers** (Settings → MCP): only Claude's turns load them. Codex starts without any MCP server, yours
   (`~/.codex/config.toml`) included.
 - **Claude swarm** and the **Agent map**.
@@ -202,9 +201,11 @@ refuses). **Stop** still cancels the turn
 and the queue.
 
 **Ask without interrupting.** **Question** (in the same card) asks the waiting messages on the side:
-Claude answers about the session - where it is at, why it did something, what is left - without stopping
-its task. The answer opens in a larger panel above the composer; close it with its **×**. It is not added
-to the conversation and Claude's work is not affected (it answers from a copy of the conversation, read-only).
+the session's agent - Claude Code or Codex; in a discussion or a debate, the one that answered last - answers
+about the session - where it is at, why it did something, what is left - without stopping its task. The answer
+opens in a larger panel above the composer, with the name of the agent that answered; close it with its **×**. It
+is not added to the conversation and the agent's work is not affected (it answers from a copy of the
+conversation, read-only). Not available for agent plugin sessions.
 
 **Quote part of an answer.** Select text in one of Claude's replies (or in a side-question answer) and
 click **Quote** above the selection (below it on a phone). The text goes into a **Quote** card above the
