@@ -235,5 +235,7 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there.
 5. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
-The HTTP API needs a signed-in browser session, so do not try to test it with curl; use the
-Python test above and the UI.
+Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in
+browser session (401 without it), and never ask for the password or a session cookie. `pilot ext check <id>` runs
+the same code as the server, `api.handle(...)` from Python tries one route, and `pilot update --verify` checks every
+extension at once (with the customizations' checks: run after an update).

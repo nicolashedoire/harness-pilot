@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The harness topic now tells Claude to test the widgets and pages it builds with `pilot ext check`, like the extensions skill, instead of trying `curl` on an address that needs your signed-in browser.
 - `pilot update --verify` (and the check after an update) now reports a widget that answers with an error message, such as a missing key, instead of counting it as working.
 - New `pilot ext check <id>` (all extensions without an id): runs a dashboard widget, a page or a conversation block plugin the way the server does and says what is broken - the error of `card()` with the lines of `api.py` it went through, blocks the dashboard drops, a script of an HTML widget that does not parse, a module of a page that is missing or not served. When harness-pilot writes or fixes an extension, it now runs this check and fixes what fails before telling you it is done.
 - A page extension can now be split into several files: `page.js` imports the other `.js`, `.mjs`, `.css` and `.json` files of its folder with a relative path such as `./lib/chart.js`. Before, such a page failed to load. Editing any of these files updates the page at the next visit. Only these files are served, to the signed-in user: not `api.py`, hidden files, or links to files outside the folder.
