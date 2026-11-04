@@ -1556,6 +1556,12 @@ function teamTurn(s, text, answer, ms, done) {
   const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model
   s.state = 'running'; s.error = null; s.updated = now()
   addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'team' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  if (s.team_parent) { // a worker looks around first (the team panel shows its last actions)
+    const id = `toolu_${crypto.randomBytes(6).toString('hex')}`
+    addEvents(s, { type: 'assistant', text: 'Reading the files the mission touches.', at: now() },
+      { type: 'tool_use', id, name: 'Read', input: { file_path: `${ROOT}/${s.path}/CLAUDE.md` }, summary: 'Read CLAUDE.md', at: now() },
+      { type: 'tool_result', tool_use_id: id, text: '# Topic notes', is_error: false, at: now() })
+  }
   later(s, ms, () => {
     Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: answer.slice(0, 200) })
     addEvents(s, { type: 'assistant', text: answer, at: now() },
@@ -1587,11 +1593,23 @@ const teamSession = (path, title, provider) => {
   S.sessions.push(s); S.events[s.id] = []
   return s
 }
+// a worker's last actions and the start of its report, from its events (teams._live_view)
+const TEAM_KINDS = { Read: 'read', Grep: 'search', Glob: 'search', Bash: 'run', Write: 'edit', Edit: 'edit', WebFetch: 'web', WebSearch: 'web' }
+const teamLive = (session) => {
+  const evs = S.events[session.id] || []
+  const turn = evs.slice(evs.map((e) => e.type).lastIndexOf('user') + 1)
+  const activity = turn.flatMap((e) => e.type === 'tool_use' ? [{ kind: TEAM_KINDS[e.name] || 'other', target: String(e.input?.file_path || e.input?.pattern || e.input?.command || e.summary || e.name).replace(`${ROOT}/${session.path}/`, '') }]
+    : e.type === 'assistant' ? [{ kind: 'say', target: e.text.split('\n')[0].slice(0, 120) }] : []).slice(-3)
+  const last = [...turn].reverse().find((e) => e.type === 'assistant')
+  return { activity, report: session.state !== 'running' && last ? last.text.slice(0, 600) : null }
+}
 const teamOut = (sid) => {
   const team = teamOf(sid)
-  return { id: sid, phase: team.phase, agents: team.agents.map((a) => {
+  return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
     const session = S.sessions.find((x) => x.id === a.id) || null
-    return { ...a, state: a.stopped ? 'stopped' : session ? session.state : 'missing', session }
+    const state = a.stopped ? 'stopped' : session ? session.state : 'missing'
+    return { ...a, state, session, started_at: team.created, finished_at: session && state !== 'running' ? session.updated : null,
+      ...(session ? teamLive(session) : { activity: [], report: null }) }
   }) }
 }
 R('POST', '/api/teams', ({ body }) => {
@@ -1600,7 +1618,7 @@ R('POST', '/api/teams', ({ body }) => {
   if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
   const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
   addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
-  const team = { phase: 'launching', goal, agents: [] }
+  const team = { phase: 'launching', goal, agents: [], created: now() }
   teamsState()[parent.id] = team
   for (const [provider, role] of TEAM_ROLES) {
     const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
@@ -1638,6 +1656,26 @@ R('POST', '/api/teams/:sid/stop', ({ params }) => {
   }
   bus('sessions', 'workspace')
   return teamOut(params.sid)
+})
+
+/* ---- discussion presets (server/maxxing/sessions/presets.py): saved roles of Claude Code + Codex conversations */
+const presetsState = () => (S.discussionPresets ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? [
+  { id: uuid(), name: 'Builder and reviewer', claude_role: 'Propose the change and write it step by step.', codex_role: 'Review each step: risks, missing tests, simpler options.' },
+  { id: uuid(), name: 'Two copywriters', claude_role: 'Write the first draft in a warm, plain tone.', codex_role: 'Tighten the draft: shorter sentences, no jargon, keep the facts.' },
+] : [])
+R('GET', '/api/discussion-presets', () => presetsState())
+R('POST', '/api/discussion-presets', ({ body }) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name || body.name.length > 80 || String(body.claude_role || '').length > 2000 || String(body.codex_role || '').length > 2000) fail(422, 'invalid', 'name: 1-80 characters, roles: 2000 at most')
+  if (presetsState().length >= 100) fail(400, 'bad_request', 'A maximum of 100 configurations can be saved.')
+  const preset = { id: uuid(), name, claude_role: String(body.claude_role || '').trim(), codex_role: String(body.codex_role || '').trim() }
+  S.discussionPresets.push(preset)
+  return preset
+})
+R('DELETE', '/api/discussion-presets/:id', ({ params }) => {
+  if (!presetsState().some((p) => p.id === params.id)) fail(404, 'not_found', 'Configuration not found')
+  S.discussionPresets = S.discussionPresets.filter((p) => p.id !== params.id)
+  return { ok: true }
 })
 
 /* ---- global bus */
