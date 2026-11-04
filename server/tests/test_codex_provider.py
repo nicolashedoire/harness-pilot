@@ -36,7 +36,15 @@ print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "outpu
     assert 'Shared workspace and topic instructions/memory' in requests[0]['prompt']
     assert requests[1]['argv'][requests[1]['argv'].index('resume') + 1] == 'codex-thread-123'
     assert [e['text'] for e in all_events(client, sid) if e['type'] == 'assistant'] == ['Codex: premier', 'Codex: deuxième']
-    assert client.post(f'/api/sessions/{sid}/ask', json={'question': 'test'}).status_code == 409
+    # side question: an ephemeral, read-only fork of the thread answers; the session is not changed
+    asked = client.post(f'/api/sessions/{sid}/ask', json={'question': 'où en es-tu ?'})
+    assert asked.status_code == 200, asked.text
+    assert asked.json()['answer'] == 'Codex: où en es-tu ?' and asked.json()['agent'] == 'codex'
+    fork = [json.loads(line) for line in calls.read_text().splitlines()][-1]['argv']
+    assert fork[fork.index('fork') + 1] == 'codex-thread-123' and '--ephemeral' in fork and 'resume' not in fork
+    assert fork[fork.index('--sandbox') + 1] == 'read-only' and fork[-1] == '-'
+    assert [e['text'] for e in all_events(client, sid) if e['type'] == 'assistant'] == ['Codex: premier', 'Codex: deuxième']
+    assert client.get(f'/api/sessions/{sid}').json()['turns'] == 2
 
 
 def test_codex_sandbox_and_events():
@@ -263,3 +271,72 @@ def test_discussion_preset_save_list_delete_and_validation(client):
     assert client.get('/api/discussion-presets').json() == [saved]
     assert client.delete(f"/api/discussion-presets/{saved['id']}").json() == {'ok': True}
     assert client.get('/api/discussion-presets').json() == []
+
+
+def _fake_codex(mx, monkeypatch, text='Codex aside'):
+    fake = mx['tmp'] / 'codex-aside'
+    calls = mx['tmp'] / 'codex-aside-calls.jsonl'
+    fake.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+sys.stdin.read()
+with open({str(calls)!r}, "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
+print(json.dumps({{"type": "item.completed", "item": {{"type": "agent_message", "text": {text!r}}}}}), flush=True)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    return calls
+
+
+def test_a_discussion_side_question_asks_the_agent_that_answered_last(client, topic, mx, monkeypatch):
+    from maxxing.sessions import store
+    calls = _fake_codex(mx, monkeypatch)
+    meta = store.new_meta(topic, 'Debate', provider='debate')
+    meta.update(turn_provider='codex', codex_thread_id='th-9', codex_model='gpt-x')
+    store.create(meta)
+    r = client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'why?'})
+    assert r.status_code == 200, r.text
+    assert r.json()['agent'] == 'codex' and r.json()['answer'] == 'Codex aside'
+    argv = json.loads(calls.read_text().splitlines()[-1])
+    assert argv[argv.index('fork') + 1] == 'th-9' and argv[argv.index('--model') + 1] == 'gpt-x'
+    # Claude spoke last but has no thread yet: Codex answers; once Claude's thread exists, Claude does
+    store.update(meta['id'], turn_provider='claude')
+    assert client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'why?'}).json()['agent'] == 'codex'
+    from maxxing.sessions import aside
+    seen = []
+    monkeypatch.setattr(aside, '_run', lambda m, csid, *a: seen.append(csid) or {'answer': 'Claude aside', 'agent': 'claude',
+                                                                                 'cost_usd': 0.0, 'duration_ms': 1})
+    store.update(meta['id'], csid='claude-thread', fresh=False)
+    assert client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'why?'}).json()['agent'] == 'claude'
+    assert seen == ['claude-thread']
+
+
+def test_side_questions_need_a_thread_and_refuse_agent_plugins(client, topic, mx, monkeypatch):
+    from maxxing.sessions import store
+    _fake_codex(mx, monkeypatch)
+    fresh = store.new_meta(topic, 'Codex', provider='codex')
+    store.create(fresh)
+    r = client.post(f"/api/sessions/{fresh['id']}/ask", json={'question': 'x'})
+    assert r.status_code == 409 and r.json()['error'] == 'no_thread'
+    plugin = store.new_meta(topic, 'Plugin', provider='plugin:demo')
+    store.create(plugin)
+    r = client.post(f"/api/sessions/{plugin['id']}/ask", json={'question': 'x'})
+    assert r.status_code == 409 and r.json()['error'] == 'unsupported'
+
+
+def test_a_failed_codex_side_question_says_why(client, topic, mx, monkeypatch):
+    from maxxing.sessions import store
+    fake = mx['tmp'] / 'codex-fail'
+    fake.write_text('''#!/usr/bin/env python3
+import json, sys
+sys.stdin.read()
+print(json.dumps({"type": "turn.failed", "error": {"message": "usage limit reached"}}))
+sys.exit(1)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    meta = store.new_meta(topic, 'Codex', provider='codex')
+    meta['codex_thread_id'] = 'th-1'
+    store.create(meta)
+    r = client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'x'})
+    assert r.status_code == 502 and 'usage limit reached' in r.json()['message']

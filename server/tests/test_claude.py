@@ -71,15 +71,19 @@ def test_settings(client):
 
 
 def test_onboarding(client, monkeypatch, tmp_path):
+    from maxxing.sessions import codex                              # never the Codex CLI of this computer
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(codex, "status", lambda: {"installed": False, "authenticated": False, "reason": "not_installed"})
     r = client.get("/api/onboarding").json()
-    assert r == {"completed": False, "steps": {"password": True, "claude": False, "workspace": False,
+    assert r == {"completed": False, "steps": {"password": True, "claude": False, "codex": False, "workspace": False,
                                                "telegram": False, "backup": False, "profile": False}}
     client.post("/api/workspace/projects", json={"name": "acme"})
     client.post("/api/workspace/projects/acme/topics", json={"name": "blog"})
     config.update_config(telegram={"chat_id": 123}, backup={"repo": "acme/memory"}, register={"asked": True})
     config.set_secret("anthropic_api_key", "sk-ant-api-0123456789")
+    monkeypatch.setattr(codex, "status", lambda: {"installed": True, "authenticated": True, "reason": None})
     steps = client.get("/api/onboarding").json()["steps"]
     assert all(steps.values())
     assert client.post("/api/onboarding/complete").json() == {"ok": True, "jobs_enabled": []}
     assert client.get("/api/onboarding").json()["completed"] is True
+

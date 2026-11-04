@@ -1,6 +1,6 @@
 """First-login wizard progress. See docs/dev/API.md#onboarding.
 
-Every check is cheap (no network call): the wizard polls it after each step.
+Every check is cheap (no network call; Codex: its local `codex login status`): the wizard polls it after each step.
 """
 from __future__ import annotations
 
@@ -21,8 +21,10 @@ def steps() -> dict:
         has_topic = bool(workspace.list_topics())
     except OSError:
         has_topic = False
+    from ..sessions import codex
     return {"password": security.password_is_set(),
             "claude": bool(auth_status()["ok"]),
+            "codex": codex.status().get("authenticated") is True,
             "workspace": has_topic,
             "telegram": bool((cfg.get("telegram") or {}).get("chat_id")),
             "backup": bool((cfg.get("backup") or {}).get("repo")),

@@ -174,7 +174,7 @@ type Cell = string | number | boolean | null
 
 const asNumber = (c: Cell): number | null => {
   if (typeof c === 'number') return c
-  if (typeof c !== 'string') return null
+  if (typeof c !== 'string' || !/\d/.test(c)) return null // text without a digit ("EU") is text, not 0
   const n = Number(c.replace(/[\s  ]/g, '').replace(/[^\d.,+\-−]/g, '').replace('−', '-').replace(',', '.'))
   return c.trim() && Number.isFinite(n) ? n : null
 }

@@ -246,3 +246,49 @@ def test_team_live_view_is_bounded_and_cached(client, topic, mx, monkeypatch):
     client.get(f'/api/teams/{sid}')
     assert len([s for s, _ in reads if s == claude]) == before   # the second poll reused the first read (log unchanged)
     client.post(f'/api/teams/{sid}/stop')
+
+
+def test_team_roles_can_be_set_at_creation(client, topic, mx, monkeypatch):
+    log = recording_codex(mx, monkeypatch)
+    r = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL Plan the launch.',
+                                        'claude_role': '  Write the launch checklist.  ', 'codex_role': ''})
+    assert r.status_code == 200, r.text
+    sid = r.json()['id']
+    team = client.get(f'/api/teams/{sid}').json()
+    claude, codex = team['agents']
+    assert claude['role'] == 'Write the launch checklist.' and claude['custom_role'] is True
+    assert codex['role'].startswith('Independently examine risks') and codex['custom_role'] is False   # blank = default
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    worker, synthesis = [json.loads(line) for line in (mx['tmp'] / 'fake-claude' / 'calls.jsonl').read_text().splitlines()]
+    assert 'Your assignment: Write the launch checklist.' in worker['prompt']
+    assert 'Your assignment: Independently examine risks' in json.loads(log.read_text().splitlines()[0])['prompt']
+    assert 'CLAUDE — Write the launch checklist.' in synthesis['prompt']
+    too_long = client.post('/api/teams', json={'path': topic, 'message': 'x', 'codex_role': 'r' * 2001})
+    assert too_long.status_code == 422
+
+
+def test_team_coordinator_and_models_can_be_chosen(client, topic, mx, monkeypatch):
+    log = recording_codex(mx, monkeypatch)
+    r = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL Compare the two plans.', 'coordinator': 'codex',
+                                        'claude_model': 'sonnet', 'codex_model': 'gpt-5.5-codex'})
+    assert r.status_code == 200, r.text
+    sid = r.json()['id']
+    assert r.json()['provider'] == 'codex'
+    assert client.get(f'/api/teams/{sid}').json()['coordinator'] == 'codex'
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    claude_calls = [json.loads(line) for line in (mx['tmp'] / 'fake-claude' / 'calls.jsonl').read_text().splitlines()]
+    assert len(claude_calls) == 1 and claude_calls[0]['argv'][claude_calls[0]['argv'].index('--model') + 1] == 'sonnet'
+    worker, synthesis = [json.loads(line) for line in log.read_text().splitlines()]   # Codex works, then synthesizes
+    assert 'Your assignment' in worker['prompt'] and 'Synthesize their findings' in synthesis['prompt']
+    for call in (worker, synthesis):
+        assert call['argv'][call['argv'].index('--model') + 1] == 'gpt-5.5-codex'
+    assert client.get(f'/api/sessions/{sid}').json()['model'] == 'gpt-5.5-codex'
+
+
+def test_team_refuses_a_bad_model_or_coordinator_before_starting(client, topic, mx, monkeypatch):
+    fake_codex(mx, monkeypatch)
+    before = len(client.get('/api/sessions').json())
+    r = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL x', 'codex_model': '-rm -rf'})
+    assert r.status_code == 400 and r.json()['error'] == 'bad_model'
+    assert client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL x', 'coordinator': 'gemini'}).status_code == 422
+    assert len(client.get('/api/sessions').json()) == before
