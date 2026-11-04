@@ -124,6 +124,9 @@ Session = {
 | GET | `/api/teams/{sid}` | – | Team phase and its two worker sessions, including individual status and links. The team is retained with the coordinator session. |
 | POST | `/api/teams/{sid}/agents/{agent_id}/stop` | – | Stop one independently launched team worker; other workers continue. Returns 404 for sessions outside this team. |
 | POST | `/api/teams/{sid}/stop` | – | Stop the team, including any running workers and coordinator. |
+| GET | `/api/discussion-presets` | – | `[{id, name, claude_role, codex_role}]`: the saved roles of Claude Code + Codex discussions (`<state>/discussion-presets.json`, oldest first) |
+| POST | `/api/discussion-presets` | `{name, claude_role?, codex_role?}` (name 1-80 characters, not blank; roles ≤ 2000) | the new preset `{id, name, claude_role, codex_role}` (texts trimmed) · `400 bad_request` past 100 presets · `422 invalid` |
+| DELETE | `/api/discussion-presets/{id}` | – | `{ok}` · `404 not_found` |
 | GET | `/api/sessions/{id}` | – | `Session` |
 | PATCH | `/api/sessions/{id}` | `{title?, model?, archived?, notify?, plan_mode?, favorite?, path?}` | `Session` (`plan_mode:false` also clears `plan_ready`; `favorite` is carried over by a hand-off; `path` moves the session to another topic and its Claude transcript with it - `400 bad_path`, `409 busy` while a turn runs or messages wait; `model`: an id of letters, digits and `._:@/[]-`, 100 characters at most, not starting with `-`, else `400 bad_model`, also on create) |
 | POST | `/api/sessions/{id}/plan/approve` | `{text?}` (shown in the thread as the user's message) | `{queued:bool, session:Session}` — plan mode off, then a turn that tells Claude to implement its latest plan (queue item flag `plan_approved`, kept by steer like `hud`) |
@@ -131,6 +134,8 @@ Session = {
 | POST | `/api/sessions/{id}/messages` | `{text, attachments?:[filepath], hud?:bool, voice?:filepath}` (`hud`: sent from the HUD - the prompt gets a short preface: answer short, annotate the screen capture if useful; `voice`: a voice message sent directly - uploaded first with `/api/uploads`, queued at once, transcribed by the server, then its transcript is the prompt) | `{queued:bool, session:Session}` · `409 voice_off` (transcription not ready) |
 | DELETE | `/api/sessions/{id}/queue` | – | clears queued messages |
 | POST | `/api/sessions/{id}/ask` | `{question}` | `{answer, cost_usd, duration_ms}` — side question: Claude answers from a throwaway copy of the session's thread (read-only, nothing saved: the running turn, queue and log are untouched). 409 `no_thread` (never answered yet) / `busy` (one already running for this session), 429 (2 running), 504 (240 s) |
+| POST | `/api/sessions/{id}/summary` | – | `{summary, decisions:[str], actions:[{title, notes}], truncated:bool}`: a reviewable summary of the conversation (its last 200 events, at most 50 000 characters; `truncated` when the beginning is missing) written by Codex (`codex exec`, plan mode, JSON output schema, 180 s); nothing is saved, no task is created · `400 empty_session` · `409 no_topic`, `409 codex_unavailable` (Codex not signed in), `409 summary_busy` (one per session), `429 summary_limit` (two at a time) · `502 summary_unavailable\|summary_failed\|summary_invalid` · `504 summary_timeout` |
+| POST | `/api/sessions/{id}/summary/memory` | `{text}` (1-12000 characters) | `{ok}`: appends `## Discussion — <UTC date>` and the text, as approved by the user, to the existing `memory.md` of the session's topic · `400 empty_memory` · `409 no_topic`, `409 memory_unavailable` (missing or not openable), `409 invalid_memory` (not a regular file), `409 memory_full` (the file would pass 32 KiB, what Codex reads) |
 | POST | `/api/sessions/{id}/queue/take` | – | `{messages:[{text, attachments}], session}` — removes the queued user messages and returns them (the composer's **Edit**: they come back in the composer and are sent again as a normal message) |
 | POST | `/api/sessions/{id}/hide` | `{at, hidden=true}` | `{ok}` — hides (or shows again) the user message whose `at` is given: appends `{type:"mx_hide", ref, hidden}` to the raw log (nothing is erased; Claude's own thread is untouched), streamed as a `hide` event; 404 when no user message has that `at`, nothing written when it is already in that state. The UI offers it for a message whose turn ended without any answer (stopped) and drops that turn's rows |
 | POST | `/api/sessions/{id}/steer` | – | `{steered:bool, interrupted:bool, session}` — while a turn runs: the queued user messages become ONE message (`steer: true`) at the head of the queue and the runner gets SIGUSR1: it ends the current turn (only that one: meta `steer_turn` = `turn_id`) and runs that message next in the same Claude thread, prefaced so Claude continues the task with it. A compact / handoff turn is not interrupted (`interrupted:false`, the message runs right after it). `steered:false` when idle or nothing is queued |
@@ -202,6 +207,8 @@ Every `path` is absolute and inside `files_root` (else `400 bad_path` / `403 for
 | POST | `/api/files/zip` | `{paths: [abs path]}` (1-1000) | several files and folders in one zip, checked: each path confined like every other (symlinks followed, `403` outside, `404` missing, `400` relative), duplicates and entries inside another selected folder left out, a name already taken gets ` (2)`; the 2 GB / 100,000 caps apply to the whole set (`413 too_large`) → `{count, size, name, token, expires_in}` (`name`: `<their folder>.zip`, or `files.zip` when they come from several folders) |
 | GET | `/api/files/zip?token=` | – | the zip of that POST (same session cookie only, valid `expires_in` = 120 s), planned again from the paths as they are now (`413` if it grew past a cap) · unknown / expired / another session `404`. A link download cannot POST: the browser follows this URL |
 | GET | `/api/files/thumb?path=&w=320&v=&anim=0` | – | webp thumbnail for images, videos and PDFs (ffmpeg, video: frame at 1 s; PDF: first page through `pdftoppm`), cached server side; without ffmpeg images fall back to the original · other types `415`. `w` ≤ 4096. `anim=1` (chat): a `.gif` of at most 8 MB (`GIF_ANIM_MAX`) is served as it is (`image/gif`, it moves), a bigger one gets the still. Cache: `no-cache` (revalidated), or for good with `v`. Same CSP rule as `/raw` (an SVG fallback is sandboxed) |
+| GET | `/api/files/preview?path=&w=2048&v=` | – | an image for the viewer: the original when it is ≤ 300 kB or a GIF / SVG, else a WebP at most `w` px wide (64-4096; the original when the server cannot make one); TIFF and HEIC/HEIF always become a WebP (`415 unsupported` when the server cannot convert them) · `404 not_found` · `415 unsupported` (not an image) |
+| GET | `/api/files/archive?path=` | – | `{path, format:"zip"\|"tar"\|"gzip", entries:[{name, size, dir, mtime\|null}], count, total_size, truncated, size}`: lists a zip, a tar (gz, bz2, xz) or a single `.gz` without extracting anything; at most 5000 entries, 256 MB read and 3 s (then `truncated`); cached per file version · `404 not_found` · `415 unsupported` |
 | POST | `/api/files/stat` | `{paths: [str]}` (≤ 500) | `{mtimes: {path: float \| null}}` - current mtime of each file (null = missing, outside the files root, not absolute). The UI puts it in preview URLs (`v`) so a file rewritten under the same name shows its new version |
 | GET | `/api/files/video?path=` | – | `{width, height, codec, bitrate, duration, fps, has_audio, rotation, qualities: [{q, state: none\|queued\|running\|ready\|error, progress 0-1, error?}], auto}`: `width`/`height` as coded (`rotation` 90 / 270 = shown sideways), `has_audio` false = no audio stream (the UI plays a clip of ≤ 15 s without sound like a GIF); the lighter copies offered (1080 / 720 / 480 below the original's height) and `auto`, the copy the UI falls back on when the browser cannot decode the original (it checks `canPlayType` with `codec`) or it struggles: 1080 above 1080p, 720 for a heavy original ≤ 1080p (not H.264 / VP8 / VP9, or > 6 Mbit/s), `null` = none (light original, or nothing lighter) · not a video `415` · no ffprobe / no video stream `422 video_unavailable` |
 | POST | `/api/files/video/prepare` | `{path, q}` | queues the copy at height `q` (H.264 crf 20 `faster` + AAC 128k, maxrate 8M / 4M / 1.5M with a buffer twice that, `+faststart`, `nice 10`, 2 threads, one encode at a time) in `<state>/videos/<sha1(path, mtime, size)>-<q>-r2.mp4` (`r2`: copies made with older settings are never served); no-op when ready or queued; returns the same as GET · `q` not offered or no ffmpeg `422`. Poll GET for progress |
@@ -278,14 +285,14 @@ Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|nul
 
 ## Resident companions
 
-Companions are persistent, editable role definitions stored in private local state. In this first version, starting a review is explicit and uses Codex in a disposable, shallow clone of the installed Git checkout. Nothing is applied, pushed, merged or scheduled automatically.
+Companions are persistent, editable role definitions stored in private local state. Starting a review is explicit and uses the role's engine (`provider`, Codex by default) in a disposable, shallow clone of the installed Git checkout. Nothing is applied, pushed, merged or scheduled automatically.
 
 | Method | Path | Body | Result |
 |---|---|---|---|
 | GET | `/api/companions` | – | `{companions:[{id,name,role,provider}], runs:[Session]}` |
-| POST | `/api/companions` | `{name,role}` | Creates a persistent Codex role definition. |
-| PUT | `/api/companions/{id}` | `{name,role}` | Updates a role; existing runs retain their original instructions. |
-| POST | `/api/companions/{id}/runs` | `{path,mission?}` | Clones the installed source at its committed HEAD into private state, starts a Codex session in that clone, and returns the session. The clone has no remote. |
+| POST | `/api/companions` | `{name,role,provider?}` | Creates a persistent role definition; `provider` (default `codex`) must be an available engine with `source-edit` (`400 bad_provider`). |
+| PUT | `/api/companions/{id}` | `{name,role,provider?}` | Updates a role (no `provider` keeps the previous one); existing runs retain their original instructions. |
+| POST | `/api/companions/{id}/runs` | `{path,mission?}` | Clones the installed source at its committed HEAD into private state, starts a session of the role's engine in that clone, and returns the session. The clone has no remote. |
 | GET | `/api/companions/runs/{sid}/review` | – | Session, bounded patch and untracked-file summaries, plus a fingerprint for the current proposal. |
 | POST | `/api/companions/runs/{sid}/pull-request` | `{fingerprint,title,body}` | Publishes the previously approved exact proposal as a draft GitHub PR; never merges. Requires a GitHub origin and authenticated GitHub CLI. |
 | POST | `/api/companions/runs/{sid}/decision` | `{decision:"approved"\|"rejected",fingerprint}` | Records a decision on the exact finished proposal; a changed or running proposal is refused. This does not apply or publish the patch. |
@@ -367,7 +374,7 @@ target = windows-amd64|windows-arm64|darwin-arm64|darwin-amd64|linux-amd64|linux
 | DELETE | `/api/pc` | – | `{ok}` - unpairs (the agent removes its autostart and exits), MCP removed |
 | POST | `/api/pc/pair` | `{code, name, os, arch, version, browsers}` | `{device_id, token}` - the PC is a `candidate` until `/confirm` · public, `403 bad_code\|expired` |
 | GET | `/api/pc/download/{target}?code=` | – | the agent binary + config trailer, streamed from the cached agent (`Content-Length` set) · public, `403`, `404` |
-| GET | `/api/pc/install.ps1\|sh?code=&target=` | – | install script (downloads, starts) · public |
+| GET | `/api/pc/install.{ps1\|sh}?code=&target=` | – | install script (downloads, starts) · public |
 | WS | `/api/pc/ws` | `Authorization: Bearer <device token>` | agent control + DevTools frames (PROTOCOL.md) · close `4401` |
 | WS | `/api/pc/cdp` | `X-PC-Secret` | loopback only: DevTools relay for chrome-devtools-mcp · close `4403` |
 | POST | `/api/pc/mcp` | JSON-RPC, `Authorization: Bearer <mcp secret>` | loopback only: MCP (streamable HTTP, JSON) `initialize`, `ping`, `tools/list`, `tools/call` · `403` - a `url` of the PC itself or its local network (localhost, private / link-local IPs in any IPv4 form, bare names, `.local`, `.lan`…) is refused like `file:` |
@@ -394,10 +401,12 @@ Telegram: voice notes and video notes in a session thread (not audio files: atta
 ## System
 | GET | `/api/system/health` | – | `{ok, issues:[{level, code, text}], cpu_pct, load, mem:{total,avail}, disk:{total,free,pct}, uptime_s, claude_auth, claude_auth_error, claude_checked_at, backup_age_h, failed_logins_1h, at}` (each issue also has `id` and `seen`; issue `claude_auth`: "Claude is not connected" or "Claude sign-in expired…") (cached 30 s, `?force=1`) |
 | POST | `/api/system/health/seen` | `{id, seen=true}` | the health above, fresh - marks a current issue as seen (or not): it stops counting in the sidebar dot until its text changes (numbers left out of the `id`) or for 24 h; marks in `<state>/health-seen.json` · `404 not_found` |
+| GET | `/api/system/codex` | – | `{installed, authenticated:bool\|null, reason:null\|"not_installed"\|"not_authenticated"\|"status_unavailable"}`: `codex login status` of the CLI sessions use (`MAXXING_CODEX_BIN`, else `codex` on the PATH; 8 s), its output is never returned |
 | GET | `/api/system/services` | – | `[{name, label, active:bool, enabled:bool, since:float\|null, state}]` (claude-maxxing, caddy, tailscaled, cron + config `services_extra`; units not installed are omitted; one `systemctl show` call, cached 10 s, dropped by a service action) |
 | POST | `/api/system/services/{name}/{start\|stop\|restart}` | – | `{ok}` (self restart deferred 2 s) |
 | GET | `/api/system/logs?unit=&lines=200` | – | `{lines:[str]}` |
-| GET | `/api/system/version?refresh=1` | – | `{version, commit, latest_commit\|null, behind:int\|null, checking:bool, checked_at:float\|null, custom:{count, titles, dirty, rebase}, pending:{at, reason:"conflict"\|"health"\|"dependencies", target_version?, conflicts?}\|null, license:{enabled, key_hint, email, kind, updates_until, expires_at, channel, latest, message, max_servers, moved_to_git, move_error}, report:{at, version, ok, problems}\|null, after:{to, at, notes_session?, notes_path?, done}\|null}` (remote checked every 10 min with git and the update token; nothing on an install still on archives until it has moved to git; `refresh=1` checks now and waits; `commit` and `custom` count/titles/dirty are cached 30 s and while the clone's HEAD / branch ref / index are unchanged, `refresh=1` re-reads them, `rebase` and `pending` are always fresh) |
+| GET | `/api/system/version?refresh=1` | – | `{version, commit, latest_commit\|null, behind:int\|null, checking:bool, checked_at:float\|null, custom:{count, titles, dirty, rebase}, pending:{at, reason:"conflict"\|"health"\|"dependencies", target_version?, conflicts?}\|null, license:{enabled, key_hint, email, kind, updates_until, expires_at, channel, latest, message, max_servers, moved_to_git, move_error}, report:{at, version, ok, problems}\|null, after:{to, at, notes_session?, notes_path?, done}\|null, local_mode:bool, auto_update:{enabled, tried, last_check}}` (`local_mode`: started by `scripts/dev-local.sh`, `HARNESS_PILOT_LOCAL_MODE=1`; remote checked every 10 min with git and the update token; nothing on an install still on archives until it has moved to git; `refresh=1` checks now and waits; `commit` and `custom` count/titles/dirty are cached 30 s and while the clone's HEAD / branch ref / index are unchanged, `refresh=1` re-reads them, `rebase` and `pending` are always fresh) |
+| PUT | `/api/system/auto-update` | `{enabled}` | `{ok, enabled}`: config `auto_update` (Settings -> System, see `maxxing/auto_update.py`) · `409 local_update_unsupported` when turning it on in local mode |
 | POST | `/api/system/update` | – | `{ok}` starts `pilot update --smart` in a transient unit (after the restart the server verifies, then opens the upgrade-notes session) |
 | GET | `/api/system/update/preflight?refresh=` | – | `Preflight` = `{ok, verdict: up_to_date\|simple\|adapt, current, latest, behind, customs:[{id, title, why, files, status: ok\|review\|included\|conflict\|unknown, conflicts, overlap}], unsaved, unsaved_overlap?, web_changes, extensions:[{id, name, api, reason}], notes:[{version}], changelog}` - the update simulated in a throw-away git worktree; cached until HEAD / target / unsaved files change; `refresh` fetches first · `502 preflight_failed` |
 | POST | `/api/system/update/assist` | – | `{session}`: a session in the update topic that adapts this server's changes then updates |
@@ -524,10 +533,11 @@ Block =
 | GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?}]` (pinned: page shown in the sidebar; page_v: page.js mtime in ms, the UI imports `page.js?v=<page_v>` so the module is reused until the file changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks) |
 | PATCH | `/api/extensions/{id}` | `{enabled?, pinned?}` | `{ok}` (`pinned` on a widget -> 400 `not_a_page`) |
 | POST | `/api/extensions/reload` | – | rescans `<workspace>/extensions` |
-| ANY | `/api/ext/{id}/{path}` | – | forwarded to the extension's `api.py` `handle()`: return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, other → 500 `extension_error`, 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
+| ANY | `/api/ext/{id}[/{path}]` | – | forwarded to the extension's `api.py` `handle()` (`path` = `""` without it): return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, other → 500 `extension_error`, 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
 | GET | `/ext/{id}/page.js` | – | page module (ES module) |
 | GET | `/ext/ui-kit.css` | – | the UI kit of extensions (`server/maxxing/assets/ui-kit.css`): `ui-*` classes scoped to `.mx-ext` (page host) and `[data-mx-kit]` (widget frame), built on the theme variables; the app adds it once when a page extension opens; `ETag` (content hash), `If-None-Match` -> `304` |
 | GET | `/ext/{id}/widget-frame` | – | HTML widget document: the bridge (`maxxing.api / resize / theme`, theme from the URL fragment) + the UI kit inlined (`<html data-mx-kit>`) + `widget.html`, `Content-Security-Policy: sandbox allow-scripts allow-pointer-lock` (the UI frames it with the same sandbox; an srcdoc frame would inherit the app's script policy). `/ext/{id}/widget.html` stays the raw file (text/plain) |
+| GET | `/ext/{id}/widget.html` | – | the raw `widget.html` as `text/plain` (`no-store`, `nosniff`) · `404 not_found` when the extension is unknown, off, broken or has none |
 
 The app page (`index.html`) is served with `script-src 'self'` plus the hashes of its inline boot scripts
 (`app._app_csp`): a page extension's `page.js` runs in the app, so it may not inject inline `<script>` nor use
@@ -774,6 +784,10 @@ Telegram: the bot posts in the thread "Notifications" (`telegram.threads["#feed"
 ## Web Push
 Notifications on the phone / computer while no tab is open, for the events of the feed. The server holds a VAPID key
 pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscriptions (`<state>/push.json`).
+A key made again (that file lost or damaged) makes push services refuse the existing subscriptions (403): the web
+compares `PushSubscription.options.applicationServerKey` with `public_key` and, when they differ, subscribes the
+browser again (POST the new subscription, DELETE the old one) - while the app runs with push on, and when push is
+turned on.
 
 ```
 PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}
@@ -877,15 +891,15 @@ All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persis
 
 | Method/path | Request | Result |
 | --- | --- | --- |
-| GET base | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`) |
-| POST `/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
-| GET `/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes}]` |
-| DELETE `/exports/{id}` | — | `{ok, id}`: removes the export and its metadata · `404 not_found` for an unknown id, anything but 32 lowercase hex characters, or a symbolic link |
-| GET `/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
-| POST `/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
-| POST `/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command; `integrations_paused: true` |
-| POST `/activate` | `{}` | Start deferred background services and exit recovered read-only mode |
-| POST `/resume-integrations` | `{}` | `{ok, scheduled_jobs, telegram}`: resume Telegram, scheduled jobs and the GitHub memory backup of an activated copy · `409 restore_hold` before activation |
+| GET `/api/backup/instance` | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`) |
+| POST `/api/backup/instance/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
+| GET `/api/backup/instance/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes}]` |
+| DELETE `/api/backup/instance/exports/{id}` | — | `{ok, id}`: removes the export and its metadata · `404 not_found` for an unknown id, anything but 32 lowercase hex characters, or a symbolic link |
+| GET `/api/backup/instance/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
+| POST `/api/backup/instance/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
+| POST `/api/backup/instance/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command; `integrations_paused: true` |
+| POST `/api/backup/instance/activate` | `{}` | Start deferred background services and exit recovered read-only mode |
+| POST `/api/backup/instance/resume-integrations` | `{}` | `{ok, scheduled_jobs, telegram}`: resume Telegram, scheduled jobs and the GitHub memory backup of an activated copy · `409 restore_hold` before activation |
 
 A full snapshot pauses pausable services and rejects concurrent HTTP mutations/WebSocket activity.
 A root that is the filesystem root, the home folder or one of its ancestors is broad. A broad state or workspace

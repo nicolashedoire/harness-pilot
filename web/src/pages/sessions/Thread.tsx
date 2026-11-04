@@ -14,9 +14,9 @@ import { errorMessage } from '@/lib/api'
 import { hideMessage } from '@/lib/queries'
 import { reducedMotion } from '@/lib/presence'
 import type { Session } from '@/lib/types'
-import { NoteRow, RequestRow, UserItem, UserMessage } from './Items'
+import { ItemContext, NoteRow, RequestRow, UserItem, UserMessage } from './Items'
 import { buildBlocks, Elapsed, isDuo, TurnView, type Block } from './Turn'
-import { AGENT_NAME, AgentIcon, type AgentId } from '@/features/agents/AgentIcon'
+import { AgentIcon, agentName, type AgentId } from '@/features/agents/AgentIcon'
 import { onThreadDragEnd, onThreadDragStart } from './contentDrag'
 import { PILL_BOTTOM, pillSpot, type PillSpot } from './pillSpot'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
@@ -481,11 +481,12 @@ function backgroundText(log: LogState, t: ReturnType<typeof useT>): string | nul
 /** The turn has started but nothing of it has arrived yet: who works on it, and for how long. */
 function PendingTurn({ agent, since, background }: { agent: AgentId; since: number | null; background: string | null }) {
   const t = useT()
+  const { providerName } = React.useContext(ItemContext)
   return (
     <div className="flex flex-col gap-3 pt-1" aria-busy aria-live="polite" data-testid="turn-pending">
       <div className="flex items-center gap-2 text-[13px]">
         <AgentIcon agent={agent} size={22} label={null} />
-        <span className="font-semibold">{AGENT_NAME[agent]}</span>
+        <span className="font-semibold">{agentName(agent, t, providerName)}</span>
         {since && (
           <span className="text-muted-foreground">
             {t('conv.working')} <Elapsed since={since} />

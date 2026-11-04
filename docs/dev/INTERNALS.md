@@ -292,7 +292,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - Agents: `skill_vars(ps)` -> `{{PILOT_BLOCKS_TYPES}}`, `{{PILOT_BLOCKS_ENABLED}}`, merged into `cmd_core._skill_vars()`
   (install and `skills_status` render `skills/pilot-blocks/SKILL.md` with them); `sync_agent_files()` writes
   `<state>/blocks/agents.md` (Codex: `sessions/codex.workspace_context` appends it, the only hook in session code),
-  `<state>/blocks/reference.md`, and renders the installed skill again when it exists. Idempotent (files rewritten only
+  `<state>/blocks/reference.md`, and renders the installed skill again (Claude's and Codex's copies) when it exists. Idempotent (files rewritten only
   on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `pilot init`. The
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
@@ -719,8 +719,11 @@ default project/topic once - install.json `seeded`), `install_skills()` (copies 
 install.json `skills` lists what was installed, an obsolete listed one is deleted, an old-named folder of
 `renames.SKILL_RENAMES` that is not listed goes to `trash/skills/` - from `skills/*` to `<claude_dir>/skills`
 and renders the same placeholders in their `.md`/`.json`/`.txt` files, so shipped skills never hard-code
-`/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`; `skills_status()` compares with the rendered
-text), `default_jobs()` / `ensure_default_crons()` (install.json
+`/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`. The same copy goes to Codex's user skills
+folder `codex_skills_target()` = `~/.agents/skills` (where Codex CLI reads personal skills; checked with codex-cli
+0.150.1), with its own record install.json `codex_skills` (a folder it moves away goes to `trash/skills/<name>-codex-<time>`); the result keeps `installed`/`removed`/`backed_up` for
+Claude and adds `codex: {target, installed, removed, backed_up}`. `skills_status()` compares with the rendered text:
+`[{name, state, codex}]`, `state` for Claude's copy and `codex` for Codex's, each `ok` | `missing` | `outdated`), `default_jobs()` / `ensure_default_crons()` (install.json
 `default_crons`; the morning job's prompt is `MORNING_TASKS_PROMPT`), `check_update(branch) -> {ok, current, latest, behind, available, changelog}` (no change to the
 code; `update_source()` = "license" | "git" (clone with an `origin` remote) | None - None: `{ok: true, git: false,
 message: "no license, no remote"}`, `update --check` exits 0 with "updates unavailable (no license, no remote)", and
@@ -838,6 +841,11 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
+  also read by the doctor, uninstall and `blocks.sync_agent_files`) instead of `~/.agents/skills`.
+  `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and
+  its parents up to the Git repository root (the default local dir is inside the checkout), so the personal
+  `~/.agents/skills` of the computer is never written. Tests point it to a temporary folder (`conftest.py`).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL

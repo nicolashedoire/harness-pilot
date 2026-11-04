@@ -142,7 +142,8 @@ Claude automatically loads the workspace, project and topic memory (see [Memory]
 extension) and **Several agents** (Claude swarm, Debate, Mixed team). Each card says in one line what it does; the
 **What will happen** panel beside them (under them on a phone or a narrow column) details the chosen mode: its steps,
 what it never does, the subscriptions it uses, and what it cannot take. The settings of the chosen mode (model, number
-of subagents, debate limits and roles, plan mode) follow the cards. A mode that takes written messages only (Mixed team,
+of subagents, debate limits and roles, plan mode) follow the cards; an extension engine's optional model is passed to
+that engine as is. A mode that takes written messages only (Mixed team,
 an engine without file support) turns the paperclip off and says why; voice is then dictated into the text.
 
 **Its title** is short: the start of the message shows at once, then a shortened title replaces it (greetings and

@@ -1535,6 +1535,111 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
+   sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
+const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
+  ['codex', 'Independently examine risks, alternatives and how to verify the result.']]
+const TEAM_REPORTS = {
+  claude: 'Approach in four steps: list what the change touches, make it behind a flag, migrate the existing data, then remove the old path. The first two steps fit in one afternoon.',
+  codex: 'Main risk: the data migration cannot be undone once the old path is removed. Keep a backup and a dry run that counts the rows to change; verify with the existing tests plus one end-to-end check.',
+}
+const teamsState = () => (S.teams ||= {}) // coordinator id -> { phase, goal, agents: [{ id, provider, role, stopped }] }
+const teamOf = (sid) => { findSession(sid); return teamsState()[sid] || fail(404, 'not_found', 'Team not found') }
+function teamSetPhase(sid, phase) {
+  teamsState()[sid].phase = phase
+  const s = S.sessions.find((x) => x.id === sid)
+  if (s) s.team_phase = phase
+  bus('sessions', 'workspace')
+}
+// One turn with a fixed answer (startTurn's generic answer would ignore the assignment); `done` runs when it ends.
+function teamTurn(s, text, answer, ms, done) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model
+  s.state = 'running'; s.error = null; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'team' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, ms, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: answer.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: answer, at: now() },
+      { type: 'result', ok: true, cost_usd: s.provider === 'codex' ? 0 : 0.06, duration_ms: ms, model, usage: { input: 2400, output: 380, cache_read: 16000, cache_write: 400 }, at: now() })
+    bus('sessions', 'workspace')
+    done()
+  })
+  bus('sessions', 'workspace')
+}
+function teamAdvance(sid) { // like teams.advance: once no worker runs, the coordinator synthesises
+  const team = teamsState()[sid]
+  if (!team || team.phase !== 'working') return
+  const workers = team.agents.map((a) => [a, S.sessions.find((x) => x.id === a.id)])
+  if (workers.some(([, w]) => w && w.state === 'running')) return
+  const reports = workers.map(([a, w]) => `${a.provider.toUpperCase()} — ${a.role}\n${a.stopped ? '[Stopped by the user; no final report.]' : w ? w.last_text || '[No final report.]' : '[Agent failed or its session is missing.]'}`)
+  const coordinator = findSession(sid)
+  teamSetPhase(sid, 'synthesizing')
+  const name = (a) => (a.provider === 'codex' ? 'Codex' : 'Claude Code')
+  const points = { claude: '- **Plan** (Claude Code): flag the change, migrate the data, then remove the old path.', codex: '- **Risks** (Codex): the migration is one-way; keep a backup and a dry run first.' }
+  const stopped = team.agents.filter((a) => a.stopped)
+  const answer = `**Synthesis of the team's analyses**\n\n${team.agents.filter((a) => !a.stopped).map((a) => points[a.provider]).join('\n')}\n\n${stopped.length ? `Note: ${stopped.map(name).join(' and ')} was stopped before reporting, so its part is missing.\n\n` : ''}Recommendation: start with a dry run, then the flagged change.`
+  teamTurn(coordinator, 'The two independent team members have finished. Synthesize their findings for the user.\n\nReports:\n' + reports.join('\n\n---\n\n'), answer, 2600,
+    () => { if (team.phase === 'synthesizing') teamSetPhase(sid, 'completed') })
+}
+const teamSession = (path, title, provider) => {
+  const t = now()
+  const s = { id: uuid(), title, path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null,
+    context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null, provider, team_phase: null, team_parent: null, team_turn: false }
+  S.sessions.push(s); S.events[s.id] = []
+  return s
+}
+const teamOut = (sid) => {
+  const team = teamOf(sid)
+  return { id: sid, phase: team.phase, agents: team.agents.map((a) => {
+    const session = S.sessions.find((x) => x.id === a.id) || null
+    return { ...a, state: a.stopped ? 'stopped' : session ? session.state : 'missing', session }
+  }) }
+}
+R('POST', '/api/teams', ({ body }) => {
+  if (typeof body.path !== 'string') fail(422, 'invalid', 'path is required')
+  const goal = String(body.message || '').trim()
+  if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
+  const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
+  addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
+  const team = { phase: 'launching', goal, agents: [] }
+  teamsState()[parent.id] = team
+  for (const [provider, role] of TEAM_ROLES) {
+    const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
+    Object.assign(child, { team_parent: parent.id, team_turn: true })
+    team.agents.push({ id: child.id, provider, role, stopped: false })
+    teamTurn(child, `You are an independent member of a mixed Claude and Codex team. Analyze the mission from your assigned perspective and report your findings to the coordinator.\n\nYour assignment: ${role}\n\nMission:\n${goal}`,
+      TEAM_REPORTS[provider], provider === 'codex' ? 5200 : 3800, () => teamAdvance(parent.id))
+  }
+  teamSetPhase(parent.id, 'working')
+  return parent
+})
+R('GET', '/api/teams/:sid', ({ params }) => teamOut(params.sid))
+R('POST', '/api/teams/:sid/agents/:agent/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  const agent = team.agents.find((a) => a.id === params.agent) || fail(404, 'not_found', 'Team agent not found')
+  if (team.phase !== 'working') fail(409, 'not_running', 'The team is not working.')
+  const child = S.sessions.find((x) => x.id === agent.id)
+  if (!child || child.state !== 'running') fail(409, 'not_running', 'The agent is not running.')
+  agent.stopped = true
+  clearTimers(child); child.state = 'idle'; child.updated = now()
+  addEvents(child, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  teamAdvance(params.sid) // the other worker may already be done
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+R('POST', '/api/teams/:sid/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  teamSetPhase(params.sid, 'stopped')
+  for (const s of [...team.agents.map((a) => S.sessions.find((x) => x.id === a.id)), S.sessions.find((x) => x.id === params.sid)]) {
+    if (!s || s.state !== 'running') continue
+    const agent = team.agents.find((a) => a.id === s.id)
+    if (agent) agent.stopped = true
+    clearTimers(s); s.state = 'idle'; s.updated = now()
+    addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  }
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
@@ -1882,6 +1987,102 @@ R('DELETE', '/api/backup', () => {
   return { ok: true }
 })
 
+/* ---- complete instance backup (server/maxxing/instance_backup.py): encrypted exports kept on the server, a verified
+   preview of an uploaded archive, restore into a separate copy whose services and integrations start paused */
+const IB_DESCRIPTION = { version: VERSION, files: 1834, bytes: 412 * 1024 * 1024, external_links: ['workspace/projects/acme/topics/website/node_modules'],
+  includes: ['settings_and_credentials', 'sessions', 'attachments', 'workspace', 'files', 'space_labels'],
+  excludes: ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets'], excluded_roots: {} }
+const ibId = () => crypto.randomBytes(16).toString('hex')
+function ibState() {
+  if (S.instanceBackup) return S.instanceBackup
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+  return S.instanceBackup
+}
+const ibRoots = () => {
+  const files = S.settings.files_root || ROOT
+  const broad = files === '/' || files === '/root' || /^\/home\/[^/]+\/?$/.test(files) // the filesystem root or a home folder
+  return { state: { source: '/var/lib/claude-maxxing', archive: 'state' }, workspace: { source: ROOT, archive: 'workspace' },
+    files: broad ? { source: files, archive: null, excluded: 'broad_root' } : { source: files, archive: 'files' } }
+}
+const ibDescription = () => {
+  const roots = ibRoots(), left = Object.entries(roots).filter(([, r]) => !r.archive)
+  return { ...clone(IB_DESCRIPTION), includes: IB_DESCRIPTION.includes.filter((x) => x !== 'files' || roots.files.archive),
+    excluded_roots: Object.fromEntries(left.map(([name, r]) => [name, { source: r.source, reason: r.excluded }])) }
+}
+const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
+const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+R('GET', '/api/backup/instance', () => {
+  const st = ibState()
+  return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+})
+R('POST', '/api/backup/instance/export', async ({ body }) => {
+  ibHeld(); ibPassphrase(body.passphrase)
+  if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
+  await sleep(2500)
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  ibState().exports.unshift(e)
+  bus('backup')
+  return e
+})
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
+  ibHeld()
+  const st = ibState()
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  st.exports = st.exports.filter((e) => e.id !== params.id)
+  return { ok: true, id: params.id }
+})
+R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  // A short stand-in for the real file: the format-2 header (magic, version, scrypt 2^15/8/1, salt, nonce) and random bytes.
+  const header = Buffer.concat([Buffer.from('PILOTBK\n'), Buffer.from([2, 1, 15, 0, 8, 0, 1]), crypto.randomBytes(28)])
+  const data = Buffer.concat([header, crypto.randomBytes(4096)])
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': data.length, 'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="pilot-${params.id.slice(0, 12)}.pilotbackup"` })
+  res.end(data)
+  return RAW
+})
+R('POST', '/api/backup/instance/preview', async ({ req, rawBody }) => {
+  ibHeld()
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  const m = rawBody.toString('latin1').match(/name="passphrase"\r\n\r\n([^\r]*)\r\n/)
+  if (!file) fail(422, 'invalid', 'file is required')
+  ibPassphrase(m ? Buffer.from(m[1], 'latin1').toString('utf8') : null)
+  if (!file.data.subarray(0, 8).equals(Buffer.from('PILOTBK\n'))) fail(400, 'format', 'This is not a supported encrypted instance backup.')
+  await sleep(1500)
+  if (/wrong/i.test(m[1])) fail(400, 'decrypt_failed', 'The passphrase is incorrect or the backup has been modified.') // try it with a passphrase containing "wrong"
+  const p = { id: ibId(), sha256: crypto.randomBytes(32).toString('hex'), created: now() - 2 * DAY, ...ibDescription() }
+  ibState().previews[p.id] = { at: now(), ...p }
+  return p
+})
+R('POST', '/api/backup/instance/restore', async ({ body }) => {
+  ibHeld()
+  const p = ibState().previews[body.id]
+  if (!/^[a-f0-9]{32}$/.test(body.id || '') || !/^[a-f0-9]{64}$/.test(body.sha256 || '')) fail(400, 'preview_required', 'Inspect the archive before restoring it.')
+  if (!p || p.sha256 !== body.sha256 || now() - p.at > HOUR) fail(409, 'changed', 'The archive changed or its preview expired. Inspect it again.')
+  await sleep(2000)
+  delete S.instanceBackup.previews[body.id]
+  const destination = `/var/lib/pilot-restored-${crypto.randomBytes(6).toString('hex')}`, { at, ...preview } = p
+  return { destination, state: `${destination}/state`, background_services_paused: true, integrations_paused: true, ...preview,
+    launch_command: `MAXXING_STATE=${destination}/state MAXXING_CRONTAB_FILE=${destination}/crontab uv run --directory /opt/harness-pilot/server python -m uvicorn maxxing.app:create_app --factory --host 127.0.0.1 --port 8790` }
+})
+// A restored copy starts held (read-only) and with its integrations paused: the scenario has none, these only answer.
+R('POST', '/api/backup/instance/activate', () => {
+  const st = ibState()
+  if (!st.restore_hold) return { ok: true, already_active: true }
+  st.restore_hold = false; bus('backup', 'health')
+  return { ok: true }
+})
+R('POST', '/api/backup/instance/resume-integrations', () => {
+  const st = ibState()
+  if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
+  st.integrations_paused = false; bus('crons', 'backup', 'telegram')
+  return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
@@ -2011,6 +2212,146 @@ R('DELETE', '/api/secrets/:name', ({ params }) => {
   const s = S.secrets.find((x) => x.name === params.name) || fail(404, 'not_found', 'Secret not found')
   S.secrets = S.secrets.filter((x) => x !== s)
   return { ok: true }
+})
+
+/* ---- agent engines and resident companions (server/maxxing/companions.py: persistent roles, runs in a disposable
+   copy of the source whose proposal the owner reviews, approves or rejects, then may publish as a draft PR) */
+const AGENT_PROVIDERS = [
+  { id: 'claude', name: 'Claude Code', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+  { id: 'codex', name: 'Codex', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+]
+R('GET', '/api/agent-providers', () => AGENT_PROVIDERS)
+
+const COMPANION_ROLES = [
+  { id: 'observer', name: 'Platform observer', provider: 'codex', role: 'Inspect the platform, identify a small useful improvement, implement it in the isolated copy, run relevant tests and explain the change, evidence and limitations.' },
+  { id: 'security', name: 'Security and dependencies', provider: 'codex', role: 'Inspect the platform for security weaknesses and outdated or vulnerable dependencies. Use available evidence, prepare a narrowly scoped fix or dependency update, and run relevant tests. Report when an advisory database, network access, or further review is needed.' },
+  { id: 'architect', name: 'Application architect and router', provider: 'codex', role: 'Understand how the platform components and features connect. Use the source import map, documentation and code to identify relevant modules and guide other companions with precise file paths, dependencies and verification steps.' },
+  { id: 'reverse-engineer', name: 'Reverse engineering investigator', provider: 'codex', role: 'Investigate source, application behavior and dependencies. Keep evidence and internal maps, distinguish observations from hypotheses, and guide tested improvements.' },
+]
+// What every mock run proposes (a real run's diff comes from git in its copy): a tracked change and one new file.
+const COMPANION_PATCH = `diff --git a/server/maxxing/api/files.py b/server/maxxing/api/files.py
+index 3f2a1c4..8b9d0e7 100644
+--- a/server/maxxing/api/files.py
++++ b/server/maxxing/api/files.py
+@@ -212,5 +212,7 @@ async def rename(body: RenameIn):
+     src = _resolve(body.path)
++    if '/' in body.name or body.name in ('.', '..'):
++        raise HTTPException(400, {'error': 'bad_name', 'message': 'A name cannot contain a slash.'})
+     dst = src.with_name(body.name)
+     if dst.exists():
+         raise HTTPException(409, {'error': 'exists', 'message': 'A file with this name already exists.'})
+     src.rename(dst)
+`
+const COMPANION_NEW = [{ path: 'server/tests/test_rename_names.py', executable: false,
+  content: "def test_a_name_with_a_slash_is_refused(client, mx):\n    r = client.post('/api/files/rename', json={'path': str(mx['files'] / 'a.txt'), 'name': 'x/y'})\n    assert r.status_code == 400 and r.json()['error'] == 'bad_name'\n" }]
+const COMPANION_REPORT = 'Renaming a file to a name with a slash moved it into another folder. The rename route now refuses such names (`400 bad_name`), with a test.\n\n**Verified:** `uv run pytest tests/test_rename_names.py tests/test_files.py` (all passed).\n\n**Not verified:** the Files page message for this error.'
+const companionFingerprint = () => {
+  const h = crypto.createHash('sha256').update(COMPANION_PATCH)
+  for (const f of COMPANION_NEW) h.update(`${f.path}\0${f.content}\0${f.executable ? 'x' : '-'}`)
+  return h.digest('hex')
+}
+function companionsState() {
+  if (S.companions) return S.companions
+  S.companions = { roles: clone(COMPANION_ROLES), runs: {} } // runs: session id -> { base, decision, pull_request }
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') { // one finished run waiting for the owner's review
+    const t = now(), path = topicPath('ops', 'server')
+    const s = { id: uuid(), title: 'Platform observer — platform review', path, state: 'idle', queue: 0, created: t - 50 * MIN, updated: t - 38 * MIN,
+      turns: 1, cost_usd: 0, model: '', real_model: 'gpt-5.5-codex', context_tokens: 41000, context_window: 400000, archived: false, notify: false,
+      source: 'web', unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200), error: null, provider: 'codex',
+      companion: { id: 'observer', name: 'Platform observer', decision: null } }
+    S.sessions.push(s)
+    S.events[s.id] = [
+      { type: 'user', text: 'You are Platform observer, a resident companion. Additional mission: Find a useful, small improvement.', attachments: [], at: s.created, source: 'companion' },
+      { type: 'init', model: 'gpt-5.5-codex', cwd: `${ROOT}/${path}`, at: s.created + 1 },
+      { type: 'assistant', text: COMPANION_REPORT, at: s.updated },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 690000, model: 'gpt-5.5-codex', usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: s.updated },
+    ]
+    S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  }
+  return S.companions
+}
+// A run's turn: the agent edits its copy, runs the tests and reports (startTurn's generic answer would echo the role).
+function companionTurn(s, text) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model, tu = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  s.state = 'running'; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'companion' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, 1200, () => addEvents(s, { type: 'tool_use', id: tu, name: 'Bash', input: { command: 'uv run pytest tests/test_rename_names.py tests/test_files.py' }, summary: 'Bash: uv run pytest', at: now() }))
+  later(s, 2600, () => addEvents(s, { type: 'tool_result', tool_use_id: tu, text: '38 passed in 4.21s', is_error: false, at: now() }))
+  later(s, 3400, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: COMPANION_REPORT, at: now() },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 3400, model, usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: now() })
+    bus('companions', 'sessions', 'workspace')
+  })
+  bus('sessions', 'workspace')
+}
+const companionRun = (sid) => {
+  const s = findSession(sid), run = companionsState().runs[sid]
+  if (!run) fail(404, 'not_found', 'Companion run not found.')
+  return { s, run }
+}
+const companionReview = (sid) => {
+  const { s, run } = companionRun(sid)
+  const done = s.state !== 'running' && s.turns > 0 // the copy is unchanged until the agent worked in it
+  return { target: 'acme/platform', session: s, fingerprint: done ? companionFingerprint() : crypto.createHash('sha256').digest('hex'),
+    patch: done ? COMPANION_PATCH : '', untracked: done ? clone(COMPANION_NEW) : [], has_changes: done, base: run.base,
+    decision: run.decision, pull_request: run.pull_request }
+}
+function companionSave(body, ident) {
+  const name = String(body.name || '').trim(), role = String(body.role || '').trim()
+  if (!name || !role || name.length > 80 || role.length > 4000) fail(400, 'bad_role', 'A name and role are required.')
+  const st = companionsState()
+  const previous = ident ? st.roles.find((p) => p.id === ident) || fail(404, 'not_found', 'Companion not found.') : null
+  if (!ident && st.roles.length >= 99 + COMPANION_ROLES.length) fail(400, 'limit', 'Maximum number of companions reached.')
+  const provider = body.provider || previous?.provider || 'codex'
+  if (!AGENT_PROVIDERS.some((p) => p.id === provider && p.capabilities.includes('source-edit'))) fail(400, 'bad_provider', 'Choose an available coding agent for this companion.')
+  const item = { id: ident || uuid(), name, role, provider }
+  if (previous) Object.assign(previous, item); else st.roles.push(item)
+  bus('companions')
+  return item
+}
+R('GET', '/api/companions', () => {
+  const st = companionsState()
+  return { companions: st.roles, runs: S.sessions.filter((s) => st.runs[s.id]).sort((a, b) => b.created - a.created).slice(0, 100) }
+})
+R('POST', '/api/companions', ({ body }) => companionSave(body, null))
+R('PUT', '/api/companions/:id', ({ params, body }) => companionSave(body, params.id))
+R('POST', '/api/companions/:id/runs', ({ params, body }) => {
+  const p = companionsState().roles.find((x) => x.id === params.id) || fail(404, 'not_found', 'Companion not found.')
+  if (!S.projects.some((pr) => pr.topics.some((tp) => topicPath(pr.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const mission = String(body.mission || '')
+  if (mission.length > 6000) fail(400, 'bad_mission', 'Mission is too long.')
+  const t = now()
+  const s = { id: uuid(), title: `${p.name} — platform review`, path: body.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0,
+    model: '', real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '',
+    error: null, provider: p.provider, companion: { id: p.id, name: p.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  companionTurn(s, `You are ${p.name}, a resident companion. Your persistent role:\n${p.role}\n\nAdditional mission: ${mission.trim() || 'Find a useful, small improvement.'}`)
+  bus('companions', 'sessions', 'workspace')
+  return s
+})
+R('GET', '/api/companions/runs/:sid/review', ({ params }) => companionReview(params.sid))
+R('POST', '/api/companions/runs/:sid/decision', ({ params, body }) => {
+  if (!['approved', 'rejected'].includes(body.decision)) fail(400, 'bad_decision', 'Invalid decision.')
+  const { s, run } = companionRun(params.sid)
+  if (s.state === 'running') fail(409, 'running', 'Wait until the experiment stops.')
+  const review = companionReview(params.sid)
+  if (!review.has_changes || review.fingerprint !== body.fingerprint) fail(409, 'changed', 'The proposal changed; review it again.')
+  run.decision = { value: body.decision, fingerprint: body.fingerprint, at: now() }
+  s.companion.decision = run.decision
+  bus('companions', 'sessions')
+  return companionReview(params.sid)
+})
+R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => {
+  const { run } = companionRun(params.sid)
+  const title = String(body.title || '').trim()
+  if (!title || title.length > 180 || String(body.body || '').length > 12000) fail(400, 'bad_request', 'Invalid pull request title or body.')
+  if (run.decision?.value !== 'approved' || run.decision.fingerprint !== body.fingerprint || body.fingerprint !== companionFingerprint()) fail(409, 'not_approved', 'Approve the current finished proposal first.')
+  await sleep(1200)
+  run.pull_request ||= { url: `https://github.com/acme/platform/pull/${140 + Object.keys(S.companions.runs).length}`, fingerprint: body.fingerprint }
+  bus('companions')
+  return { url: run.pull_request.url, target: 'acme/platform' }
 })
 
 /* ---- system */
