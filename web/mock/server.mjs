@@ -1658,12 +1658,48 @@ R('POST', '/api/teams/:sid/stop', ({ params }) => {
   return teamOut(params.sid)
 })
 
+/* ---- discussion presets (server/maxxing/sessions/presets.py): saved roles of Claude Code + Codex conversations */
+const presetsState = () => (S.discussionPresets ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? [
+  { id: uuid(), name: 'Builder and reviewer', claude_role: 'Propose the change and write it step by step.', codex_role: 'Review each step: risks, missing tests, simpler options.' },
+  { id: uuid(), name: 'Two copywriters', claude_role: 'Write the first draft in a warm, plain tone.', codex_role: 'Tighten the draft: shorter sentences, no jargon, keep the facts.' },
+] : [])
+R('GET', '/api/discussion-presets', () => presetsState())
+R('POST', '/api/discussion-presets', ({ body }) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name || body.name.length > 80 || String(body.claude_role || '').length > 2000 || String(body.codex_role || '').length > 2000) fail(422, 'invalid', 'name: 1-80 characters, roles: 2000 at most')
+  if (presetsState().length >= 100) fail(400, 'bad_request', 'A maximum of 100 configurations can be saved.')
+  const preset = { id: uuid(), name, claude_role: String(body.claude_role || '').trim(), codex_role: String(body.codex_role || '').trim() }
+  S.discussionPresets.push(preset)
+  return preset
+})
+R('DELETE', '/api/discussion-presets/:id', ({ params }) => {
+  if (!presetsState().some((p) => p.id === params.id)) fail(404, 'not_found', 'Configuration not found')
+  S.discussionPresets = S.discussionPresets.filter((p) => p.id !== params.id)
+  return { ok: true }
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
   busClients.add(res)
   req.on('close', () => busClients.delete(res))
   return RAW
+})
+
+/* ---- space labels (server/maxxing/api/space_labels.py): the owner's personal / agents / shared marks on folders and
+   files, keyed by absolute path; `unclassified` removes the mark */
+const labelsState = () => (S.spaceLabels ||= S.scenario === 'ready' || S.scenario === 'maxxing'
+  ? { [`${ROOT}/projects/personal`]: 'personal', [`${ROOT}/projects/ops`]: 'agents' } : {})
+R('GET', '/api/space-labels', () => Object.fromEntries(Object.entries(labelsState()).filter(([p]) => S.fs.has(p))))
+R('PUT', '/api/space-labels', ({ body }) => {
+  if (!['personal', 'agents', 'shared', 'unclassified'].includes(body.label)) fail(422, 'invalid', 'label must be personal, agents, shared or unclassified')
+  const p = typeof body.path === 'string' && body.path.startsWith('/') ? path.posix.normalize(body.path).replace(/(.)\/$/, '$1') : fail(400, 'bad_path', 'An absolute path is required.')
+  const files = S.settings.files_root || ROOT
+  if (![ROOT, files].some((r) => p === r || p.startsWith(r + '/'))) fail(403, 'forbidden', 'Path is outside the workspace and files root.')
+  if (!S.fs.has(p)) fail(404, 'not_found', 'Item not found.')
+  if (body.label === 'unclassified') delete labelsState()[p]; else labelsState()[p] = body.label
+  bus('space-labels')
+  return { path: p, label: body.label }
 })
 
 /* ---- files */
@@ -1773,6 +1809,51 @@ R('GET', '/api/files/search', ({ q }) => {
   for (const [k, n] of S.fs) if (k !== ROOT && k.slice(ROOT.length).toLowerCase().includes(term)) out.push({ path: k, name: path.basename(k), type: n.type })
   return out.sort((a, b) => a.path.length - b.path.length).slice(0, 50)
 })
+
+/* ---- trash (server/maxxing/trash.py): deleted files, folders, topics, projects and sessions, kept 30 days. The mock's
+   own delete routes still remove at once; the ready scenarios seed a few items that restore into the mock state. */
+function trashState() {
+  if (S.trash) return S.trash
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  const item = (kind, name, original, ago, size, extra = {}) => ({ id: crypto.randomBytes(8).toString('hex'), kind, name, original, at: t - ago, size, sessions: 0, restorable: true, ...extra })
+  S.trash = ready ? [
+    item('file', 'old-draft.md', 'projects/acme/topics/blog/drafts/old-draft.md', 2 * HOUR, 2140),
+    item('session', 'Try a dark hero image', topicPath('acme', 'website'), 26 * HOUR, 48200),
+    item('topic', 'newsletter', 'projects/acme/topics/newsletter', 3 * DAY, 18400, { sessions: 2 }),
+    item('previous_versions', 'Backup: previous versions', '.backup/previous', 9 * DAY, 3200000, { restorable: false }),
+  ] : []
+  return S.trash
+}
+const trashFind = (id) => trashState().find((x) => x.id === id) || fail(404, 'not_found', 'Not in the trash')
+R('GET', '/api/trash', () => ({ items: [...trashState()].sort((a, b) => b.at - a.at), keep_days: 30 }))
+R('POST', '/api/trash/:id/restore', ({ params }) => {
+  const it = trashFind(params.id)
+  if (!it.restorable) fail(409, 'not_restorable', 'Previous versions are restored from the backup, not from the trash')
+  let to = it.original, sessions = 0
+  if (it.kind === 'file' || it.kind === 'folder') {
+    if (S.fs.has(`${ROOT}/${to}`)) to = to.replace(/(\.[^./]+)?$/, ' (restored)$1')
+    if (it.kind === 'file') fsAdd(S, to, '# Old draft\n\nRestored from the trash.\n', now(), 'text/markdown'); else fsMkdirp(S, `${ROOT}/${to}`)
+  } else if (it.kind === 'topic' || it.kind === 'project') {
+    const [, project, , topic] = to.split('/')
+    const p = S.projects.find((x) => x.name === project)
+    if (it.kind === 'topic' && p) {
+      let name = topic, n = 0
+      while (p.topics.some((x) => x.name === name)) name = `${topic}-restored${++n > 1 ? '-' + n : ''}` // -restored, -restored-2…
+      p.topics.push({ name, description: '' }); to = topicPath(project, name); fsMkdirp(S, `${ROOT}/${to}`)
+      sessions = it.sessions
+    }
+  } else if (it.kind === 'session') {
+    const s = { id: uuid(), title: it.name, path: S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === to)) ? to : '', state: 'idle', queue: 0,
+      created: it.at - HOUR, updated: it.at, turns: 2, cost_usd: 0.18, model: '', real_model: S.claude.default_model, context_tokens: 24000, context_window: 1000000,
+      archived: false, notify: false, source: 'web', unread: false, last_text: 'The dark hero reads well on desktop; on mobile the text needs a stronger shadow.', error: null }
+    S.sessions.push(s); S.events[s.id] = []; to = s.path; sessions = 1
+  }
+  S.trash = S.trash.filter((x) => x !== it)
+  bus('workspace', 'sessions')
+  return { ok: true, kind: it.kind, restored_to: to, sessions }
+})
+R('DELETE', '/api/trash/:id', ({ params }) => { const it = trashFind(params.id); S.trash = S.trash.filter((x) => x !== it); return { ok: true } })
+R('DELETE', '/api/trash', () => { const deleted = trashState().length; S.trash = []; return { ok: true, deleted } })
 
 /* ---- tasks */
 const TASK_FIELDS = ['title', 'notes', 'status', 'priority', 'due', 'project_id', 'topic_path', 'labels', 'order']
