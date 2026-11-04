@@ -12,7 +12,8 @@ harness-pilot gives its web interface access to the connected agent tools and, w
 The app explicitly disables native FastAPI request tracing, metrics, telemetry logs and automatic
 OTLP exporter setup, including when the parent environment enables automatic OpenTelemetry.
 The original project's registration/heartbeat service remains off by default, including for a
-restored legacy opt-in configuration. This does not remove your local conversation history,
+restored legacy opt-in configuration, and its registration, feedback and license settings are not
+reachable: those requests answer "not found" and send nothing. This does not remove your local conversation history,
 operational logs or token statistics; they remain useful application data on your machine.
 
 App-launched Codex turns, resumes and connection-status checks disable built-in analytics and OTLP log, metric and trace
