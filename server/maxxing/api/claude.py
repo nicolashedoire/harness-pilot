@@ -2,26 +2,24 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import shutil
 import subprocess
 import time
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import claude_auth, claude_update, config
+from .. import claude_auth, claude_probe, claude_update, config
 from ..security import require_auth
 from ..sessions import service, spawn
 
 router = APIRouter(prefix="/api/claude", tags=["claude"], dependencies=[Depends(require_auth)])
 
-TEST_MODEL = "claude-haiku-4-5-20251001"
-TEST_PROMPT = "Reply with the single word: ok"
-TEST_TIMEOUT_S = 90
+TEST_MODEL = claude_probe.MODEL
+TEST_PROMPT = claude_probe.PROMPT
+TEST_TIMEOUT_S = claude_probe.TIMEOUT_S
 PERMISSION_MODES = ("bypass", "acceptEdits", "default")
 SECRET_FOR = {"oauth_token": "claude_oauth_token", "api_key": "anthropic_api_key"}
 _version_cache: dict[str, tuple[float, str | None]] = {}
@@ -67,47 +65,16 @@ def auth_status() -> dict:
 # ---- test call -----------------------------------------------------------------------------
 def run_test(model: str = TEST_MODEL, source: str = "test", timeout_s: int = TEST_TIMEOUT_S) -> dict:
     """Real one-line call through the CLI -> {ok, model, ms, error?} (also remembered)."""
-    t0 = time.time()
-    out: dict = {"ok": False, "model": model, "ms": 0}
-    b = _resolved_bin()
-    if not b:
-        out["error"] = "Claude Code is not installed"
-        return _remember(out, source)
-    cwd = config.state_dir("claude-test")
-    try:
-        r = subprocess.run([b, "-p", "--output-format", "json", "--model", model], input=TEST_PROMPT,
-                           capture_output=True, text=True, timeout=timeout_s, cwd=cwd,
-                           env=spawn.claude_env(None, "default"))
-    except subprocess.TimeoutExpired:
-        out.update(ms=int((time.time() - t0) * 1000), error=f"No answer within {timeout_s} s")
-        return _remember(out, source)
-    except OSError as e:
-        out.update(error=str(e))
-        return _remember(out, source)
-    out["ms"] = int((time.time() - t0) * 1000)
-    try:
-        data = json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {}
-    except ValueError:
-        data = {}
-    text = str(data.get("result") or "")
-    if r.returncode == 0 and not data.get("is_error") and text.strip():
-        out["ok"] = True
-        mu = data.get("modelUsage")
-        if isinstance(mu, dict) and mu:
-            out["model"] = next(iter(mu))
-    else:
-        out["error"] = (text or r.stderr or r.stdout or f"exit code {r.returncode}").strip()[-400:]
-    return _remember(out, source)
+    return _remember(claude_probe.run(model, TEST_PROMPT, timeout_s), source)
 
 
 def _remember(out: dict, source: str) -> dict:
-    """Record the outcome. A background check only flips the state on a real sign-in error
-    (a timeout or a network glitch is not "signed out"); an explicit test always does."""
+    """A failed request is not necessarily a failed sign-in, including when the user clicked Test."""
     err = out.get("error")
     if out["ok"]:
         claude_auth.record(True, None, source)
-    elif source == "test" or claude_auth.detect(err):
-        claude_auth.record(False, claude_auth.detect(err) or err, source)
+    elif auth_error := claude_auth.detect(err):
+        claude_auth.record(False, auth_error, source)
     return out
 
 
@@ -188,6 +155,7 @@ async def set_auth(body: AuthIn):
         raise HTTPException(400, detail={"error": "invalid", "message": "This does not look like a token"})
     for kind, name in SECRET_FOR.items():               # one stored credential at a time
         config.set_secret(name, value if kind == body.kind else None)
+    claude_auth.forget()                               # a previous credential's failure is no longer relevant
     res = await asyncio.to_thread(run_test)
     return {"ok": res["ok"], **({"error": res["error"]} if not res["ok"] else {})}
 

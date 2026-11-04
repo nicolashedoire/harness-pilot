@@ -158,9 +158,22 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - `pending(sid) -> bool` - a short title is being made (between `schedule` and the end of its thread) or meta
   `title_auto` is set: the Telegram sync waits for it (60 s at most) before creating the session's thread.
 ## maxxing.claude_auth  (stdlib only, also used by the runner)
+- `auth_method()` is shared by the web app and CLI, including macOS Keychain's boolean CLI status.
+  Legacy non-authentication failures from an explicit test are not relevant sign-in records.
 - `record(ok, error=None, source="turn"|"test"|"check")` - outcome of a real call; `detect(text) -> str|None`
   finds a sign-in error; `status() -> {ok, method, detail, checked_at, error}` (GET /api/claude/status `auth`,
   health, doctor); `needs_check()` - no verification in the last 6 h (background check in api/claude.py).
+
+## maxxing.claude_probe (stdlib only)
+- `run(model, prompt, timeout_s)` makes the one-line authentication probe used by Settings, the background
+  checker and `pilot doctor --live`. A temporary directory outside the workspace is removed after the call;
+  no tools, MCP servers, setting sources, skills or saved conversation are used. Credentials and the configured
+  Claude directory stay the same. Results are `{ok, model, ms, error?}`; callers record successes or genuine
+  authentication failures only. No FastAPI dependency in the CLI.
+- On macOS, doctor inspects TCP listeners with `lsof` (unknown inspection is a warning). Local launchd
+  configuration is informational; a terminal invocation cannot infer whether another process is the agent.
+  Local tool checks accept root or the current user and reject foreign ownership or writable code paths;
+  Linux manifest pins/root ownership and Linux firewall/service checks remain unchanged on Linux.
 
 ## maxxing.auto_update
 - Harness updates itself while nobody uses it. Off by default (config `auto_update`, Settings -> System -> Updates,

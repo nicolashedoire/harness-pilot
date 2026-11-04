@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -757,27 +758,40 @@ def uv_bin() -> str | None:
 
 
 def claude_auth() -> tuple[str | None, str]:
-    """-> (method, detail). method None = not signed in."""
-    if config.get_secret("claude_oauth_token"):
-        return "oauth_token", "long-lived token stored in harness-pilot"
-    if config.get_secret("anthropic_api_key"):
-        return "api_key", "API key stored in harness-pilot"
-    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        return "oauth_token", "CLAUDE_CODE_OAUTH_TOKEN in the environment"
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return "api_key", "ANTHROPIC_API_KEY in the environment"
-    cred = config.claude_dir() / ".credentials.json"
-    if cred.is_file():
-        return "credentials", f"Claude CLI sign-in ({cred})"
-    return None, "no token, API key or CLI sign-in found"
+    """Same credential detection as the app, including macOS Keychain; no FastAPI import."""
+    from . import claude_auth as ca
+    return ca.auth_method()
 
 
-def _listen_addrs(port: int) -> list[str]:
-    """Addresses listening on TCP `port` (from /proc/net/tcp*)."""
+def _listen_addrs(port: int) -> list[str] | None:
+    """TCP listeners; None means inspection failed, not that there is no listener."""
+    if sys.platform == "darwin":
+        code, out = run(["lsof", "-nP", "-a", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fn"], timeout=5)
+        if code == 1 and not out.strip():               # lsof: no matching listener
+            return []
+        if code != 0:
+            return None
+        found = []
+        for line in out.splitlines():
+            if not line.startswith("n"):
+                continue
+            host, sep, actual_port = line[1:].rpartition(":")
+            if not sep or actual_port != str(port):
+                return None
+            host = host.strip("[]")
+            if host == "*":
+                host = "0.0.0.0"
+            try:
+                found.append(str(ipaddress.ip_address(host)))
+            except ValueError:
+                return None
+        return list(dict.fromkeys(found)) if found else None
     out = []
+    inspected = False
     for fn, v6 in (("/proc/net/tcp", False), ("/proc/net/tcp6", True)):
         try:
             rows = Path(fn).read_text().splitlines()[1:]
+            inspected = True
         except OSError:
             continue
         for r in rows:
@@ -793,7 +807,7 @@ def _listen_addrs(port: int) -> list[str]:
                 out.append(str(ipaddress.IPv6Address(raw)))
             else:
                 out.append(str(ipaddress.IPv4Address(raw[::-1])))
-    return out
+    return out if inspected else None
 
 
 def _crontab_text() -> str | None:
@@ -1006,19 +1020,12 @@ def check_claude_auth(live: bool = False) -> Check:
         when = (f", verified {time.strftime('%Y-%m-%d %H:%M', time.localtime(st['checked_at']))}"
                 if st["method"] == method and st.get("checked_at") else ", not verified yet")
         return _c("claude_auth", OK, f"Claude auth: {method}{when}", detail)
-    b = claude_bin()
-    env = dict(os.environ)
-    tok, key = config.get_secret("claude_oauth_token"), config.get_secret("anthropic_api_key")
-    if tok:
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = tok
-    if key:
-        env["ANTHROPIC_API_KEY"] = key
-    t0 = time.time()
-    code, out = run([b or "claude", "-p", "Reply with the single word: ok"], timeout=120, cwd="/tmp", env=env)
-    from . import claude_auth as ca
-    if code == 0 and "ok" in out.lower():
+    from . import claude_auth as ca, claude_probe
+    result = claude_probe.run()
+    if result["ok"]:
         ca.record(True, None, "check")
-        return _c("claude_auth", OK, f"Claude auth: {method} (live test {time.time() - t0:.1f}s)", detail)
+        return _c("claude_auth", OK, f"Claude auth: {method} (live test {result['ms'] / 1000:.1f}s)", detail)
+    out = result.get("error") or "No answer"
     auth_err = ca.detect(out)
     if auth_err:
         ca.record(False, auth_err, "check")
@@ -1026,10 +1033,20 @@ def check_claude_auth(live: bool = False) -> Check:
                   "run `claude` then /login on the server, or `claude setup-token` and paste the token "
                   "in Settings -> Claude")
     return _c("claude_auth", FAIL, f"Claude auth: {method} but the test call failed", out.strip()[-300:],
-              "renew the token (`claude setup-token`) or check the API key in Settings -> Claude")
+              "check the test error and retry; this failure alone does not mean the sign-in expired")
 
 
 def check_service() -> Check:
+    if sys.platform == "darwin":
+        from . import local_service
+        st = local_service.status()
+        if not st["supported"]:
+            return _c("service", INFO, "systemd does not apply on macOS")
+        if st["installed"]:
+            return _c("service", INFO, "macOS launchd service configured", st["plist"],
+                      st["commands"]["status"])
+        return _c("service", INFO, "local app uses a terminal; no launchd service installed", "",
+                  st["commands"]["install"] + "  (optional)")
     code, out = systemctl("is-active", SERVICE, timeout=10)
     state = out.strip() or "unknown"
     if code == 127:
@@ -1173,13 +1190,20 @@ def check_memory() -> Check | None:
 def check_bind(cfg: dict) -> Check:
     bind, port = str(cfg.get("bind")), int(cfg.get("port") or 8787)
     if _is_public_bind(bind) and not _is_hostname(bind):
+        fix = "pilot init --bind 127.0.0.1 && systemctl restart claude-maxxing (put Caddy or Tailscale in front)"
+        if sys.platform == "darwin":
+            fix = f"set bind to 127.0.0.1 in {config.config_path()} and restart the local app"
         return _c("bind", FAIL, f"configured to listen on {bind}:{port} (reachable from the internet)", "",
-                  "pilot init --bind 127.0.0.1 && systemctl restart claude-maxxing (put Caddy or Tailscale in front)")
+                  fix)
     live = _listen_addrs(port)
+    inspect = f"lsof -nP -iTCP:{port} -sTCP:LISTEN" if sys.platform == "darwin" else f"ss -ltnp 'sport = :{port}'"
+    if live is None:
+        return _c("bind", WARN, f"cannot inspect listeners on port {port}",
+                  f"configured address: {bind}:{port}; the live address is unknown", inspect)
     public = [a for a in live if _is_public_bind(a)]
     if public:
         return _c("bind", FAIL, f"port {port} is listening on {', '.join(public)}",
-                  "something listens on a public interface", f"ss -ltnp 'sport = :{port}'")
+                  "something listens on a public interface", inspect)
     return _c("bind", OK, f"listens on {bind}:{port} (not public)",
               ", ".join(live) if live else "nothing listening right now")
 
@@ -1197,8 +1221,10 @@ def check_http(cfg: dict) -> Check:
         except ValueError:
             v = "?"
         return _c("http", OK, f"server answers on {url} (version {v})")
-    return _c("http", FAIL, "server does not answer", f"{url}: {status or body}",
-              f"systemctl status {SERVICE} ; journalctl -u {SERVICE} -n 50 --no-pager")
+    fix = f"systemctl status {SERVICE} ; journalctl -u {SERVICE} -n 50 --no-pager"
+    if sys.platform == "darwin":
+        fix = "check the terminal running bash scripts/dev-local.sh, or bash scripts/dev-local.sh service status"
+    return _c("http", FAIL, "server does not answer", f"{url}: {status or body}", fix)
 
 
 def check_public_url(cfg: dict) -> Check:
@@ -1443,6 +1469,8 @@ def check_node_owner() -> Check | None:
 
 def check_managed_deps() -> Check | None:
     """deps.toml: components missing / not at the pinned version, and files another user could replace (FAIL)."""
+    if sys.platform == "darwin" and os.environ.get("HARNESS_PILOT_LOCAL_MODE") == "1":
+        return check_local_tools()
     deps = _optional("deps")
     if deps is None:
         return check_node_owner()
@@ -1461,6 +1489,34 @@ def check_managed_deps() -> Check | None:
               "pilot deps list")
 
 
+def check_local_tools() -> Check:
+    """Local macOS tools are user-managed: inspect code paths, not Linux pins or root-only ownership."""
+    from .sessions import spawn
+    tools = [p for p in (claude_bin(), uv_bin(), shutil.which("node", path=spawn.base_env()["PATH"])) if p]
+    bad: list[str] = []
+    seen: set[Path] = set()
+    for tool in tools:
+        leaf = Path(tool).absolute()
+        try:
+            target = leaf.resolve(strict=True)
+            for path in (leaf, *leaf.parents, target, *target.parents):
+                if path in seen:
+                    continue
+                seen.add(path)
+                st = path.lstat()
+                sticky = stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX
+                if st.st_uid not in (0, os.geteuid()) or (not stat.S_ISLNK(st.st_mode) and
+                                                       st.st_mode & 0o022 and not sticky):
+                    bad.append(str(path))
+        except (OSError, RuntimeError) as e:
+            bad.append(f"{leaf}: {e}")
+    if bad:
+        return _c("deps_files", FAIL, "local tool paths are unsafe or cannot be inspected", ", ".join(bad[:3]),
+                  "use tools owned by your account or root, with code paths not writable by other users")
+    return _c("deps_files", INFO, "local macOS tool ownership and permissions checked",
+              f"{len(tools)} executable(s); Linux package pins do not apply; package contents are not verified")
+
+
 def _run_ok(cmd: list[str]) -> tuple[bool, str]:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
@@ -1471,6 +1527,9 @@ def _run_ok(cmd: list[str]) -> tuple[bool, str]:
 
 def check_security() -> Check:
     """Firewall (ufw), fail2ban, automatic security updates: set by the installer; warning only."""
+    if sys.platform == "darwin":
+        return _c("security", INFO, "Linux server hardening checks do not apply on macOS",
+                  "ufw, fail2ban and unattended-upgrades are not used; macOS security settings were not inspected")
     missing = []
     in_container = _run_ok(["systemd-detect-virt", "-cq"])[0]
     if not in_container:

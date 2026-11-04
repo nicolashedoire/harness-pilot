@@ -18,6 +18,8 @@ from maxxing import cli, cmd_core, config, security
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
+    from maxxing import claude_auth
+    monkeypatch.setattr(claude_auth, "_mac_signed_in", lambda: False)  # never probe this computer's Keychain
     state, home, ws, etc = tmp_path / "state", tmp_path / "home", tmp_path / "ws", tmp_path / "etc"
     home.mkdir()
     etc.mkdir()
