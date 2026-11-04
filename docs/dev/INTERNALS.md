@@ -662,6 +662,12 @@ failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stop
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
 
+## maxxing.sessions.spawn - companion sandbox
+`settings_args(cfg, sandbox)` adds `COMPANION_SANDBOX` (`{enabled, failIfUnavailable: true, allowUnsandboxedCommands:
+false, autoAllowBashIfSandboxed: false}`) to the turn's `--settings`; the runner passes `companion_sandbox(cfg, meta)`
+= config `companion_sandbox` and `meta.companion` set (experiments, mission steps, planner). Codex turns and external
+adapters are unchanged. Options and limits: `docs/dev/COMPANION-SANDBOX.md`.
+
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
   `flock` (`<id>.lock`) + atomic `config.write_json`; `create.lock` serializes the 50-mission cap; `worker.lock`
