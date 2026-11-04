@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Tests: `_conn_helpers._Server` listens with a backlog of 128 (`_Listener`) instead of socketserver's 5. `infra.providers.cloudflare()` fetches its sections in parallel and macOS refuses connections beyond the backlog, so `test_infra.py::test_providers_with_fake_apis` failed now and then (`KeyError: 0` on a section that came back `unreachable`).
 - Missions: `companions.MAX_MISSION` (6000) is checked when a plan is created, saved or started (`_check_lengths`, `TooLong` -> `400 too_long` with `step`, `title`, `excess`; `plan` checks the goal, `step: null`). At launch prerequisite reports shrink (120/60/20/0) to fit, which was the launch failure with long goals and instructions; the planner's role catalog also fits the limit. `api/missions._call` keeps `SessionError.details` in the error body; the web `ApiError` exposes the body's extra fields as `details`.
 - `companions._notify` returns early for a session whose `companion.purpose` is `plan` (a mission's architect run): no `companion.ready/empty/error` notice; the mission's `mission.review` covers plan ready and failures.
 - Missions: `_review` caches `companions.review` per step (`step.review`, keyed by the session's `turns` and `updated`), so a step awaiting a decision no longer runs git in its copy every ~2 s; new `companions.decision(sid)` reads the decision from the session record. The cache is dropped when a cycle restarts.
