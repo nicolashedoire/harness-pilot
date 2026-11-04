@@ -1,0 +1,13 @@
+{
+  "type": "block",
+  "name": { "en": "Kanban board", "fr": "Tableau Kanban" },
+  "version": "1.0.0",
+  "renders": ["kanban"],
+  "schema": "schema.json",
+  "entry": "block.html",
+  "permissions": { "network": [] },
+  "icon": "kanban",
+  "category": "organisation",
+  "description": "Columns of cards. Clicking a card offers to send it back to the agent.",
+  "hint": "Work split into columns of cards (to do / doing / done), e.g. a launch plan."
+}

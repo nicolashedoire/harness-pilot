@@ -21,6 +21,7 @@ import { VoiceSection } from './sections/Voice'
 import { KeysSection } from './sections/Keys'
 import { McpSection } from './sections/Mcp'
 import { ExtensionsSection } from './sections/Extensions'
+import { BlocksSection } from './sections/Blocks'
 import { SystemSection } from './sections/System'
 import { TrashSection } from './sections/Trash'
 import { ImportSection } from './sections/Import'
@@ -49,6 +50,7 @@ const COMPONENTS: Record<Exclude<SettingsSectionId, 'docs'>, React.ComponentType
   keys: KeysSection,
   mcp: McpSection,
   extensions: ExtensionsSection,
+  blocks: BlocksSection,
   import: ImportSection,
   packs: ProjectsSection,
   trash: TrashSection,

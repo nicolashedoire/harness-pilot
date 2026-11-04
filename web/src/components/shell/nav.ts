@@ -10,7 +10,8 @@ export const navItemClass = (active: boolean, collapsed: boolean) =>
   [
     'mx-boot-item group relative flex h-9 items-center gap-3 rounded-md px-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
     active ? 'bg-accent text-foreground' : '',
-    collapsed ? 'justify-center px-0' : '',
+    // rail: 44 px squares (touch-sized, like the mock-ups)
+    collapsed ? 'mx-auto size-11 justify-center rounded-[10px] px-0' : '',
   ].join(' ')
 
 /** `data-tour` id of a nav item (guided tour targets): nav-dashboard, nav-sessions… */

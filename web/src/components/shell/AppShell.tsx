@@ -25,6 +25,7 @@ import { qk } from '@/lib/queries/keys'
 import type { AuthState } from '@/lib/types'
 import { useHotkey } from '@/commands/shortcuts'
 import { Sidebar } from './Sidebar'
+import { useSidebarFold } from './rail-store'
 import { TouchDrawers } from './TouchNav'
 import { useCompact } from '@/stores/media'
 import { useMobileViewport } from '@/lib/mobile-viewport'
@@ -89,7 +90,7 @@ const FileViewerHost = React.lazy(withGroups(['files'], () => import('@/features
 const TeamLive = React.lazy(() => import('@/features/team/Live').then((m) => ({ default: m.TeamLive })))
 const TeamPanel = React.lazy(withGroups(['team'], () => import('@/features/team/TeamPanel').then((m) => ({ default: m.TeamPanel }))))
 const FeedbackDialog = React.lazy(withGroups(['feedback'], () => import('./FeedbackDialog').then((m) => ({ default: m.FeedbackDialog }))))
-const NotificationCenter = React.lazy(() => import('@/features/notifications/NotificationCenter'))
+const NotificationCenter = React.lazy(withGroups(['ncentre'], () => import('@/features/notifications/NotificationCenter')))
 
 /** The notifications centre (desktop): its code loads the first time it opens, then it stays for its animations. */
 function NotificationCenterHost() {
@@ -230,7 +231,7 @@ function useSyncLanguage() {
 function GlobalHotkeys() {
   const navigate = useNavigate()
   const setPalette = useCommandStore((s) => s.setOpen)
-  const toggleSidebar = useUI((s) => s.toggleSidebar)
+  const { toggle: toggleSidebar } = useSidebarFold()
   const setShortcuts = useShortcutsDialog((s) => s.setOpen)
   const nav = useNav()
   useHotkey('mod+k', () => setPalette(!useCommandStore.getState().open), { allowInInput: true })

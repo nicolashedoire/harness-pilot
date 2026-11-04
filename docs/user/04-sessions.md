@@ -21,7 +21,7 @@ Use **Open session** to inspect a worker's live activity and full result. **Stop
 
 ## Claude Code and Codex together
 
-When creating a session, choose **Claude Code + Codex**, then select a collaborative discussion or a debate. Each agent retains its own conversation and receives the other agent's latest answer. Optional reply-count and duration limits pause the discussion after the current reply; resuming after a limit starts a new period. The pause button lets the current response finish, and the resume button continues the exchange. Sending a message during a turn interrupts that turn so the agent can take your intervention into account. Stop ends the automatic exchange. Each turn uses the corresponding agent's connected account.
+When creating a session, choose **Claude Code + Codex**, then select a collaborative discussion or a debate. Each agent retains its own conversation and receives the other agent's latest answer. The session header shows how far it went (**Reply 6 of 20 · 14 min of 30**), each agent answers with its mark and its name in its own colour, a line on the left of its replies, and your own messages sent during the exchange are labelled **Your intervention**. **Pause after this reply** and **Stop** sit in the message box while the agents talk. Optional reply-count and duration limits pause the discussion after the current reply. A banner above the conversation then shows when it paused and which limit it reached (*Paused at 03:12 · limit of 20 replies*), with **Change limits** and **Resume**; the same pause is marked in the thread. Resuming after a limit starts a new period with the same limits; to let the agents go further in the same period, choose **Change limits** (in the banner, or in the session's **…** menu at any time), raise the limit (or empty the field: no limit), then **Save and resume**. The pause button lets the current response finish, and the resume button continues the exchange. Sending a message during a turn interrupts that turn so the agent can take your intervention into account. Stop ends the automatic exchange. Each turn uses the corresponding agent's connected account.
 
 You can assign a different role to each agent, choose a built-in pair of roles, and save named configurations for later sessions. Roles are included in the instructions sent to the corresponding agent on every turn. Saved configurations live in the server's local state.
 
@@ -35,7 +35,13 @@ Some features described below apply to Claude sessions only; Codex support is st
 
 ## Layout
 
-- **Left pane**: the project / topic tree. Badges show running sessions and unread answers.
+- **Left pane**: the project / topic tree under a **Sessions** title row that holds the page's buttons: fold the
+  list, **Tabs**, the grid (two sessions or more), **+** (new session, Alt+N). Badges show running sessions and unread
+  answers; a Codex session or a discussion shows the agents' marks under its name. On the Sessions page the app's
+  sidebar becomes a slim **icon rail** so conversations get the width; unfold it with the button at its bottom
+  (or ⌘\ / Ctrl+\), it stays unfolded there until you fold it again.
+- **One header per session**: where it lives (*project › # topic*, click to move it), its name (click to rename),
+  the agent and model that answer (hover for the session's total cost), the context used, **…** and close.
 - **Main area**: one or more **columns**, one session each. Open several sessions side by side,
   resize and reorder the columns, or detach one into its own window.
 - **Grid**: with two sessions or more, the grid button at the top right stacks them two per column (four sessions
@@ -49,7 +55,7 @@ Some features described below apply to Claude sessions only; Codex support is st
   while they are on), the project / topic line and the cost are hidden.
 - **Widening a session to read**: drag the right edge of a column, up to 2000 px (never wider than the screen leaves
   room for, the other columns keep their minimum width). A widened column's conversation and message box use its
-  whole width; otherwise the text stays at a comfortable 860 px. Double-click the edge to undo.
+  whole width; otherwise the text stays at a comfortable 740 px reading column. Double-click the edge to undo.
 - **Scrolling sideways** (trackpad swipe, the mouse wheel between sessions or over a session's title bar, or Shift + wheel anywhere) moves the columns; the strip
   stays exactly where you leave it (it never locks onto a session).
 - **Ready-made layouts**: hold the mouse button down on a session's grip (the dots left of its title): small
@@ -60,20 +66,21 @@ Some features described below apply to Claude sessions only; Codex support is st
   per column: when they do not all fit, the strip scrolls as usual (the half moves with it, nothing slides under
   it). While a half is shown the widths are fixed (no resize handle).
   **Grid of 3** stacks three per column.
-- **Tabs view**: the **Tabs** button (window icon) at the top right of the Sessions page (Alt+T) shows one session at a time,
+- **Tabs view**: the **Tabs** button (window icon) in the sessions list's title row (Alt+T) shows one session at a time,
   full width, with every open session as a chip above it. A chip shows whether its session is working, finished
   with an unread answer or stopped on an error; click it to show that session, or use the arrows on the left and
   right edges (Alt+← / Alt+→). Its cross closes the session. **Waiting** jumps to the next session that finished and
-  waits for your answer. Click the **Tabs** button again: your columns come back exactly as they were. On a phone, the same
-  button sits in the session's header; the chips show under the top bar, and a sideways swipe on the session
+  waits for your answer. Click the **Tabs** button again: your columns come back exactly as they were. On a phone,
+  **Tabs** is in the session's **…** menu; the chips show under the top bar, and a sideways swipe on the session
   shows the previous or next one.
 - Fold the sidebar with the button at its bottom; fold the session tree with the button at its top left
   (a slim rail stays to unfold it).
 - On a phone or a tablet (the *touch layout*), one session fills the screen and the app opens on the last one.
   **☰** at the top left opens all your sessions: a search field, **New session** (in the topic of the session on
   screen), the **All / Running / Unread** chips, then your projects and topics. **Press and hold** a session, a
-  topic or a project for its menu (rename, favorite, archive, delete...). The **plan button** (checklist icon)
-  sits right of the session's name; the session's **…** menu also holds *Telegram notifications*. **⊞** at the
+  topic or a project for its menu (rename, favorite, archive, delete...). The session's top bar shows its name, where
+  it lives and the model on one line; **Plan mode** is in the message box, and the session's **…** menu holds
+  *Telegram notifications* and **Tabs**. **⊞** at the
   top right opens the rest of the app (see [Settings](11-settings-and-keys.md#on-a-phone-or-a-tablet)).
 
 ## Move a session to another topic
@@ -195,14 +202,28 @@ into another app, the content arrives as plain text (a file as its path).
 
 ## What you see
 
-- Answers stream live (markdown, code, images).
-- **Tool calls** (reading files, running commands, editing) appear as compact cards; expand them
-  to see input and output. Edits are shown as diffs.
+- Your messages are bubbles on the right, with their time. Each answer starts with the agent's mark, its name and
+  the time; while it works the header says **working…** with the time it has been at it.
+- **Activity**: what the agent did between two pieces of text (thinking, reading files, running commands,
+  editing) is folded into one line - *Thought, read 2 files, ran 1 command · 8 s*. While it works, the line says
+  what it is doing now (*Editing steps.tsx…*). Click it for the list: one row per step with the file or command,
+  **+/−** lines for edits, and **View diff**, **View output** or **View error** to open the details. A failed step
+  turns the line red (*1 failed*).
+- Answers use a reading layout (15 px text, modest headings, framed tables). Files the agent wrote show as cards
+  under the answer: **Open** shows them in the file viewer. When the agent keeps a task list, its checklist shows
+  under its activity (*2 of 4*).
+- Under each answer: **Copy**, **New session from this reply**, and the time and cost of the turn; hover the
+  figures for the model, the tokens and the cache share.
+- **A turn that stopped on an error** ends with a card that says so: **Retry** sends your last message again,
+  **Details** shows the full error. **A question with choices** from the agent ends with its options: one click
+  answers, **Another answer…** goes to the message box.
+- A summary made to continue a long conversation (compact, hand off) shows as a separator line;
+  **View the request** opens what was asked.
 - **Agents and background commands**: when Claude hands work to a sub-agent, or runs a command in the background,
-  its card keeps spinning, with the time it has been running, until that work really ends (✓ done, ✗ failed, ⊘
+  its row keeps spinning, with the time it has been running, until that work really ends (✓ done, ✗ failed, ⊘
   stopped or interrupted). Expand it for where it is: its last action, the tools and tokens used so far, then the
   agent's report once it is done. While some still run, a pill above the composer says so (**2 agents running**):
-  click it to list them, click one to jump to its card. All of it comes back as it was after a reload or a lost
+  click it to list them, click one to open its row. All of it comes back as it was after a reload or a lost
   connection.
 - **Diagrams**: to explain how something works, Claude can draw a small diagram (a flowchart, a sequence, the
   states of something...) right in the answer. Click it to open it in the file viewer like a picture (zoom,
@@ -220,16 +241,15 @@ into another app, the content arrives as plain text (a file as its path).
   **Quote** (adds the file to your next message as one line with its path - Claude reads it only if needed, the
   picture does not fill the context) and **Copy path**.
 - File paths are clickable and open the **file viewer**: ← / → go through every file of the conversation (see [Files](06-files.md#the-file-viewer)).
-- The header shows the **model that actually answered**, the **cost** and a **context gauge**
-  (how full Claude's context window is, measured against the real window of the model in use - it
-  follows when you switch model).
-- A line under each answer shows the model, the time it took, its **cost**, the tokens (input → output) and the
-  share of input served from cache. Hover (or tap) any of them to see what it means: the token count splits
-  uncached input, cache reads, cache writes and output.
+- The header shows the **model that actually answered** and a **context gauge** (how full Claude's context window
+  is, in %, measured against the real window of the model in use - it follows when you switch model); the session's
+  total **cost** is in the tooltip of the agent and model.
+- The line under each answer shows the time it took and its **cost**; hover (or tap) them for the model, the tokens
+  (input → output) and the share of input served from cache.
 - **About the amount**: Claude Code reports an indicative dollar amount; the display does not establish the actual bill and does not include Codex. Billing depends on your account, plan and credits. For example, [Anthropic's usage credits](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans) can incur additional charges after included usage is exhausted. Check your provider account for actual charges.
 - **Choose what the line shows**: click the ⚙ at its end (it appears on hover; always there on a touch screen),
   or **Settings → General → Line under each answer**. The choice applies to every device; hiding the cost also
-  hides the session total in the header.
+  hides the session total.
 
 ## Plan mode
 
@@ -237,15 +257,14 @@ With plan mode on, Claude **changes nothing before you agree**. It reads and exp
 answers with a plan: goal, steps, files concerned, risks and open questions. It cannot write files or run
 commands that modify anything in this mode.
 
-- Turn it on with the **plan button** (checklist icon) in the session header, or tick **Plan mode** when
-  you start a new session. The composer shows a *Plan mode* chip (click it to leave).
-- Once the turn is over, a slim *Plan ready* line appears on top of the composer (waiting messages take
-  its place while there are some):
-  - **Adjust** (or just write): say what should change - Claude sends the updated plan. Repeat as often as
+- Turn it on with the **Plan mode** box in the message box, or tick **Plan mode** when you start a new session
+  (untick it to leave).
+- Once the turn is over, a **Proposed plan** card ends the conversation - *nothing changes before you approve*:
+  - **Edit** (or just write): say what should change - Claude sends the updated plan. Repeat as often as
     you like.
-  - **Validate**: posts *Plan validated - go ahead.*, plan mode goes off and Claude carries out the latest
+  - **Approve and run**: posts *Plan validated - go ahead.*, plan mode goes off and Claude carries out the latest
     version of the plan.
-  - **×**: leave plan mode without running the plan.
+  - **Reject**: leave plan mode without running the plan.
 - The HUD shows the plan as the answer and has a **Validate the plan** button.
 - Plan mode applies to every message of the session, Telegram included; validate the plan from the web
   app or the HUD. Compact and hand off still work normally.
@@ -278,8 +297,7 @@ the switch, the bar and the shortcut below only appear then (turning it off ther
 ## HUD mode
 
 A small floating bar to drive one session while you work in other apps. Turn it on in
-**Settings → Features → HUD mode**, then click the HUD button in a session header (or **Open the HUD**
-in its menu).
+**Settings → Features → HUD mode**, then pick **Open the HUD** in the session's **…** menu.
 
 - While Claude works, it shows your prompt and Claude's **last three steps** (tools, thinking).
   When it is done, it shows **the answer** with its images - one at a time, ‹ › to go through them;
@@ -360,7 +378,7 @@ browser's own menu (and the **Quote** button), a file keeps its own menu (Open, 
 
 ## Notify, archive, delete
 
-- **Notify** (bell): when a turn ends, a short message is posted in the topic's Telegram thread.
+- **Telegram notifications** (session **…** menu; a bell shows in the header while it is on): when a turn ends, a short message is posted in the topic's Telegram thread.
 - **In the browser**: Settings -> **Notifications** -> *Notify me when a session finishes* shows a
   system notification when the tab is in the background (a small banner with **Open** otherwise),
   with an optional chime. A failed turn is notified too; scheduled jobs are not. **Test** checks that

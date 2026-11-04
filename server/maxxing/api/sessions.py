@@ -93,6 +93,12 @@ class PatchIn(_Text):
     plan_mode: bool | None = None
 
 
+class DiscussionLimitsIn(BaseModel):
+    """PATCH /discussion: a field left out keeps its limit, null removes it (same ranges as on create)."""
+    turn_limit: int | None = Field(default=None, ge=1, le=200, strict=True)
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440, strict=True)
+
+
 class AskIn(_Text):
     question: str = ""
 
@@ -294,6 +300,16 @@ async def pause_discussion(sid: str):
 @router.post("/sessions/{sid}/discussion/resume")
 async def resume_discussion(sid: str):
     return await _call(service.resume_debate, sid)
+
+
+@router.patch("/sessions/{sid}/discussion")
+async def patch_discussion(sid: str, body: DiscussionLimitsIn):
+    given = body.model_fields_set
+    minutes = body.duration_minutes
+    return await _call(service.update_discussion, sid,
+                       turn_limit=body.turn_limit if "turn_limit" in given else service.UNSET,
+                       duration_s=(minutes * 60 if minutes is not None else None) if "duration_minutes" in given
+                       else service.UNSET)
 
 
 @router.post("/sessions/{sid}/compact")

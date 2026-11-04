@@ -47,7 +47,7 @@ export function ExtensionsSection() {
                 <div className="grid min-w-0 flex-1 gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{x.name}</span>
-                    <Badge variant="muted">{x.type === 'page' ? t('ext.page') : t('ext.widget')}</Badge>
+                    <Badge variant="muted">{x.type === 'page' ? t('ext.page') : x.type === 'block' ? t('blocks.kind.block') : t('ext.widget')}</Badge>
                     <span className="font-mono text-xs text-muted-foreground">
                       {x.id} · v{x.version}
                     </span>
@@ -58,6 +58,11 @@ export function ExtensionsSection() {
                       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                       <span className="font-mono break-all">{x.error}</span>
                     </p>
+                  )}
+                  {x.type === 'block' && (
+                    <Link to="/settings/blocks" className="inline-flex w-fit items-center gap-1 pointer-coarse:min-h-10 text-[13px] font-medium text-primary hover:underline">
+                      {t('blocks.manage')} <span className="font-mono text-xs text-muted-foreground">{(x.renders ?? []).join(', ')}</span>
+                    </Link>
                   )}
                   {x.type === 'page' && x.enabled && !x.error && (
                     <div className="flex flex-wrap items-center gap-x-5 gap-y-2">

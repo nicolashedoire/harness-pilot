@@ -17,7 +17,7 @@ export function AgentMap({ sid, running, open, onOpenChange }: { sid: string; ru
   const agents = React.useMemo(() => items.filter((item): item is AgentItem => item.kind === 'tool' && (item.use.name === 'Agent' || item.use.name === 'Task')), [items])
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[85dvh] overflow-y-auto md:max-w-3xl">
-      <DialogHeader><DialogTitle>{t('swarm.map')}</DialogTitle><DialogDescription>{t('swarm.mapHint')}</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{t('sessions.swarm.map')}</DialogTitle><DialogDescription>{t('swarm.mapHint')}</DialogDescription></DialogHeader>
       <div className="grid gap-4 md:grid-cols-[minmax(10rem,1fr)_minmax(0,2fr)] md:items-start">
         <div className="flex items-center gap-2 rounded-lg border bg-card p-3"><Network className="size-4 text-primary" /><span className="font-medium">{t('swarm.coordinator')}</span></div>
         <div className="grid gap-2 border-l-2 border-border pl-4" aria-live="polite">

@@ -1,0 +1,8 @@
+{
+  "title": "Mug launch",
+  "columns": [
+    { "name": "To do", "cards": ["Proofread the email", { "title": "Test the product link", "tag": "web" }] },
+    { "name": "Doing", "cards": [{ "title": "Teaser video", "note": "15 s, light background", "tag": "video" }] },
+    { "name": "Done", "cards": ["Pick the main visual"] }
+  ]
+}

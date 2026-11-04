@@ -195,6 +195,19 @@ Shared feature blocks (`src/features`): the theme blocks of `features/themes` (�
 domain components reused by onboarding **and** settings: `ClaudeConnect`, `ClaudeDefaults`, `CreateProjectTopic`
 (+ `SlugPreview`), `TelegramSetup` (+ `ThreadList`), `BackupSetup` (+ `BackupWhy`), `RegionFields`.
 
+**Conversation blocks** (`src/features/blocks`, API.md#conversation-blocks): `components/ui/markdown.tsx` asks the eager
+`fence.tsx` whether a fence is a block, then mounts the lazy `BlockFence` chunk (with the `blocks` dictionary group).
+Every renderer uses `BlockShell` (header: type icon, title, source · body · footer actions) and the fallback card
+`BlockNotice`; its root carries `.mx-block` (`blocks.css` hands the markdown element styles back to Tailwind inside
+it). Block data is model output: rendered as text only (never `dangerouslySetInnerHTML`), links through the safe
+checks, HTML only inside the sandboxed frames. Sending to the conversation goes through `useSendToSession` (shows the
+exact text, asks). The conversation view hooks in with `<BlockHostProvider value={{sessionId, send?, openPanel?,
+agent?}}>` (`features/blocks/host.tsx`): each session column provides it (its `send` shows the message as sent at once
+and resolves to false when it failed, its `openPanel` is the column's block panel, `pages/sessions/BlockPanel.tsx`);
+without it the blocks find the session from `[data-mx-session]` / the URL and open their own side drawer
+(`mx-block-open` window event too). `BlockFence panel` draws a block at its large size. Settings -> Conversation blocks
+(`pages/settings/sections/Blocks.tsx`) lists, toggles and explains the plugins.
+
 ## 3. Layout rules
 
 - **Two layouts**, decided once by `html[data-compact]` (`stores/media.ts` `isCompact()` / `useCompact()`, copied in
@@ -220,6 +233,27 @@ domain components reused by onboarding **and** settings: `ClaudeConnect`, `Claud
 - Settings-like pages: stacked `SettingsCard`s (`grid gap-6`), danger zone last (`danger` prop).
 - **Density**: rows 40 px comfortable / 32 px compact (`--row-h`); lists use `divide-y` inside a bordered card.
 - Responsive targets: 375 / 768 / 1280 / 1920 px. Test at least 375 and 1280.
+
+### Conversation view (Sessions)
+- One header per session (breadcrumb project › topic, title, agent + model chip, context gauge in %, **…**, close);
+  the Sessions page renders no `PageHeader` on a computer: the list's title row holds its actions. On `/sessions*`
+  the sidebar is folded into a 64 px icon rail (`components/shell/rail-store.ts`; nav items 44 px).
+- Reading column `--mx-read` = 740 px (set on the column, `none` once widened by hand); thread, composer and banners
+  use `max-w-(--mx-read,…)`.
+- `pages/sessions/Turn.tsx` groups items into turns: agent header (`AgentIcon` + name + time), runs of tool calls and
+  thoughts folded into one activity line (expandable rows with +/-, diff / output on demand), the answer
+  (`Markdown` with `.mx-answer`, styles in `pages/sessions/conversation.css`), written-file cards, a footer
+  (duration · cost, copy, new session; model / tokens / cache in its tooltip). Rows are memoised on item identity.
+- States at the end of the thread are cards (`tail`): plan to approve, failed turn (Retry; the last turn's error notes
+  are then not shown, the card carries the error), agent question. A paused discussion ends with a dated separator
+  (`PauseSeparator`: "Paused at 03:12 · limit of 20 replies").
+- Conversation blocks in an answer keep the body type (14 px / 1.5, `[data-mx-block]` in `conversation.css`); the
+  media paths of a block fence are not repeated as thumbnails under the message (`stripBlockFences`). "Open beside"
+  docks the block on the right of the conversation in a tabbed panel when the column is at least 1040 px wide (the
+  thread and the composer narrow), else opens it in a sheet (bottom sheet on a phone).
+- Agents: `features/agents/AgentIcon.tsx` (`role="img"`, product names never translated). Discussion lanes use
+  `--agent-claude` / `--agent-codex` (chart series slots, defined in `conversation.css`).
+- Filled buttons (send, approve, retry, new session) are the shared `Button` so they follow the palette.
 
 ### Mobile
 - Inputs 16 px (automatic), touch targets ≥ 44 px (buttons do it automatically below `md`), `Dialog`/`Sheet`
@@ -325,11 +359,14 @@ comes from server settings once signed in (stored locally too for the login page
 
 Loading: each dictionary is split at build time (`i18nSplit` in `vite.config.ts`) by namespace (the key's first
 segment). `i18n/groups.ts` lists the namespaces that leave the core, by group (`settings`, `auth`, `infra`, `git`,
-`tasks`, `files`, `show`); the core (everything else) is awaited before the first render. A route declares the
+`tasks`, `files`, `show`, `convx`…); the core (everything else) is awaited before the first render. A route declares the
 groups it shows (`page(() => import('./pages/tasks'), ['tasks'])` in `routes.tsx`, preloaded by `index.html` too) and
 a lazy component wraps its import with `withGroups(['infra'], () => import(…))`. A key from a group that is not
 loaded yet renders as an empty string and triggers its loading (then `useT` re-renders): a new namespace shown by the
-shell or the dashboard stays out of `groups.ts`.
+shell or the dashboard stays out of `groups.ts`. What a conversation opens on demand (activity rows, footer details,
+Change limits, summary, HUD, agent map, side question) is the `convx` group, fetched when the sessions page is idle,
+so the first-load budget (`test_web_first_load.py`, 20 000 brotli bytes) holds; their entry points (menu items,
+buttons) keep core keys (`sessions.menu.*`, `sessions.swarm.*`, `sessions.queue.ask*`).
 
 ## 8. Do / Don't
 
@@ -378,9 +415,15 @@ is skipped — the tour never blocks. Keep these attributes when refactoring the
 onboarding (`mx-tour-pending` in sessionStorage, `tourDone` in the UI store) and is replayable from the Help
 group of the user menu, the palette and Settings › General. The closing card links to the
 `projects/tutorial/topics/1-first-steps` topic when it exists (else to the docs).
-- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round, green for unread answers, accent for running, red
-  for notifications to handle (`attention`), an accent dot for unread activity (`notice`); they
-  pulse (`.mx-badge-pulse`) only when the user turned on Settings -> Notifications -> "Pulsing badge".
+- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round; tones `unread` (finished answers, green),
+  `running` (the accent), `attention` (notifications to handle, red) and, for the dot only, `notice` (an accent dot:
+  unread activity that needs nothing). They pulse (`.mx-badge-pulse`, never the running ones) only when the user
+  turned on Settings -> Notifications -> On this device -> "Pulsing badges" (off by default).
+- Notifications: the sidebar entry (a tile in the touch menu) opens the centre (`features/notifications`), "To handle"
+  on top; the dashboard shows a "To handle" card only while something is pending - there is no permanent feed panel
+  nor header bell. A discussion paused on its limit shows `PausedBanner` above its thread (warning tokens, Change
+  limits + Resume); the session's **…** menu opens the same `ChangeLimitsDialog` for any discussion. Colours come
+  from the semantic tokens only (`warning`, `destructive`, `success`, `primary`, `action`).
 
 ## 11. Motion & performance
 
@@ -395,7 +438,7 @@ group of the user menu, the palette and Settings › General. The closing card l
   time order via `--i` / `--x`), `.mx-rise` on list / table rows, a count-up on numeric stats (`useCountUp`, rAF,
   text only). A card below the fold carries `.mx-wait` (`animation-play-state: paused` on it and its children) and
   the `InView` context is false until it scrolls into view (IntersectionObserver), so its entrance is seen; never
-  under reduced motion. When the grid changes (feed panel, widget shown / hidden / moved) `useGridFlip` slides the
+  under reduced motion. When the grid changes (the "To handle" card coming or going, a widget shown / hidden / moved) `useGridFlip` slides the
   cards (2-D FLIP, transform only, 340 ms). The whole build of a card stays under ~0.9 s.
 - A page is fully on screen within ~0.5 s of its data: a stagger never delays the last item by more than
   ~200 ms (cap `--i`), and an entrance does not replay when the user comes back to a page.
