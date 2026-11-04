@@ -2,6 +2,8 @@
 
 ## Unreleased - 2026-11-04
 
+- Complete instance archives: streaming scrypt/AES-GCM encrypted ZIP inventory with hashes, bounded validation and separate-destination recovery. Restore retargets stored paths and historical file links, resets native runtime handles and rebinds valid labels. Mutation/service hold persists until explicit activation; listing extensions cannot import their Python during review. Activation keeps concurrent mutations gated and reinstates the hold if a startup hook fails. No private archive is sent to GitHub; selective memory backups retain their existing scope. API and recovery limits are documented in the backup guide.
+
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
 - `SettingsCard` (`pages/settings/sections/ui.tsx`): `children` optional; without them the description is the card's text (no body, the header takes the bottom padding). Backup's *What this backup covers* uses it instead of a paragraph in the body, whose top padding made a larger gap under the title than in the other cards.

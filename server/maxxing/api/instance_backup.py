@@ -37,6 +37,8 @@ async def _call(function, *args):
 @router.get('')
 async def status(request: Request):
     return {**await _call(snapshots.status),
+            'restore_hold': bool(config.load_config().get('restore_hold') or
+                                 getattr(request.app.state, 'restore_activation_in_progress', False)),
             'service_resume_errors': getattr(request.app.state, 'snapshot_service_errors', [])}
 
 

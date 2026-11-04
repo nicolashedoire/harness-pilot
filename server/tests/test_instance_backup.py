@@ -152,6 +152,10 @@ def test_archive_paths_cannot_escape_the_restore(mx, name):
 
 def test_recovered_app_can_authenticate_read_history_and_hold_services(mx):
     sid, _, attachment = seed(mx)
+    extension = mx['ws'] / 'extensions/recovered-plugin'
+    extension.mkdir(parents=True)
+    (extension / 'manifest.json').write_text(json.dumps({'id': 'recovered-plugin', 'type': 'widget'}))
+    (extension / 'api.py').write_text("from pathlib import Path\nPath(__file__).with_name('imported').touch()\ndef card(ctx): return {'blocks': []}\n")
     _, _, restored = round_trip(mx)
     script = '''
 from fastapi.testclient import TestClient
@@ -168,7 +172,11 @@ with TestClient(create_app()) as c:
     assert str(config.STATE) not in roots
     assert c.post('/api/sessions',json={}).status_code==409
     assert c.get('/api/backup/instance').json()['restore_hold'] is True
+    plugin = __import__('pathlib').Path(config.load_config()['workspace'])/'extensions/recovered-plugin'
+    assert c.get('/api/extensions').status_code==200
+    assert not (plugin/'imported').exists(), 'Listing recovered plugins must not execute them'
     assert c.post('/api/backup/instance/activate').status_code==200
+    assert (plugin/'imported').exists(), 'Explicit activation loads deferred plugins'
     assert c.get('/api/backup/instance').json()['restore_hold'] is False
     assert c.post('/api/workspace/projects',json={'name':'after-restore'}).status_code==200
     print('Recovered authentication, history, attachment and service hold verified.')

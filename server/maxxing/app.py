@@ -109,15 +109,17 @@ class _RestoredInstanceHold:
         path = scope.get('path', '')
         application = scope.get('app')
         snapshot_busy = bool(application and getattr(application.state, 'snapshot_in_progress', False))
+        held = (config.load_config().get('restore_hold') or
+                bool(application and getattr(application.state, 'restore_activation_in_progress', False)))
         if snapshot_busy and scope['type'] == 'http' and scope.get('method') in ('POST', 'PUT', 'PATCH', 'DELETE'):
             return await JSONResponse({'error': 'snapshot_busy', 'message':
                 'A full snapshot is being created. Changes are temporarily paused; retry when it finishes.'},
                 status_code=409)(scope, receive, send)
-        if scope['type'] == 'websocket' and (snapshot_busy or config.load_config().get('restore_hold')):
+        if scope['type'] == 'websocket' and (snapshot_busy or held):
             return await send({'type': 'websocket.close', 'code': 1008})
         if (scope['type'] == 'http' and scope.get('method') in ('POST', 'PUT', 'PATCH', 'DELETE')
                 and path.startswith('/api/') and not path.startswith('/api/auth/')
-                and path != '/api/backup/instance/activate' and config.load_config().get('restore_hold')):
+                and path != '/api/backup/instance/activate' and held):
             return await JSONResponse({'error': 'restore_hold', 'message':
                 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.'},
                 status_code=409)(scope, receive, send)
@@ -145,19 +147,25 @@ def create_app() -> FastAPI:
 
         async def start_restored_services():
             newly_started = []
+            app.state.restore_activation_in_progress = True
             try:
+                # The owner approved activation; hooks may now load extensions. Keep user mutations
+                # gated until every hook finishes, and reinstate the hold if any hook fails.
+                config.update_config(restore_hold=False)
                 for module in mods:
                     if module not in started and hasattr(module, 'startup'):
                         await module.startup()
                         newly_started.append(module)
-                config.update_config(restore_hold=False)
                 started.extend(newly_started)
             except Exception:
+                config.update_config(restore_hold=True)
                 for module in reversed(newly_started):
                     if hasattr(module, 'shutdown'):
                         await module.shutdown()
                 raise HTTPException(503, detail={'error': 'restore_activation', 'message':
                     'Background services could not start. The restored instance remains in review mode.'}) from None
+            finally:
+                app.state.restore_activation_in_progress = False
 
         app.state.activate_restored_instance = activate
         app.state.snapshot_in_progress = False
