@@ -2,7 +2,9 @@ import * as React from 'react'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { RouterProvider } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { onUnauthorized, ApiError } from '@/lib/api'
+import { onLocalErrorText, onUnauthorized, ApiError } from '@/lib/api'
+import { translate } from '@/i18n'
+import { useUI } from '@/stores/ui'
 import { isLiveKey, qk } from '@/lib/queries/keys'
 import { ConfirmHost, Toaster, TooltipProvider } from '@/components/ui'
 import { createAppRouter } from './routes'
@@ -34,6 +36,9 @@ onUnauthorized(() => {
     redirecting = false
   })
 })
+
+// "the server could not be reached" (raised in the browser, not by the server) in the UI language
+onLocalErrorText((code) => (code === 'network' ? translate(useUI.getState().language, 'common.networkError') : undefined))
 
 export function App() {
   return (
