@@ -18,6 +18,7 @@ Layout:
   <repo>/_maxxing/crons/jobs.json    managed cron jobs
   <repo>/_maxxing/mcp.json           MCP servers of Claude Code (user + per topic), literal secrets blanked
   <repo>/_maxxing/space-labels.json  {workspace-relative path: label} of the saved files and their folders
+  <repo>/_maxxing/atelier.json       the Atelier's versions and provenance of each creation (no file contents)
 
 Environment overrides (tests): MAXXING_GITHUB_API (REST base URL), MAXXING_GITHUB_GIT (git base URL,
 default https://github.com; remote = <base>/<owner>/<name>.git).
@@ -554,6 +555,14 @@ def snapshot() -> dict[str, bytes]:
         raise BackupError("Cannot export the space labels; no backup was published.", "read_failed") from e
     if labels:
         files[f"{META_DIR}/space-labels.json"] = (json.dumps(labels, indent=2, ensure_ascii=False) + "\n").encode()
+    try:                                       # the Atelier's versions and provenance (no file contents: a few kB)
+        from . import atelier
+        meta = atelier.export_meta()
+    except Exception as e:                                         # noqa: BLE001
+        log.warning("backup: Atelier history not exported: %s", e)
+        meta = {}
+    if meta:
+        files[f"{META_DIR}/atelier.json"] = (json.dumps(meta, indent=1, ensure_ascii=False) + "\n").encode()
     files[f"{META_DIR}/README.md"] = (b"# harness-pilot memory backup\n\nPrivate backup of the workspace memory "
                           b"(CLAUDE.md, memory.md, tasks, extensions, skills) made by harness-pilot.\n"
                           b"Restore: Settings > Backup > Restore, or `pilot backup restore`.\n")
@@ -996,6 +1005,14 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
         except (ValueError, TypeError, OSError) as e:
             log.warning("restore: space labels not restored: %s", e)
             warnings.append("labels")
+    atelier_blob = files.get(f"{META_DIR}/atelier.json")
+    if atelier_blob is not None:                  # after the files: provenance of the extensions restored above
+        try:
+            from . import atelier
+            atelier.import_meta(json.loads(atelier_blob))
+        except (ValueError, TypeError, OSError) as e:
+            log.warning("restore: Atelier history not restored: %s", e)
+            warnings.append("atelier")
     cfg_blob = files.get(f"{META_DIR}/config.json")
     if cfg_blob is not None:
         try:

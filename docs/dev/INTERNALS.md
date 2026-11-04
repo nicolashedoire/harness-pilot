@@ -521,10 +521,18 @@ cron jobs through their own modules, no copy of their data).
   always taken before `extensions.publishing()`, never inside it.
 - **Bus**: `rev` (`<state>/atelier/rev`, its mtime) is touched by every write; `api/atelier` polls it every 2 s and
   sends `invalidate atelier`, so a proposal registered by the CLI reaches open browsers.
-- **Backup**: the GitHub memory backup adds `_maxxing/atelier.json` (each item's versions and history without the
-  file lists: a few kB); a restore keeps it as metadata (`restorable: false` versions) so provenance survives a move.
-  The extension files themselves are the workspace's (`extensions/` include patterns). The complete instance backup
-  has all of `<state>/atelier/`.
+- **Backup**: the GitHub memory backup adds `_maxxing/atelier.json` (`export_meta()`: each item's versions - `n, at,
+  hash, base, origin, approval, health, error, note, size, file_count` - and its 50 newest history events, never file
+  lists nor contents: a few kB). A restore (`backup._apply`, after the files) calls `import_meta()`: an item this server
+  approved nothing for (no version `approval.by` user / auto) gets the backup's record with `restorable: false`
+  versions and `live.sig` null; the next `refresh()` sees its folder, and when the files hash to the active version's
+  `hash` it snapshots them (that version is restorable again) - no `unreviewed` flag. Older versions stay
+  metadata (`409 not_restorable`). The extension files themselves are the workspace's (`extensions/**` include
+  pattern). The complete instance backup has all of `<state>/atelier/`.
+- **Rollback / diffs**: `rollback(kind, id, n)` (`400 bad_version`, `404`, `409 not_restorable` when a blob is missing,
+  `422 not_versioned`); `version_detail(kind, id, n, against)` diffs blob contents (`diff_files`).
+- **Retention**: `prune(now)` runs inside `approve` and from the API watcher once a day (`prune_due`: `pruned_at` of
+  `state.json` older than `PRUNE_EVERY_S`, checked every hour); it returns the counts dropped.
 - **Other kinds** (`items()`): themes = `themes.saved()` (active = the applied palette, else `disabled`; origin from
   the entry's `source` / `from`); skills = `<workspace>/.claude/skills/*/SKILL.md` and `<workspace>/.agents/skills`
   (product skills excluded; `agents` = which agent reads it); customizations = `customs.list_customs()` (`review`

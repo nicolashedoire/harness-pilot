@@ -374,3 +374,87 @@ def test_pins_are_recorded_as_approved_by_the_user(client, mx):
     eid = r.json()["id"]
     it = next(i for i in client.get("/api/atelier").json()["items"] if i["id"] == eid)
     assert it["type"] == "pin" and it["approval"]["by"] == "user" and not it["unreviewed"]
+
+
+def _version_of(client, eid, value, capsys, monkeypatch):
+    _, out, _ = _cli(capsys, monkeypatch, "draft", eid)
+    folder = Path(out.strip())
+    (folder / "api.py").write_text(CARD % value)
+    _, out, _ = _cli(capsys, monkeypatch, "propose", eid)
+    r = client.post(f"/api/atelier/drafts/{_draft_id(out)}/approve")
+    assert r.status_code == 200, r.text
+    return r.json()["version"]
+
+
+def test_rollback_restores_a_kept_version(client, mx, capsys, monkeypatch):
+    d = _write(mx["ws"] / "extensions" / "meter", "meter", 1)
+    _premigration(mx)
+    client.get("/api/atelier")
+    assert _version_of(client, "meter", 2, capsys, monkeypatch) == 2
+    assert _version_of(client, "meter", 3, capsys, monkeypatch) == 3
+    r = client.post("/api/atelier/extension/meter/rollback", json={"version": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["version"] == 1 and r.json()["item"]["version"] == 1
+    assert (d / "api.py").read_text() == CARD % 1 and extensions.get("meter").error is None
+    det = client.get("/api/atelier/extension/meter").json()
+    assert [(v["n"], v["active"]) for v in det["versions"]] == [(3, False), (2, False), (1, True)]
+    assert det["history"][0]["action"] == "rollback" and det["history"][0]["note"] == "from v3"
+    assert not det["item"]["unreviewed"]
+    # the same version again: nothing to do
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": 1}).json()["version"] == 1
+    # files changed by hand are kept as a version before a rollback replaces them
+    (d / "api.py").write_text(CARD % 42)
+    _reset()
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": 3}).json()["version"] == 3
+    vs = client.get("/api/atelier/extension/meter").json()["versions"]
+    assert vs[0]["n"] == 4 and vs[0]["note"] == "changed outside the Atelier" and not vs[0]["active"]
+    assert (d / "api.py").read_text() == CARD % 3
+    # diffs between versions
+    v = client.get("/api/atelier/extension/meter/versions/3").json()
+    assert v["against"] == 2 and "+    return {'title': 'Hi', 'blocks': [{'type': 'stat', 'label': 'N', 'value': 3}]}" \
+        in next(f for f in v["files"] if f["path"] == "api.py")["diff"]
+    assert client.get("/api/atelier/extension/meter/versions/1", params={"against": "active"}).json()["against"] == 3
+    assert client.get("/api/atelier/extension/meter/versions/99").status_code == 404
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": 99}).json()["error"] == "not_found"
+    assert client.post("/api/atelier/extension/meter/rollback", json={"version": "x"}).json()["error"] == "bad_version"
+    assert client.post("/api/atelier/theme/x/rollback", json={"version": 1}).json()["error"] == "not_versioned"
+
+
+def test_retention_keeps_recent_or_newest_versions(client, mx, capsys, monkeypatch):
+    _write(mx["ws"] / "extensions" / "keep", "keep", 0)
+    _premigration(mx)
+    client.get("/api/atelier")
+    for i in range(1, 5):
+        _version_of(client, "keep", i, capsys, monkeypatch)        # v2..v5, v5 active
+    client.put("/api/atelier/settings", json={"keep_days": 1, "keep_versions": 2})
+    later = __import__("time").time() + 3 * 86400
+    res = atelier.prune(now=later)
+    assert res["versions"] == 3 and res["objects"] >= 1
+    assert [v["n"] for v in client.get("/api/atelier/extension/keep").json()["versions"]] == [5, 4]
+    assert client.post("/api/atelier/extension/keep/rollback", json={"version": 4}).status_code == 200
+    assert (mx["ws"] / "extensions" / "keep" / "api.py").read_text() == CARD % 3
+    assert not atelier.prune_due(now=later + 10) and atelier.prune_due(now=later + 2 * 86400)
+
+
+def test_memory_backup_keeps_the_provenance(client, mx, capsys, monkeypatch):
+    _write(mx["ws"] / "extensions" / "prov", "prov", 1)
+    _premigration(mx)
+    client.get("/api/atelier")
+    _version_of(client, "prov", 2, capsys, monkeypatch)
+    meta = atelier.export_meta()
+    assert set(meta["items"]) == {"extension:prov"}
+    blob = json.dumps(meta)
+    assert len(blob) < 8000 and "def card" not in blob                 # no file contents
+    from maxxing import backup
+    assert json.loads(backup.snapshot()["_maxxing/atelier.json"]) == meta
+    # a new server: the files come back with the workspace, the provenance with _maxxing/atelier.json
+    shutil.rmtree(mx["state"] / "atelier")
+    _reset()
+    assert atelier.import_meta(meta) == 1
+    _reset()
+    det = client.get("/api/atelier/extension/prov").json()
+    assert [(v["n"], v["approval"]["by"]) for v in det["versions"]] == [(2, "user"), (1, "migration")]
+    assert det["versions"][0]["restorable"] and not det["versions"][1]["restorable"]   # its files are on disk again
+    assert not det["item"]["unreviewed"]
+    assert client.post("/api/atelier/extension/prov/rollback", json={"version": 1}).json()["error"] == "not_restorable"
+    assert atelier.import_meta(meta) == 0                              # approved here: this server's record wins

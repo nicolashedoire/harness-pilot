@@ -771,6 +771,9 @@ def _refresh() -> None:
             act = active_version(item)
             if act and h == act["hash"]:
                 item["live"] = {"sig": sig, "hash": h}
+                if not act.get("restorable"):          # metadata restored from a backup: the files are back
+                    act["files"], act["restorable"] = snapshot(d)
+                    act.pop("file_count", None)
                 if item.get("unreviewed_since"):
                     item["unreviewed_since"] = None
                     changed = True
@@ -1144,6 +1147,7 @@ def approve(did: str, base: Any = ..., by: str = "user") -> dict:
         _save_draft(rec)
         _accept_permissions(eid)
         _feed_resolve(did)
+        prune()
         if by == "auto":
             from . import feed
             o = rec.get("origin") or {}
@@ -1355,7 +1359,8 @@ def items(kind: str | None = None, state: str | None = None) -> dict:
 
 def public_version(v: dict, active: int | None) -> dict:
     return {"n": v["n"], "at": v["at"], "active": v["n"] == active, "origin": _live_origin(v.get("origin")),
-            "approval": v.get("approval"), "base": v.get("base"), "files": len(v.get("files") or {}),
+            "approval": v.get("approval"), "base": v.get("base"),
+            "files": int(v.get("file_count") or len(v.get("files") or {})),
             "size": v.get("size") or 0, "hash": v.get("hash"), "restorable": bool(v.get("restorable")),
             "health": v.get("health") or "unknown", "error": v.get("error"), "note": v.get("note")}
 
@@ -1437,3 +1442,199 @@ def forget_preview(did: str) -> None:
     with _preview_lock:
         _preview_mods.pop(did, None)
     sys.modules.pop(f"mx_draft_{did}", None)
+
+
+# ---- versions: rollback, diffs ----------------------------------------------------------------------------------------
+def _versioned(kind: str, iid: str) -> dict:
+    if kind not in KINDS:
+        raise AtelierError(404, "not_found", f"no kind {kind}")
+    if kind != "extension":
+        raise AtelierError(422, "not_versioned", f"{kind} creations are not versioned")
+    item = load_item(kind, iid)
+    if item is None:
+        raise AtelierError(404, "not_found", f"no extension {iid}")
+    return item
+
+
+def _restorable(v: dict) -> bool:
+    return bool(v.get("restorable")) and all(_blob(f["sha256"]).is_file() for f in (v.get("files") or {}).values())
+
+
+def rollback(kind: str, iid: str, n: Any) -> dict:
+    """Make the kept version `n` active again: its files replace the extension's folder in one step (files changed
+    outside the Atelier are kept first as a version). No new version: `history` gets a `rollback` event."""
+    if not isinstance(n, int) or isinstance(n, bool):
+        raise AtelierError(400, "bad_version", "version must be a version number")
+    with contextlib.suppress(OSError):
+        refresh(force=True)
+    with locked():
+        item = _versioned(kind, iid)
+        v = _version(item, n)
+        if v is None:
+            raise AtelierError(404, "not_found", f"version {n} of {iid} is not kept")
+        live = extensions.root() / iid
+        if item.get("active") == n and not item.get("unreviewed_since") and live.is_dir():
+            return {"item": item, "version": n}
+        if not _restorable(v):
+            raise AtelierError(409, "not_restorable", f"the files of version {n} are not kept")
+        _keep_direct(item, live)
+        v = _version(item, n)
+
+        def write(dest: Path) -> None:
+            for rel, f in (v.get("files") or {}).items():
+                p = dest / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(_blob(f["sha256"]), p)
+                os.chmod(p, int(f.get("mode") or 0o644))
+        _install(iid, write)
+        prev = item.get("active")
+        _close_active(item)
+        item["active"] = n
+        v["activated_at"] = time.time()
+        _event(item, "rollback", version=n, note=f"from v{prev}" if prev else None)
+        _set_live(item, live)
+        _save_item(item)
+        _accept_permissions(iid)
+        touch()
+        return {"item": item, "version": n}
+
+
+def version_detail(kind: str, iid: str, n: int, against: str | None = None) -> dict:
+    """Version `n` and its diff against `against` (default: the kept version before it; "active"; a number)."""
+    item = _versioned(kind, iid)
+    v = _version(item, n)
+    if v is None:
+        raise AtelierError(404, "not_found", f"version {n} of {iid} is not kept")
+    if against in (None, ""):
+        older = [x for x in item["versions"] if x["n"] < n]
+        base = max(older, key=lambda x: x["n"]) if older else None
+    elif against == "active":
+        base = active_version(item)
+    else:
+        try:
+            base = _version(item, int(against))
+        except ValueError:
+            raise AtelierError(400, "bad_version", "against is a version number or active") from None
+        if base is None:
+            raise AtelierError(404, "not_found", f"version {against} of {iid} is not kept")
+
+    def blob(_rel: str, sha: str) -> bytes | None:
+        return _read_blob(sha)
+    rows = diff_files(v.get("files") or {}, blob, (base or {}).get("files") or {}, blob)
+    return {"version": public_version(v, item.get("active")), "against": base["n"] if base else None, "files": rows}
+
+
+# ---- retention ----------------------------------------------------------------------------------------------------------
+PRUNE_EVERY_S = 86400
+
+
+def prune_due(now: float | None = None) -> bool:
+    return (now or time.time()) - float(_state().get("pruned_at") or 0) >= PRUNE_EVERY_S
+
+
+def prune(now: float | None = None) -> dict:
+    """Keep a version while it is younger than keep_days OR among the keep_versions newest of its creation (the active
+    one and a pending draft's base always); decided drafts after DECIDED_KEEP_S; then the objects nothing uses."""
+    now = now or time.time()
+    s = settings()
+    cutoff = now - s["keep_days"] * 86400
+    dropped_versions = dropped_drafts = dropped_objects = 0
+    with locked():
+        drafts = all_drafts()
+        bases: dict[str, set] = {}
+        for d in drafts:
+            if d.get("status") == "pending" and d.get("base") is not None:
+                bases.setdefault(d["target"], set()).add(d["base"])
+        used: set[str] = set()
+        items_dir = root() / "items"
+        for p in sorted(items_dir.glob("*/*.json")) if items_dir.is_dir() else []:
+            item = config.read_json(p, None)
+            if not isinstance(item, dict) or not isinstance(item.get("versions"), list):
+                continue
+            newest = {v["n"] for v in sorted(item["versions"], key=lambda v: v["n"], reverse=True)[:s["keep_versions"]]}
+            keep = newest | {item.get("active")} | bases.get(item.get("id"), set())
+            kept = [v for v in item["versions"] if v["n"] in keep or float(v.get("at") or 0) >= cutoff]
+            if len(kept) != len(item["versions"]):
+                dropped_versions += len(item["versions"]) - len(kept)
+                item["versions"] = kept
+                _save_item(item)
+            for v in kept:
+                used.update(f["sha256"] for f in (v.get("files") or {}).values())
+        for d in drafts:
+            at = float((d.get("decided") or {}).get("at") or 0)
+            if d.get("status") != "pending" and at and now - at > DECIDED_KEEP_S:
+                shutil.rmtree(_drafts() / d["id"], ignore_errors=True)
+                dropped_drafts += 1
+        if _objects().is_dir():
+            for sub in _objects().iterdir():
+                for blob in sub.iterdir() if sub.is_dir() else []:
+                    if blob.name not in used:
+                        with contextlib.suppress(OSError):
+                            blob.unlink()
+                            dropped_objects += 1
+        _write(root() / "state.json", {**_state(), "pruned_at": now})
+        if dropped_versions or dropped_drafts:
+            touch()
+    return {"versions": dropped_versions, "drafts": dropped_drafts, "objects": dropped_objects}
+
+
+# ---- the GitHub memory backup: provenance without the files -------------------------------------------------------------
+def export_meta() -> dict:
+    """`_maxxing/atelier.json` of the memory backup: each item's versions and history, without file lists (a few kB)."""
+    out: dict[str, dict] = {}
+    items_dir = root() / "items"
+    for p in sorted(items_dir.glob("*/*.json")) if items_dir.is_dir() else []:
+        item = config.read_json(p, None)
+        if not isinstance(item, dict) or not isinstance(item.get("versions"), list):
+            continue
+        out[f"{item['kind']}:{item['id']}"] = {
+            "kind": item["kind"], "id": item["id"], "active": item.get("active"), "next": item.get("next"),
+            "versions": [{k: v.get(k) for k in ("n", "at", "hash", "base", "origin", "approval", "health", "error",
+                                                "note", "size")} | {"file_count": len(v.get("files") or {})
+                                                                    or int(v.get("file_count") or 0)}
+                         for v in item["versions"]],
+            "history": (item.get("history") or [])[:50]}
+    return {"version": 1, "items": out} if out else {}
+
+
+def import_meta(data: Any) -> int:
+    """Restore `_maxxing/atelier.json`: an item this server has not approved anything for gets the backup's metadata
+    (versions not restorable until their files are seen again). -> items written. Never runs any code."""
+    items = (data or {}).get("items") if isinstance(data, dict) else None
+    if not isinstance(items, dict):
+        return 0
+    n = 0
+    with locked():
+        for key, it in items.items():
+            if not isinstance(it, dict) or it.get("kind") not in KINDS or not isinstance(it.get("versions"), list):
+                continue
+            iid = str(it.get("id") or "")
+            if not extensions.ID_RE.match(iid) or key != f"{it['kind']}:{iid}":
+                continue
+            local = load_item(it["kind"], iid)
+            if local and any((v.get("approval") or {}).get("by") in ("user", "auto") for v in local["versions"]):
+                continue                               # approved here: this server's own record wins
+            versions = []
+            for v in it["versions"]:
+                if not isinstance(v, dict) or not isinstance(v.get("n"), int):
+                    continue
+                versions.append({"n": v["n"], "at": float(v.get("at") or 0), "files": {},
+                                 "file_count": int(v.get("file_count") or 0), "hash": str(v.get("hash") or ""),
+                                 "base": v.get("base"), "origin": v.get("origin") if isinstance(v.get("origin"), dict)
+                                 else dict(UNKNOWN), "approval": v.get("approval") if isinstance(v.get("approval"), dict)
+                                 else {"by": None, "at": None}, "restorable": False,
+                                 "health": v.get("health") or "unknown", "error": v.get("error"), "note": v.get("note"),
+                                 "activated_at": None, "size": int(v.get("size") or 0)})
+            if not versions:
+                continue
+            active = it.get("active") if any(v["n"] == it.get("active") for v in versions) else None
+            item = {"kind": it["kind"], "id": iid, "active": active,
+                    "next": max(int(it.get("next") or 1), max(v["n"] for v in versions) + 1), "versions": versions,
+                    "history": [h for h in it.get("history") or [] if isinstance(h, dict)][:200],
+                    "live": {"sig": None, "hash": None}, "unreviewed_since": None}
+            _event(item, "migrate", version=active, by="system", note="restored from the memory backup")
+            _save_item(item)
+            n += 1
+        if n:
+            touch()
+    return n

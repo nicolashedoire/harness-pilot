@@ -297,6 +297,32 @@ export function installAtelier({ R, state, fail, bus, now, sendMessage }) {
       health: { state: v.state, error: v.error, errors: v.error ? [v.error] : [], checked_at: now() },
     }
   })
+  R('GET', '/api/atelier/:kind/:id/versions/:n', ({ params, q }) => {
+    if (params.kind !== 'extension') fail(422, 'not_versioned', `${params.kind} creations are not versioned`)
+    const it = A().items[`extension:${params.id}`] || fail(404, 'not_found', `no extension ${params.id}`)
+    const n = Number(params.n)
+    const v = it.versions.find((x) => x.n === n) || fail(404, 'not_found', `version ${n} of ${params.id} is not kept`)
+    const against = q.get('against')
+    const base = !against ? [...it.versions].filter((x) => x.n < n).sort((a, b) => b.n - a.n)[0] : against === 'active' ? activeOf(it) : it.versions.find((x) => x.n === Number(against)) || fail(404, 'not_found', `version ${against} is not kept`)
+    return { version: publicVersion(v, it.active), against: base ? base.n : null, files: diffRows(v.files, base ? base.files : {}) }
+  })
+  R('POST', '/api/atelier/:kind/:id/rollback', ({ params, body }) => {
+    if (!['extension', 'theme', 'skill', 'customization', 'cron'].includes(params.kind)) fail(404, 'not_found', `no kind ${params.kind}`)
+    if (params.kind !== 'extension') fail(422, 'not_versioned', `${params.kind} creations are not versioned`)
+    const it = A().items[`extension:${params.id}`] || fail(404, 'not_found', `no extension ${params.id}`)
+    if (!Number.isInteger(body?.version)) fail(400, 'bad_version', 'version must be a version number')
+    const v = it.versions.find((x) => x.n === body.version) || fail(404, 'not_found', `version ${body.version} of ${it.id} is not kept`)
+    if (!v.restorable) fail(409, 'not_restorable', `the files of version ${v.n} are not kept`)
+    if (it.active === v.n && !it.unreviewed_since) return { ok: true, item: view(it), version: v.n }
+    const prev = activeOf(it)
+    if (prev) prev.health = prev.error ? 'error' : 'ok'
+    it.active = v.n
+    it.unreviewed_since = null
+    it.runtime_error = null
+    it.history.unshift({ at: now(), action: 'rollback', version: v.n, draft: null, by: 'user', note: prev ? `from v${prev.n}` : null })
+    bus('atelier', 'extensions')
+    return { ok: true, item: view(it), version: v.n }
+  })
   R('POST', '/api/atelier/:kind/:id/accept', ({ params }) => {
     if (params.kind !== 'extension') fail(422, 'not_versioned', `${params.kind} creations are not versioned`)
     const it = A().items[`extension:${params.id}`] || fail(404, 'not_found', `no extension ${params.id}`)

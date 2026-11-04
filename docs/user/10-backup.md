@@ -134,7 +134,10 @@ Only a **whitelist**, relative to the workspace:
 - plus non-secret settings (time zone, language, default model, dashboard layout...), your
   scheduled jobs and the space labels (Personal, Agents, Shared) of the saved files and of the folders that hold
   them, in a `_maxxing/` folder. A restore puts the labels back on the restored items; labels already set on other
-  items stay.
+  items stay;
+- the Atelier's history of your widgets, pages and block plugins (`_maxxing/atelier.json`: each version, who made it
+  and when, who approved it - not the files of older versions, which stay on the server). On a new server the
+  extensions come back with their history; going back to an older version needs that server's own copies.
 
 Never saved, even if a pattern matches: `secrets.json`, keys, `.env` files, private keys,
 credentials, logs, `attachments/`, `.git`, `node_modules` and virtual environments. Session conversations are stored outside the workspace and are not included. Other project files are included only when a configured pattern matches them. This is a selected-file memory backup, not a complete project archive.
