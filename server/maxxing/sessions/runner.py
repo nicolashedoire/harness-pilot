@@ -298,7 +298,7 @@ class Runner:
         from maxxing import pcbridge                    # not at import: the runner starts with stdlib-only modules
         base += pcbridge.mcp_config_args() + mcp_plan.args
         env = spawn.claude_env(meta.get("env") or {}, mode)
-        env["MAXXING_SESSION"] = self.sid               # `maxxing mcp load` run by the turn finds its session
+        env["MAXXING_SESSION"] = self.sid               # `pilot mcp load` run by the turn finds its session
         text = (PLAN_PREFACE if plan else "") + build_prompt(item)
         prompt, json_in = stdin_payload(text, item, Path(cfg.get("workspace") or "/").resolve())
         if json_in:
@@ -420,7 +420,7 @@ class Runner:
     def _mcp_after(self, item: dict, a: Attempt, err: str | None, cfg: dict, meta: dict,
                    mcp_plan: mcp_auto.Plan, plan: bool) -> None:
         """Remembers the MCP servers the topic used and the claude.ai connectors seen; when the turn asked for a
-        server it was not given (`maxxing mcp load`), queues a continuation first - at most CONTINUE_MAX in a row."""
+        server it was not given (`pilot mcp load`), queues a continuation first - at most CONTINUE_MAX in a row."""
         try:
             if a.mcp_used:
                 mcp_auto.record_used(str(meta.get("path") or ""), a.mcp_used)

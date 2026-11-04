@@ -122,7 +122,7 @@ def test_off_loads_everything_as_before(client, topic, mx, servers):
     sid, c = _turn(client, mx, topic, "Hi NOTOOL")
     assert "--strict-mcp-config" not in c["argv"]
     assert c["argv"].count("--append-system-prompt") == 1
-    assert "maxxing mcp load" not in flag(c["argv"], "--append-system-prompt")
+    assert "pilot mcp load" not in flag(c["argv"], "--append-system-prompt")
     assert c["env"]["MAXXING_SESSION"] == sid
 
 
@@ -140,7 +140,7 @@ def test_on_a_turn_gets_the_topic_servers_and_learns_what_it_used(client, topic,
     assert "Facebook-ads (http, mcp.facebook.com)" in hint and "SECRET" not in hint
     assert "notion (local program: npx @notionhq/notion-mcp-server)" in hint
     assert "claude.ai Google Drive (claude.ai connector)" in hint and "blog-db" not in hint
-    assert "maxxing mcp load" in hint
+    assert "pilot mcp load" in hint
     _turn(client, mx, topic, "Use it MCPUSE:Facebook-ads NOTOOL", sid)
     _, c = _turn(client, mx, topic, "Again NOTOOL", sid)
     assert _loaded(c["argv"]) == ["Facebook-ads", "blog-db"]
@@ -162,7 +162,7 @@ def test_on_a_connector_needed_means_nothing_is_restricted(client, topic, mx, se
     from maxxing import config
     config.update_config(mcp_auto=True)
     _, c = _turn(client, mx, topic, "Find the file in my Google Drive NOTOOL")
-    assert "--strict-mcp-config" not in c["argv"] and "maxxing mcp load" not in flag(c["argv"], "--append-system-prompt")
+    assert "--strict-mcp-config" not in c["argv"] and "pilot mcp load" not in flag(c["argv"], "--append-system-prompt")
 
 
 def test_maxxing_mcp_load_continues_the_turn_once(client, topic, mx, servers, monkeypatch):

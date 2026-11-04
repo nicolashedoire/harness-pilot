@@ -1,8 +1,8 @@
-"""`maxxing 2fa` - two-step sign-in with Telegram, from the server (the way out when Telegram does not answer).
+"""`pilot 2fa` - two-step sign-in with Telegram, from the server (the way out when Telegram does not answer).
 
-    maxxing 2fa status              on / off, Telegram linked or not
-    maxxing 2fa off                 password only again (every trusted browser is forgotten)
-    maxxing 2fa forget-browsers     every browser asks again at its next sign-in
+    pilot 2fa status              on / off, Telegram linked or not
+    pilot 2fa off                 password only again (every trusted browser is forgotten)
+    pilot 2fa forget-browsers     every browser asks again at its next sign-in
 
 Turning it on needs an approval in Telegram: Settings -> Telegram -> Two-step sign-in.
 """
@@ -41,7 +41,7 @@ def _handler(a) -> int:
         print(json.dumps({"on": on, "telegram_linked": linked, "active": on and linked}))
         return 0
     if on and linked:
-        print("Two-step sign-in: on (Telegram approval for every new browser). Way out: maxxing 2fa off")
+        print("Two-step sign-in: on (Telegram approval for every new browser). Way out: pilot 2fa off")
     elif on:
         print("Two-step sign-in: on, but no Telegram chat is linked - not asked until one is linked again.")
     else:

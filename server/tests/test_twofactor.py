@@ -127,7 +127,7 @@ def test_requests_are_throttled_and_telegram_failure_is_explained(tg, monkeypatc
         twofactor.reset()
         tg.fail["sendMessage"] = (403, "Forbidden: bot was blocked by the user")
         r = c.post("/api/auth/login", json={"password": PW}, headers=H)
-        assert r.status_code == 503 and "maxxing 2fa off" in r.json()["message"]
+        assert r.status_code == 503 and "pilot 2fa off" in r.json()["message"]
         assert c.get("/api/workspace/tree").status_code == 401
 
 

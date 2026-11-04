@@ -1,6 +1,6 @@
 """Where the tokens of Claude sessions go - read from Claude Code's own transcripts (~/.claude/projects/*/*.jsonl).
 
-`maxxing sessions token-report` prints it: context size per call, re-read share, cache rewrites (after an idle
+`pilot sessions token-report` prints it: context size per call, re-read share, cache rewrites (after an idle
 hour, a model switch...), the tools whose results fill the context, and what automatic compaction at other
 thresholds would have saved on the same calls (a simulation: growth between calls is replayed, a compaction
 brings the context back to SUMMARY_TOKENS).

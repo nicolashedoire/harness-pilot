@@ -812,7 +812,7 @@ _last_sync: dict[str, Any] = {"at": None}
 def sync_agent_files(light: bool = False) -> dict:
     """Write the enabled types where the agents read them: `<state>/blocks/agents.md` (Codex) and `reference.md`
     (full schemas), and the installed `pilot-blocks` skill rendered again with the list (Claude Code; only when it
-    is installed - `maxxing init` installs it). Idempotent: files are rewritten only when they change."""
+    is installed - `pilot init` installs it). Idempotent: files are rewritten only when they change."""
     ps = enabled_plugins(light)
     changed: list[str] = []
     with _sync_lock:

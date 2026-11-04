@@ -1,11 +1,11 @@
-"""`maxxing custom` - record changes made to the product code so updates carry them over.
+"""`pilot custom` - record changes made to the product code so updates carry them over.
 
-  maxxing custom [status]                       customizations, unsaved changes, pending update
-  maxxing custom save "TITLE" --why "REASON"    commit the uncommitted changes as one customization
-  maxxing custom check ID "COMMAND"             the command proving it still works (run after each update)
-  maxxing custom drop ID                        remove one customization
-  maxxing custom export                         rewrite <workspace>/CUSTOMIZATIONS.md + customizations/*.patch
-  maxxing custom restore [--from DIR] [--stat]  re-apply saved patches (new server, after a restore); --stat lists them
+  pilot custom [status]                       customizations, unsaved changes, pending update
+  pilot custom save "TITLE" --why "REASON"    commit the uncommitted changes as one customization
+  pilot custom check ID "COMMAND"             the command proving it still works (run after each update)
+  pilot custom drop ID                        remove one customization
+  pilot custom export                         rewrite <workspace>/CUSTOMIZATIONS.md + customizations/*.patch
+  pilot custom restore [--from DIR] [--stat]  re-apply saved patches (new server, after a restore); --stat lists them
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def _configure(p: argparse.ArgumentParser) -> None:
     s.add_argument("--why", default="", help="why the user wanted it (kept for future updates)")
     s.add_argument("--files", nargs="*", help="only these files (default: every change)")
     s.add_argument("--check", default="", help="a shell command that exits 0 while the customization works "
-                                              "(run by `maxxing update --verify` after every update)")
+                                              "(run by `pilot update --verify` after every update)")
     s = sub.add_parser("check", help="set (or clear with \"\") the check command of a customization")
     s.add_argument("id")
     s.add_argument("command", help="shell command, run from the workspace; exit 0 = still working")
@@ -53,13 +53,13 @@ def _print_status(js: bool) -> int:
     for it in items:
         print(f"  - [{it['id']}] {it['title']}" + (f"  - {it['why']}" if it["why"] and it["why"] != "-" else ""))
         print(f"      files: {', '.join(it['files'])}")
-        print(f"      check: {it['check']}" if it.get("check") else "      check: none  (maxxing custom check ID \"COMMAND\")")
+        print(f"      check: {it['check']}" if it.get("check") else "      check: none  (pilot custom check ID \"COMMAND\")")
     if st["dirty"]:
         print(f"Unsaved changes: {len(st['dirty'])} file(s) - {', '.join(st['dirty'][:8])}")
-        print('  -> maxxing custom save "what it does" --why "why"   (an update would auto-save them)')
+        print('  -> pilot custom save "what it does" --why "why"   (an update would auto-save them)')
     if st["rebase"]:
         print("Rebase in progress: customizations are being adapted to a new version")
-        print("  -> finish (git add <files> && git rebase --continue) then: maxxing update --resume")
+        print("  -> finish (git add <files> && git rebase --continue) then: pilot update --resume")
     p = st["pending"]
     if p:
         when = dt.datetime.fromtimestamp(p.get("at", 0)).strftime("%Y-%m-%d %H:%M")

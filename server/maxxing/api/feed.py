@@ -169,7 +169,7 @@ async def delete_event(event_id: int):
 
 
 async def _watch() -> None:
-    """Events written by other processes (cron runs, `maxxing feed post`): tell the UI. Any change (this process's
+    """Events written by other processes (cron runs, `pilot feed post`): tell the UI. Any change (this process's
     posts too) also sends the new rows to the Web Push subscriptions (push.dispatch, in a thread)."""
     last = None
     try:

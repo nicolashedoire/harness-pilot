@@ -4,7 +4,7 @@ Harness Maxxing includes or installs the third-party software below. Each one ke
 here with its copyright notice. Harness Maxxing itself is under the [LICENSE](LICENSE) of this repository.
 
 - **JavaScript**: bundled into the web interface (`web/dist`), fonts included (SIL Open Font License 1.1).
-- **Python**: installed from PyPI into the server's virtual environment by the installer and `maxxing update`.
+- **Python**: installed from PyPI into the server's virtual environment by the installer and `pilot update`.
 - **Go**: compiled into the optional PC agent (`pc-agent/`).
 
 Tools the installer downloads from their publishers (Claude Code, uv, Python, Node.js, Caddy, Chromium, ...)

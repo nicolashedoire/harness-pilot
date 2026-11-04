@@ -1,4 +1,4 @@
-"""`maxxing feed` - post to / read the notifications feed (any script can use it; see docs/user/24-feed.md)."""
+"""`pilot feed` - post to / read the notifications feed (any script can use it; see docs/user/24-feed.md)."""
 from __future__ import annotations
 
 import json

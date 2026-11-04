@@ -58,7 +58,7 @@ def test_preflight_conflict_included_and_review(code):
     assert conflict["conflicts"] == ["server/maxxing/rules.py"] and rep["verdict"] == "adapt"
     assert _worktrees(clone) == 1 and "LIMIT = 50" in rules.read_text()       # the install is untouched
     prompt = smartupdate.assist_prompt(rep)
-    assert "CONFLICTS" in prompt and "INCLUDED" in prompt and "maxxing update --resume" in prompt
+    assert "CONFLICTS" in prompt and "INCLUDED" in prompt and "pilot update --resume" in prompt
 
 
 def test_review_when_a_customization_touches_changed_code(code):

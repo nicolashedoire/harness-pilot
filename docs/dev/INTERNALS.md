@@ -61,7 +61,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `PASS_STAMP_S` = 5 s after passes that saw a session change; no fsync): its first pass
   after a start reports the turns whose `finished_at` is later (they ended while the server was stopped or
   restarting); without that file (first start) the first pass is only a baseline.
-- `wait_turn(sid, timeout_s) -> dict` - blocking helper (thread) used by `maxxing cron run`: returns the
+- `wait_turn(sid, timeout_s) -> dict` - blocking helper (thread) used by `pilot cron run`: returns the
   Session once it is not running and its queue is empty (or when the timeout expires).
 - `move_session(sid, path)` (also `update_session(..., path=)`) - another topic for an idle session; moves the
   Claude transcript (`~/.claude/projects/<slug of cwd>/<csid>.jsonl`) so `--resume` keeps the conversation.
@@ -159,7 +159,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `smartupdate.preflight()` (fetches): only the verdict "simple" with no upgrade note, no unsaved change and every
   customization "ok"/"included" goes on; anything else posts one notification per target (`needs_review`). One try per
   target per 24 h (`<state>/auto-update.json` `tried`); busy is checked again after the preflight. The update is
-  `api/system._spawn_update(smart=False)`: the usual `maxxing update` (rolls itself back when the new version does not
+  `api/system._spawn_update(smart=False)`: the usual `pilot update` (rolls itself back when the new version does not
   start) without the Harness session of the Update button.
 
 ## maxxing.claude_update
@@ -281,7 +281,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   (install and `skills_status` render `skills/pilot-blocks/SKILL.md` with them); `sync_agent_files()` writes
   `<state>/blocks/agents.md` (Codex: `sessions/codex.workspace_context` appends it, the only hook in session code),
   `<state>/blocks/reference.md`, and renders the installed skill again when it exists. Idempotent (files rewritten only
-  on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `maxxing init`. The
+  on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `pilot init`. The
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
 
@@ -328,7 +328,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `install_steps[...]` and `http_transport` (httpx.MockTransport).
 - `start_install(model=None)` (background thread: `uv sync --frozen --no-dev --extra voice` in `server/`, then the model
   download in a child process; progress = size of `state_dir('voice/models/<m>')`), `download_model(name)`,
-  `delete_model(name)`, `sync_extras()` (flags added by `maxxing update` so the optional group survives updates:
+  `delete_model(name)`, `sync_extras()` (flags added by `pilot update` so the optional group survives updates:
   marker `state/voice/extra-installed` or engine `local`), `doctor()`.
 - Used by maxxing.api.voice, maxxing.telegram.gateway (`_voice`), cmd_core (doctor, update), cmd_voice (CLI).
 
@@ -377,7 +377,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `TTL` 120 s, `GRACE` 60 s to collect an approval, `NEW_MAX` 5 per client / 15 min, `PENDING_MAX` 10.
 - Trusted browser: cookie `mx_device` = `<issued_at>.<nonce>.<hmac(device_key)>`, path `/api/auth`, 30 days;
   `forget_devices()` = `device_key` -> None (recreated on first use).
-- CLI `maxxing 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer.
+- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer.
 
 ## maxxing.bus
 - `invalidate(*topics)` - thread-safe UI invalidation (see API.md Global bus).
@@ -427,7 +427,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   KillMode=control-group): background processes of a job end with it, as with "Run now" before. `units_available()`
   = not `MAXXING_SPAWN=direct`, `systemd-run` on PATH and `/run/systemd/system` (`SYSTEMD_DIR`); otherwise
   `--detach` runs the job in the cron process and "Run now" starts a detached subprocess.
-- `maxxing-jobs.slice` (`cmd_core.ensure_jobs_slice`, called by every `maxxing init`, so by every update; removed by
+- `maxxing-jobs.slice` (`cmd_core.ensure_jobs_slice`, called by every `pilot init`, so by every update; removed by
   uninstall): `/etc/systemd/system/maxxing-jobs.slice` with `MemoryMax=<jobs_memory_max>` (config, default `75%`;
   `""`/`infinity` = no line) = the memory budget of all jobs running at once; written only when the text changed
   (then daemon-reload); skipped without systemd and with MAXXING_SPAWN=direct. Claude jobs run their turn in a turn
@@ -444,7 +444,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   variable, not a flag: a version restored by a rollback (a69 and older) does not know `--detach` and would refuse
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
-  (no unit: background programs live on, as in a69). `maxxing init` re-syncs the block.
+  (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
@@ -622,13 +622,13 @@ URLs without query / fragment / userinfo. A channel with more than 64 MB waiting
   notes of the target that ask something (first paragraph not "Nothing to do").
 - `verify() -> report` (`update/report.json`): `extensions.scan()`, `widget_card(force)`, `node --check page.js` when
   node exists, each customization's `check` (shell, cwd workspace, `MAXXING_CODE`, 60 s).
-- `mark_updated(from, to, smart)` (end of `maxxing update`) -> `update/after.json`; `after_update()` runs once at
+- `mark_updated(from, to, smart)` (end of `pilot update`) -> `update/after.json`; `after_update()` runs once at
   server start (api/system.startup, after `MAXXING_AFTER_UPDATE_DELAY` s): verify, feed alert if broken, and for
   `smart` the upgrade-notes session (config `update_auto_notes`, default true).
 - `assist_prompt / start_assist`, `fix_prompt`: the Harness sessions ("Answer me in French." when the UI is fr).
-- `maxxing update` sets edits under `web/` aside (`git stash push -u -- web/`) instead of failing.
+- `pilot update` sets edits under `web/` aside (`git stash push -u -- web/`) instead of failing.
 - Customization checks: commit trailer `Check:` (save `--check`), overridden by `<workspace>/customizations/checks.json`
-  (`maxxing custom check`).
+  (`pilot custom check`).
 
 ## maxxing.license  (owner: core)
 The optional Enterprise key: `activate(key)`, `release()`, `remove_key()`, `status()` (`has_key`, `key_hint` = `HM-…` + the last 4 characters, never
@@ -668,7 +668,7 @@ says `pilot`.
 `cmd_custom.py` (custom status/save/drop/export/restore), `cmd_license.py` (license activate/status/remove/release).
 Startup speed: `configure(parser)` runs only for the command being run (the first non-option argument),
 and the `cmd_*` modules import their domain module (crons, feed, license, urllib...) inside the handler,
-never FastAPI (`maxxing.security` / `maxxing.app`): `maxxing --help` ~85 ms. Keep new commands that way.
+never FastAPI (`maxxing.security` / `maxxing.app`): `pilot --help` ~85 ms. Keep new commands that way.
 cmd_core also exposes `copy_templates(ws)` (renders `{{CODE_DIR}}`/`{{WORKSPACE}}`/`{{STATE_DIR}}`/`{{VERSION}}`, seeds each
 default project/topic once - install.json `seeded`), `install_skills()` (copies the product skills - `pilot-*` and
 `PRODUCT_SKILLS_EXTRA`; `maxxing-*` still counts as a product name so the copies of earlier versions are dropped:
@@ -695,7 +695,7 @@ prompts written or edited by the user are left (upgrade notes ask Claude to prop
 Idempotent, runs on every init (cheap: only template-mapped files that still contain an old name are read
 twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old name back.
 
-## Service sandboxing (`maxxing harden`)
+## Service sandboxing (`pilot harden`)
 - `cmd_core.HARDENING` = drop-in `/etc/systemd/system/claude-maxxing.service.d/10-hardening.conf`
   (`hardening_path()` derives it from `UNIT_PATH`); install.sh writes the byte-identical text (a test checks it).
   Options: NoNewPrivileges, ProtectKernelTunables/Modules/Logs, ProtectControlGroups, RestrictSUIDSGID,
@@ -704,9 +704,9 @@ twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when
   RestrictNamespaces (Claude Code sandbox), MemoryDenyWriteExecute (Node JIT), UMask=0077 (files written for
   Caddy or other web servers must stay readable). Turns, updates and restarts go through `systemd-run`: PID 1
   creates those units outside this sandbox.
-- `maxxing harden`: write -> daemon-reload -> restart -> `_healthy(version)`; on failure the previous drop-in
+- `pilot harden`: write -> daemon-reload -> restart -> `_healthy(version)`; on failure the previous drop-in
   (or none) is restored, reloaded and restarted (exit 1). `--undo` removes it. Doctor check `hardening`
-  (INFO when missing or different, OK when identical). `maxxing uninstall` removes the drop-in.
+  (INFO when missing or different, OK when identical). `pilot uninstall` removes the drop-in.
 - `systemd-analyze security --offline=true` on the generated unit: 9.4 UNSAFE without, 7.8 EXPOSED with
   (the rest is the root user and its capabilities, which the product needs).
 
@@ -721,7 +721,7 @@ twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when
 ## External components (deps.toml, deps.py)
 - `server/maxxing/deps.toml` is the one list of what Harness Maxxing installs besides apt packages: version, URL
   template, sha256 per machine (`x86_64`, `aarch64`), path, links in `/usr/local/bin`, what `remove` deletes, update
-  policy (`auto` = moved by every `maxxing update`; `self` = Claude Code; `apt`; `manual` = Garage, whose pins stay in
+  policy (`auto` = moved by every `pilot update`; `self` = Claude Code; `apt`; `manual` = Garage, whose pins stay in
   `infra/actions.py`), the OSV package for `deps check`, lockfiles. Both `deps.py` (tomllib) and install.sh (`dep`, a
   regex reader: keep the syntax to `[name]`, `k = "s"`, `k = ["a"]`, one-line `k = { a = "b" }`) read it;
   `tests/test_install_reliability.py` checks they agree.
@@ -736,7 +736,7 @@ twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when
   `installed()` / `owned_paths()` cases, a test; bump with `scripts/bump-pins.sh` (it rewrites deps.toml in place
   and re-resolves `templates/scrapling/requirements.txt` with `uv pip compile --universal --generate-hashes`).
 - One Chromium: Playwright's build in `<state>/tools/browsers` (revision of the drivers of the Scrapling lock) serves
-  Scrapling, Remotion (`templates/remotion/remotion.config.js`) and `maxxing pdf` (`cmd_video.browser()`).
+  Scrapling, Remotion (`templates/remotion/remotion.config.js`) and `pilot pdf` (`cmd_video.browser()`).
 
 ## Turn units (sessions/spawn.py)
 `_start_unit(sid)` runs `systemd-run --collect --unit maxxing-<sid8>` (the name users pass to `journalctl -u`).
@@ -770,7 +770,7 @@ git, `claude --version`). Config `unit_hardening` (default true; false = none).
 | `SystemCallArchitectures=native` | rejected | 32-bit programs (steamcmd, wine) stop working |
 | `ProtectSystem`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `ProtectProc`, `RestrictNamespaces`, `MemoryDenyWriteExecute` | rejected | writes everywhere, /tmp shared with the server, devices, `ps`, Claude Code's own sandbox (namespaces), Node JIT |
 
-The server service keeps its own drop-in (`HARDENING`, `maxxing harden`), stricter because the server itself never
+The server service keeps its own drop-in (`HARDENING`, `pilot harden`), stricter because the server itself never
 administers the host; units started with systemd-run are created by PID 1 and do not inherit it.
 
 ## Claude tuning variables (production)
@@ -817,7 +817,7 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `invalidate_sizes()` after writing deep inside an existing item (backup restore's previous versions).
 - `maxxing/importer.py`: `prompt(agent)`, `inspect(zip)` (preview, writes nothing), `apply(zip)`,
   `finish_prompt(result)`; uploads in `state_dir("import")` (24 h). Never overwrites; secret scan =
-  `backup.scan_bytes`. API `/api/import`, CLI `maxxing import`.
+  `backup.scan_bytes`. API `/api/import`, CLI `pilot import`.
 - `maxxing/videos.py`: lighter copies for the player. `probe(p)` (ffprobe, cached by `sha1(path, mtime_ns,
   size)`), `status(p)`, `prepare(p, q)` -> `_encode` on a 1-worker pool (`nice -n 10 ffmpeg ... -progress pipe:1`,
   writes `<key>.part.mp4` then renames; `_jobs[key]` = state/progress/error in memory, lost on restart: a

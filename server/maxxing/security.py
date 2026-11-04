@@ -80,7 +80,7 @@ def set_password(pw: str) -> None:
 
 
 # ---- setup token ---------------------------------------------------------------------------
-SETUP_TOKEN_TTL = 3600          # the first sign-in link works for 1 h (`maxxing setup-link` gives a fresh one)
+SETUP_TOKEN_TTL = 3600          # the first sign-in link works for 1 h (`pilot setup-link` gives a fresh one)
 
 
 def _setup_token_fresh() -> bool:

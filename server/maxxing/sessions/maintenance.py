@@ -1,7 +1,7 @@
 """Nightly upkeep of the session files, in a background thread of the server.
 
 Every night at RUN_AT (server local time):
-- the logs written since the last pass are compacted like `maxxing sessions compact-logs` (logs written before the
+- the logs written since the last pass are compacted like `pilot sessions compact-logs` (logs written before the
   runner clipped at write time, thinking signatures; a running session is skipped and retried the next night);
 - the `.lock` / `.run` files of sessions idle for an hour are removed (store.prune_locks).
 State: <state>/sessions-maintenance.json {at, retry: [ids]} (when the last pass started, sessions skipped).
