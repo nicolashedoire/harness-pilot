@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- In plan mode, an agent engine taking part in a discussion now gets the same instructions as Codex: work the plan out with Claude Code and give the whole plan in each reply.
 - An agent engine installed as an extension can now take Codex's place in a discussion or debate with Claude Code (**Second agent** in the new-session form), if it declares what the discussion needs: plan mode or attached files are refused clearly otherwise.
 - Plan mode now works in Claude Code and Codex discussions: both agents work out a plan without changing anything, you approve the latest one, one agent carries it out and the discussion pauses so the other can review the work when you resume.
 - Scheduled prompts can now run with **Codex**: in a job's editor, choose the agent (Claude Code or Codex) under the prompt, with an optional Codex model; the job list marks Codex jobs.
