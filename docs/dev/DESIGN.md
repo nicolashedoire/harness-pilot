@@ -190,6 +190,7 @@ exported / imported files, the server's `look.palette`):
 | `Skeleton`, `SkeletonText`, `Spinner`, `EmptyState`, `ProgressBar`, `StatusDot` | see §4. |
 | `toast.success/error/info` + `<Toaster/>` (sonner) | bottom-right desktop, top-center mobile. |
 | `CodeBlock` (block or `inline` one-liner with copy), `CopyButton` | |
+| `DiffTable` + `parseDiff` (`@/components/ui/diff`, not in the barrel) | a unified diff as a table (line numbers, + / −, hunks): the conversation `diff` block and the Atelier's file review |
 | `Markdown` (`@/components/ui/markdown`, lazy-load it) | GFM, highlight.js, raw HTML escaped, unsafe URLs dropped, `/routes` via the router, external links `noopener noreferrer nofollow` in a new tab, code blocks with copy. `onLink(href)` to rewrite links (docs). |
 | `QRCode` (`@/components/ui/qr-code`, not in the barrel) | client-side SVG (uqr). |
 | `Avatar`, `NamedIcon`, `initials()` | |
@@ -217,8 +218,11 @@ without it the blocks find the session from `[data-mx-session]` / the URL and op
 **Atelier** (`pages/atelier`, API.md#atelier): the creations of the agents. `features/atelier/parts.tsx` holds what
 every Atelier screen and the conversation's proposal card share: `TypeTile` (type icon, violet while a draft waits),
 `StatePill` (`pillState(item)`: pending violet, active / applied green, error red, review amber, disabled muted),
-`Origin` (agent mark + session link + time; unknown origins say so), `VersionTag` (`vN`). Its texts are the lazy
-group `atelier`; the rail entry (`nav.atelier`, after the extension pages) stays in the core.
+`Origin` (agent mark + session link + time; unknown origins say so), `VersionTag` (`vN`); and for a draft
+`DraftPreview` (`PreviewFrame`: dashed border + diagonal hatching = not installed; the dashboard's `BlockView` or
+`HtmlWidget` inside), `CheckLine`, `PermissionRows`, `FileReview`. Its texts are the lazy group `atelier`; the rail
+entry (`nav.atelier`, after the extension pages) stays in the core. A screen that ends with a decision keeps its
+buttons in sight (`sticky bottom-0` on the column, and on the screen in the touch layout).
 
 ## 3. Layout rules
 

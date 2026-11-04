@@ -1051,3 +1051,9 @@ export type AtelierDraftFile = {
   truncated: boolean
 }
 export type AtelierSettings = { auto_activate_safe: boolean; keep_days: number; keep_versions: number }
+export type AtelierDraftDetail = { draft: AtelierDraft; files: AtelierDraftFile[]; active_version: number | null; stale: boolean; preview: 'card' | 'html' | 'none' }
+export type AtelierPreview =
+  | { kind: 'card'; card: Card | null; error: string | null; trace: string[] }
+  | { kind: 'html'; url: string; height: number }
+  | { kind: 'none'; reason: 'page' | 'block' | 'agent' }
+export type AtelierDecision = { ok: boolean; item: AtelierItem; version: number }
