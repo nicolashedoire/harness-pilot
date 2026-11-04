@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Plan mode now works in Claude Code and Codex discussions: both agents work out a plan without changing anything, you approve the latest one, one agent carries it out and the discussion pauses so the other can review the work when you resume.
+- Settings → Stats marks the Claude plan usage as **Experimental** and explains where it comes from. When it cannot be read, Stats and the dashboard card say so in a plain sentence instead of showing an error code.
 - **Summary and actions** no longer needs Codex: without a signed-in Codex, Claude Code writes the summary, the dialog says which agent wrote it and its errors show in your language. The summary's tokens (and Claude's indicative amount) now count in the session's statistics.
 - **Summarise & restart** now works on a Claude Code and Codex discussion: a new discussion with the same objective, roles, models and limits continues from a summary of the exchanges, and a paused discussion stays paused on the reply it was waiting for.
 - Scheduled jobs can run **At startup** (`@reboot`) in the local app: they start each time the application starts. The Crons page shows *At the next start* for them.
