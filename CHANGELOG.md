@@ -7,6 +7,10 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
+- Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.
+- An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
+- Codex sessions can now use the product skills (tasks, scheduled jobs, notifications, backup…): `pilot init` and `pilot update` install them for Codex too, and `pilot doctor` reports a missing or outdated Codex copy.
+- Model Lab experiments no longer end in an error when the adapter's interpreter or program is larger than 16 MB, which was the case of the Python that uv installs on Linux.
 - Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.
@@ -77,6 +81,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Find the built-in skills under clearer names starting with `pilot-`, such as `pilot-crons`, `pilot-notifications` and `pilot-widgets-pages`. An update installs the new names, removes the old copies and updates the product's own text in your workspace; your own notes and jobs are not changed.
 - `pilot doctor` warns when another program called `pilot` comes first in your terminal or for the sessions (some systems ship one), names it, and suggests `maxxing`, the same command under its earlier name.
 - The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
+- The Linux server installer was tried on a test Debian 12 server; what works, what still points to the original project and the plan to turn it back on are documented for maintainers. It stays disabled for now.
 - Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
 
 ### Inherited version history
