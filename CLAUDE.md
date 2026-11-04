@@ -1,4 +1,4 @@
-# Harness Maxxing v2 - development rules
+# harness-pilot - development rules
 
 Product & architecture: docs/dev/PLAN.md · HTTP contract: docs/dev/API.md · module interfaces:
 docs/dev/INTERNALS.md · UI rules: docs/dev/DESIGN.md. Change the contract docs first, then the code.
@@ -21,7 +21,7 @@ docs/dev/INTERNALS.md · UI rules: docs/dev/DESIGN.md. Change the contract docs 
   `docs/upgrade/<version>.md` ("Nothing to do" when nothing to do), and the user docs page of each visible change.
   `tests/test_docs.py::test_every_version_is_documented` fails when one is missing.
 - Two changelogs, both updated with every change: `CHANGELOG.md` is PUBLIC (shown in the app's "What's new"
-  and by `maxxing update`): what changes for the user, plain language, no internals. `docs/dev/CHANGES.md`
+  and by `pilot update`): what changes for the user, plain language, no internals. `docs/dev/CHANGES.md`
   is for maintainers: API, data formats, migrations, internals.
 - An important new feature (one the user would not find alone) ends its CHANGELOG.md bullet with
   `[Show me](#show:<id>)` and gets a showcase `<id>` in `web/src/features/whatsnew/showcases.ts` (route + `data-tour`
