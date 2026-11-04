@@ -44,7 +44,7 @@ def save_memory(sid: str, text: str) -> dict:
     entry = ('\n\n## Discussion — ' + datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
              + '\n\n' + text + '\n').encode('utf-8')
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             info = os.fstat(fd)

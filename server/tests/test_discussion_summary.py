@@ -1,4 +1,5 @@
 import json
+import os
 import pytest
 
 from maxxing import workspace
@@ -81,3 +82,6 @@ def test_memory_rejects_symlinks_and_oversized_file(client, topic, mx):
     memory.write_text('x' * 32760)
     assert client.post(url, json={'text': 'safe text'}).status_code == 409
     assert memory.read_text() == 'x' * 32760
+    memory.unlink()
+    os.mkfifo(memory)
+    assert client.post(url, json={'text': 'safe text'}).status_code == 409
