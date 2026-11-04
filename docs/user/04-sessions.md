@@ -53,9 +53,15 @@ On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Code
 the server's `secrets.json`, `~/.ssh` and the agents' own sign-ins (Codex's `auth.json`, Claude Code's
 `.credentials.json`) in every mode, for every command Codex runs, a script included; Codex itself still signs in with
 its file. Outside that sandbox: the MCP servers Codex starts, and its image viewer, which could still show it a
-picture stored in those folders. Checked on macOS and on Linux. On a Linux machine where Codex's sandbox cannot start (bubblewrap without
-user namespaces, as in some containers), a Codex turn now stops with that error instead of answering without running
-commands; turning **Protect the secrets** off brings the old behaviour back, without this protection.
+picture stored in those folders. Checked on macOS and on Linux. In every mode, Codex also cannot change the extensions,
+the saved customization patches, `infra.json`, nor the settings of any topic or project folder (see
+[Security](security#what-agents-can-do)).
+
+On a Linux machine where Codex's sandbox cannot start (bubblewrap without user namespaces, as in some containers), a
+Codex turn stops with that error and a note on the way out: allow user namespaces, or add `"codex_plain_sandbox":
+true` to `config.json` (in the state folder) and restart. Codex then gets its plain sandbox: the turn answers but its
+commands still fail on such a machine, and **neither Protect the secrets nor the protection of the extensions and the
+folders' settings apply to Codex any more**. Use it only on a machine where you accept that.
 
 These features are for Claude Code only for now:
 

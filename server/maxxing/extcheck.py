@@ -18,14 +18,16 @@ deadline), then, by kind:
   refused by the app's `script-src 'self'`; `eval` / `new Function` are flagged; `ctx.api()` needs `handle()`.
 - block plugin: block.json (`blocks.parse_manifest`), `GET /ext/_blocks/<id>/frame`, the entry parsed like a widget.
 - agent: the manifest (`agent_providers.parse`).
+- widget and page: what the manifest declares in "permissions" (permissions.py), a warning when it declares nothing.
 
 The routes run in-process (a FastAPI app with the extensions and blocks routers, the sign-in check waived): nothing
 listens, no request leaves the machine. An extension that is turned off (or held after a restore) is "skipped":
 none of its code runs.
 
 Result = {id, name, type, kind: "card"|"html"|"page"|"block"|"agent"|"widget", dir, status: "ok"|"warn"|"error"|
-"skipped", error: first error | None, steps: [{step, status, detail}], files: [names relative to dir], card?, trace?,
-runtime_errors: what broke while it ran since its files last changed (exterrors.recent; not part of the status)}
+"skipped", error: first error | None, steps: [{step, status, detail}], files: [names relative to dir], permissions:
+the declaration | None, card?, trace?, runtime_errors: what broke while it ran since its files last changed
+(exterrors.recent; not part of the status)}
 """
 from __future__ import annotations
 
@@ -43,7 +45,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit
 
-from . import config, exterrors, extensions
+from . import config, exterrors, extensions, permissions
 
 NODE_TIMEOUT_S = 20
 MAX_MODULES = 40
@@ -73,7 +75,8 @@ class _Run:
         err = next((s["detail"] for s in self.steps if s["status"] == ERROR), None)
         return {"id": self.ext.id, "name": self.ext.label(), "type": self.ext.type, "kind": self.kind,
                 "dir": str(self.ext.dir), "status": status, "error": err, "steps": self.steps, "files": self.files,
-                **self.extra, "runtime_errors": exterrors.recent(self.ext.id, self.ext.dir)}
+                "permissions": self.ext.permissions, **self.extra,
+                "runtime_errors": exterrors.recent(self.ext.id, self.ext.dir)}
 
 
 def _kind(ext: extensions.Extension) -> str:
@@ -485,6 +488,17 @@ def _check_page(run: _Run) -> None:
         run.add("api", ERROR, "the page calls ctx.api() but api.py has no handle(ctx, method, path, query, body)")
 
 
+def _check_permissions(run: _Run) -> None:
+    """What a widget or page declares it uses (manifest "permissions")."""
+    perms = run.ext.permissions
+    if perms is None:
+        run.add("permissions", WARN, 'manifest.json declares no "permissions": add what it uses beyond its own folder, '
+                                     '{"network": [hosts], "secrets": [key names], "read": [workspace paths]} '
+                                     '({} = none of them)')
+    else:
+        run.add("permissions", OK, f"declares {permissions.summary(perms)}")
+
+
 # ---- entry points ---------------------------------------------------------------------------------------------------
 def _check_one(ext: extensions.Extension) -> dict:
     kind = _kind(ext)
@@ -514,6 +528,8 @@ def _check_one(ext: extensions.Extension) -> dict:
             _check_page(run)
         elif kind == "block":
             _check_block(run)
+        if ext.type in ("widget", "page"):
+            _check_permissions(run)
     except Exception as e:  # noqa: BLE001 - a check that fails is a result, never a crash of the command
         run.add("check", ERROR, f"the check itself failed: {type(e).__name__}: {e}")
     return run.result()

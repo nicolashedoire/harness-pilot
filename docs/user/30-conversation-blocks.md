@@ -51,8 +51,8 @@ turn); its blocks already in your conversations show their raw data. Built-in bl
 removed. Click a plugin to see what it shows, what it can access and the hint the agents get.
 
 **Catalogue**: ideas of blocks harness-pilot can build for you (calendar, kanban board, map, mind map…). **Create**,
-or describe the one you miss: a session starts in `system › harness` where harness-pilot writes the plugin, tries it
-and shows it to you.
+or describe the one you miss: a session starts in `system › harness` (created again if you deleted it) where
+harness-pilot writes the plugin, tries it and shows it to you.
 
 ## Block plugins and safety
 
