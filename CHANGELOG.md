@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A mixed team can now be stopped from the session header and from the message box, which says the team is working while it waits, as well as from the team panel.
 - Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed. Outside **Full access**, Codex only uses the tools a server marks as read-only.
 - A mixed team's mission can be spoken: the recording is transcribed and its text is sent as the mission, like a voice message in the other modes.
 - **Summarise & restart** on a discussion whose second agent is an agent engine now keeps that engine in the new discussion, and the engine starts from the summary.
