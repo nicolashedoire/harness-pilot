@@ -127,6 +127,58 @@ Changes made to the product code, recorded so updates carry them over (see [Cust
 | `pilot custom export` | rewrite `<workspace>/CUSTOMIZATIONS.md` and `customizations/*.patch` |
 | `pilot custom restore [--from DIR]` | re-apply the saved patches (new server) |
 
+## pilot ext check
+
+Runs your extensions (dashboard widgets, pages, conversation block plugins: see [Dashboard widgets](dashboard-widgets),
+[Page extensions](page-extensions)) the way the server runs them, and says what is broken before you open the app.
+harness-pilot runs it after writing or fixing an extension.
+
+| Command | Effect |
+|---|---|
+| `pilot ext check ID` | check the extension in `<workspace>/extensions/ID/` |
+| `pilot ext check` | check every extension |
+| `--json` | machine-readable result (below) |
+
+What is checked:
+
+- every extension: `manifest.json` (or `block.json`) and `api.py` are loaded as the server loads them, with the same
+  10-second limit for `api.py`; the error is the one shown in Settings -> Extensions;
+- a card widget: `card(ctx)` runs with the dashboard's 20-second limit and its result goes through the same cleaning
+  as on the dashboard. A card that keeps no block, blocks of an unknown type (dropped) and a card whose status is
+  `"error"` are warnings; an exception shows the lines of your `api.py` it went through;
+- an HTML widget: the frame is served, `widget.html` is a document with content, every `<script>` is closed and
+  parses (`node --check`, with the line numbers of `widget.html`), it loads no other file of the folder (only
+  `widget.html` is served), `maxxing.api()` has a `handle()` in `api.py` to answer it; `localStorage` and cookies,
+  which the sandboxed frame does not have, are warnings;
+- a page: `page.js` is served and parses as a module (`node --check`), exports `mount`, and every module it imports
+  is a file of the folder that the server serves as JavaScript and that parses in turn; a bare name (`lodash`) or
+  another site's address is refused by the app; `eval` / `new Function` are warnings; `ctx.api()` needs `handle()`;
+- a block plugin: `block.json`, its schema and its frame are served, its HTML is checked like a widget's, and a
+  plugin that never calls `maxxing.onData` is a warning.
+
+Nothing is sent over the network and nothing changes in the running server. Without Node.js the JavaScript syntax is
+not checked (a warning says so). An extension that is turned off is skipped: none of its code runs.
+
+Exit codes: `0` every extension checked works (warnings allowed), `1` at least one is broken, `2` no extension has
+that id, `3` that extension is turned off (nothing was run).
+
+`--json` prints:
+
+```json
+{"ok": false, "problems": 1, "extensions": [
+  {"id": "disk-usage", "name": "Disk usage", "type": "widget", "kind": "card",
+   "dir": "/root/maxxing/extensions/disk-usage", "status": "error",
+   "error": "KeyError: 'total' (api.py:6 in card)",
+   "steps": [{"step": "load", "status": "ok", "detail": "manifest.json is valid, api.py loads"},
+             {"step": "card", "status": "error", "detail": "KeyError: 'total' (api.py:6 in card)"}],
+   "trace": ["api.py:6 in card: pct = du['total']"],
+   "files": ["manifest.json", "api.py"]}]}
+```
+
+`kind` is `card`, `html` (HTML widget), `page`, `block` or `agent`; `status` is `ok`, `warn`, `error` or `skipped`;
+`error` is the first error (null when there is none); `files` lists the files of the folder involved. A card widget
+that works also returns the `card` the dashboard would draw.
+
 ## pilot deps
 
 The external components (`server/maxxing/deps.toml`: uv, Python, Node.js, Claude Code, Caddy, Scrapling, Chromium,

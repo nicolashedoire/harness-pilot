@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- New `pilot ext check <id>` (all extensions without an id): runs a dashboard widget, a page or a conversation block plugin the way the server does and says what is broken - the error of `card()` with the lines of `api.py` it went through, blocks the dashboard drops, a script of an HTML widget that does not parse, a module of a page that is missing or not served. When harness-pilot writes or fixes an extension, it now runs this check and fixes what fails before telling you it is done.
 - Fixed on Linux servers: rarely, a change to a session saved twice within the same millisecond went unnoticed: a finished turn sent no Telegram reply or notification, or a message sent to a continued session waited up to 10 minutes after its summary failed.
 
 - Codex sessions are now compacted automatically when their context gets large, like Claude Code sessions: at the automatic compaction threshold (Settings → Claude) or at 80 % of Codex's context window, whichever comes first. In a discussion, a Codex reply near its limit now leads to the summary too, instead of waiting for Codex to refuse a reply.

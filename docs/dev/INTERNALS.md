@@ -365,6 +365,30 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
 
+## maxxing.extcheck / maxxing.cmd_ext (`pilot ext check`)  (owner: organisation)
+- `check(id) -> Result | None` (None: no such folder), `check_all() -> [Result]`, `timed_out(results)`. Both start
+  with `extensions.scan()` (the server's loading: manifest / block.json, `api.py` imported apart with
+  `IMPORT_TIMEOUT_S`; the other extensions are loaded too). A turned-off extension (or `restore_hold`) is `skipped`
+  and none of its code runs.
+- Routes taken in-process: a `TestClient` on a FastAPI app with the `api.extensions` and `api.blocks` routers,
+  `require_auth` overridden (`_client()`); GET `/ext/<id>/widget-frame`, `/ext/<id>/page.js`, each module a page
+  imports (resolved with `urljoin` against the module's URL, so a module the server does not serve is a 404 there
+  too), `/ext/_blocks/<id>/frame`. Nothing listens, no request leaves.
+- Card: `card(ctx)` through `extensions.call(..., timeout=api.dashboard.TIMEOUT_S, key="card:<id>")`, then
+  `clean_card` + `widgets.strip_none` (= `widget_card(force=True)` + the dashboard, keeping the raw value to report
+  dropped blocks). Exception frames inside the extension folder -> `trace`. A timed-out call keeps an extension
+  thread: `cmd_ext` leaves with `os._exit` after printing (the pool's threads are joined at exit otherwise).
+- JavaScript: `_node_check(code, name, module, line, col)` writes the code to a temp `.mjs` / `.js` padded with
+  newlines and spaces so `node --check` reports the file's own positions (inline scripts), then rewrites the temp path
+  (and its realpath) to `name`; None when `node` is missing (a warning step). `_scan_js` is a light scanner (strings,
+  template literals and comments skipped) returning the specifiers after `import` / `from` / `import(` and the code
+  with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
+- HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
+  position, links); an unclosed `<script>` is detected by the parser never closing it.
+- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, card?, trace?,
+  timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
+- `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off.
+
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
   cron sessions, nor for a mixed-team worker on its assignment (`team_turn`: the coordinator's own stop is the team's
