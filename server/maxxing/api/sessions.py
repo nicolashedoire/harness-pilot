@@ -53,7 +53,7 @@ class CreateIn(_Text):
     title: str | None = None
     model: str | None = None
     codex_model: str | None = None
-    provider: Literal["claude", "codex", "discussion", "debate"] = "claude"
+    provider: str = Field(default='claude', max_length=64)
     swarm_agents: int | None = Field(default=None, ge=2, le=6, strict=True)
     discussion_turn_limit: int | None = Field(default=None, ge=1, le=200)
     discussion_duration_seconds: int | None = Field(default=None, ge=60, le=86400)
@@ -197,6 +197,12 @@ async def list_sessions(path: str | None = None, archived: int | None = Query(No
     arch = None if archived is None else bool(archived)
     # Plain JSON data: a JSONResponse skips FastAPI's jsonable_encoder walk (~11 ms for 300 sessions), same body.
     return JSONResponse(await _call(service.list_sessions, path.strip("/") if path is not None else None, arch))
+
+
+@router.get('/agent-providers')
+async def agent_providers():
+    from .. import agent_providers as providers
+    return await asyncio.to_thread(providers.public)
 
 
 @router.post("/sessions")

@@ -853,3 +853,13 @@ Each step has `{id, title, role, instruction, after: earlierStepIds[]}`. IDs are
 Phases: draft, planning, plan_review, active, paused, completed, stopped, budget. Step states include pending, starting, running, review, complete, failed, rejected, interrupted and explicitly skipped. Planning is a counted companion launch. Run keys persist before process creation and reconcile tagged sessions after interruption; unknown launches wait up to 180 seconds before requiring attention, not an automatic retry. `companions.run` accepts internal purpose, launch key, timeout and guarded message launch; normal manual runs retain their behavior.
 
 Plans from agents are parsed from their full bounded assistant text, never the 200-character list preview. No automatic role adoption, PR publication or code application occurs. Reports, not patches, pass between dependent steps. New-source checks prevent repeated approved patches across cycles. Feed kinds `mission.review` and `mission.completed` use normal notification preferences. The user guide documents soft token limits, deadline latency, trusted-process boundaries and current limits.
+
+## Agent provider catalog
+
+`GET /api/agent-providers` (authenticated) returns `{id, name, builtin, capabilities, protocol?}[]`.
+`POST /api/sessions` accepts an installed `plugin:<extension-id>` provider as well as the native
+providers. Session responses retain `provider_name` for external engines. Read-only `plan` and
+attachment capabilities are checked at creation. Profile `POST/PUT /api/companions` accepts an
+optional `provider`; omitting it preserves the previous choice, defaulting to Codex for new roles.
+A coding companion needs `source-edit`. See [AGENT-PROVIDERS.md](AGENT-PROVIDERS.md) for the external
+executable protocol and trust model. Provider token totals use dynamic keys in `Stats.providers`.

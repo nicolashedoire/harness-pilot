@@ -124,7 +124,9 @@ def create_app() -> FastAPI:
                     log.exception("shutdown of %s failed", m.__name__)
 
     app = FastAPI(title="harness-pilot", version=__version__, lifespan=lifespan,
-                  docs_url=None, redoc_url=None, openapi_url=None)
+                  docs_url=None, redoc_url=None, openapi_url=None,
+                  telemetry={'tracing': False, 'metrics': False, 'logs': False,
+                             'operation_spans': False, 'auto_configure': False})
 
     @app.exception_handler(HTTPException)
     async def _http_error(request: Request, exc: HTTPException):

@@ -153,6 +153,8 @@ function TokensCard() {
             <div className="grid grid-cols-2 gap-2">
               <Tile label="Claude Code" value={n(data.providers.claude.total)} hint={t('stats.turns', { count: data.providers.claude.turns })} />
               <Tile label="Codex" value={n(data.providers.codex.total)} hint={t('stats.turns', { count: data.providers.codex.turns })} />
+              {Object.entries(data.providers).filter(([id]) => id.startsWith('plugin:')).map(([id, provider]) =>
+                <Tile key={id} label={provider.name || id} value={n(provider.total)} hint={t('stats.turns', { count: provider.turns })} />)}
             </div>
           </div>}
           {days.length > 1 && (

@@ -39,7 +39,7 @@ from typing import Any, Callable
 from . import config
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}\Z")              # \Z: "$" also matches before a final "\n"
-TYPES = ("widget", "page", "block")
+TYPES = ("widget", "page", "block", "agent")
 DEFAULT_TTL = 300
 # The extension contract (Card schema, ctx, page ctx, maxxing.api bridge, CSS variables). An extension declares
 # the version it was written for in its manifest ("api", default 1). EXT_API goes up when something is ADDED;
@@ -69,6 +69,7 @@ class Extension:
     page_v: int | None = None              # page.js mtime (ms): the UI imports page.js?v=<it> (cached until it changes)
     height: int = 260
     block: dict | None = None              # block plugins: the validated block.json (blocks.parse_manifest)
+    agent: dict | None = None              # external executable contract; no Python is imported for an agent
     error: str | None = None
     module: ModuleType | None = field(default=None, repr=False)
 
@@ -248,7 +249,7 @@ def _load_one(d: Path) -> Extension:
         if ext.type == "block":
             raise ValueError("a block plugin is described by block.json (not manifest.json)")
         if ext.type not in TYPES:
-            raise ValueError("type must be widget or page")
+            raise ValueError("type must be widget, page or agent")
         if ext.type == "widget" and d.name in RESERVED_IDS:
             raise ValueError(f"{d.name!r} is the id of a built-in widget - rename the folder")
         try:
@@ -263,6 +264,10 @@ def _load_one(d: Path) -> Extension:
                              "ask harness-pilot to update this extension")
         ext.icon = str(m.get("icon") or "puzzle")[:40]
         ext.version = str(m.get("version") or "")[:20]
+        if ext.type == 'agent':
+            from . import agent_providers
+            ext.agent = agent_providers.parse(m, d)
+            return ext
         ext.span = min(3, max(1, int(m.get("span") or 1)))
         ext.ttl = max(0, int(m.get("ttl", DEFAULT_TTL)))
         ext.has_api = (d / "api.py").is_file()

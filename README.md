@@ -16,6 +16,8 @@ Organize work by project, collaborate with either agent, and follow their automa
 - Work with files, tasks, schedules, and project memory from the web interface.
 - Optionally configure Telegram, voice features, and GitHub backups.
 
+Product telemetry is disabled by default; see [privacy defaults](docs/user/15-security.md#privacy-defaults) for the exact scope.
+
 Each agent uses its own CLI and account. Automatic discussions pass the other agent's latest reply to the next agent; every turn uses the corresponding account. Some features, including parts of the Claude-specific settings, are not yet available for Codex.
 
 ## Run locally on macOS
@@ -69,6 +71,8 @@ The [Model evolution plugin](docs/user/31-model-evolution.md) pairs a companion 
 ## Documentation and contributions
 
 Organize bounded platform improvements with [resident missions](docs/user/33-resident-missions.md): review the architect’s plan, assign persistent roles and approve proposed patches. Missions retain progress across restarts and include finite recurrence and stop controls.
+
+Companion roles can use Claude Code, Codex or a removable external agent adapter. See the [companion guide](docs/user/companions.md) and [provider plugin contract](docs/dev/AGENT-PROVIDERS.md).
 
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 

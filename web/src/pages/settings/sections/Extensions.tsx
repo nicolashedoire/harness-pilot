@@ -47,7 +47,7 @@ export function ExtensionsSection() {
                 <div className="grid min-w-0 flex-1 gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{x.name}</span>
-                    <Badge variant="muted">{x.type === 'page' ? t('ext.page') : x.type === 'block' ? t('blocks.kind.block') : t('ext.widget')}</Badge>
+                    <Badge variant="muted">{x.type === 'page' ? t('ext.page') : x.type === 'block' ? t('blocks.kind.block') : x.type === 'agent' ? t('sessions.provider') : t('ext.widget')}</Badge>
                     <span className="font-mono text-xs text-muted-foreground">
                       {x.id} · v{x.version}
                     </span>
