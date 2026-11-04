@@ -16,7 +16,8 @@ export type AuthState = {
   version: string
   onboarding_completed: boolean
   language: Language
-  /** Look last chosen in a signed-in browser (null: never): the sign-in page shows it. */
+  /** Look last chosen in a signed-in browser (null: never): the sign-in page shows it; its palette (a Theme,
+   *  docs/dev/DESIGN.md "Themes") and `rev` make the palette follow the user on every device. */
   look: Look | null
 }
 export type SetupBody = { token: string; password: string }
@@ -199,7 +200,7 @@ export type SessionEventsBackPage = {
 export type SessionStreamEvents = { events: SessionEvent[]; next: number }
 
 /* ---------------------------------------------------------------- Global bus */
-export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live'
+export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live' | 'look' | 'themes'
 
 /* ---------------------------------------------------------------- MCP servers (Settings -> MCP) */
 export type McpState = 'connected' | 'needs_auth' | 'failed' | 'pending' | 'unknown'

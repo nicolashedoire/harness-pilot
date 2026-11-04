@@ -1,12 +1,13 @@
 // Settings sub-navigation (route /settings/:section). Lightweight on purpose: also used by the palette.
 // Support (donation) stays last and in the accent colour (pages/settings/index.tsx).
-import { Building2, UserRound, BarChart3, Bell, FolderKanban, HandHeart, History, ToggleRight, Blocks, BookOpen, Shapes, Bot, Brain, DatabaseBackup, FileInput, KeyRound, Mic, Plug, Send, Server, Shield, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react'
+import { Building2, UserRound, BarChart3, Bell, Palette, FolderKanban, HandHeart, History, ToggleRight, Blocks, BookOpen, Shapes, Bot, Brain, DatabaseBackup, FileInput, KeyRound, Mic, Plug, Send, Server, Shield, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react'
 import type { TKey } from '@/i18n'
 
-export type SettingsSectionId = 'general' | 'profile' | 'license' | 'support' | 'packs' | 'features' | 'notifications' | 'security' | 'claude' | 'codex' | 'stats' | 'memory' | 'telegram' | 'voice' | 'backup' | 'keys' | 'mcp' | 'extensions' | 'blocks' | 'import' | 'trash' | 'system' | 'updates' | 'docs'
+export type SettingsSectionId = 'general' | 'appearance' | 'profile' | 'license' | 'support' | 'packs' | 'features' | 'notifications' | 'security' | 'claude' | 'codex' | 'stats' | 'memory' | 'telegram' | 'voice' | 'backup' | 'keys' | 'mcp' | 'extensions' | 'blocks' | 'import' | 'trash' | 'system' | 'updates' | 'docs'
 
 export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: TKey; description: TKey; icon: LucideIcon; keywords?: string }[] = [
-  { id: 'general', label: 'settings.general', description: 'settings.general.desc', icon: SlidersHorizontal, keywords: 'theme accent language timezone density' },
+  { id: 'general', label: 'settings.general', description: 'settings.general.desc', icon: SlidersHorizontal, keywords: 'layout language timezone server address' },
+  { id: 'appearance', label: 'settings.appearance', description: 'settings.appearance.desc', icon: Palette, keywords: 'theme dark light palette colour color accent buttons tint background font density export import' },
   { id: 'profile', label: 'settings.profile', description: 'settings.profile.desc', icon: UserRound, keywords: 'pseudo name nickname avatar color emoji identity' },
   { id: 'license', label: 'settings.license', description: 'settings.license.desc', icon: Building2, keywords: 'license licence enterprise company key business fair source' },
   { id: 'system', label: 'settings.system', description: 'settings.system.desc', icon: Server, keywords: 'health services logs update version' },

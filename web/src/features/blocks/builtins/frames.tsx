@@ -35,7 +35,9 @@ type FrameMsg = { mx?: string; height?: number; text?: string; message?: string 
 function useBlockFrame({ data, type, onLoader, onError, maxH }: { data: unknown; type: string; onLoader?: (win: Window) => void; onError: (m: string) => void; maxH: number }) {
   const frame = React.useRef<HTMLIFrameElement>(null)
   const theme = resolveTheme(useUI((s) => s.theme))
-  const look = useUI((s) => `${s.accent}.${s.tint}.${s.density}`)
+  // a new palette (Settings -> Appearance, a theme applied) or density: the frame gets the new variables
+  const palette = useUI((s) => s.palette)
+  const density = useUI((s) => s.density)
   const [ready, setReady] = React.useState(false)
   const [height, setHeight] = React.useState<number | null>(null)
   const [left, setLeft] = React.useState(false)
@@ -80,7 +82,7 @@ function useBlockFrame({ data, type, onLoader, onError, maxH }: { data: unknown;
   React.useEffect(() => {
     const r = requestAnimationFrame(() => frame.current?.contentWindow?.postMessage({ mx: 'theme', theme, vars: themeVars() }, '*'))
     return () => cancelAnimationFrame(r)
-  }, [theme, look])
+  }, [theme, palette, density])
 
   // A document without the bridge in the frame (it navigated itself elsewhere, or its page failed) is stopped: the
   // bridge speaks while the page is parsed, so just before its load event.

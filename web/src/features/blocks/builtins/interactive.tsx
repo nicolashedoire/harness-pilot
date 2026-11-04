@@ -233,7 +233,7 @@ function FormFieldView({ f, id, value, onChange, error, disabled }: { f: Field; 
               disabled={disabled}
               onChange={(e) => onChange(Number(e.target.value))}
               aria-describedby={hintId}
-              className="h-2 min-w-0 flex-1 cursor-pointer accent-[var(--primary)] disabled:cursor-default"
+              className="h-2 min-w-0 flex-1 cursor-pointer accent-action disabled:cursor-default"
             />
             <output htmlFor={id} className="w-20 shrink-0 text-right text-sm font-medium tabular-nums">
               {String(value)}

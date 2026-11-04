@@ -360,6 +360,23 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
   itself - same result) and into shell cron jobs.
 
+## maxxing.themes
+- `clean_theme(data) -> dict` - structural validation of a palette (Theme object, DESIGN.md "Themes"), the server
+  mirror of `web/src/lib/theme/validate.ts`: unknown keys dropped, defaults filled, colours only (`is_color`), 16 KB
+  at most; raises `ThemeError` (-> 422 `invalid_theme`). No colour maths: derivation and contrast stay in the browser.
+- `legacy_theme(accent, tint, keep)` - the palette of a client from before palettes; `nearest_accent(theme)`.
+- Used by `PUT /api/settings/look` (config `look` = `{theme, accent, tint, palette, rev}`, `rev` + bus `look` on a
+  palette change) and `GET /api/auth/state`.
+- Saved themes ("My themes"): `saved()`, `save_theme(theme, source, frm)` (validated, same colours = the existing
+  entry, `ThemeLimit` past `SAVED_MAX` = 50), `rename_theme(id, name)`, `delete_theme(id)` (`ThemeNotFound`);
+  `<state>/themes.json` (600, `{themes: [{id, theme, source, from, saved}]}`, atomic writes, `_saved_lock`, bus
+  `themes`); an entry that no longer validates is skipped on read. Routes `/api/settings/themes*`.
+- `latest_file(folder, since)` - the newest `*.theme.json` (folder or `folder/themes/`, mtime >= since, no symbolic
+  link, read with `O_NOFOLLOW`, 16 KB at most) as `{theme, file, at}` through `clean_theme`: the theme generator
+  (Settings -> Appearance -> Create, skill `skills/pilot-theme`) reads what its session wrote
+  (`GET /api/settings/themes/session/{sid}`).
+- `team.send_theme` / `team._remote_message` validate a theme sent in a chat (message `kind: theme`) both ways.
+
 ## maxxing.crons  (owner: organisation)
 - `run_job(id) -> Run | None` (blocking; None = unknown or already running) · `spawn_run(id)` · `sync_crontab()`
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.
@@ -419,7 +436,7 @@ listing (`clear_cache()` in tests). Web: `features/git/` (GitGraph = lane layout
 Chats between people, `<state>/team/team.json` (format in the docstring), one lock (`_lock`), atomic writes, bus
 topic `team`. `state()`, `messages(cid)`, `create_chat`, `send`, `react`, `create_poll`, `vote`, `mark_read`,
 `mark_sent` (a "to a session" click), `edit_message` / `delete_message`, `update_group` / `leave_group` / `set_muted`,
-`typing` and the read receipt (signals through `teampeer.signal_all`, never queued), `summarize(cid, ids, since)` (one `claude -p` without tools, Sonnet,
+`send_theme` (a colour theme as a card, `themes.clean_theme` here and at every receiver), `typing` and the read receipt (signals through `teampeer.signal_all`, never queued), `summarize(cid, ids, since)` (one `claude -p` without tools, Sonnet,
 prompt `SUMMARY_PROMPT`, titles in the chat's language). Every local change goes to the other members (`_post_mine`: a new message, stored with its `pending` list in one save; `_broadcast`: the other events)
 through `teampeer.send` (message `pending` = ids not reached yet, cleared by `delivered()`); remote events come in
 through `apply_remote(frm, contact, event)` which checks membership and authorship; their messages keep `recv`

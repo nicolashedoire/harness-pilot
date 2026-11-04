@@ -527,3 +527,50 @@ def test_sending_a_message_reads_and_writes_team_json_once(client, sent, monkeyp
     assert len(reads) == 1 and len(writes) == 1 and sent[-1][1]["message"]["kind"] == "poll"
     stored = client.get(f"/api/team/chats/{dm}").json()["messages"]
     assert stored[1]["pending"] == [lea] and stored[1]["reply_to"] == first["id"]
+
+
+THEME = {"schema": 1, "id": "ember", "name": "Ember", "base": "custom", "accent": "#e8915a", "buttons": "accent", "tint": "neutral",
+         "tokens": {"light": {}, "dark": {"background": "#14100d", "card": "#1c1612"}}}
+
+
+def test_a_theme_goes_as_a_card_validated_both_ways(client, sent, monkeypatch):
+    lea = teampeer.pid(LEA)
+    dm = client.post("/api/team/chats", json={"kind": "dm", "members": [lea]}).json()["id"]
+    m = client.post(f"/api/team/chats/{dm}/themes", json={"theme": THEME | {"extra": "<script>"}}).json()
+    assert m["kind"] == "theme" and m["text"] == "Ember" and "extra" not in m["theme"] and m["theme"]["tokens"]["dark"]["card"] == "#1c1612"
+    assert sent[-1][1]["message"]["kind"] == "theme" and sent[-1][1]["message"]["theme"] == m["theme"]
+    # never sent when it is not colours only
+    r = client.post(f"/api/team/chats/{dm}/themes", json={"theme": THEME | {"tokens": {"dark": {"card": "url(https://x.example/a)"}}}})
+    assert r.status_code == 422 and r.json()["error"] == "invalid_theme"
+    # received: cleaned again here; anything unsafe refuses the whole message (400, never stored)
+    team.apply_remote(LEA, True, {"type": "message", "chat": dm, "message": {
+        "id": "m_" + secrets.token_hex(4), "at": time.time(), "kind": "theme", "text": "<b>spoof</b>",
+        "theme": THEME | {"name": "Sauge", "author": "Lea", "evil": 1}}})
+    got = [x for x in client.get(f"/api/team/chats/{dm}").json()["messages"] if x["author"] == lea]
+    assert len(got) == 1 and got[0]["kind"] == "theme" and got[0]["text"] == "Sauge" and "evil" not in got[0]["theme"]
+    for bad in ({"tokens": {"light": {"background": "var(--x)"}}}, {"schema": 9}, {"accent": "javascript:alert(1)"}):
+        with pytest.raises(team.TeamError) as e:
+            team.apply_remote(LEA, True, {"type": "message", "chat": dm, "message": {
+                "id": "m_" + secrets.token_hex(4), "at": time.time(), "kind": "theme", "theme": THEME | bad}})
+        assert e.value.code == "invalid_theme"
+    with pytest.raises(team.TeamError):
+        team.apply_remote(LEA, True, {"type": "message", "chat": dm, "message": {"id": "m_" + secrets.token_hex(4), "kind": "theme", "theme": "x"}})
+    assert len([x for x in client.get(f"/api/team/chats/{dm}").json()["messages"] if x["author"] == lea]) == 1
+    # the list preview, a theme cannot be edited, a deleted one loses its theme
+    assert client.get("/api/team").json()["chats"][0]["last"]["kind"] == "theme"
+    assert client.post(f"/api/team/chats/{dm}/messages/{m['id']}/edit", json={"text": "x"}).status_code == 403
+    gone = client.post(f"/api/team/chats/{dm}/messages/{m['id']}/delete").json()
+    assert gone["deleted"] and "theme" not in gone
+    # a summary names the theme only (no colour values go to Claude)
+    assert team._transcript({}, [got[0]]) == "Lea [colour theme] Sauge"
+
+
+def test_a_theme_over_the_peer_inbox(client, sent, monkeypatch):
+    monkeypatch.setattr(teampeer, "verify", lambda *a, **k: (LEA, ""))
+    dm = client.post("/api/team/chats", json={"kind": "dm", "members": [teampeer.pid(LEA)]}).json()["id"]
+    ok = client.post("/api/team-peer/inbox", json={"type": "message", "chat": dm, "message": {"id": "m_aaaabbbb", "at": time.time(), "kind": "theme", "theme": THEME}})
+    assert ok.status_code == 200
+    bad = client.post("/api/team-peer/inbox", json={"type": "message", "chat": dm, "message": {
+        "id": "m_ccccdddd", "at": time.time(), "kind": "theme", "theme": THEME | {"tokens": {"dark": {"card": "red;}body{x"}}}}})
+    assert bad.status_code == 400 and bad.json()["error"] == "invalid_theme"
+    assert [m["id"] for m in client.get(f"/api/team/chats/{dm}").json()["messages"]] == ["m_aaaabbbb"]

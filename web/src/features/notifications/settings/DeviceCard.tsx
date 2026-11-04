@@ -130,7 +130,7 @@ function SoundControls() {
           onKeyUp={commit}
           onBlur={() => v / 100 !== volume && setNotify({ soundVolume: v / 100 })}
           aria-label={t('nset.volumeLabel')}
-          className="h-5 w-28 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-50 max-md:h-11"
+          className="h-5 w-28 cursor-pointer accent-action disabled:cursor-not-allowed disabled:opacity-50 max-md:h-11"
         />
       </label>
       <Button variant="outline" size="sm" disabled={soundSet === 'none' || v === 0} onClick={() => previewSounds(soundSet, v / 100)}>

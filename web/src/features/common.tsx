@@ -69,8 +69,8 @@ export function OptionCard({
       )}
     >
       <input type="radio" name={name} value={value} checked={selected} onChange={onSelect} className="sr-only" />
-      <span className={cn('mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border', selected ? 'border-primary' : 'border-input')}>
-        {selected && <span className="size-2 rounded-full bg-primary" />}
+      <span className={cn('mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border', selected ? 'border-action' : 'border-input')}>
+        {selected && <span className="size-2 rounded-full bg-action" />}
       </span>
       <span className="grid min-w-0 flex-1 gap-1">
         <span className="flex flex-wrap items-center gap-2 text-sm font-medium">

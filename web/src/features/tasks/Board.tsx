@@ -374,8 +374,8 @@ function ColumnSelect({ ids, selected, visible, label }: { ids: string[]; select
     >
       <span
         className={cn(
-          'flex size-5 items-center justify-center rounded-full border text-primary-foreground transition-opacity group-focus-visible/dot:opacity-100 group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-ring',
-          all ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-card',
+          'flex size-5 items-center justify-center rounded-full border text-action-foreground transition-opacity group-focus-visible/dot:opacity-100 group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-ring',
+          all ? 'border-action bg-action' : 'border-muted-foreground/40 bg-card',
           !visible && 'opacity-0 group-hover/col:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100',
         )}
       >
@@ -465,7 +465,7 @@ function TaskCard({ task, project, today, hidden, lifted, ref, selected, selecti
           <span
             className={cn(
               'flex size-5 items-center justify-center rounded-full border shadow-xs transition-opacity group-focus-visible/dot:opacity-100 group-focus-visible/dot:ring-2 group-focus-visible/dot:ring-ring max-md:size-6',
-              selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 bg-card',
+              selected ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40 bg-card',
               !selected && !selecting && 'opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100',
             )}
           >

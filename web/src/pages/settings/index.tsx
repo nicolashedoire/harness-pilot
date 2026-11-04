@@ -7,6 +7,7 @@ import { useT } from '@/i18n'
 import { PageHeader, useDocumentTitle } from '@/components/shell/Page'
 import { SETTINGS_SECTIONS, type SettingsSectionId } from './sections'
 import { GeneralSection } from './sections/General'
+import { AppearanceSection } from './sections/Appearance'
 import { ProfileSection } from './sections/Profile'
 import { LicenseSection } from './sections/License'
 import { SupportSection } from './sections/Support'
@@ -32,6 +33,7 @@ import { UpdatesSection } from './sections/Updates'
 
 const COMPONENTS: Record<Exclude<SettingsSectionId, 'docs'>, React.ComponentType> = {
   general: GeneralSection,
+  appearance: AppearanceSection,
   profile: ProfileSection,
   license: LicenseSection,
   support: SupportSection,
