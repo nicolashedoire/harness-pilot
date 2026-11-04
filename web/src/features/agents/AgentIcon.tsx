@@ -3,12 +3,11 @@
 // (see THIRD_PARTY_NOTICES.md). The Claude mark keeps its own colour, the OpenAI mark follows the text colour.
 import { Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n'
 import type { Session } from '@/lib/types'
+import { agentName, type AgentId } from './names'
 
-export type AgentId = 'claude' | 'codex' | 'plugin'
-
-/** Product names: never translated. */
-export const AGENT_NAME: Record<AgentId, string> = { claude: 'Claude Code', codex: 'Codex', plugin: 'Agent' }
+export { AGENT_NAME, agentName, type AgentId } from './names'
 
 /** Agents a session talks to, in speaking order. */
 export function sessionAgents(provider: Session['provider']): AgentId[] {
@@ -27,10 +26,11 @@ const OPENAI_PATH =
 /** Brand colour of the Claude mark (part of the mark, like a logo file: not a theme colour). */
 const CLAUDE_MARK = '#D97757'
 
-/** The mark of an agent, `size` px square. `label` = accessible name (defaults to the product name); `label={null}`
+/** The mark of an agent, `size` px square. `label` = accessible name (defaults to the agent's name); `label={null}`
  *  when a visible name sits right next to it (decorative). */
 export function AgentIcon({ agent, size = 20, label, className }: { agent: AgentId; size?: number; label?: string | null; className?: string }) {
-  const name = label === undefined ? AGENT_NAME[agent] : label
+  const t = useT()
+  const name = label === undefined ? agentName(agent, t) : label
   return (
     <span
       {...(name ? { role: 'img', 'aria-label': name } : { 'aria-hidden': true })}

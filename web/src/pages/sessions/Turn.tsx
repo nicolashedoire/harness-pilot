@@ -10,7 +10,7 @@ import { useLang, useT } from '@/i18n'
 import { fmtDate, fmtNumber } from '@/lib/format'
 import { CopyButton, Sensitive, Spinner, Tooltip } from '@/components/ui'
 import type { ResultField, Session } from '@/lib/types'
-import { AGENT_NAME, AgentIcon, type AgentId } from '@/features/agents/AgentIcon'
+import { AgentIcon, agentName, type AgentId } from '@/features/agents/AgentIcon'
 import { authServerOf, McpAuthButton } from '@/features/mcp/AuthButton'
 import { AssistantMessage, FILE_TOOLS, ItemContext, NoteRow, ToolInput, ToolOutput, toolDiff } from './Items'
 import { isShownTask, taskStatus, type Item } from './log'
@@ -177,7 +177,7 @@ export const TurnView = React.memo(function TurnView({ turn, live, since, backgr
   const { segs, result, texts, written, todoAfter } = React.useMemo(() => segment(items), [items])
   const first = items[0]
   const at = first ? ('ev' in first ? first.ev.at : first.use.at) : null
-  const name = agent === 'plugin' ? providerName || AGENT_NAME.plugin : AGENT_NAME[agent]
+  const name = agentName(agent, t, providerName)
   const last = segs[segs.length - 1]
   // live and the last thing shown is not a group at work: a status line says what is going on
   const working = live && !(last?.kind === 'activity' && last.items.some((it) => it.kind === 'tool' && !it.result))
