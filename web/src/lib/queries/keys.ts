@@ -42,7 +42,6 @@ export const qk = {
   },
   settings: ['settings'] as const,
   profile: ['settings', 'profile'] as const,
-  register: ['settings', 'register'] as const,
   feedback: ['settings', 'feedback'] as const,
   license: ['settings', 'license'] as const,
   themes: ['themes'] as const,
@@ -96,7 +95,8 @@ export const BUS_KEYS: Record<BusTopic, readonly (readonly unknown[])[]> = {
   trash: [qk.trash, qk.files.all],
   feed: [qk.feed.all],
   profile: [qk.profile],
-  register: [qk.register, qk.onboarding],
+  /** the legacy registration changed (only with MAXXING_LICENSE_PING=1): the onboarding's profile step reads it */
+  register: [qk.onboarding],
   license: [qk.license, ['system']],
   infra: [['infra']],
   team: [['team']],
