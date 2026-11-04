@@ -3,7 +3,7 @@ section: Settings
 ---
 # Settings and keys
 
-Everything is configurable from **Settings**; no file editing is needed.
+Settings provide the main application controls. Some inherited server-only functions are not available in local mode; Codex sign-in is managed by the Codex CLI.
 
 | Section | What you find |
 |---|---|

@@ -42,7 +42,7 @@ Settings -> Keys and mention only the key name).
   runs it every day at 05:00 (see Crons; it starts once the onboarding is finished with Claude signed in). It acts on files longer than the **line limit**
   (Settings -> **Memory**, 200 lines by default) or redundant, contradictory or outdated: it merges
   duplicates, summarizes old history and reorders each file (rules and preferences, current
-  state, decisions, references, context). It only edits `memory.md` files.
+  state, decisions, references, context). It only edits `memory.md` files. In local mode it runs only while the app is running; missed runs are not replayed.
 
 ## Second brain cleaner (Settings -> Memory)
 
