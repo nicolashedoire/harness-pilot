@@ -766,25 +766,31 @@ def claude_auth() -> tuple[str | None, str]:
 def _listen_addrs(port: int) -> list[str] | None:
     """TCP listeners; None means inspection failed, not that there is no listener."""
     if sys.platform == "darwin":
-        code, out = run(["lsof", "-nP", "-a", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fn"], timeout=5)
+        # -w: no lsof warnings (a stale network mount...) in the output, which run() merges with stdout;
+        # -Ftn: one field per line, the socket type (t) before its address (n), a new socket at each f line
+        code, out = run(["lsof", "-w", "-nP", "-a", f"-iTCP:{port}", "-sTCP:LISTEN", "-Ftn"], timeout=5)
         if code == 1 and not out.strip():               # lsof: no matching listener
             return []
         if code != 0:
             return None
-        found = []
+        found, family = [], ""
         for line in out.splitlines():
-            if not line.startswith("n"):
-                continue
-            host, sep, actual_port = line[1:].rpartition(":")
-            if not sep or actual_port != str(port):
-                return None
-            host = host.strip("[]")
-            if host == "*":
-                host = "0.0.0.0"
-            try:
-                found.append(str(ipaddress.ip_address(host)))
-            except ValueError:
-                return None
+            tag, value = line[:1], line[1:]
+            if tag == "f":
+                family = ""
+            elif tag == "t":
+                family = value
+            elif tag == "n":
+                host, sep, actual_port = value.rpartition(":")
+                if not sep or actual_port != str(port):
+                    return None
+                if host == "*":                         # lsof writes both wildcards `*`; the type tells which
+                    found.append({"IPv4": "0.0.0.0", "IPv6": "::"}.get(family, "*"))
+                    continue
+                try:
+                    found.append(str(ipaddress.ip_address(host.strip("[]"))))
+                except ValueError:
+                    return None
         return list(dict.fromkeys(found)) if found else None
     out = []
     inspected = False
@@ -1203,12 +1209,17 @@ def check_bind(cfg: dict) -> Check:
     if live is None:
         return _c("bind", WARN, f"cannot inspect listeners on port {port}",
                   f"configured address: {bind}:{port}; the live address is unknown", inspect)
-    public = [a for a in live if _is_public_bind(a)]
+    public = [_addr_label(a) for a in live if _is_public_bind(a)]
     if public:
         return _c("bind", FAIL, f"port {port} is listening on {', '.join(public)}",
                   "something listens on a public interface", inspect)
     return _c("bind", OK, f"listens on {bind}:{port} (not public)",
-              ", ".join(live) if live else "nothing listening right now")
+              ", ".join(map(_addr_label, live)) if live else "nothing listening right now")
+
+
+def _addr_label(addr: str) -> str:
+    """A listening address as people read it: IPv6 in brackets (`[::]`, `[::1]`), IPv4 and `*` unchanged."""
+    return f"[{addr}]" if ":" in addr else addr
 
 
 def check_http(cfg: dict) -> Check:
@@ -1492,11 +1503,26 @@ def check_managed_deps() -> Check | None:
               "pilot deps list")
 
 
+MAC_ADMIN_GID = 80     # macOS group `admin`: Homebrew's bin and Cellar (Intel: /usr/local/bin) are user:admin 775
+
+
+def _group_name(gid: int) -> str:
+    try:
+        import grp
+        return grp.getgrgid(gid).gr_name
+    except (ImportError, KeyError):
+        return str(gid)
+
+
 def check_local_tools() -> Check:
-    """Local macOS tools are user-managed: inspect code paths, not Linux pins or root-only ownership."""
+    """Local macOS tools are user-managed: inspect code paths, not Linux pins or root-only ownership.
+    Each tool, its link target and their parents: an owner other than root or the current user, or writable by
+    everyone -> FAIL; writable by the group `admin` (Homebrew's layout; its members administer the Mac) -> fine;
+    writable by another group -> WARN. Sticky folders and the mode of a link are not write access to the code."""
     from .sessions import spawn
     tools = [p for p in (claude_bin(), uv_bin(), shutil.which("node", path=spawn.base_env()["PATH"])) if p]
     bad: list[str] = []
+    group: list[str] = []
     seen: set[Path] = set()
     for tool in tools:
         leaf = Path(tool).absolute()
@@ -1507,15 +1533,22 @@ def check_local_tools() -> Check:
                     continue
                 seen.add(path)
                 st = path.lstat()
-                sticky = stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX
-                if st.st_uid not in (0, os.geteuid()) or (not stat.S_ISLNK(st.st_mode) and
-                                                       st.st_mode & 0o022 and not sticky):
+                if st.st_uid not in (0, os.geteuid()):
                     bad.append(str(path))
+                elif stat.S_ISLNK(st.st_mode) or (stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX):
+                    continue
+                elif st.st_mode & stat.S_IWOTH:
+                    bad.append(str(path))
+                elif st.st_mode & stat.S_IWGRP and st.st_gid != MAC_ADMIN_GID:
+                    group.append(f"{path} (group {_group_name(st.st_gid)})")
         except (OSError, RuntimeError) as e:
             bad.append(f"{leaf}: {e}")
     if bad:
         return _c("deps_files", FAIL, "local tool paths are unsafe or cannot be inspected", ", ".join(bad[:3]),
                   "use tools owned by your account or root, with code paths not writable by other users")
+    if group:
+        return _c("deps_files", WARN, "local tool paths are writable by a group", ", ".join(group[:3]),
+                  "chmod g-w on them, unless every member of that group may change these tools")
     return _c("deps_files", INFO, "local macOS tool ownership and permissions checked",
               f"{len(tools)} executable(s); Linux package pins do not apply; package contents are not verified")
 
