@@ -5,7 +5,7 @@ section: Getting started
 
 harness-pilot is a self-hosted workspace for **Claude Code and OpenAI Codex**. Organize work into projects and topics, start persistent sessions with either agent, or let them exchange ideas while you follow the conversation.
 
-The project is under active development. The [local macOS setup](installation) is the currently verified way to run it. Some inherited features and deployment paths still need verification; the repository's [audit](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/AUDIT.md) tracks their status.
+The project is under active development. The local macOS setup is the main verified way to run it; the Linux server installer has been verified on Debian 12 and Ubuntu 24.04 in containers, not yet on a real server (see [Installation](installation)). Some inherited features and deployment paths still need verification; the repository's [audit](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/AUDIT.md) tracks their status.
 
 ## How the workspace is organized
 
