@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useUI } from '@/stores/ui'
 import { cn } from '@/lib/utils'
+import { useT } from '@/i18n'
 
 /**
  * Presentation mode (screen sharing / streaming).
@@ -25,16 +26,17 @@ export function Sensitive({
   placeholder?: React.ReactNode
 }) {
   const on = usePresentation()
+  const t = useT()
   if (!on) return <>{children}</>
   if (placeholder) return <>{placeholder}</>
   if (block)
     return (
-      <div aria-label="Hidden (presentation mode)" className={cn('flex min-h-6 items-center rounded-md bg-muted/70 px-2 text-xs tracking-[0.3em] text-muted-foreground/70 select-none', className)}>
+      <div aria-label={t('presentation.hidden')} className={cn('flex min-h-6 items-center rounded-md bg-muted/70 px-2 text-xs tracking-[0.3em] text-muted-foreground/70 select-none', className)}>
         ••••••
       </div>
     )
   return (
-    <span aria-label="Hidden (presentation mode)" className={cn('tracking-[0.15em] text-muted-foreground select-none', className)}>
+    <span aria-label={t('presentation.hidden')} className={cn('tracking-[0.15em] text-muted-foreground select-none', className)}>
       {'•'.repeat(Math.max(2, Math.min(length, 16)))}
     </span>
   )
