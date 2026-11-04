@@ -2,7 +2,8 @@
 sessions.service.on_session_stop:
 
 - a session (not a cron job's) stops running -> `session.done` (success) or `session.failed` (error), folded per
-  session (group `session:<id>`); a done resolves that session's pending failure;
+  session (group `session:<id>`); a done resolves that session's pending failure. A mixed-team worker on its team
+  assignment (`team_turn`) stays out: the team notifies once, when its coordinator's synthesis ends;
 - a Claude Code + Codex discussion / debate paused by its turn or duration limit -> `discussion.paused` (warning,
   group `discussion:<id>`, actions Resume + Open), resolved by sessions.service when it runs again (resume, a new
   message, Stop, deletion).
@@ -52,6 +53,8 @@ def record(s: dict) -> dict | None:
 
 def _record(s: dict) -> dict | None:
     if s.get("cron") or s.get("source") == "cron":   # cron runs report as cron.succeeded / cron.failed
+        return None
+    if s.get("team_turn"):                            # a team worker: its coordinator reports for the whole team
         return None
     sid = str(s.get("id") or "")
     if not sid:

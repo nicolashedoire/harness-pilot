@@ -1,4 +1,5 @@
 import json
+import time
 
 from conftest import all_events, wait_for, wait_idle
 
@@ -15,6 +16,18 @@ print(json.dumps({'type':'turn.completed','usage':{'input_tokens':1,'output_toke
 '''.replace('DELAY', str(delay)))
     binary.chmod(0o755)
     monkeypatch.setenv('MAXXING_CODEX_BIN', str(binary))
+
+
+def failing_codex(mx, monkeypatch):
+    binary = mx['tmp'] / 'fake-team-codex-fail'
+    binary.write_text('#!/usr/bin/env python3\nimport sys\nsys.stdin.read()\nprint("codex crashed", file=sys.stderr)\nsys.exit(1)\n')
+    binary.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(binary))
+
+
+def session_notices(client) -> list[dict]:
+    """The notifications of the "sessions" source (session.done / session.failed), newest first."""
+    return client.get('/api/feed', params={'source': 'sessions'}).json()['events']
 
 
 def test_team_runs_both_agents_and_synthesizes(client, topic, mx, monkeypatch):
@@ -89,3 +102,52 @@ def test_watcher_can_resume_team_after_workers_finish(client, topic, mx, monkeyp
     real_advance()  # Repeated watcher passes must not start a second synthesis.
     wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
     assert client.get(f'/api/sessions/{sid}').json()['turns'] == 1
+
+
+def test_only_the_team_notifies_once_its_synthesis_ends(client, topic, mx, monkeypatch):
+    fake_codex(mx, monkeypatch)
+    sid = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL One notice for the team.'}).json()['id']
+    agents = client.get(f'/api/teams/{sid}').json()['agents']
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    notice = wait_for(lambda: session_notices(client))[0]
+    time.sleep(1)  # every stop of the team (two workers, then the coordinator) has passed the watcher
+    notices = session_notices(client)
+    assert [(e['kind'], e['params']['session_id'], e['count']) for e in notices] == [('session.done', sid, 1)]
+    assert notice['params']['session_id'] == sid
+    # the workers stay visible in the team, flagged as on their assignment; the coordinator is not
+    team = client.get(f'/api/teams/{sid}').json()
+    assert [a['session']['id'] for a in team['agents']] == [a['id'] for a in agents]
+    for agent in team['agents']:
+        assert agent['state'] == 'idle' and agent['session']['team_turn'] is True
+        assert agent['session']['team_parent'] == sid
+    assert client.get(f'/api/sessions/{sid}').json()['team_turn'] is False
+    # a message sent to a worker after the team is its own turn: it notifies like any session
+    claude = agents[0]['id']
+    assert client.post(f'/api/sessions/{claude}/messages', json={'text': 'NOTOOL follow-up'}).status_code == 200
+    wait_idle(client, claude)
+    assert client.get(f'/api/sessions/{claude}').json()['team_turn'] is False
+    wait_for(lambda: any(e['params']['session_id'] == claude for e in session_notices(client)))
+
+
+def test_a_failed_worker_does_not_notify_the_team_does(client, topic, mx, monkeypatch):
+    failing_codex(mx, monkeypatch)
+    sid = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL One worker fails.'}).json()['id']
+    codex = client.get(f'/api/teams/{sid}').json()['agents'][1]['id']
+    assert wait_idle(client, codex)['state'] == 'error'
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    wait_for(lambda: session_notices(client))
+    time.sleep(1)
+    assert [(e['kind'], e['params']['session_id']) for e in session_notices(client)] == [('session.done', sid)]
+    assert '[Agent failed or its session is missing.]' in all_events(client, sid)[1]['text']
+
+
+def test_stopping_the_team_raises_no_worker_notice(client, topic, mx, monkeypatch):
+    fake_codex(mx, monkeypatch, delay=6)
+    sid = client.post('/api/teams', json={'path': topic, 'message': 'SLOW Stop us.'}).json()['id']
+    agents = client.get(f'/api/teams/{sid}').json()['agents']
+    wait_for(lambda: all(client.get(f"/api/sessions/{a['id']}").json()['state'] == 'running' for a in agents))
+    assert client.post(f'/api/teams/{sid}/stop').status_code == 200
+    for agent in agents:
+        assert wait_idle(client, agent['id'])['state'] != 'running'
+    time.sleep(1)
+    assert not session_notices(client)

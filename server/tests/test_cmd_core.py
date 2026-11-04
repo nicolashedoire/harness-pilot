@@ -221,6 +221,36 @@ def test_init_installs_the_theme_skill_with_its_checker(env):
     assert (dst / "check_theme.py").read_bytes() == (src / "check_theme.py").read_bytes()
 
 
+def test_skills_dir_override_keeps_the_personal_skills_untouched(env, tmp_path, monkeypatch):
+    """The local macOS setup (scripts/dev-local.sh) installs the product skills in <local dir>/.claude/skills
+    (MAXXING_SKILLS_DIR): pilot-theme works for "Create with harness-pilot", ~/.claude/skills is never written."""
+    personal = env["home"] / ".claude" / "skills"
+    (personal / "memory").mkdir(parents=True)
+    (personal / "memory" / "SKILL.md").write_text("---\nname: memory\ndescription: the user's own\n---\n")
+    local = tmp_path / "local" / ".claude" / "skills"
+    monkeypatch.setenv("MAXXING_SKILLS_DIR", str(local))
+    assert cmd_core.skills_target() == local
+    assert run_cli("init", "--workspace", str(env["ws"]), "--quiet") == 0
+    assert (local / "pilot-theme" / "SKILL.md").read_text().startswith("---\nname: pilot-theme\n")
+    assert sorted(p.name for p in personal.iterdir()) == ["memory"]
+    assert "the user's own" in (personal / "memory" / "SKILL.md").read_text()
+    assert not (env["state"] / "trash" / "skills").exists()
+    assert all(s["state"] == "ok" for s in cmd_core.skills_status())
+    listing = cmd_core.check_skill_listing(config.load_config())
+    assert listing["title"].startswith(f"{len(cmd_core.product_skill_names()) + 1} skills listed")   # + the personal one
+    from maxxing import blocks
+    (local / "pilot-blocks" / "SKILL.md").write_text("stale")
+    blocks.sync_agent_files()                                    # the enabled blocks are rendered where it lives
+    assert (local / "pilot-blocks" / "SKILL.md").read_text() != "stale"
+    assert blocks.agents_summary()["skill"] == str(local / "pilot-blocks" / "SKILL.md")
+
+
+def test_local_setup_installs_the_product_skills_beside_its_workspace():
+    script = (config.CODE / "scripts" / "dev-local.sh").read_text()
+    assert 'export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"' in script
+    assert "cmd_core.install_skills()" in script
+
+
 def test_shipped_skills_use_placeholders_not_default_paths():
     for f in sorted(config.SKILLS_DIR.glob("*/SKILL.md")):
         text = f.read_text()

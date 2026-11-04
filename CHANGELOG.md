@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A link to a file given relative to the workspace (such as `projects/acme/topics/blog/memory.md`) opens like its full path: whole breadcrumb, file selected in its folder.
 - The Crons page shows every time in your language's format: a schedule *every day at 04:40* reads *4:40 AM* in English, like its next run. On the night clocks go back, a next run in the repeated hour is no longer shown in the past.
 - Preview a memory backup before restoring, restore the latest version without local history, and review skipped or held items afterward. A selected file that cannot be read or exceeds the size limit now stops the backup instead of silently dropping it. [Show me](#show:backup-preview)
 - Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
@@ -23,6 +24,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Keep your themes in My themes, the same on every device: apply, rename, share or delete them, import a file or paste a theme code.
 - Share a theme with a Team contact (it arrives as a card with Install), as a file or as a short code to paste. A theme holds colours only, is checked before any preview and is never applied without your click.
 - Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate.
+- A mixed Claude–Codex team now notifies you once, when its coordinator's synthesis is ready, instead of once per agent. Each agent's session stays available from the team.
 - Run a mixed Claude–Codex team with two independent analyses and a coordinator's synthesis. Open either agent's session and stop it individually or stop the whole team. [Show me](#show:mixed-team)
 - Mark a project, topic or file as **Personal**, **Agents**, **Shared** or **Unclassified** from its menu; the label shows next to its name in the session list and in Files. Labels help you organize: they do not prove who made an item or restrict access. Existing items start unclassified, children do not inherit their parent's label, and labels are not yet part of the memory backup.
 - Try resident companions in Settings -> Companions (experimental): pick a built-in role (observer, security, architect, reverse engineering) or write your own, then start a Codex companion that reviews a copy of the platform's source while you work. When it finishes, a notification links to its proposal shown as file diffs; approve or reject it, then, if you choose, publish an approved proposal as a draft GitHub pull request. Nothing is applied or merged automatically. Runs start manually and need a Git checkout and the Codex CLI. The reverse-engineering role uses the `pilot-rea-investigation` skill with an optional external REA installation (not bundled).
@@ -32,6 +34,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
 - View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.
 - Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
+- In the local macOS setup, the built-in skills are installed at every start, so **Create with harness-pilot** in Settings -> Appearance works without copying `pilot-theme` by hand. They are kept beside the local workspace: your personal Claude skills are not changed.
 - Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
 - Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
 - After the update, your agent looks for the old skill names (such as `maxxing-cron`) in the notes, instructions and scheduled job prompts you wrote, and offers to rename them; nothing you wrote changes without your yes.
