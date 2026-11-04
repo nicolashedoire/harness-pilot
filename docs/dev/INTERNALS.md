@@ -909,6 +909,16 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and
   its parents up to the Git repository root (the default local dir is inside the checkout), so the personal
   `~/.agents/skills` of the computer is never written. Tests point it to a temporary folder (`conftest.py`).
+- `scripts/dev-local.sh` (local setup): `HARNESS_PILOT_LOCAL_DIR` (default `<repo>/.harness-pilot-local`: state,
+  workspace, skills, local crontab file, `logs/`) and `HARNESS_PILOT_PORT` (default 8787: `serve --port`, written to
+  the config so `link`, `cli doctor` and `cli status` name it; the start refuses a port that already has a
+  listener). `dev-local.sh service install|status|restart|uninstall` runs `scripts/macos-service.sh` (macOS only): a
+  launchd agent `HARNESS_PILOT_SERVICE_LABEL` (default `local.harness-pilot`) in
+  `~/Library/LaunchAgents/<label>.plist` running `/bin/bash <repo>/scripts/dev-local.sh` in `gui/<uid>` with the PATH
+  of the installing terminal, the local dir and the port as EnvironmentVariables, RunAtLoad, KeepAlive
+  `{SuccessfulExit: false}`, ThrottleInterval 10, stdout/stderr to `<local dir>/logs/server.log` / `server.err.log`.
+  `install` refuses a port in use or an existing plist, and removes the agent again when its error log says
+  "Operation not permitted" (TCC: a clone in Desktop, Documents, Downloads, iCloud Drive or on an external disk).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL

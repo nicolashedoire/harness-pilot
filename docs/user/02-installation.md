@@ -29,6 +29,28 @@ To use an agent, sign in to its CLI on the computer and check its connection in 
 
 The local setup disables upstream registration and license communication and starts with restrictive agent permissions. The telemetry counter is off by default. Telegram, voice and backup connections are optional and require separate configuration.
 
+### Keep it running in the background
+
+In a terminal, the app stops when the terminal is closed, and scheduled jobs, backups, resident missions and Telegram stop with it. To keep it running, make it a background service of your user account (a launchd agent). Nothing is installed until you run, from the repository root:
+
+```sh
+bash scripts/dev-local.sh service install
+```
+
+Run it from a terminal where `uv`, `claude` and `codex` work: the service keeps that terminal's PATH. It runs the same `bash scripts/dev-local.sh`, with the same settings, right away and at every login, and starts it again if it crashes. Stop the app first if it runs in a terminal: the install is refused while its port is in use.
+
+| Command | Effect |
+|---|---|
+| `bash scripts/dev-local.sh service status` | running or not, its process, the address, the service file, the log files and the PATH it uses |
+| `bash scripts/dev-local.sh service restart` | restart it, for example after a `git pull` |
+| `bash scripts/dev-local.sh service uninstall` | stop it and remove the service; your state, workspace and logs stay |
+
+Its output goes to `.harness-pilot-local/logs/server.log` and `.harness-pilot-local/logs/server.err.log`. `service status` prints their full paths, which Console.app can open.
+
+**Where the clone lives matters.** macOS keeps background services out of Desktop, Documents, Downloads, iCloud Drive and external disks. A clone in one of those folders cannot run as a service: `install` notices it, removes the service again and says so. To use the service, clone the repository somewhere else, for example `~/harness-pilot`. The same protection applies to the folders your agents work in while the app runs as a service.
+
+The app uses port 8787. `HARNESS_PILOT_PORT=8790 bash scripts/dev-local.sh service install` picks another one, and the variable works without the service too. After installing a tool in a new place (a new PATH), run `service uninstall`, then `service install` again.
+
 ## Linux server (Debian 12, Ubuntu 24.04)
 
 You need a server with Debian 12 or Ubuntu 24.04 and systemd, x86_64 or arm64, root access (`sudo`) and about 5 GB
