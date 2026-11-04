@@ -108,6 +108,12 @@ finished: browser, silent*). A webhook or a script is pushed with all its events
 forgotten by itself. If the server's push key is replaced (its key file lost), each browser subscribes again by
 itself the next time the app is open there.
 
+While the browser asks for permission or sets up push, the card shows **Waiting for your browser** with a
+**Cancel** button, and the app stops waiting after 30 seconds. Answer the browser's prompt, or cancel and try again
+later: an answer given after a cancel does not turn push on (cancelling does not close the browser's prompt, and a
+permission you grant there stays granted). On a first visit the switch becomes available once the app has finished
+installing in the browser, without reloading the page.
+
 ## Good to know
 
 - Events are kept 30 days. They live on your server (`/var/lib/claude-maxxing/feed.db`).

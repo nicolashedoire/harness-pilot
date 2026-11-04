@@ -326,6 +326,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
   by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:
   params, actions, body dropped in that order when too long). Tests set `push.http_transport` (httpx.MockTransport).
+- Web: `features/notifications/push.ts` (`subscribeBrowser`, `usePushSync`) through `enrollment.ts` (`enrollPush`,
+  `activeRegistration`) and `lib/browser-request.ts`: each native step (permission, subscription, key replacement)
+  runs under one 30 s deadline and stops on abort; a late native answer is ignored, never sent to the server.
 
 ## maxxing.backup  (owner: connectivity)
 - `run() -> dict`, `restore(ref=None) -> dict`, `restore_from(repo, token, ref=None)`, `status()`,

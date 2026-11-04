@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Settings → Notifications: while the browser asks for notification permission or sets up push, a **Cancel** button shows and the app stops waiting after 30 seconds; an answer given after a cancel no longer finishes the cancelled attempt. On a first visit, the push switch becomes available without reloading the page.
 - Plan mode now works in Claude Code and Codex discussions: both agents work out a plan without changing anything, you approve the latest one, one agent carries it out and the discussion pauses so the other can review the work when you resume.
 - Scheduled prompts can now run with **Codex**: in a job's editor, choose the agent (Claude Code or Codex) under the prompt, with an optional Codex model; the job list marks Codex jobs.
 - Settings → Backup can create the encrypted instance archive every day or every week at the hour you choose, keeping the number of scheduled archives you set. Your passphrase is never stored: the server keeps a key derived from it, with your agreement, and the passphrase still opens every archive. A failure is notified.
