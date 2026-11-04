@@ -38,7 +38,8 @@ You may also review and edit the summary before saving it to the topic's `memory
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
 are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact**,
 **Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions, shows the **context gauge** in its
-header (read from what Codex records after each answer) and is compacted automatically when its context gets large. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+header (read from what Codex records after each answer) and is compacted automatically when its context gets large
+and when you come back to it after a long pause. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
 On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Codex discussion
@@ -57,8 +58,6 @@ These features are for Claude Code only for now:
   outside Full access, only their read-only tools), but not Claude's sign-ins, the claude.ai connectors nor the
   Browser of my PC.
 - **Claude swarm** and the **Agent map**.
-- The compaction when you come back after a long pause (**Compact when you come back**, **Smart resume**): compact
-  a long Codex session yourself from the session menu before you go on.
 - The extra rules of Claude's permission settings (`claude_deny`): Codex only follows its own sandbox.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
 
@@ -412,13 +411,15 @@ You wait for one summary turn before the reply; every turn after it is much smal
 never trigger it, nor does a session whose context is mostly what every new thread loads anyway (CLAUDE.md,
 memory): summarizing it would save nothing. Pick Off to keep the full thread whatever the pause. Stop during the
 summary cancels only the summary, your message stays: it runs right after, in the full thread.
+Codex sessions follow the same rule: OpenAI documents its prompt cache as kept about 5 to 10 minutes of inactivity
+(about 30 minutes with its extended retention), so after an hour it has usually expired too.
 
 **Smart resume** (Settings -> Claude, 100k tokens by default): when you come back to a session whose cache expired
-with at least that much context - or after 5 minutes or more with twice as much - harness-pilot first has Claude summarize
-the session **for the message you just sent**. The summary keeps exact what your message needs (the files, commands,
+with at least that much context - or after 5 minutes or more with twice as much - harness-pilot first has the agent
+(Claude or Codex) summarize the session **for the message you just sent**. The summary keeps exact what your message needs (the files, commands,
 values, errors, the plan in progress or the question Claude asked), then your message runs in a fresh, much smaller
 thread, with the note "Back after 2 h: harness-pilot summarized the session ... for your message". Measured on real
-returns: 38 to 67 % fewer tokens from 100k, and details kept better than with the plain summary. Below the threshold
+Claude returns: 38 to 67 % fewer tokens from 100k, and details kept better than with the plain summary. Below the threshold
 the full thread goes on. Off = the "Compact when you come back" rule alone.
 
 ## Edit or delete a message that got no answer

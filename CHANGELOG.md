@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- **Compact when you come back** and **Smart resume** (Settings → Claude) now apply to Codex sessions too: back to a long Codex session after its cache expired, harness-pilot first has Codex summarize it (for the message you just sent, with Smart resume), and your message runs in a fresh, much smaller conversation.
 - Codex sessions are now compacted automatically when their context gets large, like Claude Code sessions: at the automatic compaction threshold (Settings → Claude) or at 80 % of Codex's context window, whichever comes first. In a discussion, a Codex reply near its limit now leads to the summary too, instead of waiting for Codex to refuse a reply.
 - Codex sessions now show the context gauge in their header, like Claude Code sessions: how full Codex's context is after each answer, measured against the window Codex works with (258k tokens for its current models). It is the count Codex itself records, not an estimate; it appears from the next answer of an existing session.
 - Codex sessions no longer count their tokens several times. Codex reports the running total of its conversation after each answer, and every answer added that whole total again: the tokens under each Codex answer and on the Stats page now show what that answer used. Totals recorded before this update stay as they were.

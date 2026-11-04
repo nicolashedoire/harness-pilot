@@ -33,6 +33,14 @@ SUMMARY_PROMPT = (
     "The user's next message:\n{message}")
 
 
+def thread_open(m: dict) -> bool:
+    """The session has a thread to summarize: Claude's once a turn ran in it (meta `fresh` false), Codex's once a
+    Codex turn gave its id (`codex_thread_id`; Codex sessions keep `fresh`)."""
+    if m.get("provider") == "codex":
+        return bool(m.get("codex_thread_id"))
+    return not m.get("fresh", True)
+
+
 def threshold(cfg: dict) -> int:
     """The context (tokens) from which a return after the cache expired is summarized; 0 = smart resume off."""
     try:
@@ -55,7 +63,7 @@ def candidate(m: dict, item: dict, cfg: dict, now: float) -> tuple[float, int] |
     if (item.get("kind") or "user") != "user" or item.get("source") in ("system", "cron") or item.get("steer") \
             or item.get("plan_approved") or item.get("held"):
         return None
-    if m.get("fresh", True) or m.get("cron") or m.get("plan_ready"):
+    if not thread_open(m) or m.get("cron") or m.get("plan_ready"):
         return None
     try:
         ctx = int(m.get("context_tokens") or 0)
