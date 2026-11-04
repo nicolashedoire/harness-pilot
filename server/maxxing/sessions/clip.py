@@ -1,7 +1,7 @@
 """Shrink raw log lines before they are written.  STDLIB ONLY (used by the runner).
 
 Tool outputs (file reads, command output, images) are ~90 % of a long session's log and the UI
-only shows a short head of each. The runner clips them at write time; `maxxing sessions
+only shows a short head of each. The runner clips them at write time; `pilot sessions
 compact-logs` applies the same function to existing logs. The stream-json structure is kept
 (same keys, same block types); a clipped value ends with a marker giving the original size and the
 block gets `mx_clipped: <original characters>`.

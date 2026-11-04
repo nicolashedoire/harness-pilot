@@ -257,7 +257,7 @@ export type FeedEvent = {
   pending?: boolean
   resolved_at?: number | null
   first_at?: number
-  /** Posted quiet (`maxxing feed post --quiet`): no Telegram, no push, no notice or sound here. */
+  /** Posted quiet (`pilot feed post --quiet`): no Telegram, no push, no notice or sound here. */
   quiet?: boolean
 }
 export type FeedOccurrence = { at: number; title: string; body: string; params?: FeedParams }
@@ -679,7 +679,7 @@ export type DocMeta = { slug: string; title: string; section: string; order: num
 export type DocPage = { slug: string; title: string; markdown: string }
 
 /* ---------------------------------------------------------------- Dashboard & extensions */
-export type StatBlock = { type: 'stat'; label: string; value: string | number; hint?: string; delta?: string | number; tone?: Tone }
+export type StatBlock = { type: 'stat'; label: string; value: string | number; unit?: string; hint?: string; delta?: string | number; tone?: Tone }
 export type Block =
   | StatBlock
   | { type: 'stats'; items: Omit<StatBlock, 'type'>[] }

@@ -1,10 +1,10 @@
-"""`maxxing mcp` - the MCP servers of Claude Code (Settings -> MCP) from scripts and sessions.
+"""`pilot mcp` - the MCP servers of Claude Code (Settings -> MCP) from scripts and sessions.
 
-    maxxing mcp list [--json]             every server, where it applies, its state (checks first)
-    maxxing mcp add NAME URL [--where projects/acme/topics/blog] [--header 'Authorization: Bearer ${KEY}']
-    maxxing mcp add NAME --command 'npx -y pkg' [--env KEY=VALUE] [--where ...]
-    maxxing mcp remove NAME [--where ...]
-    maxxing mcp load NAME                 (in a session) load that server from the session's next turn on
+    pilot mcp list [--json]             every server, where it applies, its state (checks first)
+    pilot mcp add NAME URL [--where projects/acme/topics/blog] [--header 'Authorization: Bearer ${KEY}']
+    pilot mcp add NAME --command 'npx -y pkg' [--env KEY=VALUE] [--where ...]
+    pilot mcp remove NAME [--where ...]
+    pilot mcp load NAME                 (in a session) load that server from the session's next turn on
 
 No --where = every session. Secrets go in the Keys vault and are referenced as ${KEY_NAME}.
 OAuth servers are connected from Settings -> MCP (button Connect).
@@ -96,7 +96,7 @@ def _handler(a) -> int:
                 where = s["where"]["rel"] or "every session"
                 print(f"{s['name']:<28} {s['type']:<6} {s['state']:<11} {where}")
             if not rows:
-                print("no MCP server (Settings -> MCP or `maxxing mcp add`)")
+                print("no MCP server (Settings -> MCP or `pilot mcp add`)")
             return 0
         if a.action == "add":
             if a.command:

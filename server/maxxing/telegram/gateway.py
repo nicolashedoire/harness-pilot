@@ -34,7 +34,7 @@ Lifecycle
   (`service.on_turn_end`) the final assistant text is sent back as HTML in the same thread.
 
 Notifications (`alert`, `notify_topic`, `notify_cron`) are thread-safe and work in any process:
-inside the server they go through the running gateway; elsewhere (e.g. `maxxing cron run`) they
+inside the server they go through the running gateway; elsewhere (e.g. `pilot cron run`) they
 are sent directly with a short-lived HTTP client.
 
 State files (state_dir('telegram')):
@@ -42,7 +42,7 @@ State files (state_dir('telegram')):
                poll_error, poll_error_code (set / cleared by the poller only: 401 -> "token_rejected",
                409 -> "conflict", else "unreachable"), sync_error (thread sync), topics_notice (topics off
                in @BotFather: information, not an error), last_poll_ok + poller_pid (heartbeat of the
-               poller, read by `maxxing telegram status` / doctor from another process),
+               poller, read by `pilot telegram status` / doctor from another process),
                link:{code, created, expires}|null, refused:[chat_id], fallback_path}
                (`last_error` = older versions; status() still reports it as poll_error or sync_error)
   offset.json {offset}
@@ -3185,7 +3185,7 @@ def notify_cron_report(header: str, body: str = "", markdown: bool = True, loud:
 
 
 def send_test() -> dict:
-    """POST /api/telegram/test / `maxxing telegram test` - blocking (call from a worker thread).
+    """POST /api/telegram/test / `pilot telegram test` - blocking (call from a worker thread).
     Sending only proves the bot can WRITE; what it receives depends on the poller (running, last
     successful getUpdates) and on no webhook being set -> {ok, sent, poller:{running, last_poll_ok,
     last_poll_age, error, error_code}, webhook:{url, pending_updates, last_error}|None, problems:[str]}."""

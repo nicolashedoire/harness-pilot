@@ -328,7 +328,7 @@ def test_crontab_check(env):
     assert cmd_core.check_crontab()["level"] == "ok"
     (env["tmp"] / "crontab").write_text("")
     c = cmd_core.check_crontab()
-    assert c["level"] == "warn" and c["fix"] == "maxxing cron sync"
+    assert c["level"] == "warn" and c["fix"] == "pilot cron sync"
     assert crons  # noqa
 
 

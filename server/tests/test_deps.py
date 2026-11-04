@@ -221,7 +221,7 @@ def test_verify_finds_files_another_user_could_replace(st):
 def test_remove_lists_and_refuses_essentials(st, capsys):
     rem = st / "tools/remotion/node_modules"
     rem.mkdir(parents=True)
-    with pytest.raises(deps.DepError, match="needed by Harness Maxxing"):
+    with pytest.raises(deps.DepError, match="needed by harness-pilot"):
         deps.remove("python")
     assert cli.main(["deps", "remove", "remotion"]) == 0
     assert not (st / "tools/remotion").exists()

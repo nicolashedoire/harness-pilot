@@ -299,7 +299,7 @@ def _start_unit(sid: str) -> str:
         # (polled every UNIT_POLL_S), then start again; still there -> a suffixed name
         unit = base if attempt < 2 else f"{base}-{int(time.time()) % 100000}"
         cmd = ["systemd-run", "--collect", "--quiet", "--unit", unit,
-               "--description", f"Harness Maxxing turn {sid}",
+               "--description", f"harness-pilot turn {sid}",
                "--property", "KillMode=mixed", "--property", "TimeoutStopSec=15", *memory_properties(),
                *hardening_properties(),
                "--working-directory", str(SERVER_DIR), *sets, "--", *_runner_cmd(sid)]

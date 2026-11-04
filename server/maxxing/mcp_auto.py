@@ -4,7 +4,7 @@ Every MCP server and claude.ai connector costs prompt tokens on every model call
 and time at each turn start (connections). With `mcp_auto` on, the runner gives each turn only:
 
   - the servers this TOPIC used (a `mcp__<server>__<tool>` call seen in a turn's stream; kept USED_KEEP_S);
-  - the servers loaded for this session (`mcp_loaded` in its meta, written by `maxxing mcp load NAME`);
+  - the servers loaded for this session (`mcp_loaded` in its meta, written by `pilot mcp load NAME`);
   - the servers named in the message (the whole name, or a word of it no other server has, 4+ letters);
   - every project / local-scope server of the topic's folder (scoped there on purpose);
   - harness-pc, unchanged (pcbridge.mcp_config_args, its own --mcp-config file).
@@ -12,7 +12,7 @@ and time at each turn start (connections). With `mcp_auto` on, the runner gives 
 With `--strict-mcp-config --mcp-config <state>/mcp-auto/sessions/<sid>.json` (0600, rewritten only when it changes;
 secrets stay in the file, never on the command line). Strict mode also drops the claude.ai connectors: when the turn
 needs one, nothing is restricted (everything loads, as without `mcp_auto`). The servers left out are listed in the
-turn's system prompt with `maxxing mcp load NAME`; the runner then continues the turn by itself (runner._mcp_after).
+turn's system prompt with `pilot mcp load NAME`; the runner then continues the turn by itself (runner._mcp_after).
 
 Claude Code writes a server's name in its tool names with every character outside [A-Za-z0-9_-] as "_"
 ("claude.ai Google Drive" -> mcp__claude_ai_Google_Drive__search): names are compared in that form (`norm`).
@@ -48,7 +48,7 @@ CONTINUE_TEXT = ("[Harness: the MCP server{s} {names} {verb} now loaded. Continu
 HINT_MAX = 40                                   # servers named in the hint, then "and N more"
 HINT_NAME_MAX = 120                             # characters per server in the hint
 HINT = ("MCP servers NOT loaded in this turn (Harness loads only the ones this topic uses, to save tokens): {items}. "
-        "If you need one, run `maxxing mcp load \"<name>\"` (it is loaded from your next turn on) and end your turn "
+        "If you need one, run `pilot mcp load \"<name>\"` (it is loaded from your next turn on) and end your turn "
         "saying so; Harness continues automatically.")
 
 
@@ -332,7 +332,7 @@ def forget_session(sid: str) -> None:
         pass
 
 
-# ---- `maxxing mcp load` ----------------------------------------------------------------------
+# ---- `pilot mcp load` ----------------------------------------------------------------------
 def known_names(cwd: str | None = None) -> list[str]:
     """Every server a session could load: user scope, the folder's own, the claude.ai connectors."""
     try:

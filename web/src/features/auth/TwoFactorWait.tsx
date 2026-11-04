@@ -112,7 +112,7 @@ export function TwoFactorWait({ challenge, trustOption = false, onDone }: { chal
         <summary className="cursor-pointer list-none text-center hover:text-foreground pointer-coarse:flex pointer-coarse:min-h-10 pointer-coarse:items-center pointer-coarse:justify-center">{t('twofa.noAnswer')}</summary>
         <div className="mt-3 grid gap-2">
           <p>{t('twofa.noAnswerHelp')}</p>
-          <CodeBlock inline code="maxxing 2fa off" />
+          <CodeBlock inline code="pilot 2fa off" />
         </div>
       </details>
     </div>

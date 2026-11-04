@@ -60,6 +60,8 @@ const COMPONENTS: Record<Exclude<SettingsSectionId, 'docs'>, React.ComponentType
   updates: UpdatesSection,
 }
 
+const FADE_PX = 24 // = scroll-py-6
+
 export default function SettingsPage() {
   const t = useT()
   const { section = 'general' } = useParams()
@@ -67,6 +69,23 @@ export default function SettingsPage() {
   useDocumentTitle(meta ? `${t(meta.label)} · ${t('nav.settings')}` : t('nav.settings'))
   const tabs = React.useRef<HTMLUListElement>(null)
   const side = React.useRef<HTMLElement>(null)
+  // Desktop list taller than the window: fade the edge it can still scroll to, so a cut item reads as "more below".
+  const [edges, setEdges] = React.useState({ top: false, bottom: false })
+  const measure = React.useCallback(() => {
+    const nav = side.current
+    if (!nav) return
+    const top = nav.scrollTop > 1
+    const bottom = nav.scrollTop + nav.clientHeight < nav.scrollHeight - 1
+    setEdges((e) => (e.top === top && e.bottom === bottom ? e : { top, bottom }))
+  }, [])
+  React.useEffect(() => {
+    const nav = side.current
+    if (!nav) return
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(nav)
+    return () => ro.disconnect()
+  }, [measure, section])
   // phones: the next section slides in from the side of its tab (decided once per section change, so a
   // re-render during the animation does not cut it)
   const slide = React.useRef({ section, cls: '' })
@@ -84,7 +103,8 @@ export default function SettingsPage() {
     const nav = side.current
     const item = nav?.querySelector<HTMLElement>('[aria-current=page]')
     if (nav && item && nav.scrollHeight > nav.clientHeight) {
-      const top = item.offsetTop, bottom = top + item.offsetHeight
+      const at = item.getBoundingClientRect().top - nav.getBoundingClientRect().top + nav.scrollTop
+      const top = at - FADE_PX, bottom = at + item.offsetHeight + FADE_PX // clear of the fades
       if (top < nav.scrollTop) nav.scrollTop = top
       else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight
     }
@@ -116,7 +136,9 @@ export default function SettingsPage() {
         <nav
           ref={side}
           aria-label={t('nav.settings')}
-          className="sticky top-[calc(var(--header-h)+2rem)] -m-1 hidden max-h-[calc(100dvh-var(--header-h)-4rem-var(--safe-bottom))] w-54 shrink-0 self-start overflow-y-auto overscroll-contain p-1 [scrollbar-width:thin] md:block"
+          onScroll={measure}
+          style={{ maskImage: edges.top || edges.bottom ? `linear-gradient(to bottom, ${edges.top ? 'transparent' : '#000'}, #000 ${FADE_PX}px, #000 calc(100% - ${FADE_PX}px), ${edges.bottom ? 'transparent' : '#000'})` : undefined }}
+          className="sticky top-[calc(var(--header-h)+2rem)] -m-1 hidden max-h-[calc(100dvh-var(--header-h)-4rem-var(--safe-bottom))] w-54 shrink-0 scroll-py-6 self-start overflow-y-auto overscroll-contain p-1 [scrollbar-width:thin] md:block"
         >
           <ul className="relative grid gap-0.5 [--row:2.375rem] pointer-coarse:[--row:2.625rem]">
             {/* The highlight slides to the active section (items are h-9, h-10 on touch, + gap-0.5). */}

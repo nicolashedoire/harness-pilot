@@ -16,7 +16,7 @@ import { BLOCK_OPEN_EVENT, useBlockHost, type BlockPanelRequest } from './host'
 import { RAW_BLOCK_TYPES, type FenceBlock } from './fence'
 import { useBlocks, useToggleBlock } from './queries'
 import { validate } from './schema'
-import { BlockNotice, RawData, useSendToSession, type BlockSize } from './shell'
+import { BlockNotice, OpenedBeside, RawData, useSendToSession, type BlockSize } from './shell'
 import { pluginLabel } from './labels'
 import type { BlockInstance, BlockPlugin } from './types'
 import type { RendererProps } from './builtins/types'
@@ -103,6 +103,22 @@ export default function BlockFence({ block, code, fallback, className, panel: in
   const anchor = React.useRef<HTMLDivElement>(null)
   const [panel, setPanel] = React.useState(false)
   const [rawOpen, setRawOpen] = React.useState(false)
+  // Shown in the side panel docked beside the thread: a placeholder stands here. Brought back from it, the focus
+  // returns to the block's own "Open beside" (the placeholder's button is gone).
+  const ref = React.useMemo(() => ({ type: block.type, raw: code }), [block.type, code])
+  const shownBeside = !inPanel && !!host?.beside?.has(ref)
+  const refocus = React.useRef(false)
+  React.useEffect(() => {
+    if (shownBeside || !refocus.current) return
+    refocus.current = false
+    const el = anchor.current
+    const target = el?.querySelector<HTMLElement>('[data-mx-open-beside]')
+    if (target) target.focus()
+    else if (el) {
+      el.tabIndex = -1
+      el.focus()
+    }
+  }, [shownBeside])
   const type = block.type
   const drawers = cat?.plugins.filter((p) => p.renders.includes(type)) ?? []
   const plugin: BlockPlugin | undefined = drawers.find((p) => !p.error) ?? drawers[0]
@@ -202,6 +218,18 @@ export default function BlockFence({ block, code, fallback, className, panel: in
     if (host?.openPanel) host.openPanel(req)
     else setPanel(true)
   }
+  const beside = host?.beside
+  if (shownBeside && beside)
+    return wrap(
+      <OpenedBeside
+        title={title}
+        onShow={() => beside.reveal(ref)}
+        onBringBack={() => {
+          refocus.current = true
+          beside.bringBack(ref)
+        }}
+      />,
+    )
   const render = (size: BlockSize) => {
     const props: RendererProps = { block: instance, size, memoKey, onRaw: () => setRawOpen(true), onOpenBeside: size === 'panel' ? undefined : openBeside }
     if (plugin.kind === 'extension') return <PluginBlock {...props} onAskFix={askFix} />

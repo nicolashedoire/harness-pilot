@@ -17,7 +17,7 @@ const adopted = early?.then((a) => a?.look && useUI.getState().receiveLook(a.loo
 void Promise.race([adopted, new Promise((r) => setTimeout(r, 400))]).then(() => bindUIToDocument())
 bindCompact()
 bootPrefetch(queryClient)
-// A part of the app built before an update is gone from the server (a tab left open over `maxxing update`): reload
+// A part of the app built before an update is gone from the server (a tab left open over `pilot update`): reload
 // once to get the new build instead of an error screen. Once a minute at most (no loop if the server is broken).
 window.addEventListener('vite:preloadError', (e) => {
   let last = 0
