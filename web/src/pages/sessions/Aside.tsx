@@ -1,6 +1,7 @@
 // Side question ("Question" in the waiting-messages card): the waiting messages are taken back and asked
-// apart - Claude answers about the session from a throwaway copy of its thread while the running turn goes
-// on (POST /sessions/{id}/ask, nothing saved). The answer shows in this panel above the composer; × closes it.
+// apart - the session's agent (Claude Code or Codex; in a discussion, the one that answered last) answers about the
+// session from a throwaway copy of its thread while the running turn goes on (POST /sessions/{id}/ask, nothing
+// saved). The answer shows in this panel above the composer; × closes it.
 import * as React from 'react'
 import { Copy, MessageCircleQuestion, X } from 'lucide-react'
 import { useAskAside } from '@/lib/queries'
@@ -10,7 +11,7 @@ import { useT } from '@/i18n'
 import { Markdown } from '@/components/ui/markdown'
 import { Spinner, Tooltip, toast } from '@/components/ui'
 
-type Aside = { id: number; question: string; answer?: string; error?: string; ms?: number; leaving?: boolean }
+type Aside = { id: number; question: string; answer?: string; agent?: 'claude' | 'codex'; error?: string; ms?: number; leaving?: boolean }
 
 /** State + actions of the side question of one session column. */
 export function useAside(sid: string) {
@@ -24,7 +25,7 @@ export function useAside(sid: string) {
       const id = ++seq.current
       setAside({ id, question: q })
       const done = (patch: Partial<Aside>) => setAside((a) => (a && a.id === id ? { ...a, ...patch } : a))
-      ask.mutate({ id: sid, question: q }, { onSuccess: (d) => done({ answer: d.answer, ms: d.duration_ms }), onError: (e) => done({ error: errorMessage(e) }) })
+      ask.mutate({ id: sid, question: q }, { onSuccess: (d) => done({ answer: d.answer, agent: d.agent, ms: d.duration_ms }), onError: (e) => done({ error: errorMessage(e) }) })
     },
     [sid, ask],
   )
@@ -88,7 +89,7 @@ export function AsidePanel({ aside, onClose }: { aside: Aside; onClose: () => vo
             <Markdown className="mx-assistant text-[14px]">{aside.answer!}</Markdown>
           )}
         </div>
-        {aside.ms !== undefined && <footer className="shrink-0 border-t px-3 py-1 text-[11px] text-muted-foreground tabular-nums">{t('aside.meta', { s: Math.max(1, Math.round(aside.ms / 1000)) })}</footer>}
+        {aside.ms !== undefined && <footer className="shrink-0 border-t px-3 py-1 text-[11px] text-muted-foreground tabular-nums">{aside.agent ? t('aside.metaBy', { agent: aside.agent === 'codex' ? 'Codex' : 'Claude Code', s: Math.max(1, Math.round(aside.ms / 1000)) }) : t('aside.meta', { s: Math.max(1, Math.round(aside.ms / 1000)) })}</footer>}
       </section>
     </div>
   )

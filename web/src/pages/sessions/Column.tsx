@@ -77,6 +77,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   Checkbox,
+  Segmented,
   Input,
   Label,
   Select,
@@ -906,7 +907,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                     return r.messages
                   }}
                   steering={steer.isPending}
-                  onAsk={session?.provider === 'claude' || !session?.provider ? () => void onAsk() : undefined}
+                  onAsk={!session?.provider?.startsWith('plugin:') ? () => void onAsk() : undefined}
                   asking={takeQueue.isPending || aside.pending}
                   clearingQueue={clearQueue.isPending}
                   onSend={onSend}
@@ -1397,6 +1398,9 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [partner, setPartner] = React.useState('codex') // a discussion's second agent: Codex or an agent plugin
   const [turnLimit, setTurnLimit] = React.useState('')
   const [durationMinutes, setDurationMinutes] = React.useState('')
+  // a mixed team's coordinator (writes the synthesis) and roles: null = the default one (shown, not sent)
+  const [coordinator, setCoordinator] = React.useState<'claude' | 'codex'>('claude')
+  const [teamRoles, setTeamRoles] = React.useState<{ claude: string | null; codex: string | null }>({ claude: null, codex: null })
   const [claudeRole, setClaudeRole] = React.useState('')
   const [codexRole, setCodexRole] = React.useState('')
   const [preset, setPreset] = React.useState('default')
@@ -1442,7 +1446,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
     try {
       if (plugin && attachments.length && !adapter?.capabilities.includes('attachments')) { toast.error(t('agentProviders.textOnly')); return false }
       if (provider === 'team') {
-        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined, attachments })
+        const role = (a: 'claude' | 'codex') => {
+          const v = teamRoles[a]?.trim()
+          return v !== undefined && v !== t(a === 'claude' ? 'modes.team.claudeRoleDefault' : 'modes.team.codexRoleDefault').trim() ? v : undefined
+        }
+        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined, attachments, claude_role: role('claude'), codex_role: role('codex'), coordinator, claude_model: model || undefined, codex_model: codexModel.trim() || undefined })
         await qc.invalidateQueries({ queryKey: ['sessions'] })
         saveDraft(`new:${col.path}`, '')
         becomeSession(col.key, s.id)
@@ -1532,8 +1540,23 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               </div>
               <ModePicker name={`provider-${col.key}`} value={provider} onChange={(v) => { setProvider(v); setModel(''); setPlanMode(false) }} plugins={agentProviders.filter((p) => !p.builtin)} swarmAgents={swarmAgents} />
             </div>
-            <ModePanel mode={provider} adapter={adapter} swarmAgents={swarmAgents} className="@3xl:sticky @3xl:top-0 @3xl:col-start-2 @3xl:row-span-3 @3xl:row-start-1 @3xl:self-start" />
+            <ModePanel mode={provider} adapter={adapter} swarmAgents={swarmAgents} teamRoles={teamRoles} team={{ coordinator, claudeModel: model, codexModel: codexModel.trim() }} className="@3xl:sticky @3xl:top-0 @3xl:col-start-2 @3xl:row-span-3 @3xl:row-start-1 @3xl:self-start" />
             <div className="grid min-w-0 content-start gap-4 @3xl:col-start-1">
+              {provider === 'team' && <div className="grid gap-1.5">
+                <span className="text-sm font-medium">{t('modes.fact.coordinator')}</span>
+                <Segmented aria-label={t('modes.fact.coordinator')} value={coordinator} onChange={setCoordinator} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} />
+                <p className="text-xs text-muted-foreground">{t('modes.team.coordinatorHint')}</p>
+              </div>}
+              {provider === 'team' && <div className="grid gap-1.5">
+                {(['claude', 'codex'] as const).map((a) => (
+                  <React.Fragment key={a}>
+                    <Label htmlFor={`team-${a}-role-${col.key}`}>{t(a === 'claude' ? 'sessions.claudeRole' : 'sessions.codexRole')}</Label>
+                    <Textarea id={`team-${a}-role-${col.key}`} value={teamRoles[a] ?? t(a === 'claude' ? 'modes.team.claudeRoleDefault' : 'modes.team.codexRoleDefault')} maxLength={2000} minRows={2} onChange={(e) => setTeamRoles((r) => ({ ...r, [a]: e.target.value }))} />
+                  </React.Fragment>
+                ))}
+                <p className="text-xs text-muted-foreground">{t('modes.team.rolesHint')}</p>
+                {(teamRoles.claude !== null || teamRoles.codex !== null) && <Button type="button" variant="ghost" className="justify-start" onClick={() => setTeamRoles({ claude: null, codex: null })}>{t('modes.team.rolesReset')}</Button>}
+              </div>}
               {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
                 <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
                 <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
@@ -1560,13 +1583,13 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
                 <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
                 {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
               </div>}
-              {provider !== 'codex' && !plugin && provider !== 'team' && <div className="grid gap-1.5">
-                <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
+              {provider !== 'codex' && !plugin && <div className="grid gap-1.5">
+                <span className="text-sm font-medium">{provider === 'both' || provider === 'team' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
                 <div>
                   <ModelPicker chosen={model} onChange={setModel} />
                 </div>
               </div>}
-              {(provider === 'codex' || provider === 'both' || plugin) && <div className="grid gap-1.5">
+              {(provider === 'codex' || provider === 'both' || provider === 'team' || plugin) && <div className="grid gap-1.5">
                 <Label htmlFor={`codex-model-${col.key}`}>{partnerAdapter ? t('modes.partnerModel', { name: partnerAdapter.name }) : t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
                 <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
                 <p className="text-xs text-muted-foreground">{plugin || partnerAdapter ? t('agentProviders.modelHint', { name: agentName('plugin', t, (partnerAdapter || adapter)?.name) }) : t('sessions.codexModelHint')}</p>

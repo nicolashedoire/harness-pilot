@@ -7,7 +7,8 @@ def test_get_defaults(client, org):
     assert s == {"timezone": "UTC", "language": "en", "public_url": "", "files_root": str(org.tmp),
                  "presentation_default": False, "usage_widget": False, "git_page": False, "infra_page": False, "team_page": False,
                  "maxxing_mode": False,
-                 "memory_max_lines": 200, "result_line_hidden": [], "donation_hidden": False, "donation_url": "https://paypal.me/nicolashedoire"}
+                 "memory_max_lines": 200, "result_line_hidden": [], "donation_hidden": False, "donation_url": "https://paypal.me/nicolashedoire",
+                 "companion_sandbox": False}
 
 
 def test_donation_link_requires_a_paypal_url(client, org):

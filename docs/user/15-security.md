@@ -41,7 +41,8 @@ websites; it does **not** protect your computer from the agents you start: they 
   (see **Sign-in** below). The first one is set through a one-time link (`pilot setup-link`, valid one hour). Wrong
   passwords are throttled, and every change request needs the `X-Maxxing: 1` header, which another website open in
   your browser cannot send.
-- Two-step sign-in is optional and needs a linked Telegram chat (Settings -> Security).
+- Two-step sign-in is optional (Settings -> Security): a code from an authenticator app, an approval in a linked
+  Telegram chat, or both (see **Sign-in** below).
 
 ### Where secrets are kept
 
@@ -70,7 +71,9 @@ no operating-system isolation between harness-pilot and the agents it starts. Wh
   (`<state>/companions/runs/<id>/repo`, mode 700), with Claude's `acceptEdits` mode or Codex's workspace-write
   sandbox; an architect's plan runs read-only. The copy keeps ordinary edits away from the running app, but it is
   **not a sandbox**: what the agent may run is decided by its engine's permissions, not by the copy. A proposal is
-  applied, published or merged only after your review.
+  applied, published or merged only after your review. The optional **Sandbox** of Settings -> Companions (off by
+  default) runs a Claude companion's commands in Claude Code's own sandbox: they can then write only in the copy
+  and temporary folders and cannot reach the network (see [Resident companions](companions)).
 - **External agent adapters** (agent extensions) are programs you install and trust. They run with your
   privileges and must enforce their own engine's permissions; harness-pilot cannot check that they do.
 - **Shell jobs** run with your privileges, like a command typed in your terminal.
@@ -205,6 +208,15 @@ Recommended on top: SSH keys instead of passwords (`PasswordAuthentication no` o
   most one password every 5 seconds for everyone: retry after a few seconds.
 - **Alerts**: with Telegram linked, every sign-in and repeated wrong passwords are reported in the
   *Alerts* thread.
+- **Two-step sign-in** (optional, Settings -> Security): after the right password, a browser that is not trusted
+  yet also needs a code from an **authenticator app** (Google Authenticator, 1Password, Aegis... - time-based
+  codes, RFC 6238), an approval in Telegram (see [Telegram](telegram#two-step-sign-in)), or either when both are
+  on. Setting up the app shows a QR code and its key as text; it is switched on only once you type a code it shows
+  and your password. Each code works once, even within its 30 seconds. Ten **recovery codes**, shown once when you
+  turn the app on, each sign in once if you lose the phone; the server keeps only a fingerprint of them. The app's
+  key is stored in `secrets.json` like the other secrets. Wrong codes count like Telegram codes (5 per request, 20
+  in an hour on the whole server). Turning the app off asks for the password and a code (or a recovery code) and
+  makes every trusted browser ask again. Without the UI: `pilot 2fa off` on the server turns both methods off.
 
 ## Telegram
 
