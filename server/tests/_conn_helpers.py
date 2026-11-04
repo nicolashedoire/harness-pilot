@@ -32,6 +32,13 @@ GH_TOKEN = "test-github-token-not-a-real-one"
 # =============================================================================================
 # Generic local HTTP server
 # =============================================================================================
+class _Listener(ThreadingHTTPServer):
+    # socketserver's default backlog is 5. Code under test sends a dozen requests at once (infra providers fetch
+    # their sections in parallel) and macOS refuses a connection beyond the backlog instead of queueing it, so a
+    # section came back "unreachable" now and then.
+    request_queue_size = 128
+
+
 class _Server:
     def __init__(self, handler: Callable[[str, str, dict, bytes], tuple[int, Any, str]]):
         outer = self
@@ -53,7 +60,7 @@ class _Server:
 
             do_GET = do_POST = do_PUT = do_DELETE = _do
 
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.httpd = _Listener(("127.0.0.1", 0), H)
         self.httpd.daemon_threads = True
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
