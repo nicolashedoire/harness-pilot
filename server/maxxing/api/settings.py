@@ -9,7 +9,7 @@ from typing import Literal, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import bus, config, memory, themes
 from ..security import require_auth
@@ -109,6 +109,77 @@ def put_look(body: LookIn):
     if changed:
         bus.invalidate("look")
     return {"ok": True, "look": look()}
+
+
+# ---- saved themes ("My themes") and the theme a session wrote (Settings -> Appearance) ---------------------------
+def _theme_error(e: Exception) -> HTTPException:
+    if isinstance(e, themes.ThemeLimit):
+        return HTTPException(409, detail={"error": "too_many_themes", "message": str(e)})
+    if isinstance(e, themes.ThemeNotFound):
+        return HTTPException(404, detail={"error": "not_found", "message": "Theme not found"})
+    return HTTPException(422, detail={"error": "invalid_theme", "message": str(e)})
+
+
+class SavedThemeIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    theme: dict
+    source: Literal[themes.SOURCES] = "imported"  # type: ignore[valid-type]
+    from_: str = Field("", alias="from", max_length=200)
+
+
+class ThemeNameIn(BaseModel):
+    name: str = Field(max_length=200)
+
+
+@router.get("/themes")
+def get_themes():
+    return {"themes": themes.saved(), "max": themes.SAVED_MAX}
+
+
+@router.post("/themes")
+def post_theme(body: SavedThemeIn):
+    try:
+        return themes.save_theme(body.theme, body.source, body.from_)
+    except (themes.ThemeError, themes.ThemeLimit) as e:
+        raise _theme_error(e) from None
+
+
+@router.patch("/themes/{tid}")
+def patch_theme(tid: str, body: ThemeNameIn):
+    try:
+        return themes.rename_theme(tid, body.name)
+    except (themes.ThemeError, themes.ThemeNotFound) as e:
+        raise _theme_error(e) from None
+
+
+@router.delete("/themes/{tid}")
+def delete_theme(tid: str):
+    try:
+        themes.delete_theme(tid)
+    except themes.ThemeNotFound as e:
+        raise _theme_error(e) from None
+    return {"ok": True}
+
+
+@router.get("/themes/session/{sid}")
+def session_theme(sid: str, since: Optional[float] = None):
+    """The newest theme file the session wrote in its topic folder (theme generator), validated by clean_theme."""
+    from .. import workspace
+    from ..sessions import service
+    s = service.get_session(sid)
+    if not s:
+        raise HTTPException(404, detail={"error": "not_found", "message": "Session not found"})
+    try:
+        folder = workspace.topic_dir(s["path"])
+    except ValueError:
+        raise HTTPException(404, detail={"error": "no_theme", "message": "The session's topic is gone"}) from None
+    start = since if since is not None and since == since else float(s.get("created") or 0) - 2
+    try:
+        return themes.latest_file(folder, start)
+    except themes.ThemeNotFound:
+        raise HTTPException(404, detail={"error": "no_theme", "message": "No theme file written by this session yet"}) from None
+    except themes.ThemeError as e:
+        raise _theme_error(e) from None
 
 
 PROFILE_COLORS = ("clay", "blue", "violet", "green", "amber", "rose", "teal", "zinc")   # = the task project swatches
