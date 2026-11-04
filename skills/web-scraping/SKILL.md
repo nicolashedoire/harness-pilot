@@ -5,7 +5,7 @@ description: Collect data from websites with Scrapling - one page or a whole sit
 
 # Web scraping (Scrapling)
 
-Scrapling is installed on the server (`scrapling`, `scrapling-python`; check: `maxxing video status`).
+Scrapling is installed on the server (`scrapling`, `scrapling-python`; check: `pilot video status`).
 Three ways to fetch, from the lightest to the heaviest - start light, go up only if needed:
 
 | Fetcher | CLI | Use when |
@@ -46,5 +46,5 @@ HTML first (`scrapling extract get URL page.html`, then read it) instead of gues
 - Save results in the topic folder (`data/<name>-<date>.csv|json|md`), never only in the chat; tell
   the user the path, the row count and 2-3 sample rows. Keep the script next to the data so the
   job can be re-run.
-- Monitoring ("tell me when the price changes"): a scheduled job (skill `maxxing-cron`) that runs
+- Monitoring ("tell me when the price changes"): a scheduled job (skill `pilot-crons`) that runs
   the script, compares with the last saved result and reports only changes.

@@ -51,6 +51,12 @@ new invitation: an invitation never replaces an existing contact.
 - **Groups**: their creator renames them, adds friends and removes members; anyone can **leave** (final). The
   thread says who joined, was removed or left.
 - A small clock on a message: not delivered yet to someone (their server is off); harness-pilot retries for 7 days.
+- **Colour themes**: Settings -> Appearance -> **Share** (or the **…** of a theme in My themes) -> **Send to a Team
+  contact** sends a theme to a friend or a group. It shows in the chat as a card with its light and dark drawings and
+  **Install**: Install opens a preview with its checks, then **Use this palette** or **Save to my themes** (it appears
+  in My themes as *Received via Team*, with the sender's name). A theme holds colours only - nothing from your
+  sessions goes with it - and both servers check it: a theme with anything else than colours is refused. A theme you
+  receive is never applied by itself.
 
 ## Summarize
 

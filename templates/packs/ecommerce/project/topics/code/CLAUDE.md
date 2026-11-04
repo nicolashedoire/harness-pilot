@@ -55,6 +55,6 @@ theme", "checkout fails with a discount code, find out why". Changes go through 
 
 ## Automations
 
-- No job is created for this topic. Useful ones to add on request (`maxxing-cron` skill): a weekly
+- No job is created for this topic. Useful ones to add on request (`pilot-crons` skill): a weekly
   speed check of 3 key pages, or a daily check that the home and checkout pages answer 200.
-- Post problems to the feed with `maxxing feed post "Checkout down" --level warning --source shop`.
+- Post problems to the feed with `pilot feed post "Checkout down" --level warning --source shop`.

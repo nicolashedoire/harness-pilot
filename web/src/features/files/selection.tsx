@@ -405,7 +405,7 @@ export function SelectCheck({ checked, className }: { checked: boolean; classNam
       aria-hidden
       className={cn(
         'pointer-events-none items-center justify-center rounded-full border-2 transition-colors',
-        checked ? 'flex border-primary bg-primary text-primary-foreground' : 'hidden border-foreground/40 bg-background/80 group-data-[selecting]/sel:flex',
+        checked ? 'flex border-action bg-action text-action-foreground' : 'hidden border-foreground/40 bg-background/80 group-data-[selecting]/sel:flex',
         className,
       )}
     >

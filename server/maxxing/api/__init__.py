@@ -27,6 +27,7 @@ ROUTERS = [
     "docs",
     "dashboard",
     "extensions",
+    "blocks",
     "voice",
     "memory",
     "stats",

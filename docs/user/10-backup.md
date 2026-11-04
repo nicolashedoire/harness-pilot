@@ -53,7 +53,7 @@ In local mode, scheduled backups run only while the app is running; missed runs 
 
 ## Restore
 
-- **Settings -> Backup -> Restore** (or `maxxing backup restore`): restores the whitelisted files
+- **Settings -> Backup -> Restore** (or `pilot backup restore`): restores the whitelisted files
   of the latest commit (or a chosen one). Files that would be overwritten are first moved to the
   trash (`/var/lib/claude-maxxing/trash/backup-restore-<date>/`).
 - On a **new server** (no session started yet: the installer's restore, a move to another server) everything comes
@@ -78,8 +78,8 @@ The inherited new-server restore procedure has not yet been validated for this v
 ## Command line
 
 ```bash
-maxxing backup status [--json]
-maxxing backup run
-maxxing backup restore [--ref <commit>]
-maxxing backup restore --from owner/name      # token from $MAXXING_GITHUB_TOKEN or prompted
+pilot backup status [--json]
+pilot backup run
+pilot backup restore [--ref <commit>]
+pilot backup restore --from owner/name      # token from $MAXXING_GITHUB_TOKEN or prompted
 ```

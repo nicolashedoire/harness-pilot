@@ -38,6 +38,7 @@ class PostIn(BaseModel):
     kind: str | None = None
     params: dict[str, Any] | None = None
     actions: list[Any] | None = None
+    quiet: bool = False               # in the feed only: no Telegram, no push
 
 
 class ReadIn(BaseModel):
@@ -83,7 +84,7 @@ async def summary():
 @router.post("")
 async def post_event(body: PostIn):
     ev = await _call(feed.post, body.title, body.body, body.level, body.source, body.url, body.dedupe, body.group,
-                     kind=body.kind, params=body.params, actions=body.actions)
+                     notify=not body.quiet, kind=body.kind, params=body.params, actions=body.actions)
     return {"event": ev, "duplicate": ev is None}
 
 

@@ -57,4 +57,4 @@ air fryer page", "how much did we earn per program last month?". Link changes go
   out-of-stock affiliate links by page with a suggested fix. Created disabled, enable it on the
   Crons page or ask here.
 - Many broken links on a money page can go to the feed with
-  `maxxing feed post "Best X page: 4 dead links" --level warning --source affiliate`.
+  `pilot feed post "Best X page: 4 dead links" --level warning --source affiliate`.

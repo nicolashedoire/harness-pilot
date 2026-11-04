@@ -27,7 +27,7 @@ export function Root() {
       if (!data.authenticated) setLanguage(data.language)
       // A browser that never picked a theme (new device, private window) shows the last one chosen - the
       // sign-in page included.
-      if (data.look && !useUI.getState().lookChosen) useUI.getState().adoptLook(data.look)
+      if (data.look) useUI.getState().receiveLook(data.look)
     }
   }, [data, setLanguage])
 

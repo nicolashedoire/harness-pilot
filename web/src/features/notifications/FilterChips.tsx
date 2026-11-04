@@ -25,12 +25,12 @@ export function FilterChips({
 }) {
   const t = useT()
   const chips: { id: NotificationFilter; label: string }[] = [
-    { id: 'all', label: t('feed.all') },
+    { id: 'all', label: t('ncentre.all') },
     ...(withPending ? [{ id: 'pending' as const, label: t('feed.pending') }] : []),
     ...FEED_CATEGORIES.map((c) => ({ id: c, label: categoryLabel(t, c) })),
   ]
   return (
-    <div role="group" aria-label={t('feed.filters')} className={cn('flex flex-wrap gap-1.5', className)} data-testid="notification-filters">
+    <div role="group" aria-label={t('ncentre.filters')} className={cn('flex flex-wrap gap-1.5', className)} data-testid="notification-filters">
       {chips.map((c) => {
         const on = value === c.id
         return (

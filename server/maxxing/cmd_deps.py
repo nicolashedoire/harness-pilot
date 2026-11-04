@@ -122,7 +122,7 @@ def _cfg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--caches", action="store_true",
                    help="clean: also root's uv/npm/pip/npx caches (shared with the other tools of the server)")
     p.add_argument("--auto", action="store_true",
-                   help="update: as after `maxxing update` - keep a uv that is not ours and a venv that works")
+                   help="update: as after `pilot update` - keep a uv that is not ours and a venv that works")
 
 
 cli.register("deps", "external components: list, verify, update, remove, clean, check", _cfg, cmd_deps)

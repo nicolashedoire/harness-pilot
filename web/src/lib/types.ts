@@ -16,7 +16,8 @@ export type AuthState = {
   version: string
   onboarding_completed: boolean
   language: Language
-  /** Look last chosen in a signed-in browser (null: never): the sign-in page shows it. */
+  /** Look last chosen in a signed-in browser (null: never): the sign-in page shows it; its palette (a Theme,
+   *  docs/dev/DESIGN.md "Themes") and `rev` make the palette follow the user on every device. */
   look: Look | null
 }
 export type SetupBody = { token: string; password: string }
@@ -100,6 +101,11 @@ export type Session = {
   swarm_agents?: number | null
   debate_paused?: boolean
   discussion_pause_reason?: string | null
+  /** When it paused (limit or pause button), Unix seconds; null while not paused. */
+  discussion_paused_at?: number | null
+  /** Seconds the current period has run (paused time excluded): banked up to its last pause, plus the running span
+   *  while it runs. 0 for the other providers. */
+  discussion_elapsed?: number
   discussion_turns?: number
   discussion_turn_limit?: number | null
   discussion_duration_seconds?: number | null
@@ -194,7 +200,7 @@ export type SessionEventsBackPage = {
 export type SessionStreamEvents = { events: SessionEvent[]; next: number }
 
 /* ---------------------------------------------------------------- Global bus */
-export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live'
+export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live' | 'look' | 'themes'
 
 /* ---------------------------------------------------------------- MCP servers (Settings -> MCP) */
 export type McpState = 'connected' | 'needs_auth' | 'failed' | 'pending' | 'unknown'
@@ -247,6 +253,8 @@ export type FeedEvent = {
   pending?: boolean
   resolved_at?: number | null
   first_at?: number
+  /** Posted quiet (`maxxing feed post --quiet`): no Telegram, no push, no notice or sound here. */
+  quiet?: boolean
 }
 export type FeedOccurrence = { at: number; title: string; body: string; params?: FeedParams }
 export type FeedDetail = FeedEvent & { occurrences: FeedOccurrence[] }
@@ -285,7 +293,10 @@ export type FeedSettingsBody = { telegram?: boolean; rules?: Record<string, Feed
 /* ---------------------------------------------------------------- Web Push */
 /** Pushed when `kinds[kind]` is set (its `enabled` decides), else when the level is in `levels`; rings when that kind's
  *  `sound` (else `sound`) is true. */
-export type PushPrefs = { levels: FeedLevel[]; sound: boolean; kinds: Record<string, { enabled: boolean; sound: boolean }> }
+export type PushPref = { enabled: boolean; sound: boolean }
+/** `sources` (per webhook / script source) decides before `kinds`, then `levels` (API.md "Web Push"); absent from an
+ *  older server's copy. */
+export type PushPrefs = { levels: FeedLevel[]; sound: boolean; kinds: Record<string, PushPref>; sources?: Record<string, PushPref> }
 export type PushSubscriptionInfo = { id: string; endpoint: string; label: string; created: number; last_ok: number | null; last_error: string | null; prefs: PushPrefs }
 /** `missing`: the server has no push endpoints (older version). */
 export type PushInfo = { available: boolean; public_key: string | null; subscriptions: PushSubscriptionInfo[]; missing?: boolean }
@@ -710,10 +721,12 @@ export type DashboardLayout = { order: string[]; hidden: string[] }
 export type Extension = {
   id: string
   name: string
-  type: 'widget' | 'page'
+  type: 'widget' | 'page' | 'block'
   icon: string
   version: string
   enabled: boolean
+  /** Block extensions (block.json): the conversation block types it draws. */
+  renders?: string[]
   error: string | null
   has_api: boolean
   /** Page extensions: own entry in the sidebar (otherwise listed under "Extensions"). */

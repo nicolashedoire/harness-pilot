@@ -37,7 +37,7 @@ One app slot: its code, roadmap, bugs and releases. "this slot is for a booking 
 - Security basics: validate input, parameterized queries, hashed passwords, rate-limit login, keep
   dependencies updated, no secrets in the repo or logs.
 - When the app is down or a deploy fails, post it to the feed:
-  `maxxing feed post "app-3 deploy failed" --level error --source app-3`.
+  `pilot feed post "app-3 deploy failed" --level error --source app-3`.
 - Common mistakes: building features before the core flow works, skipping tests on a "small" fix,
   deploying without a way back, drifting from the template without a note.
 
@@ -52,4 +52,4 @@ One app slot: its code, roadmap, bugs and releases. "this slot is for a booking 
 
 - Uptime is covered by the "Uptime check" job of the `hosting` topic (add this app's URL there).
 - An app-specific job (e.g. nightly test run, weekly dependency report) can be created here with the
-  `maxxing-cron` skill if the user asks.
+  `pilot-crons` skill if the user asks.

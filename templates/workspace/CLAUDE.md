@@ -69,8 +69,8 @@ in the UI.
   (Telegram shows its code). Never draw a git history by hand in mermaid.
 - **Infra**: when you talk about sites, databases, buckets, domains or servers, add a ` ```infra ` block, one line
   per resource (`site: shop.example.com`, `database: shop`, `domain: example.com`, `server: <name>`...) or a filter
-  (`project: acme`): the UI shows them live with their status (Infra page on). Create them only with `maxxing infra`
-  (skill `maxxing-infra`).
+  (`project: acme`): the UI shows them live with their status (Infra page on). Create them only with `pilot infra`
+  (skill `pilot-infra`).
 
 ## Saving tokens
 
@@ -84,26 +84,26 @@ Everything a tool prints stays in the conversation and is re-sent on every follo
 ## harness-pilot
 
 This workspace is driven by harness-pilot, a web control room for Claude Code (URL: see
-`maxxing status`). Sessions, files, tasks, scheduled jobs, Telegram and backups are managed from the
-UI; the server CLI is `maxxing`:
+`pilot status`). Sessions, files, tasks, scheduled jobs, Telegram and backups are managed from the
+UI; the server CLI is `pilot` (`maxxing`, its earlier name, still works):
 
 | Command | Purpose |
 |---|---|
-| `maxxing status` | version, URL, service, Claude auth, Telegram, backup |
-| `maxxing doctor [--json]` | full health check with fix hints |
-| `maxxing update [--check\|--resume\|--rollback]` | check for / install a new version, carrying customizations over (or ask in the topic `system/harness`) |
-| `maxxing custom [status\|save\|drop\|restore]` | customizations of the product code (see below) |
-| `maxxing cron list\|sync\|run <id>` | scheduled jobs |
-| `maxxing backup run\|status\|restore` | memory backup to a private GitHub repo |
-| `maxxing telegram status\|test` | Telegram bridge |
-| `maxxing import ZIP [--dry-run]` / `--prompt AGENT` | import another agent's memory (Settings -> Import does the same) |
-| `maxxing keys list\|get\|set\|delete` | the Keys vault from a script: `printf %s "$V" \| maxxing keys set NAME` (value on stdin); scripts read keys as env vars (`$NAME`) |
-| `maxxing packs list\|add <id>` | starter packs: ready-made projects (only missing files are added) |
-| `maxxing infra status\|list\|site\|db\|bucket\|server` | where every site / database / bucket / domain / server is; create them on this server the standard way |
-| `maxxing mcp list\|add\|remove` | MCP servers of Claude Code (every session or one topic), as in Settings -> MCP |
-| `maxxing video new DIR` / `video status` | Remotion video project linked to the shared install / tools check |
-| `maxxing pdf IN.html OUT.pdf` | print an HTML page (or URL) to PDF |
-| `maxxing setup-link` / `maxxing password` | first sign-in link / change the UI password |
+| `pilot status` | version, URL, service, Claude auth, Telegram, backup |
+| `pilot doctor [--json]` | full health check with fix hints |
+| `pilot update [--check\|--resume\|--rollback]` | check for / install a new version, carrying customizations over (or ask in the topic `system/harness`) |
+| `pilot custom [status\|save\|drop\|restore]` | customizations of the product code (see below) |
+| `pilot cron list\|sync\|run <id>` | scheduled jobs |
+| `pilot backup run\|status\|restore` | memory backup to a private GitHub repo |
+| `pilot telegram status\|test` | Telegram bridge |
+| `pilot import ZIP [--dry-run]` / `--prompt AGENT` | import another agent's memory (Settings -> Import does the same) |
+| `pilot keys list\|get\|set\|delete` | the Keys vault from a script: `printf %s "$V" \| pilot keys set NAME` (value on stdin); scripts read keys as env vars (`$NAME`) |
+| `pilot packs list\|add <id>` | starter packs: ready-made projects (only missing files are added) |
+| `pilot infra status\|list\|site\|db\|bucket\|server` | where every site / database / bucket / domain / server is; create them on this server the standard way |
+| `pilot mcp list\|add\|remove` | MCP servers of Claude Code (every session or one topic), as in Settings -> MCP |
+| `pilot video new DIR` / `video status` | Remotion video project linked to the shared install / tools check |
+| `pilot pdf IN.html OUT.pdf` | print an HTML page (or URL) to PDF |
+| `pilot setup-link` / `pilot password` | first sign-in link / change the UI password |
 
 Never restart the `claude-maxxing` service in the middle of a task without saying so: the UI is
 served by it (running turns survive, they live in their own units).
@@ -112,11 +112,11 @@ served by it (running turns survive, they live in their own units).
 
 The user may change anything, including the product. Never say "ask the authors" or "an update
 would erase it". In this order:
-1. **Extension** (`{{WORKSPACE}}/extensions/`, skill `maxxing-extension`): widgets - Card or free
+1. **Extension** (`{{WORKSPACE}}/extensions/`, skill `pilot-widgets-pages`): widgets - Card or free
    HTML (games, canvas) -, pages, their API. Untouched by updates.
 2. **Workspace instead of code**: a topic's `CLAUDE.md`, a cron, a skill in `.claude/skills/`.
-3. **Customization of the product code** (skill `maxxing-customize`): edit `{{CODE_DIR}}`, then
-   always `maxxing custom save "title" --why "reason"`. Recorded in `CUSTOMIZATIONS.md` (workspace),
+3. **Customization of the product code** (skill `pilot-customize`): edit `{{CODE_DIR}}`, then
+   always `pilot custom save "title" --why "reason"`. Recorded in `CUSTOMIZATIONS.md` (workspace),
    replayed by every update; on a conflict the update changes nothing and Claude adapts it in
    `system/harness`. Never under `web/` (pre-built UI: use an extension).
 
@@ -126,18 +126,18 @@ would erase it". In this order:
 |---|---|
 | `memory` | end of a significant exchange: record durable facts in the right memory.md |
 | `memory-compaction` | memory files are long, redundant or contradictory (also run daily) |
-| `maxxing-setup` | "set up harness-pilot": finish or check an installation |
-| `maxxing-doctor` | something does not work (UI down, sessions failing, crons not running...) |
-| `maxxing-telegram` | configure or troubleshoot the Telegram bridge |
-| `maxxing-backup` | configure, run or restore the memory backup, move to a new server |
-| `maxxing-cron` | create or change a scheduled job |
-| `maxxing-tasks` | read or edit the task board (tasks.json) |
-| `maxxing-extension` | build a dashboard widget (Card or HTML/game) or a page extension |
-| `maxxing-infra` | put a site online, create a database or a bucket on this server, add another server, "where is X / is it up" |
-| `maxxing-mcp` | add, connect or remove an MCP server (a service's tools for Claude), for every session or one topic |
-| `maxxing-customize` | change the product itself and keep it through updates; adapt customizations when an update conflicts |
-| `video-motion-design` | a video, an animation, a short / reel, a trailer (Remotion: `maxxing video new DIR`) |
-| `pdf-document` | a PDF: quote, invoice, report, guide (HTML -> `maxxing pdf IN.html OUT.pdf`) |
+| `pilot-setup` | "set up harness-pilot": finish or check an installation |
+| `pilot-doctor` | something does not work (UI down, sessions failing, crons not running...) |
+| `pilot-telegram` | configure or troubleshoot the Telegram bridge |
+| `pilot-backup` | configure, run or restore the memory backup, move to a new server |
+| `pilot-crons` | create or change a scheduled job |
+| `pilot-tasks` | read or edit the task board (tasks.json) |
+| `pilot-widgets-pages` | build a dashboard widget (Card or HTML/game) or a page extension |
+| `pilot-infra` | put a site online, create a database or a bucket on this server, add another server, "where is X / is it up" |
+| `pilot-mcp` | add, connect or remove an MCP server (a service's tools for Claude), for every session or one topic |
+| `pilot-customize` | change the product itself and keep it through updates; adapt customizations when an update conflicts |
+| `video-motion-design` | a video, an animation, a short / reel, a trailer (Remotion: `pilot video new DIR`) |
+| `pdf-document` | a PDF: quote, invoice, report, guide (HTML -> `pilot pdf IN.html OUT.pdf`) |
 | `image-edit` | resize, convert, compress, batch-process images (ImageMagick, ffmpeg) |
 | `seo-audit` | an SEO audit of a website, with a prioritized report |
 | `web-scraping` | collect data from websites (Scrapling: `scrapling extract …`, `scrapling-python script.py`), watch a page |
@@ -145,4 +145,4 @@ would erase it". In this order:
 ## Tasks
 
 `tasks.json` = `{"version": 1, "projects": [TaskProject], "tasks": [Task]}`. Edit it with the
-`maxxing-tasks` skill (atomic write, keep unknown fields); the Tasks page refreshes by itself.
+`pilot-tasks` skill (atomic write, keep unknown fields); the Tasks page refreshes by itself.

@@ -129,15 +129,15 @@ answer cannot lock you out. Unlinking Telegram turns it off.
 **Telegram does not answer** (bot deleted, Telegram down, phone lost): on the server, over SSH,
 
 ```bash
-maxxing 2fa off             # password only again (every trusted browser is forgotten)
-maxxing 2fa status          # on / off
+pilot 2fa off             # password only again (every trusted browser is forgotten)
+pilot 2fa status          # on / off
 ```
 
 ## Troubleshooting
 
 ```bash
-maxxing telegram status     # bot, chat, poller (running, last answer from Telegram), pending link, poll / sync errors, threads
-maxxing telegram test       # sends a test message and checks the receiving side (poller, webhook)
+pilot telegram status     # bot, chat, poller (running, last answer from Telegram), pending link, poll / sync errors, threads
+pilot telegram test       # sends a test message and checks the receiving side (poller, webhook)
 ```
 
 Settings -> Telegram shows the same: **Gateway** (running / stopped), **Last answer from Telegram**,
@@ -153,9 +153,9 @@ Settings -> Telegram shows the same: **Gateway** (running / stopped), **Last ans
 | Everything lands in one chat ("Threads are disabled for this bot") | Threaded Mode is off for the bot: in BotFather `/mybots` -> your bot -> Bot Settings -> Threaded Mode, then **Retry** in Settings -> Telegram. Not an error: the main chat works meanwhile |
 | A session vanished from Telegram | archived (in the web UI: Sessions tree -> topic -> Archived), or idle longer than *Keep a thread for* - it comes back when you use it |
 | A special thread (Crons, Alerts) was deleted | **Sync threads** (Settings -> Telegram -> Threads) recreates it |
-| Two-step sign-in: no message, you cannot sign in | on the server: `maxxing 2fa off`, then sign in with the password |
+| Two-step sign-in: no message, you cannot sign in | on the server: `pilot 2fa off`, then sign in with the password |
 
-`maxxing doctor` warns when the bot is configured but the server is not reading its messages (poller
+`pilot doctor` warns when the bot is configured but the server is not reading its messages (poller
 stopped, or no answer from Telegram for 5 minutes), when the token was rejected, or when the last thread
 sync failed. Threads being off is shown as a note, not a warning.
 

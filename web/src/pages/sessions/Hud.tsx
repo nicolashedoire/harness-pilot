@@ -454,7 +454,7 @@ export function HudBar({ sid, win, onOpen, onOpenApp }: { sid: string; win: Wind
             type="button"
             onClick={() => steer.mutate(sid)}
             disabled={steer.isPending}
-            className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-primary px-2 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-action px-2 font-medium text-action-foreground hover:bg-action/90 disabled:opacity-60"
           >
             <CornerDownRight className="size-3" /> {t('sessions.queue.steerShort')}
           </button>
@@ -470,7 +470,7 @@ export function HudBar({ sid, win, onOpen, onOpenApp }: { sid: string; win: Wind
             type="button"
             onClick={approvePlan}
             disabled={approving}
-            className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-primary px-2 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-action px-2 font-medium text-action-foreground hover:bg-action/90 disabled:opacity-60"
           >
             <Check className="size-3" /> {t('plan.hudApprove')}
           </button>
@@ -531,6 +531,6 @@ export function HudBar({ sid, win, onOpen, onOpenApp }: { sid: string; win: Wind
 const ICON_BTN =
   'inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
 const ROUND_BTN =
-  'inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,opacity] hover:bg-primary/90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
+  'inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-action text-action-foreground transition-[background-color,opacity] hover:bg-action/90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
 const NAV_BTN =
   'absolute top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white transition-colors hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'

@@ -10,7 +10,7 @@ the new mug", "make a 15-second product video". Content is drafted here; the use
 - Keep a content calendar for Instagram, TikTok and Pinterest (and others noted in `memory.md`).
 - Write captions, hooks, video scripts, hashtags and Pinterest titles in the brand's tone.
 - Produce visuals: resized and cropped images (`image-edit` skill, `convert`), short vertical videos
-  with Remotion (`video-motion-design` skill, `maxxing video new DIR`).
+  with Remotion (`video-motion-design` skill, `pilot video new DIR`).
 - Save the calendar and finished files in this topic's folder, one folder per week or campaign.
 - Never post or reply publicly on the user's accounts without an explicit "yes".
 
@@ -50,7 +50,7 @@ the new mug", "make a 15-second product video". Content is drafted here; the use
 
 ## Automations
 
-- No job is created for this topic. Useful ones to add on request (`maxxing-cron` skill): a Friday
+- No job is created for this topic. Useful ones to add on request (`pilot-crons` skill): a Friday
   job that drafts next week's calendar, or a monthly recap of the best posts.
 - Ready-for-review content can be announced in the feed with
-  `maxxing feed post "Next week's posts are ready" --source social`.
+  `pilot feed post "Next week's posts are ready" --source social`.

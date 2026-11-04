@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -110,7 +111,7 @@ function buildState(scenario) {
     loginFails: [], // timestamps
     lockUntil: 0,
     onboarding_completed: ready,
-    settings: { timezone: 'Europe/Paris', language: 'en', public_url: 'https://ui.example.com', files_root: ROOT, presentation_default: false, usage_widget: false, maxxing_mode: false, memory_max_lines: 200, donation_hidden: false },
+    settings: { timezone: 'Europe/Paris', language: 'en', public_url: 'https://ui.example.com', files_root: ROOT, presentation_default: false, usage_widget: false, maxxing_mode: false, memory_max_lines: 200, donation_hidden: false, team_page: ready },
     claude: {
       installed: true, version: '2.4.1',
       auth: ready ? { ok: true, method: 'oauth_token', detail: 'Long-lived OAuth token (claude setup-token), Max plan' } : { ok: false, method: null, detail: 'Not connected' },
@@ -123,6 +124,17 @@ function buildState(scenario) {
     timers: {}, // id -> [timeout]
     tasks: { projects: [], tasks: [] },
     crons: [], cronRuns: [], external: [],
+    // saved themes and a Team contact who sent one (Settings -> Appearance -> My themes, Team theme card)
+    myThemes: ready ? [{ id: 'th_5a63e0b1c2', source: 'received', from: 'Acme team', saved: t - 2 * DAY,
+      theme: { schema: 1, id: 'sauge', name: 'Sauge', description: 'Sage green on softly tinted greys.', base: 'zinc', accent: '#5f8f6b', buttons: 'accent', tint: 'tinted', tokens: { light: {}, dark: {} } } }] : [],
+    team: {
+      people: { p_acme: { name: 'Acme team', emoji: '', color: 'green', server: 'https://acme.example.com', status: 'online', address: 'https://acme.example.com', peer: true, contact: true, last_seen: t - 60 } },
+      chats: ready ? [{ id: 'd_acme', kind: 'dm', name: '', emoji: '', members: ['p_acme'], created: t - 3 * DAY, read_at: t - 2 * DAY, remote: true, admin: null, messages: [
+        { id: 'm_00000001', author: 'p_acme', at: t - 2 * DAY - 300, text: 'Here is the palette we use for the client dashboards.', kind: 'text' },
+        { id: 'm_00000002', author: 'p_acme', at: t - 2 * DAY - 240, text: 'Sauge', kind: 'theme',
+          theme: { schema: 1, id: 'sauge', name: 'Sauge', description: 'Sage green on softly tinted greys.', author: 'Acme', base: 'zinc', accent: '#5f8f6b', buttons: 'accent', tint: 'tinted', tokens: { light: {}, dark: {} } } },
+      ] }] : [],
+    },
     telegram: {
       token: null, bot: null, chat: null, topics_enabled: false, threads: [],
       settings: { notify_crons: true, login_alerts: true, reply_mode: 'final' }, last_error: null, link: null,
@@ -139,6 +151,7 @@ function buildState(scenario) {
       { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true },
     ],
     fs: new Map(),
+    blocks: blocksState(),
   }
 
   if (scenario !== 'setup' && scenario !== 'onboarding') {
@@ -147,6 +160,8 @@ function buildState(scenario) {
   }
   if (ready) {
     seedSessions(st, t)
+    seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
+    seedDebate(st, t)
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -225,6 +240,42 @@ function seedSessions(st, t) {
     st.sessions.push(s)
     st.events[id] = conversation(s, d)
   }
+}
+
+/* A Claude Code + Codex debate in progress (conversation view: lanes, reply numbers, progress against the limits). The
+ * runner writes the name of the agent that answers next as an info note before its turn. */
+function seedDebate(st, t) {
+  const id = uuid()
+  const path = topicPath('acme', 'website')
+  const s = { id, title: 'One-page checkout?', path, state: 'running', queue: 0, created: t - 15 * MIN, updated: t - 20, turns: 5, cost_usd: 0.64,
+    model: '', real_model: 'claude-opus-5-5', context_tokens: 31000, context_window: 1000000, archived: false, notify: false, source: 'web', unread: false,
+    last_text: 'Noted. Revised version: Apple Pay first, then the two blocks Codex proposed, and a single pay button at the bottom.', error: null,
+    provider: 'debate', debate_paused: false, discussion_pause_reason: null, discussion_turns: 5, discussion_turn_limit: 20, discussion_duration_seconds: 1800, discussion_elapsed: 14 * MIN }
+  const cwd = `${ROOT}/${path}`
+  let k = 0
+  const at = () => s.created + (k += 30)
+  const turn = (agent, text, cost, extra = []) => [
+    { type: 'note', text: agent, level: 'info', at: at() },
+    { type: 'init', model: agent === 'Codex' ? 'gpt-5.5-codex' : 'claude-opus-5-5', cwd, at: at() },
+    ...extra,
+    { type: 'assistant', text, at: at() },
+    { type: 'result', ok: true, cost_usd: cost, duration_ms: 38000, model: agent === 'Codex' ? 'gpt-5.5-codex' : 'claude-opus-5-5', usage: { input: 900, output: 420, cache_read: 18000, cache_write: 600 }, at: at() },
+  ]
+  const read = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  st.events[id] = [
+    { type: 'user', text: 'Should the shop checkout move to a single page? Debate the benefits and the risks, then end with a recommendation.', attachments: [], at: at(), source: 'web' },
+    ...turn('Claude Code', 'I suggest putting delivery and payment on one page. Today the cart reloads at every step and the address has to be typed again after going back.', 0.18),
+    ...turn('Codex', 'Agreed on the diagnosis, not on the whole cure. On mobile a single page makes the first render heavier: I would keep two collapsible blocks, validated one after the other.', 0),
+    { type: 'user', text: 'Keep Apple Pay at the top of the page, that is a constraint.', attachments: [], at: at(), source: 'web' },
+    ...turn('Claude Code', 'Noted. Revised version: **Apple Pay first**, then the two blocks Codex proposed, and a single pay button at the bottom.', 0.21, [
+      { type: 'tool_use', id: read, name: 'Read', input: { file_path: `${cwd}/src/checkout/steps.tsx` }, summary: 'Read src/checkout/steps.tsx', at: at() },
+      { type: 'tool_result', tool_use_id: read, text: 'export const steps = [delivery, payment]', is_error: false, at: at() },
+    ]),
+    { type: 'note', text: 'Codex', level: 'info', at: at() },
+    { type: 'init', model: 'gpt-5.5-codex', cwd, at: at() },
+    { type: 'assistant', text: 'That works for me. One point to check before concluding: the Apple Pay button must stay visible without scrolling on a small screen.', at: now() - 25 },
+  ]
+  st.sessions.push(s)
 }
 
 /* Maxxing scenario: 30 sessions spread over the topics, most of them running; each finishes after 5 to 40 s
@@ -307,6 +358,14 @@ function conversation(s, d) {
 
   if (s.state === 'running') {
     ev.push({ type: 'assistant', text: d.last, at: at() })
+    const td = tid()
+    ev.push({ type: 'tool_use', id: td, name: 'TodoWrite', input: { todos: [
+      { content: 'Read the topic memory', status: 'completed', activeForm: 'Reading the topic memory' },
+      { content: 'List the existing articles', status: 'completed', activeForm: 'Listing the existing articles' },
+      { content: 'Write the draft', status: 'in_progress', activeForm: 'Writing the draft' },
+      { content: 'Update the memory', status: 'pending', activeForm: 'Updating the memory' },
+    ] }, summary: 'TodoWrite', at: at() })
+    ev.push({ type: 'tool_result', tool_use_id: td, text: 'Todos have been modified successfully.', is_error: false, at: at() })
     const g = tid()
     ev.push({ type: 'tool_use', id: g, name: 'Grep', input: { pattern: 'checkout', path: `${cwd}/drafts` }, summary: 'Grep "checkout" in drafts/', at: at() })
     ev.push({ type: 'tool_result', tool_use_id: g, text: 'drafts/2026-09-cart-abandonment.md:14: …a slow checkout is the first reason…\ndrafts/2026-10-payment-methods.md:3: …one-page checkout…', is_error: false, at: at() })
@@ -326,6 +385,9 @@ function conversation(s, d) {
     ev.push({ type: 'tool_use', id: e1, name: 'Edit', input: { file_path: `${cwd}/memory.md`, old_string: '## Decisions', new_string: `## Decisions\n- 2026-10-11: ${s.title}` }, summary: `Edit ${s.path}/memory.md`, at: at() })
     ev.push({ type: 'tool_result', tool_use_id: e1, text: 'The file has been updated successfully.', is_error: false, at: at() })
     if (s.state === 'error') {
+      const t1 = tid()
+      ev.push({ type: 'tool_use', id: t1, name: 'Bash', input: { command: 'python3 scripts/categorise.py --month 2026-09', description: 'Categorise the rest' }, summary: 'Bash: python3 scripts/categorise.py --month 2026-09', at: at() })
+      ev.push({ type: 'tool_result', tool_use_id: t1, text: 'Traceback (most recent call last):\n  File "scripts/categorise.py", line 42\nKeyError: \'merchant\'\nExit code 1', is_error: true, at: at() })
       ev.push({ type: 'note', text: 'Turn failed: ' + s.error, level: 'error', at: at() })
       return ev
     }
@@ -656,7 +718,44 @@ function later(s, ms, fn) {
 }
 function clearTimers(s) { for (const h of S.timers[s.id] || []) clearTimeout(h); S.timers[s.id] = [] }
 
+/* The theme generator's topic (Settings -> Appearance -> Create): the turn writes a `<name>.theme.json` like the
+   skill pilot-theme would (a canned "Ember" theme, adjusted by the refinement words). */
+const THEME_TOPIC = 'projects/system/topics/themes'
+function emberTheme(text, prev) {
+  const t = prev ? JSON.parse(JSON.stringify(prev)) : {
+    schema: 1, id: 'ember', name: 'Ember', description: 'Warm dark surfaces, orange buttons, calm text.', base: 'custom', accent: '#e8915a', buttons: 'accent', tint: 'neutral',
+    tokens: { light: {}, dark: { background: '#14100d', foreground: '#f6efe8', card: '#1c1612', 'card-foreground': '#f6efe8', popover: '#211a15', 'popover-foreground': '#f6efe8',
+      secondary: '#2b221b', 'secondary-foreground': '#f6efe8', muted: '#241c16', 'muted-foreground': '#b8a99a', accent: '#2b221b', 'accent-foreground': '#f6efe8',
+      border: '#2e241c', input: '#3a2e24', sidebar: '#181310', 'sidebar-border': '#2e241c', primary: '#f2b48a', action: '#e8915a', 'action-foreground': '#ffffff' } },
+  }
+  const low = text.toLowerCase()
+  if (/contrast/.test(low)) Object.assign(t.tokens.dark, { foreground: '#fffaf5', 'muted-foreground': '#d2c3b4', border: '#4a3a2c', card: '#211a15' })
+  if (/neutral|neutre/.test(low)) { t.buttons = 'neutral'; delete t.tokens.dark.action; delete t.tokens.dark['action-foreground'] }
+  if (/cool|froid/.test(low)) { t.accent = '#5a9ae8'; t.tokens.dark.primary = '#8ab8f2'; if (t.tokens.dark.action) t.tokens.dark.action = '#5a9ae8'; t.name = 'Ember - cool' }
+  if (/light|clair/.test(low)) Object.assign(t.tokens.light, { background: '#fbf7f3', card: '#ffffff', sidebar: '#f5eee7', muted: '#f1e9e1', border: '#e6d9cc', 'muted-foreground': '#6b5a4b' })
+  return t
+}
+function themeTurn(s, text, attachments) {
+  s.state = 'running'; s.error = null; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments, at: now(), source: 'web' }, { type: 'init', model: S.claude.default_model, cwd: `${ROOT}/${s.path}`, at: now() })
+  bus('sessions', 'workspace')
+  const tu = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  later(s, 900, () => addEvents(s, { type: 'tool_use', id: tu, name: 'Write', input: { file_path: `${ROOT}/${s.path}/ember.theme.json` }, summary: 'Write ember.theme.json', at: now() }))
+  later(s, 2600, () => {
+    const file = `${ROOT}/${s.path}/ember.theme.json`
+    const prevNode = S.fs.get(file)
+    const theme = emberTheme(text, prevNode && s.turns > 0 ? JSON.parse(prevNode.content) : null)
+    fsAdd(S, file, JSON.stringify(theme, null, 2) + '\n', now(), 'application/json')
+    const answer = s.turns ? `Done: **${theme.name}** adjusted as asked, contrast checked in light and dark.` : `**Ember**: warm dark surfaces taken from your logo, calmer orange for the buttons, links in a lighter orange. Every text passes 4.5:1 in dark and light.`
+    s.turns += 1; s.cost_usd = +(s.cost_usd + 0.03).toFixed(4); s.last_text = answer.replace(/[*`#]/g, ''); s.updated = now(); s.unread = true; s.state = 'idle'
+    addEvents(s, { type: 'tool_result', tool_use_id: tu, text: 'File written', is_error: false, at: now() }, { type: 'assistant', text: answer, at: now() },
+      { type: 'result', ok: true, cost_usd: 0.03, duration_ms: 2600, model: S.claude.default_model, usage: { input: 900, output: 420, cache_read: 12000, cache_write: 300 }, at: now() })
+    bus('sessions', 'workspace')
+  })
+}
+
 function startTurn(s, text, attachments = []) {
+  if (s.path === THEME_TOPIC) return themeTurn(s, text, attachments)
   const cwd = `${ROOT}/${s.path}`
   const model = s.model || S.claude.default_model
   s.state = 'running'; s.error = null; s.updated = now()
@@ -674,6 +773,7 @@ function startTurn(s, text, attachments = []) {
     const cost = +(0.02 + Math.random() * 0.12).toFixed(4)
     s.turns += 1; s.cost_usd = +(s.cost_usd + cost).toFixed(4); s.real_model = model; s.context_tokens = 20000 + Math.floor(Math.random() * 30000)
     s.last_text = answer.replace(/[*`#]/g, '').slice(0, 200); s.updated = now(); s.unread = true; s.state = 'idle'
+    if (s.plan_mode) s.plan_ready = true // a plan-mode turn ends with a plan to approve (as the server does)
     addEvents(s, { type: 'assistant', text: answer, at: now() },
       { type: 'result', ok: true, cost_usd: cost, duration_ms: 3400, model, usage: { input: 820, output: 164, cache_read: 19870, cache_write: 512 }, at: now() })
     bus('sessions', 'workspace')
@@ -1085,7 +1185,7 @@ function R(method, pattern, handler, opts = {}) {
 }
 
 /* ---- auth */
-R('GET', '/api/auth/state', ({ authed }) => ({ setup_required: S.setup_required, authenticated: authed, version: VERSION, onboarding_completed: S.onboarding_completed, language: S.settings.language }), { public: true })
+R('GET', '/api/auth/state', ({ authed }) => ({ setup_required: S.setup_required, authenticated: authed, version: VERSION, onboarding_completed: S.onboarding_completed, language: S.settings.language, look: S.look || null }), { public: true })
 
 R('POST', '/api/auth/setup', ({ body, res }) => {
   if (!S.setup_required) fail(409, 'already_setup', 'Setup has already been completed')
@@ -1764,6 +1864,102 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+// The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
+R('PUT', '/api/settings/look', ({ body }) => {
+  if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
+  const old = S.look || { accent: 'blue', tint: 'neutral', palette: null, rev: 0 }
+  const next = { ...old, theme: body.theme }
+  if (body.palette) {
+    if (typeof body.palette !== 'object' || JSON.stringify(body.palette).length > 16384) fail(422, 'invalid_theme', 'a theme is an object of 16 KB at most')
+    next.palette = body.palette
+    next.accent = body.accent || 'blue'
+    next.tint = body.palette.tint === 'tinted' ? 'tinted' : 'neutral'
+  }
+  const changed = JSON.stringify(next.palette) !== JSON.stringify(old.palette)
+  if (changed) next.rev = old.rev + 1
+  S.look = next
+  if (changed) bus('look')
+  return { ok: true, look: S.look }
+})
+/* ---- Team (a minimal mock: one contact, direct chats, text and theme messages) */
+const teamChatOut = (c) => {
+  const msgs = c.messages
+  const last = msgs[msgs.length - 1]
+  return { ...Object.fromEntries(Object.entries(c).filter(([k]) => k !== 'messages')),
+    last: last ? { author: last.author, at: last.at, kind: last.kind, text: last.text, files: 0 } : null,
+    unread: msgs.filter((m) => m.author !== 'me' && m.at > (c.read_at || 0)).length, updated: last ? last.at : c.created }
+}
+const teamChat = (id) => S.team.chats.find((c) => c.id === id) || fail(404, 'not_found', 'Chat not found')
+R('GET', '/api/team', () => ({ me: 'me', people: { ...S.team.people, me: { name: 'Me', emoji: '', color: 'blue', server: '', status: 'online' } },
+  chats: S.team.chats.map(teamChatOut).sort((a, b) => b.updated - a.updated), reactions: ['👍', '❤️', '😂', '🎉', '🤔', '👀'], typing: {} }))
+R('GET', '/api/team/connections', () => ({ ok: true, address: 'https://ui.example.com', reason: '', insecure: false, open_invites: 0,
+  contacts: Object.entries(S.team.people).map(([id, p]) => ({ address: p.address, id, name: p.name, emoji: p.emoji, color: p.color, status: 'accepted', fingerprint: '7F3A-91C2', since: now() - 9 * DAY, last_seen: p.last_seen })) }))
+R('GET', '/api/team/chats/:id', ({ params }) => { const c = teamChat(params.id); return { chat: teamChatOut(c), messages: c.messages } })
+R('POST', '/api/team/chats', ({ body }) => {
+  const who = (body.members || []).filter((m) => S.team.people[m])
+  if (!who.length) fail(400, 'no_members', 'Choose at least one contact')
+  let c = S.team.chats.find((x) => x.kind === 'dm' && x.members[0] === who[0])
+  if (!c) { c = { id: 'd_' + crypto.randomBytes(8).toString('hex'), kind: 'dm', name: '', emoji: '', members: [who[0]], created: now(), read_at: now(), remote: true, admin: null, messages: [] }; S.team.chats.push(c); bus('team') }
+  return teamChatOut(c)
+})
+for (const what of ['read', 'typing']) R('POST', `/api/team/chats/:id/${what}`, ({ params }) => { const c = teamChat(params.id); if (what === 'read') c.read_at = now(); return { ok: true } })
+R('POST', '/api/team/presence', () => ({ ok: true }))
+R('POST', '/api/team/chats/:id/messages', ({ params, body }) => {
+  const c = teamChat(params.id)
+  const text = String(body.text || '').trim().slice(0, 8000)
+  if (!text) fail(400, 'empty', 'Empty message')
+  const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text, kind: 'text' }
+  c.messages.push(m); c.read_at = m.at; bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/themes', ({ params, body }) => {
+  const c = teamChat(params.id)
+  if (!themeOk(body.theme)) fail(422, 'invalid_theme', 'tokens: colours only, 16 KB at most')
+  const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text: String(body.theme.name || '').slice(0, 60), kind: 'theme', theme: body.theme }
+  c.messages.push(m); c.read_at = m.at; bus('team')
+  return m
+})
+
+// Saved themes ("My themes") and the theme a session wrote (real validation: server/maxxing/themes.py clean_theme).
+const themeOk = (t) => t && typeof t === 'object' && !Array.isArray(t) && JSON.stringify(t).length <= 16384 && !/url\(|var\(|;|[{}]\s*[a-z-]+\s*:/i.test(JSON.stringify(t.tokens || {}))
+const themeColours = (t) => JSON.stringify([t.base, t.accent, t.buttons, t.tint, t.tokens])
+R('GET', '/api/settings/themes', () => ({ themes: S.myThemes, max: 50 }))
+R('POST', '/api/settings/themes', ({ body }) => {
+  if (!themeOk(body.theme)) fail(422, 'invalid_theme', 'tokens: colours only, 16 KB at most')
+  const same = S.myThemes.find((e) => themeColours(e.theme) === themeColours(body.theme))
+  if (same) return same
+  if (S.myThemes.length >= 50) fail(409, 'too_many_themes', '50 saved themes at most: delete one first')
+  const e = { id: 'th_' + crypto.randomBytes(5).toString('hex'), theme: { schema: 1, id: 'custom', name: '', base: 'zinc', accent: 'blue', buttons: 'accent', tint: 'neutral', tokens: { light: {}, dark: {} }, ...body.theme }, source: body.source || 'imported', from: String(body.from || '').slice(0, 60), saved: now() }
+  S.myThemes.unshift(e)
+  bus('themes')
+  return e
+})
+R('PATCH', '/api/settings/themes/:id', ({ params, body }) => {
+  const e = S.myThemes.find((x) => x.id === params.id) || fail(404, 'not_found', 'Theme not found')
+  const name = String(body.name || '').replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, 60)
+  if (!name) fail(422, 'invalid_theme', 'a name is needed')
+  e.theme.name = name
+  bus('themes')
+  return e
+})
+R('DELETE', '/api/settings/themes/:id', ({ params }) => {
+  if (!S.myThemes.some((x) => x.id === params.id)) fail(404, 'not_found', 'Theme not found')
+  S.myThemes = S.myThemes.filter((x) => x.id !== params.id)
+  bus('themes')
+  return { ok: true }
+})
+R('GET', '/api/settings/themes/session/:id', ({ params, q }) => {
+  const s = findSession(params.id)
+  const since = Number(q.get('since')) || s.created - 2
+  const dir = `${ROOT}/${s.path}`
+  let best = null
+  for (const [k, n] of S.fs) if (n.type === 'file' && k.endsWith('.theme.json') && (path.posix.dirname(k) === dir || path.posix.dirname(k) === `${dir}/themes`) && n.mtime >= since && (!best || n.mtime > best[1].mtime)) best = [k, n]
+  if (!best) fail(404, 'no_theme', 'No theme file written by this session yet')
+  let theme
+  try { theme = JSON.parse(best[1].content) } catch { fail(422, 'invalid_theme', `${path.basename(best[0])}: not JSON`) }
+  if (!themeOk(theme)) fail(422, 'invalid_theme', 'tokens: colours only')
+  return { theme, file: path.basename(best[0]), at: best[1].mtime }
+})
 const secretOut = (s) => ({ name: s.name, note: s.note, expose: s.expose, updated: s.updated, preview: s.value.slice(0, 4) + '…' })
 R('GET', '/api/secrets', () => S.secrets.map(secretOut))
 R('PUT', '/api/secrets/:name', ({ params, body }) => {
@@ -1855,6 +2051,7 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
   return { ok: true }
 })
 R('GET', '/api/extensions', () => S.extensions)
+installBlocks({ R, state: () => S, fail, bus })
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
   const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown extension')
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
@@ -1921,7 +2118,7 @@ const sessionUrl = (s) => `/sessions?path=${encodeURIComponent(s.path)}&session=
 function feedAdd(st, ev) {
   const t = ev.at ?? now()
   const e = { id: st.feed.nextId++, at: t, source: 'custom', level: 'info', title: '', body: '', url: '', count: 1, read: false,
-    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], ...ev }
+    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], quiet: false, ...ev }
   if (e.group) {
     const row = st.feed.events.find((x) => x.source === e.source && x.group === e.group && x.level === e.level && !x.read && !x.resolved_at && t - x.at < DAY)
     if (row) {
@@ -1995,7 +2192,8 @@ function seedFeed(st, t) {
   const disc = { id: uuid(), title: 'Compare hosting offers', path: topicPath('ops', 'server'), state: 'idle', queue: 0, created: t - 3 * HOUR, updated: t - 40 * MIN,
     turns: 12, cost_usd: 1.9, model: '', real_model: 'claude-opus-5-5', context_tokens: 64000, context_window: 1000000, archived: false, notify: false,
     source: 'web', unread: true, last_text: 'Codex: the managed option wins on maintenance, the VPS on price. Shall we write the decision record?', error: null,
-    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_turns: 12, discussion_turn_limit: 12, discussion_duration_seconds: null }
+    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_paused_at: t - 40 * MIN, discussion_turns: 12, discussion_turn_limit: 12,
+    discussion_duration_seconds: null, discussion_elapsed: 22 * MIN }
   st.sessions.push(disc)
   st.events[disc.id] = conversation(disc, { last: disc.last_text, turns: disc.turns })
   // ---- three days ago
@@ -2149,7 +2347,7 @@ R('POST', '/api/feed', ({ body }) => {
   const source = String(body.source || 'custom').toLowerCase()
   if (body.dedupe && S.feed.events.some((e) => e.source === source && e.dedupe === body.dedupe)) return { event: null, duplicate: true }
   const ev = feedAdd(S, { source, level, title, body: String(body.body || ''), url: String(body.url || ''), dedupe: body.dedupe || undefined, group: body.group || null,
-    kind, params: feedParams(body.params), actions: feedActions(body.actions) })
+    kind, params: feedParams(body.params), actions: feedActions(body.actions), quiet: body.quiet === true })
   bus('feed')
   return { event: feedPublic(ev), duplicate: false }
 })
@@ -2196,7 +2394,10 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be resumed.')
   if (!s.debate_paused) fail(409, 'not_paused', 'The conversation is not paused.')
-  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_turns: 0, updated: now() })
+  // after a limit pause: a new period only while a limit is still reached (API.md "Discussion periods")
+  const reached = (s.discussion_turn_limit && s.discussion_turns >= s.discussion_turn_limit) || (s.discussion_duration_seconds && (s.discussion_elapsed || 0) >= s.discussion_duration_seconds)
+  if (s.discussion_pause_reason === 'limit' && reached) Object.assign(s, { discussion_turns: 0, discussion_elapsed: 0 })
+  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_paused_at: null, updated: now() })
   feedResolve(S, 'sessions', `discussion:${s.id}`)
   bus('sessions', 'feed')
   return s
@@ -2204,7 +2405,19 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
 R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be paused.')
-  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', updated: now() })
+  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', discussion_paused_at: s.debate_paused ? s.discussion_paused_at : now(), updated: now() })
+  bus('sessions')
+  return s
+})
+R('PATCH', '/api/sessions/:id/discussion', ({ params, body }) => {
+  const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
+  if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations have limits.')
+  const ok = (v, hi) => v === null || (Number.isInteger(v) && v >= 1 && v <= hi)
+  if ('turn_limit' in body && !ok(body.turn_limit, 200)) fail(422, 'invalid', 'turn_limit: 1-200')
+  if ('duration_minutes' in body && !ok(body.duration_minutes, 1440)) fail(422, 'invalid', 'duration_minutes: 1-1440')
+  if ('turn_limit' in body) s.discussion_turn_limit = body.turn_limit
+  if ('duration_minutes' in body) s.discussion_duration_seconds = body.duration_minutes === null ? null : body.duration_minutes * 60
+  s.updated = now()
   bus('sessions')
   return s
 })
@@ -2212,20 +2425,24 @@ R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
 // ---- web push (the mock never sends anything: /test answers ok)
 const PUSH_KEY = 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM'
 const pushOut = (p) => ({ id: p.id, endpoint: p.endpoint, label: p.label, created: p.created, last_ok: p.last_ok, last_error: p.last_error, prefs: p.prefs })
-function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {} }) {
+function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {}, sources: {} }) {
   if (p == null) return clone(base)
-  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds}')
-  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true, kinds = p.kinds ?? base.kinds
+  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds, sources}')
+  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true
   if (!Array.isArray(levels) || levels.some((l) => !FEED_LEVELS.includes(l))) fail(400, 'bad_prefs', 'prefs.levels')
   if (typeof sound !== 'boolean') fail(400, 'bad_prefs', 'prefs.sound')
-  if (typeof kinds !== 'object' || Array.isArray(kinds)) fail(400, 'bad_prefs', 'prefs.kinds')
-  const out = {}
-  for (const [k, v] of Object.entries(kinds)) {
-    if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
-    if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.kinds.${k}: {enabled, sound}`)
-    out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+  // kinds / sources: {<name>: {enabled, sound}} (a bare boolean = enabled with the default sound)
+  const entries = (name, map) => {
+    if (typeof map !== 'object' || map === null || Array.isArray(map)) fail(400, 'bad_prefs', `prefs.${name}`)
+    const out = {}
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
+      if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.${name}.${k}: {enabled, sound}`)
+      out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+    }
+    return out
   }
-  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: out }
+  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: entries('kinds', p.kinds ?? base.kinds ?? {}), sources: entries('sources', p.sources ?? base.sources ?? {}) }
 }
 R('GET', '/api/push', () => ({ available: true, public_key: PUSH_KEY, subscriptions: S.push.subs.map(pushOut) }))
 R('POST', '/api/push/subscriptions', ({ body }) => {
@@ -2391,6 +2608,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true })
     }
     if (url.pathname.startsWith('/api/') || url.pathname === '/api') return await handleApi(req, res, url)
+    if (url.pathname.startsWith('/ext/_blocks/')) return serveBlockFrame(req, res, url, isAuthed(req), () => S)
     if (url.pathname.startsWith('/ext/')) return serveExt(req, res, url)
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method_not_allowed', message: 'Static files are read-only' })
     return serveStatic(req, res, url)

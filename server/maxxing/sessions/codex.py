@@ -43,7 +43,17 @@ def workspace_context(root: Path, cwd: Path) -> str:
                 parts.append(f"--- {path.relative_to(root)} ---\n{text}" + ("\n[truncated]" if truncated else ""))
             except OSError:
                 continue
+    parts += _blocks_context()   # the conversation block types enabled on this server (written by maxxing/blocks.py)
     return "\n\n".join(parts)
+
+
+def _blocks_context() -> list[str]:
+    from .. import config
+    try:
+        with (config.STATE / "blocks" / "agents.md").open("rb") as f:
+            return [f"--- conversation blocks ---\n{f.read(16384).decode('utf-8', errors='replace')}"]
+    except OSError:
+        return []
 
 
 def command(thread_id: str, mode: str, model: str = "", images: list[str] | None = None) -> list[str]:

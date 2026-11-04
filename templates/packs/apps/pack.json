@@ -15,7 +15,7 @@
       "name": "Uptime check",
       "schedule": "*/15 * * * *",
       "topic": "hosting",
-      "prompt": "Check every URL listed under Monitoring in the hosting topic memory: HTTP status, response time and TLS certificate expiry. Only when something fails (non-2xx/3xx status, timeout over 10 s, certificate expiring in less than 14 days), post one feed notification per problem with `maxxing feed post \"<title>\" --level error --source hosting` (warning for certificates) and say what failed. If everything is fine, answer \"All up\" in one line and post nothing. If no URL is listed, report it in one line and stop.",
+      "prompt": "Check every URL listed under Monitoring in the hosting topic memory: HTTP status, response time and TLS certificate expiry. Only when something fails (non-2xx/3xx status, timeout over 10 s, certificate expiring in less than 14 days), post one feed notification per problem with `pilot feed post \"<title>\" --level error --source hosting` (warning for certificates) and say what failed. If everything is fine, answer \"All up\" in one line and post nothing. If no URL is listed, report it in one line and stop.",
       "notify": "failure"
     }
   ]

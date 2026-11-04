@@ -5,7 +5,9 @@ import { useT } from '@/i18n'
 import { useClaudeStatus } from '@/lib/queries'
 import { Badge, confirm, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, StatusDot, Tooltip } from '@/components/ui'
 import type { Session } from '@/lib/types'
-import { contextWindow, fmtTokens, modelLabel } from './util'
+import { contextWindow, fmtCost, fmtTokens, modelLabel } from './util'
+import { costTip, useResultLine } from './resultLine'
+import { AGENT_NAME, AgentIcon, sessionAgents } from '@/features/agents/AgentIcon'
 
 /** Family aliases follow resolved versions; pinned model ids still compare exactly. */
 function matchesModel(real: string, chosen: string): boolean {
@@ -107,7 +109,7 @@ export function ModelPicker({
   )
 }
 
-export function ContextGauge({ tokens, window: reported, model, realModel, ring }: { tokens: number | null; window?: number | null; model?: string | null; realModel?: string | null; ring?: boolean }) {
+export function ContextGauge({ tokens, window: reported, model, realModel, ring, percent }: { tokens: number | null; window?: number | null; model?: string | null; realModel?: string | null; ring?: boolean; /** Session header: a neutral bar and the share used ("32 %"). */ percent?: boolean }) {
   const t = useT()
   const { data: claude } = useClaudeStatus()
   if (!tokens) return null
@@ -116,6 +118,19 @@ export function ContextGauge({ tokens, window: reported, model, realModel, ring 
   const pct = Math.min(1, tokens / max)
   const tone = pct > 0.85 ? 'bg-destructive' : pct > 0.6 ? 'bg-warning' : 'bg-primary'
   const label = t('sessions.context', { used: fmtTokens(tokens), max: fmtTokens(max), pct: Math.round(pct * 100) })
+  if (percent) {
+    const fill = pct > 0.85 ? 'bg-destructive' : pct > 0.6 ? 'bg-warning' : 'bg-muted-foreground'
+    return (
+      <Tooltip content={label}>
+        <span tabIndex={0} className="inline-flex h-7 items-center gap-1.5 rounded px-0.5 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={label} data-testid="context-gauge">
+          <span aria-hidden className="relative h-1 w-10 overflow-hidden rounded-full bg-muted">
+            <span className={cn('absolute inset-y-0 left-0 rounded-full', fill)} style={{ width: `${Math.max(4, pct * 100)}%` }} />
+          </span>
+          <span className="tabular-nums">{Math.round(pct * 100)} %</span>
+        </span>
+      </Tooltip>
+    )
+  }
   if (ring) {
     // phone header: a ring that fills with the context used (r = 6.5 -> circumference 40.84)
     const stroke = pct > 0.85 ? 'stroke-destructive' : pct > 0.6 ? 'stroke-warning' : 'stroke-primary'
@@ -159,4 +174,28 @@ export function StateBadge({ session }: { session: Pick<Session, 'state' | 'queu
       </Tooltip>
     )
   return null
+}
+
+/** Session header: who answers and with which model (the session's total cost in the tooltip). Discussions show both
+ *  agents. Narrow columns keep the marks only. */
+export function AgentChip({ session }: { session: Session }) {
+  const t = useT()
+  const { data } = useClaudeStatus()
+  const showCost = !useResultLine().hidden.includes('cost')
+  const agents = sessionAgents(session.provider)
+  const model = session.provider === 'codex' ? session.model : session.real_model || session.model || data?.default_model || ''
+  const label = agents.length > 1 ? agents.map((a) => AGENT_NAME[a]).join(' · ') : [AGENT_NAME[agents[0]], model ? modelLabel(model, data?.models) : ''].filter(Boolean).join(' · ')
+  const tip = [label, session.cost_usd > 0 && showCost ? `≈ ${fmtCost(session.cost_usd)} · ${costTip(t, session.turns)}` : ''].filter(Boolean).join(' — ')
+  return (
+    <Tooltip content={<span className="block max-w-72 whitespace-normal">{tip}</span>}>
+      <span tabIndex={0} className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-lg border px-2 text-xs text-foreground/85 outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={tip} data-testid="agent-chip">
+        <span className="flex shrink-0 items-center -space-x-0.5">
+          {agents.map((a) => (
+            <AgentIcon key={a} agent={a} size={16} label={null} />
+          ))}
+        </span>
+        <span className="truncate @max-[30rem]:hidden">{label}</span>
+      </span>
+    </Tooltip>
+  )
 }
