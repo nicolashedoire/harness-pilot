@@ -51,8 +51,8 @@ Codex turns are unchanged (already sandboxed). External adapters are unchanged.
 ## Limits
 
 - Claude's sandbox covers Bash commands and their child processes. File tools (Read, Edit, Write) follow
-  permission rules, not the sandbox; reads are not limited except by `Read(...)` deny rules (secrets.json and
-  `~/.ssh` with Protect the secrets).
+  permission rules, not the sandbox; reads are not limited except by `Read(...)` deny rules (secrets.json,
+  `~/.ssh` and the agents' sign-in files with Protect the secrets).
 - Sandboxed commands lose network access to domains that are not allowed: installing dependencies or calling an
   API from a test fails. Companions should not install dependencies anyway.
 - On Linux, Claude's sandbox needs bubblewrap and socat; without them the turn fails (`failIfUnavailable`).

@@ -59,10 +59,11 @@ websites; it does **not** protect your computer from the agents you start: they 
   user, an agent included, can read it. FileVault protects it while the computer is off.
 - The API never returns a stored secret, except a Key you reveal on purpose. A Key marked **Expose** becomes an
   environment variable of every Claude turn and shell job: the agent and every command it runs can read it.
-- **Protect the secrets** (Settings -> Claude, on by default) makes Claude's file tools refuse `secrets.json` and
-  `~/.ssh`. For Claude it is a speed bump: a command written to open the file still can. For Codex it is enforced by
-  Codex's own sandbox, so the commands Codex runs, scripts included, cannot read or change them either (checked on
-  macOS and Linux). MCP servers run outside both agents' rules and can read them.
+- **Protect the secrets** (Settings -> Claude, on by default) makes Claude's file tools refuse `secrets.json`,
+  `~/.ssh` and the agents' own sign-ins (Codex's `auth.json`, Claude Code's `.credentials.json`); the agents
+  themselves still use their own sign-in. For Claude it is a speed bump: a command written to open the file still
+  can. For Codex it is enforced by Codex's own sandbox, so the commands Codex runs, scripts included, cannot read or
+  change them either (checked on macOS and Linux). MCP servers run outside both agents' rules and can read them.
 - The rest of the state folder is not covered, for either agent: the commands an agent runs can read the
   configuration, the session logs and the server's own SSH key for your other servers (`<state>/ssh`, see
   [Infra](infra)).
@@ -77,7 +78,8 @@ no operating-system isolation between harness-pilot and the agents it starts. Wh
   (Claude asks before edits and commands); `bypass` runs any command without asking.
 - **Codex**: its own sandbox, chosen from the same mode: read-only in `default` and `plan`, workspace-write
   (writes limited to the working folder and temporary folders) otherwise. harness-pilot never starts Codex with
-  unrestricted access. Reads are not limited, except `secrets.json` and `~/.ssh` with **Protect the secrets**.
+  unrestricted access. Reads are not limited, except `secrets.json`, `~/.ssh` and the agents' sign-in files with
+  **Protect the secrets**.
 - **Resident companions and missions**: each experiment works in a disposable copy of the committed source
   (`<state>/companions/runs/<id>/repo`, mode 700), with Claude's `acceptEdits` mode or Codex's workspace-write
   sandbox; an architect's plan runs read-only. The copy keeps ordinary edits away from the running app, but it is
@@ -136,9 +138,9 @@ follow: do not feed it untrusted content with the bypass mode on. Topics and job
 forwarded messages are the ones to put in a stricter mode.
 
 **Protect the secrets** (Settings -> Claude, on by default) makes Claude's tools refuse to read or edit
-`secrets.json` and `~/.ssh` in every mode. It is a speed bump, not a wall: a script written on purpose to open the
-file still can. Codex sessions get the same two paths denied by Codex's own sandbox, which a script does not get
-around.
+`secrets.json`, `~/.ssh` and the agents' sign-in files (Codex's `auth.json`, Claude Code's `.credentials.json`) in
+every mode. It is a speed bump, not a wall: a script written on purpose to open the file still can. Codex sessions
+get the same paths denied by Codex's own sandbox, which a script does not get around.
 
 ## Who can reach the UI
 

@@ -169,8 +169,9 @@ e-mails, forwarded messages - so instructions hidden in that content cannot make
 job's mode, else the topic's, else this global one.
 
 **Protect the secrets** (on by default): in every mode, Claude's tools refuse to read or edit the server's secrets
-(`secrets.json`) and the SSH keys (`~/.ssh`). It stops a hidden instruction from simply reading them; a script written
-on purpose to open the file is not stopped, so it does not replace a stricter mode. Codex sessions get the same two
+(`secrets.json`), the SSH keys (`~/.ssh`) and the agents' own sign-ins (Codex's `auth.json`, Claude Code's
+`.credentials.json`; on a Mac Claude Code keeps its sign-in in the Keychain). It stops a hidden instruction from simply reading them; a script written
+on purpose to open the file is not stopped, so it does not replace a stricter mode. Codex sessions get the same
 paths denied by Codex's own sandbox, which stops a script too. More rules for Claude only:
 `claude_deny` in config.json (Claude Code rule syntax, for example `"Bash(rm -rf:*)"`).
 
