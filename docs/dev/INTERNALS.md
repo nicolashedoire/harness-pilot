@@ -354,6 +354,7 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
   router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
 
 ## maxxing.permissions - declared permissions of extensions  (owner: organisation)
+Next stages (a sandboxed frame for `page.js`, `api.py` out of process): docs/dev/EXTENSION-ISOLATION.md.
 Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--extensions (Permissions).
 - `parse(raw) -> dict | None`: the manifest's `"permissions"` validated -> `{network, secrets, read}` (lists in the
   manifest's order, duplicates dropped, hosts lowercased, read paths normalised: no trailing `/`, `./` dropped);
