@@ -128,3 +128,38 @@ def test_context_overflow_is_recognised_for_both_agents():
     assert runner._context_overflow(runner.Attempt(), "Codex ran out of room in the model's context window.")
     assert not runner._context_overflow(runner.Attempt(result={'is_error': False, 'result': 'Prompt is too long'}), 'boom')
     assert not runner._context_overflow(runner.Attempt(), 'OAuth session expired')
+
+
+def test_a_discussion_is_handed_off_to_a_seeded_continuation(client, topic, mx, monkeypatch):
+    codex_calls = _codex(mx, monkeypatch)
+    old = client.post('/api/sessions', json={'path': topic, 'provider': 'debate', 'message': 'Handoff NOTOOL',
+                                             'discussion_turn_limit': 1, 'claude_role': 'PROPOSER ROLE',
+                                             'codex_role': 'REVIEWER ROLE', 'codex_model': 'codex-test-model'}).json()['id']
+    _paused(client, old)                                       # Claude replied, Codex's reply is pending
+    r = client.post(f'/api/sessions/{old}/handoff')
+    assert r.status_code == 200, r.text
+    new = r.json()
+    assert new['provider'] == 'debate' and new['title'].endswith('(cont.)') and new['discussion_turn_limit'] == 1
+    wait_for(lambda: store.read(old).get('archived'), 20)
+    assert not client.get(f'/api/sessions/{old}').json()['debate_paused']
+    summary = [c for c in _claude_calls(mx) if c['prompt'].startswith(runner.DEBATE_SUMMARY_PROMPT)]
+    assert len(summary) == 1 and 'User: Handoff NOTOOL' in summary[0]['prompt']
+    meta = store.read(new['id'])
+    assert meta['debate_goal'] == 'Handoff NOTOOL' and meta['codex_role'] == 'REVIEWER ROLE' and meta['debate_next'] == 'codex'
+    seeds = [e for e in all_events(client, new['id']) if e['type'] == 'user' and e['source'] == 'system']
+    assert len(seeds) == 1 and "Context carried over from discussion 'Handoff NOTOOL'" in seeds[0]['text']
+    s = client.get(f"/api/sessions/{new['id']}").json()
+    assert s['debate_paused'] and s['state'] == 'idle' and not codex_calls()   # nothing runs before Resume
+    assert client.post(f"/api/sessions/{new['id']}/discussion/resume").status_code == 200
+    _paused(client, new['id'])
+    codex = codex_calls()
+    assert len(codex) == 1 and 'resume' not in codex[0]['argv']
+    assert codex[0]['argv'][codex[0]['argv'].index('--model') + 1] == 'codex-test-model'
+    for text in ("Context carried over from discussion 'Handoff NOTOOL'", 'REVIEWER ROLE', 'Latest contribution from Claude Code'):
+        assert text in codex[0]['prompt']
+    assert client.post(f"/api/sessions/{new['id']}/messages", json={'text': 'Next NOTOOL'}).status_code == 200
+    wait_for(lambda: len([c for c in _claude_calls(mx) if 'Next NOTOOL' in c['prompt']]) == 1, 20)
+    claude = [c for c in _claude_calls(mx) if 'Next NOTOOL' in c['prompt']][0]
+    assert 'Context carried over from discussion' in claude['prompt'] and 'PROPOSER ROLE' in claude['prompt']
+    assert '--resume' not in claude['argv']
+    client.post(f"/api/sessions/{new['id']}/stop")

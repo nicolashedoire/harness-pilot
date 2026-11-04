@@ -602,7 +602,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       ),
     compact: () => compact.mutate(sid, { onSuccess: () => toast.success(t('sessions.compacting')) }),
     handoff: async () => {
-      if (!(await confirm({ title: t('sessions.handoff.title'), description: t('sessions.handoff.desc'), confirmText: t('sessions.handoff.confirm') }))) return
+      if (!(await confirm({ title: t('sessions.handoff.title'), description: t(duo ? 'convx.handoffDuo' : 'sessions.handoff.desc'), confirmText: t('sessions.handoff.confirm') }))) return
       handoff.mutate(sid, {
         onSuccess: (s) => {
           seedEmptyLog(s.id)
@@ -737,7 +737,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
+                <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
                 {duo && (

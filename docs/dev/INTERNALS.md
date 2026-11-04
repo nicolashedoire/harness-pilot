@@ -91,6 +91,7 @@ Python modules call each other only through these functions. Keep signatures sta
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
 - Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
+- Discussion hand-off: `service.handoff` copies `DISCUSSION_CARRIED` (`debate_goal`, roles, `codex_model`, limits) and, when paused, `debate_pending` + `debate_next` (new one paused, reason `user`) to the continuation and queues a `handoff` item (`DEBATE_SUMMARY_PROMPT`, `target`) on the old one; `_pop` also runs a `handoff` head while paused. `_debate_compact` ends with `_debate_handoff(target, summary)`: target meta `discussion_summary` + `discussion_from` (old title: `SEED_DEBATE_HANDOFF` instead of `SEED_DEBATE`, dropped by its next compaction), an `mx_user` `kind: seed` line (`source: system`) with that seed, `_start_target(target, None)`; the old one is archived and unpaused. `resume_debate` does not start a continuation still `_handoff_held`.
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
@@ -474,6 +475,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.boot()` once (every
+  enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while `integrations_paused`), then
+  `localcron.tick()` every 15 s (the current minute, claimed in `<state>/local-cron-minutes.json`; never `@reboot`).
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
