@@ -10,6 +10,7 @@ from urllib.parse import unquote
 
 import pytest
 
+from _needs import non_utf8_names
 from maxxing import config, downloads, security, teampeer
 from maxxing.api import files as files_api
 
@@ -118,6 +119,7 @@ def test_zip_caps(client, tree, monkeypatch):
     assert client.get("/api/files/zip", params={"path": str(tree / "proj")}).status_code == 413
 
 
+@non_utf8_names
 def test_zip_names_that_are_not_utf8(client, tree):
     d = tree / "proj"
     os.close(os.open(os.fsencode(d) + b"/caf\xe9.txt", os.O_CREAT | os.O_WRONLY))
@@ -126,6 +128,7 @@ def test_zip_names_that_are_not_utf8(client, tree):
 
 
 
+@non_utf8_names
 def test_zip_names_shown_alike_get_distinct_entries(client, tree):
     """`.env` keeps its dot, and two names shown alike in one folder (`café` on disk as UTF-8 and as Latin-1,
     `a\\nb` / `a_b`) never share an entry: the extractor would overwrite one with the other."""
@@ -145,6 +148,7 @@ def test_zip_names_shown_alike_get_distinct_entries(client, tree):
     assert sorted(z.read(n) for n in names if n.endswith("/f")) == [b"1", b"2"]
 
 
+@non_utf8_names
 def test_raw_download_names(client, mx):
     root = mx["files"]
     for name, plain in (("café.txt", "cafe.txt"), ("a b 'c'.txt", "a b 'c'.txt"), ('q"uote.txt', "q_uote.txt")):

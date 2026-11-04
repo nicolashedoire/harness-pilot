@@ -120,7 +120,7 @@ Session = {
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
 | POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6}` | `Session` (starts the first turn if message or voice). `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
-| POST | `/api/teams` | `{path, message, title?}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. |
+| POST | `/api/teams` | `{path, message, title?, attachments?:[filepath]}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. `attachments` (absolute paths of uploaded files, as for a message; `400 bad_attachment` when one is missing) go with the mission to both workers - Claude opens them with its Read tool, Codex gets the images it can take inline (PNG/GIF/WebP/JPEG inside the workspace, 3.5 MB and 8000 px at most) and the path of every other file - and with the synthesis request to the coordinator; the mission message of the coordinator shows them. An empty `message` -> `400 bad_mission`. |
 | GET | `/api/teams/{sid}` | – | `{id, phase, created, agents: [{id, provider, role, stopped, state, session: Session\|null, started_at, finished_at, activity: [{kind: "read"\|"search"\|"run"\|"edit"\|"web"\|"say"\|"other", target}], report: string\|null}]}`: team phase and its two worker sessions, including individual status and links. `started_at` is the team's start, `finished_at` when the worker stopped running (null while it runs). `activity` = the last 3 actions of the worker's latest turn, oldest first: a tool call (`target`: a file path relative to the topic, a pattern, a command or a URL) or the first line of what it said (`say`), 120 characters at most. `report` = the first 600 characters of its final answer once it stopped running, else null. Read from the last 128 kB of the worker's log only, again only when that log changed. The team is retained with the coordinator session. |
 | POST | `/api/teams/{sid}/agents/{agent_id}/stop` | – | Stop one independently launched team worker; other workers continue. Returns 404 for sessions outside this team. |
 | POST | `/api/teams/{sid}/stop` | – | Stop the team, including any running workers and coordinator. |
@@ -744,7 +744,7 @@ else off). Effective rule of an event: its kind's rule unless auto, else its sou
 default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
-`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
+`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`, `review` (a companion proposal).
 
 | kind | source | level | params | actions | resolved by |
 |---|---|---|---|---|---|
@@ -763,6 +763,9 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `deps.vulnerable` | system | warning | `count` | `open` | – |
 | `deps.update_failed` | system | warning | `count, names` | `open` | – |
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `companion.ready` | system | warning | `session_id, fingerprint` (a finished companion experiment with a proposal; `fingerprint` = the exact proposal reviewed; Telegram review buttons are bound to it) | `review` | – |
+| `companion.empty` | system | info | `session_id, fingerprint` (finished without a code change) | `review` | – |
+| `companion.error` | system | warning | – (the experiment stopped with an error, or its result cannot be reviewed) | – | – |
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
 | `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
