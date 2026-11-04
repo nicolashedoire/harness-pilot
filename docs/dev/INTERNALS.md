@@ -642,6 +642,8 @@ The optional Enterprise key: `activate(key)`, `release()`, `remove_key()`, `stat
 the key) talk to `{API}/v1/activate|release` (activation token kept as `license_seat`, only to free the seat;
 machine = sha256("harness-maxxing:" + /etc/machine-id)). Also `API`, `USER_AGENT`, `disk_version()` (used by
 `register.py`, `feedback.py`).
+The HTTP routes `/api/settings/register|feedback|license` depend on `api/settings._legacy_cloud`: `404 not_found`
+while `register._offline()` (`MAXXING_LICENSE_PING` is not `1`); the modules are kept for the update and CLI paths.
 Installs from before 2.0.0a87 (`enabled()` = `license_token` in secrets.json) run the code of a signed archive
 imported by their old code as a commit on `refs/remotes/origin/<branch>`. `move_to_git()` makes them a clone of
 `GIT_URL` on `stable` (the `stable` commit with the same tree, else the same `__version__`; customizations
