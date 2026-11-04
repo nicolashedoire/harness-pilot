@@ -426,6 +426,7 @@ installed while the app runs in a terminal, or not installed; `MOCK_MEDIA=none|n
 show the thumbnail tools as missing;
 `MOCK_CODEX=signed-in|signed-out|missing|device-fails` sets Codex's sign-in (a device code is accepted 12 s after it is shown,
 an API key starting with `sk-bad` is refused);
+`MOCK_EXT_BROKEN=1` makes the Shop sales widget fail on the dashboard and the Notes page not load, with "Ask for a fix";
 `MOCK_DIST=…` serves another build)
 (`POST /__mock/scenario {"name"}` resets at runtime; setup token `dev-token`, password `password123`; two-step sign-in:
 Telegram code `246810` (Allow is pressed after 4 s), authenticator app: real RFC 6238 codes of the secret it shows, or

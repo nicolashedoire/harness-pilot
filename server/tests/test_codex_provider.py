@@ -77,9 +77,12 @@ def test_protect_secrets_gives_codex_a_profile_that_denies_them(mx, monkeypatch,
     denied = {str(secrets): 'deny', str(home / '.ssh'): 'deny'}
     for mode in ('default', 'plan'):
         assert codex_profile(codex.command('', mode)) == {'extends': ':read-only', 'filesystem': denied}
+    server_side = codex._write_entries(str(mx['ws']), None)   # test_codex_never_writes_what_the_server_runs
     for mode in ('acceptEdits', 'bypass'):                # .git / .codex / .agents stay read-only, as with --sandbox
         assert codex_profile(codex.command('thread-1', mode)) == {'extends': ':workspace', 'filesystem': {
-            ':workspace_roots': {'.': 'write', '.git': 'read', '.codex': 'read', '.agents': 'read'}, **denied}}
+            **server_side, ':workspace_roots': {'.': 'write', '.git': 'read', '.codex': 'read', '.agents': 'read',
+                                                '.claude': 'read', '.mcp.json': 'read', '.maxxing.json': 'read'},
+            **denied}}
     fork = codex.fork_command('thread-1')               # side questions: read-only too
     assert codex_profile(fork) == {'extends': ':read-only', 'filesystem': denied} and fork[-3:] == ['fork', 'thread-1', '-']
     # only the paths that exist; none left: the plain sandbox
@@ -87,13 +90,110 @@ def test_protect_secrets_gives_codex_a_profile_that_denies_them(mx, monkeypatch,
     assert codex_profile(codex.command('', 'plan'))['filesystem'] == {str(secrets): 'deny'}
     secrets.unlink()
     assert codex_profile(codex.command('', 'plan')) is None and codex_sandbox(codex.command('', 'plan')) == 'read-only'
-    # the setting off: the plain sandbox, even with the files there
+    # the setting off: nothing denied, even with the files there - the plain read-only sandbox, and write modes keep
+    # the profile that protects what the server runs
     secrets.write_text('{}')
     config.update_config(protect_secrets=False)
-    for mode, sandbox in (('default', 'read-only'), ('bypass', 'workspace-write')):
-        argv = codex.command('', mode)
+    argv = codex.command('', 'default')
+    assert codex_profile(argv) is None and argv[argv.index('--sandbox') + 1] == 'read-only'
+    assert not any(a.startswith(('default_permissions', 'permissions.')) for a in argv)
+    profile = codex_profile(codex.command('', 'bypass'))
+    assert profile['extends'] == ':workspace' and not any(p in profile['filesystem'] for p in denied)
+    assert profile['filesystem'][str(mx['ws'] / 'extensions')] == 'read'
+
+
+def test_codex_never_writes_what_the_server_runs(mx, monkeypatch, tmp_path):
+    """A write-mode Codex turn, wherever it runs (the workspace root included), cannot change the code the server runs
+    as its own user (extensions, customization patches, infra.json) nor the settings of any session folder (permission
+    mode, Claude Code's folder, .mcp.json): either would run code outside Codex's sandbox. Exact entries (a glob only
+    takes "deny", and protected nothing on Linux). Checked with codex-cli 0.150.1 against a stub Responses API on
+    macOS and Linux (INTERNALS.md maxxing.sessions.codex)."""
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    monkeypatch.delenv('CODEX_HOME', raising=False)
+    monkeypatch.delenv('CLAUDE_CONFIG_DIR', raising=False)
+    ws = mx['ws']
+    for p, topics in (('acme', ('blog', 'seo')), ('ops', ())):
+        (ws / 'projects' / p / 'topics').mkdir(parents=True)
+        for t in topics:
+            (ws / 'projects' / p / 'topics' / t).mkdir()
+    (ws / 'projects' / 'Not A Topic').mkdir()             # not a slug: never a session folder
+    own = {'.': 'write', **{d: 'read' for d in ('.git', '.codex', '.agents', '.claude', '.mcp.json', '.maxxing.json')}}
+    conf = ('.maxxing.json', '.claude', '.mcp.json')
+    for mode in ('default', 'plan'):                     # read-only modes write nothing anyway: unchanged
+        assert codex_sandbox(codex.command('', mode, cwd=str(ws))) == 'read-only'
+    for mode in ('acceptEdits', 'bypass'):
+        # at the root: the server's code and every project's and topic's settings, relative to the folder
+        fs = codex_profile(codex.command('', mode, cwd=str(ws)))['filesystem']
+        below = ('projects/acme', 'projects/acme/topics/blog', 'projects/acme/topics/seo', 'projects/ops')
+        assert fs[':workspace_roots'] == {**own, **{f'{d}/{c}': 'read' for d in below for c in conf},
+                                          'extensions': 'read', 'customizations': 'read', 'infra.json': 'read'}
+        for name in ('extensions', 'customizations', 'infra.json', *conf):       # and as absolute paths
+            assert fs[str(ws / name)] == 'read', name
+        for folder in ('projects/*', 'projects/*/topics/*'):                    # macOS: folders made during the turn
+            for name in ('.maxxing.json', '.claude/settings.json', '.claude/settings.local.json',
+                         '.claude/hooks/**', '.mcp.json'):
+                assert fs[f'{ws}/{folder}/{name}'] == 'deny'
+        # in a project: its topics; in a topic: its own folder only
+        roots = codex_profile(codex.command('', mode, cwd=str(ws / 'projects' / 'acme')))['filesystem'][':workspace_roots']
+        assert roots == {**own, **{f'topics/{t}/{c}': 'read' for t in ('blog', 'seo') for c in conf}}
+        topic = codex_profile(codex.command('', mode, cwd=str(ws / 'projects' / 'acme' / 'topics' / 'blog')))
+        assert topic['filesystem'][':workspace_roots'] == own and topic['filesystem'][str(ws / 'extensions')] == 'read'
+        # outside the workspace (a companion's copy): its own folder, and the workspace by absolute paths
+        other = codex_profile(codex.command('', mode, cwd=str(tmp_path)))['filesystem']
+        assert other[':workspace_roots'] == own and other[str(ws / 'infra.json')] == 'read'
+    assert (ws / 'extensions').is_dir()                  # made before the turn: the rule is on an existing folder
+    # a workspace path Codex would read as a glob ([ ] * ? { }): no absolute "read" (Codex refuses it and the turn
+    # would not start); the relative entries keep it read-only from the root
+    odd = tmp_path / 'my ws [2]'
+    (odd / 'projects' / 'p' / 'topics' / 't').mkdir(parents=True)
+    config.update_config(workspace=str(odd))
+    fs = codex_profile(codex.command('', 'bypass', cwd=str(odd)))['filesystem']
+    assert not any(k.startswith(str(odd)) for k in fs)
+    assert fs[':workspace_roots']['extensions'] == 'read' and fs[':workspace_roots']['projects/p/topics/t/.claude'] == 'read'
+    assert fs[f'{tmp_path}/my ws [[]2[]]/projects/*/topics/*/.maxxing.json'] == 'deny'   # (pytest's tmp_path: no glob)
+    # hundreds of topics below the folder: a profile too long for one argument -> read-only rather than unprotected
+    for n in range(700):
+        (odd / 'projects' / 'p' / 'topics' / f'topic-{n:04d}-with-a-rather-long-name').mkdir()
+    assert codex_sandbox(codex.command('', 'bypass', cwd=str(odd))) == 'read-only'
+    assert codex_sandbox(codex.command('', 'bypass', cwd=str(odd / 'projects' / 'p' / 'topics' / 't'))) == 'workspace-write'
+    # secret paths are literal too (macOS): as is, "<state [1]>/secrets.json" only matched "<state 1>/secrets.json"
+    odd_state = tmp_path / 'state [1]'
+    odd_state.mkdir()
+    (odd_state / 'secrets.json').write_text('{}')
+    monkeypatch.setattr(config, 'STATE', odd_state)
+    assert codex_profile(codex.command('', 'plan'))['filesystem'] == {f'{tmp_path}/state [[]1[]]/secrets.json': 'deny'}
+    ssh = tmp_path / 'home' / '.ssh [old]'                # a folder: its pattern does not cover its files, /** does
+    ssh.mkdir(parents=True)
+    assert codex._deny(str(ssh)) == {f'{tmp_path}/home/.ssh [[]old[]]': 'deny', f'{tmp_path}/home/.ssh [[]old[]]/**': 'deny'}
+    assert codex._deny('/srv/state/secrets.json') == {'/srv/state/secrets.json': 'deny'}
+
+
+def test_codex_plain_sandbox_is_the_way_out(mx, monkeypatch, tmp_path):
+    """config codex_plain_sandbox: the plain --sandbox in every mode (where bubblewrap cannot start a profile), without
+    any of the profile's protections; a turn that fails because the sandbox cannot start says so, with that way out."""
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    (mx['state'] / 'secrets.json').write_text('{}')
+    config.update_config(codex_plain_sandbox=True)
+    for mode, sandbox in (('default', 'read-only'), ('plan', 'read-only'), ('bypass', 'workspace-write')):
+        argv = codex.command('', mode, cwd=str(mx['ws']))
         assert codex_profile(argv) is None and argv[argv.index('--sandbox') + 1] == sandbox
-        assert not any(a.startswith(('default_permissions', 'permissions.')) for a in argv)
+    assert codex_profile(codex.fork_command('t')) is None
+    said = ('Error: thread/start: thread/start failed: error creating thread: Fatal error: Failed to initialize '
+            'session: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with')
+    assert codex.sandbox_failed(said) and codex.sandbox_failed('bwrap: No permissions to create new namespace')
+    assert not codex.sandbox_failed('auth failed') and 'codex_plain_sandbox' in codex.SANDBOX_HINT
+
+
+def test_codex_turn_that_cannot_start_its_sandbox_says_the_way_out(client, topic, mx, monkeypatch):
+    fake = mx['tmp'] / 'codex'
+    fake.write_text('#!/bin/sh\ncat > /dev/null\necho "Error: thread/start: thread/start failed: Fatal error: failed to load '
+                    'AGENTS.md instructions for environment local: fs sandbox helper failed with" >&2\nexit 1\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'hi'}).json()['id']
+    wait_idle(client, sid)
+    notes = [e for e in all_events(client, sid) if e.get('type') == 'note']
+    assert any('codex_plain_sandbox' in str(e.get('text')) for e in notes), notes
 
 
 def test_protect_secrets_also_denies_the_agents_sign_ins(mx, monkeypatch, tmp_path):

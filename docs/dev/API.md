@@ -575,11 +575,12 @@ Block =
 | GET | `/api/dashboard` | – | `{widgets:[{id, title, icon, span:1\|2\|3, source:"builtin"\|"extension", card:Card\|null, error:string\|null, hidden:bool, pending?:true}]}` — hidden widgets are listed with `card:null` so the UI can show them again; a widget still computing after 1.5 s comes as `pending:true` (fetch it with the route below, which joins that computation); the `crons` and `day` cards are reused while jobs.json, runs.jsonl, the job locks and config.json are unchanged (10 s at most); `?force=1` recomputes everything; an extension widget whose `card()` raises or times out also gets that error recorded as a runtime error of the extension (`where:"card"`, see `POST /api/extensions/{id}/errors`; not for an extension that does not load, whose `error` is already listed) |
 | GET | `/api/dashboard/widgets/{id}?force=1` | – | one widget (refresh) |
 | PUT | `/api/dashboard/layout` | `{order:[id], hidden:[id]}` | `{ok}` |
-| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?}]` (pinned: page shown in the sidebar; page_v: newest mtime in ms of page.js and the module files of its folder (`.js .mjs .css .json`, hidden files, `node_modules` and `__pycache__` skipped, 2000 files at most), the UI imports `/ext/<id>/@<page_v>/page.js` so the page and the modules it imports relatively are reused until one of them changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks). Each also has `runtime_errors:[{where:"widget"\|"page"\|"card"\|"api", message, stack, at, count}]`: the errors recorded while it ran (below) since its files last changed, newest first, at most 10 |
+| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?, permissions}]` (permissions: the `Permissions` its manifest declares, `null` when it has no `"permissions"` key - a block plugin: `{network: <block.json hosts>, secrets: [], read: []}`, an agent: `null`; pinned: page shown in the sidebar; page_v: newest mtime in ms of page.js and the module files of its folder (`.js .mjs .css .json`, hidden files, `node_modules` and `__pycache__` skipped, 2000 files at most), the UI imports `/ext/<id>/@<page_v>/page.js` so the page and the modules it imports relatively are reused until one of them changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks). Each also has `runtime_errors:[{where:"widget"\|"page"\|"card"\|"api", message, stack, at, count}]`: the errors recorded while it ran (below) since its files last changed, newest first, at most 10; and `origin:{id, title, path}\|null`: the session that made it, where "Ask for a fix" goes (below) |
 | PATCH | `/api/extensions/{id}` | `{enabled?, pinned?}` | `{ok}` (`pinned` on a widget -> 400 `not_a_page`) |
 | POST | `/api/extensions/reload` | – | rescans `<workspace>/extensions` |
 | POST | `/api/extensions/{id}/errors` | `{where:"widget"\|"page", message, stack?}` | a runtime error the browser saw, sent by the app itself: the HTML widget bridge's `error` and `unhandledrejection` events (forwarded by the dashboard), and in a page the errors whose script is under `/ext/<id>/` or that came from its `ctx.api()`, a page module that fails to load, a `mount()` that throws -> `{ok:true, error:{where, message, stack, at, count}}`, `invalidate extensions`. Auth + CSRF. `message` (1-4000 characters) is cut at 500, `stack` (8000 at most) kept to 6 lines of 240 characters, the app's addresses made relative (`https://host/ext/<id>/@1712/page.js:12:5` -> `page.js:12:5`; `…/ext/<id>/widget-frame:58:3` -> `widget.html:<58 - the lines served before widget.html>:3`). The same `where` + `message` as the newest error bumps its `count` and `at`. `404 not_found` (unknown extension) · `422` (bad `where`, empty or too long fields) · `429 rate_limited` past 20 reports of one extension or 120 in all per minute (nothing kept) |
 | DELETE | `/api/extensions/{id}/errors` | – | forget its runtime errors -> `{ok}` · `404 not_found` |
+| POST | `/api/extensions/{id}/fix` | `{error?:{message, stack?}, dry_run?:bool}` | "Ask for a fix" (`maxxing/extfix.py`): one message for the agent - the extension, its folder, what broke (its load `error`, the `error` the user is looking at unless it is one of its runtime errors, the 3 newest `runtime_errors`), the files involved (absolute paths: manifest / block.json, `api.py`, `page.js`, `widget.html`, the entry, and the files its stacks name), the skill and `pilot ext check <id> --json` before and after ("Answer me in French." when the UI is French). Sent to `origin` (the session that made it: queued behind a running turn) -> `{session, reused:true}`, else (none recorded, gone, archived, or refusing the message) a new session in the Harness topic (`system/harness`, titled "Fix the extension <name>") -> `{session, reused:false}`; `invalidate extensions`. `dry_run` -> `{prompt, target:{session:{id, title, path}}\|{topic:"projects/system/topics/harness"}}`, nothing sent. Auth + CSRF. `404 not_found` · session errors as for `POST /api/sessions` |
 | ANY | `/api/ext/{id}[/{path}]` | – | forwarded to the extension's `api.py` `handle()` (`path` = `""` without it): return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, other → 500 `extension_error` (also recorded as a runtime error `where:"api"`, with the lines of the extension's files it went through), 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
 | GET | `/ext/{id}/page.js` | – | page module (ES module) |
 | GET | `/ext/{id}/{path}` · `/ext/{id}/@{version}/{path}` | – | a module of the page's folder, `page.js` included, for its relative imports: `.js`/`.mjs` (`text/javascript`), `.css` (`text/css`), `.json` (`application/json`), in the folder or a subfolder. Every segment of `path` starts with a letter, a digit or `_` (no hidden file, no `.`/`..`), and the real path (links followed) must be such a file inside the folder. The `@{version}` segment is ignored (the UI imports `@<page_v>[-<retry>]/page.js`, so relative imports carry the version). Same checks as `page.js`: signed in (`401`), an enabled page extension without error, else `404 not_found`; `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. `{id}` only matches an extension id, so `/ext/_blocks/...` stays with Conversation blocks |
@@ -592,10 +593,27 @@ The app page (`index.html`) is served with `script-src 'self'` plus the hashes o
 `eval` / `new Function` (load code as modules from its own folder: `/ext/{id}/{path}` above).
 
 Extension folder: `<workspace>/extensions/<id>/manifest.json`
-`{"id", "name", "type":"widget"|"page", "icon":"<lucide name>", "version", "span"?, "ttl"?: seconds}` +
+`{"id", "name", "type":"widget"|"page", "icon":"<lucide name>", "version", "span"?, "ttl"?: seconds, "permissions"?: Permissions}` +
 `api.py` (widget: `def card(ctx) -> dict` returning a Card; page/API: `def handle(ctx, method, path, query, body) -> dict`) +
 `page.js` (page: `export function mount(el, ctx) { …; return () => cleanup }`, `ctx = {api(path, opts), navigate, theme, lang, t, icon(name, {size?, className?}) -> <svg>}`)
 + optional modules `page.js` imports relatively (`./lib/chart.js`; `.js .mjs .css .json`).
+
+Permissions (`maxxing/permissions.py`): what a widget or page extension says it uses, listed by `GET /api/extensions`
+(what the Atelier shows before the user validates an extension) and reported by `pilot ext check`:
+```
+Permissions = {network: [host], secrets: [NAME], read: [path]}
+```
+- `network`: host names its HTML widget frame reaches over https (`api.example.com`, `*.example.com`, an optional
+  `:port`; no scheme, no path; lowercased), at most 8 - the block plugins' rule (`blocks.HOST_RE`).
+- `secrets`: names of Keys (Settings -> Keys, `^[A-Z][A-Z0-9_]{1,63}$`) its `api.py` reads with `ctx["secret"](name)`,
+  at most 32.
+- `read`: files or folders of the workspace its `api.py` reads, relative to the workspace (`projects/shop`,
+  `tasks.json`; `.` = the whole workspace; no `/` at the start, no `..`, no `~`, no `\`), at most 32, each at most
+  300 characters. Its own folder and `ctx["state_dir"]` are always its own and are never declared.
+- Every key is optional (`"permissions": {}` = it uses none of them); duplicates are dropped. Anything else (an
+  unknown key, a value that is not a list, a bad host, name or path) is the extension's `error`, like a bad manifest.
+- An agent extension ignores `"permissions"` (an external program: its engine decides). A block plugin declares its
+  hosts in `block.json` (Conversation blocks); `secrets` and `read` do not apply to it (no server code).
 
 Extension details: `ctx` (Python) = `{id, workspace, state_dir, secret(name) -> str|None, config:{timezone, language,
 public_url}}`; `state_dir` = `<state>/extensions/<id>/` (created). Extensions are rescanned automatically when a
@@ -734,10 +752,11 @@ Origin    = {agent: "claude"|"codex"|"plugin:<id>"|"user"|"unknown", session: si
 Approval  = {by: "user"|"auto"|"migration"|null, at: float|null}
             // user = approved in the Atelier · auto = config atelier.auto_activate_safe · migration = existed before
             // the Atelier (approved v1) · null = never approved (files changed outside the Atelier, kept as a version)
-Permissions = {network: [host], secrets: [name], accounts?: [str], files?: [str], declared: bool}
-            // what the creation declares (manifest.json / block.json "permissions", read by maxxing.permissions when
-            // present - the permissions contract owns the fields; network/secrets always present, [] when none);
-            // declared = the creation has a "permissions" object at all
+Permissions = {network: [host], secrets: [name], read: [path], declared: bool}
+            // what the creation declares: manifest.json "permissions" (Dashboard & extensions, Permissions) or a block
+            // plugin's block.json hosts, as `permissions.view(Extension.permissions)` gives it: the three lists always
+            // present ([] when none); declared = the creation has a "permissions" object at all (a block plugin:
+            // always true)
 ErrorInfo = {message, where: "load"|"card"|"api"|"widget"|"page"|"run"|"check", at: float|null, count: int}
             // load = the extension does not load (its `error`); card/api/widget/page = newest runtime error
             // (maxxing.exterrors, since its files last changed); run = a cron job's last run failed

@@ -7,6 +7,8 @@ description: Build a harness-pilot extension - a dashboard widget (a Card with s
 
 Extensions live in `<workspace>/extensions/<id>/` (workspace from `pilot status`, here
 `{{WORKSPACE}}`). Product updates never touch them and the memory backup includes them.
+The server runs their code as its own user, so a Codex session cannot write that folder (its sandbox keeps it
+read-only, whatever the mode): in Codex, say so and suggest a Claude session in the topic `system/harness`.
 
 - **widget**: `manifest.json` + `api.py` with `card(ctx)` returning a **Card** (JSON). The UI draws
   it with the built-in design system - no HTML/CSS to write, consistent look guaranteed.
@@ -50,6 +52,13 @@ authors to add something an extension can do.
   (≤ 10 s), no threads left behind, never print secrets. It is called in a worker thread.
 - Secrets: the user stores them in Settings -> Keys; read them with `ctx["secret"]("NAME")`
   (returns None when missing -> return a Card saying which key to add). Never hard-code a token.
+- **`permissions`** (always write it in the manifest): what the extension uses beyond its own folder and
+  `ctx["state_dir"]`, shown to the user before they turn it on -
+  `"permissions": {"network": ["api.example.com"], "secrets": ["SHOP_TOKEN"], "read": ["projects/shop"]}`.
+  `network`: the hosts an HTML widget reaches (no `https://`, no path, `*.example.com` allowed, 8 max); `secrets`:
+  every key `api.py` reads with `ctx["secret"]`; `read`: workspace-relative files or folders `api.py` reads (no
+  leading `/`, no `..`; `.` = the whole workspace). Declare exactly what the code uses, nothing more;
+  `"permissions": {}` when it uses none. A mistake in it is the extension's error.
 - Persistent data: `ctx["state_dir"]` (a folder reserved for this extension).
 - `ctx` = `{"id", "workspace", "state_dir", "secret": fn(name), "config": {"timezone", "language", "public_url"}}`.
 - Widget results are cached `ttl` seconds (manifest, default 300); the card's refresh button forces it.
@@ -75,7 +84,8 @@ Unknown block types are dropped; the card must be JSON-serialisable.
 ## Minimal widget - `extensions/disk-usage/`
 `manifest.json`
 ```json
-{"id": "disk-usage", "name": "Disk usage", "type": "widget", "icon": "hard-drive", "version": "1.0.0", "span": 1, "ttl": 60}
+{"id": "disk-usage", "name": "Disk usage", "type": "widget", "icon": "hard-drive", "version": "1.0.0", "span": 1, "ttl": 60,
+ "permissions": {}}
 ```
 `api.py`
 ```python
@@ -99,7 +109,8 @@ def card(ctx):
 ## Minimal page - `extensions/notes-board/`
 `manifest.json`
 ```json
-{"id": "notes-board", "name": "Notes board", "type": "page", "icon": "sticky-note", "version": "1.0.0"}
+{"id": "notes-board", "name": "Notes board", "type": "page", "icon": "sticky-note", "version": "1.0.0",
+ "permissions": {}}
 ```
 `api.py`
 ```python
@@ -236,7 +247,10 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there, with the errors
    recorded while it ran (an HTML widget's or a page's script errors, exceptions of `card()` / `handle()`).
    To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the
-   user since its files last changed (they disappear once you change the files).
+   user since its files last changed (they disappear once you change the files). The user's **Ask for a fix** button
+   sends you a message with the error, the extension's folder and its files: fix only those files, check again until
+   it exits 0, then say in two or three sentences what was wrong. Run from this session, `pilot ext check <id>` also
+   records it as the session that made the extension: later fixes come back here.
 5. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
 Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in

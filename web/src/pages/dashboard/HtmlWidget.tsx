@@ -5,16 +5,19 @@
 //   maxxing.api(path, {method, body, query}) -> Promise   (calls the extension's own api.py handle())
 //   maxxing.resize(px) · maxxing.theme ('dark'|'light') · maxxing.onTheme(fn)
 // The frame's uncaught errors and rejected promises come as {mx:'error', message, stack}: reported to the server as
-// runtime errors of the extension (features/extensions/report.ts), read by the agent that fixes it.
+// runtime errors of the extension (features/extensions/report.ts), read by the agent that fixes it, and the card shows
+// the latest one under the frame with "Ask for a fix" (features/extensions/AskFix.tsx).
 // and the app's theme variables (--background, --card, --primary, --border… and the older --mx-bg --mx-card --mx-fg
 // --mx-muted --mx-border --mx-accent) follow the app theme; the UI kit (`ui-*` classes) is inlined by the server.
 import * as React from 'react'
-import { TriangleAlert } from 'lucide-react'
+import { TriangleAlert, X } from 'lucide-react'
 import { ApiError, request, seg } from '@/lib/api'
 import { reportExtensionError } from '@/features/extensions/report'
+import { AskFixButton } from '@/features/extensions/AskFix'
+import { useExtensions } from '@/lib/queries'
 import { useUI, resolveTheme } from '@/stores/ui'
 import { useT } from '@/i18n'
-import { Skeleton } from '@/components/ui'
+import { Button, Skeleton } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 const VARS: [string, string][] = [
@@ -82,6 +85,9 @@ export function HtmlWidget({
   const frame = React.useRef<HTMLIFrameElement>(null)
   const [loaded, setLoaded] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [runtime, setRuntime] = React.useState<{ message: string; stack: string } | null>(null)
+  const { data: exts } = useExtensions()
+  const ext = exts?.find((e) => e.id === id) ?? { id, origin: null }
   const [h, setH] = React.useState(height)
   const errorRef = React.useRef(onError)
   errorRef.current = onError
@@ -109,7 +115,15 @@ export function HtmlWidget({
       if (!win || e.source !== win) return
       const m = (e.data || {}) as { mx?: string; seq?: number; path?: string; method?: string; body?: unknown; query?: Record<string, string>; height?: number; message?: unknown; stack?: unknown }
       if (m.mx === 'resize' && typeof m.height === 'number') setH(Math.min(1200, Math.max(80, Math.round(m.height))))
-      if (m.mx === 'error') (errorRef.current ?? ((msg: string, stack: string) => reportExtensionError(id, 'widget', msg, stack)))(String(m.message ?? ''), typeof m.stack === 'string' ? m.stack : '')
+      if (m.mx === 'error') {
+        const message = String(m.message ?? ''), stack = typeof m.stack === 'string' ? m.stack : ''
+        // a draft's preview keeps its errors to itself (nothing installed to record them against)
+        if (errorRef.current) errorRef.current(message, stack)
+        else {
+          reportExtensionError(id, 'widget', message, stack)
+          setRuntime({ message: message || 'Error', stack })
+        }
+      }
       if (m.mx === 'api') {
         const up = (m.method || 'GET').toUpperCase()
         const method = (['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(up) ? up : 'GET') as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -146,6 +160,7 @@ export function HtmlWidget({
       </div>
     )
   return (
+    <>
     <div className="relative" style={{ height: h }}>
       {!loaded && <Skeleton className="absolute inset-0 rounded-lg" />}
       <iframe
@@ -158,5 +173,19 @@ export function HtmlWidget({
         className={cn('block size-full rounded-lg border-0 bg-transparent transition-opacity duration-200', loaded ? 'opacity-100' : 'opacity-0')}
       />
     </div>
+    {runtime && (
+      <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-2.5 py-2" data-testid="widget-runtime-error">
+        <TriangleAlert className="size-3.5 shrink-0 text-destructive" aria-hidden />
+        <span className="min-w-0 flex-[1_1_10rem] text-xs">
+          <span className="font-medium">{t('exterr.widgetError')}</span>{' '}
+          <span className="font-mono [overflow-wrap:anywhere] text-destructive">{runtime.message}</span>
+        </span>
+        <AskFixButton ext={ext} error={runtime} className="h-7" />
+        <Button variant="ghost" size="icon-sm" className="size-7" aria-label={t('exterr.dismiss')} onClick={() => setRuntime(null)}>
+          <X />
+        </Button>
+      </div>
+    )}
+    </>
   )
 }

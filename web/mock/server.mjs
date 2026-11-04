@@ -13,6 +13,7 @@
 // MOCK_LOCAL=mac|mac-terminal|mac-none|linux: a local installation (Settings -> System: background service, Git update).
 // MOCK_MEDIA=none|no-webp|no-pdf: ffmpeg and pdftoppm missing, ffmpeg without WebP, pdftoppm missing (Settings -> System).
 // MOCK_CODEX=signed-in|signed-out|missing|device-fails: Codex's sign-in (Settings -> Codex, the wizard's Codex step).
+// MOCK_EXT_BROKEN=1: the Shop sales widget fails on the dashboard and the Notes page does not load (Ask for a fix).
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -160,14 +161,16 @@ function buildState(scenario) {
     widgetUpdated: {},
     uptimeFixed: false,
     extensions: [
-      { id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', enabled: true, error: null, has_api: true,
+      // permissions: what the manifest declares (null = no "permissions" key: an extension older than permissions)
+      { id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', enabled: true, error: null, has_api: true, permissions: null,
         runtime_errors: [{ where: 'card', message: 'URLError: <urlopen error timed out>', stack: 'api.py:14 in card: orders = fetch_orders(token)\napi.py:6 in fetch_orders: with urllib.request.urlopen(req, timeout=10) as r:', at: t - 25 * MIN, count: 3 }] },
       { id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0', enabled: true, error: null, has_api: true,
+        permissions: { network: [], secrets: [], read: ['projects'] },
         runtime_errors: [
           { where: 'page', message: "TypeError: Cannot read properties of undefined (reading 'map')", stack: "TypeError: Cannot read properties of undefined (reading 'map')\nat render (lib/list.js:12:24)\nat mount (page.js:31:5)", at: t - 6 * MIN, count: 1 },
           { where: 'api', message: "KeyError: 'notes'", stack: "api.py:9 in handle: return {\"notes\": data[\"notes\"]}", at: t - 2 * HOUR, count: 2 },
         ] },
-      { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true },
+      { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true, permissions: null },
     ],
     fs: new Map(),
     blocks: blocksState(),
@@ -208,6 +211,9 @@ function buildState(scenario) {
   }
   if (!st.feed) { st.feed = { events: [], nextId: 1, settings: { telegram: true, rules: {}, kind_rules: {} }, hooks: [] }; st.push = { subs: [] } }
   seedFiles(st, t)
+  // the session that made the Notes page (recorded by `pilot ext check` run from its turn): where "Ask for a fix" goes
+  const maker = st.sessions.find((s) => !s.archived && s.path.startsWith('projects/'))
+  if (maker) st.extensions.find((e) => e.id === 'notes').origin_session = maker.id
   return st
 }
 
@@ -644,7 +650,7 @@ function seedFiles(st, t) {
   }
   fsAdd(st, 'extensions/shop-sales/manifest.json', JSON.stringify({ id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', span: 1, ttl: 1800 }, null, 2), t - 15 * DAY)
   fsAdd(st, 'extensions/shop-sales/api.py', 'def card(ctx):\n    orders = ctx.http.get("https://api.example-shop.com/orders?days=7").json()\n    return {"blocks": [{"type": "stat", "label": "Today", "value": len(orders)}]}\n', t - 15 * DAY)
-  fsAdd(st, 'extensions/notes/manifest.json', JSON.stringify({ id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0' }, null, 2), t - 10 * DAY)
+  fsAdd(st, 'extensions/notes/manifest.json', JSON.stringify({ id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0', permissions: { read: ['projects'] } }, null, 2), t - 10 * DAY)
   fsAdd(st, 'extensions/notes/api.py', 'import time\n\ndef handle(ctx, method, path, query, body):\n    if path == "hello":\n        return {"hello": "world", "at": time.time()}\n    return {"error": "not_found"}\n', t - 10 * DAY)
   fsAdd(st, 'extensions/notes/page.js', NOTES_PAGE_JS, t - 10 * DAY)
   fsAdd(st, 'extensions/broken-widget/manifest.json', JSON.stringify({ id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0' }, null, 2), t - 4 * DAY)
@@ -848,6 +854,8 @@ function renderWidget(d) {
   const base = { id: d.id, title: d.title, icon: d.icon, span: d.span, source: d.source, hidden }
   if (hidden) return { ...base, card: null, error: null }
   if (d.id === 'uptime' && !S.uptimeFixed) return { ...base, card: null, error: 'Timeout after 10 s' }
+  // MOCK_EXT_BROKEN=1: the Shop sales extension's card() fails (its runtime error is the seeded `card` one)
+  if (d.id === 'shop-sales' && process.env.MOCK_EXT_BROKEN) return { ...base, card: null, error: 'URLError: <urlopen error timed out>' }
   try {
     const card = d.card()
     card.updated = S.widgetUpdated[d.id] || now() - 120
@@ -4002,7 +4010,32 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
   S.layout = { order: body.order.map(String), hidden: body.hidden.map(String) }
   return { ok: true }
 })
-R('GET', '/api/extensions', () => S.extensions)
+// `origin`: the session that made it while it exists and is not archived (extfix.origin)
+const extOrigin = (e) => {
+  const s = e.origin_session && S.sessions.find((x) => x.id === e.origin_session && !x.archived)
+  return s ? { id: s.id, title: s.title, path: s.path } : null
+}
+R('GET', '/api/extensions', () => S.extensions.map(({ origin_session, ...e }) => ({ ...e, origin: extOrigin({ origin_session }) })))
+// "Ask for a fix" (extfix.py): the message, sent to the session that made it or to a new system/harness session
+R('POST', '/api/extensions/:id/fix', ({ params, body }) => {
+  const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', `no extension ${params.id}`)
+  const seen = body.error && String(body.error.message || '').trim()
+  const errs = [...(e.error ? [`- does not load: ${e.error}`] : []), ...(seen && !(e.runtime_errors || []).some((r) => r.message === seen) ? [`- the error I see: ${seen}`] : []),
+    ...(e.runtime_errors || []).slice(0, 3).flatMap((r) => [`- ${r.where}: ${r.message}`, ...r.stack.split('\n').slice(0, 6).map((l) => `    ${l}`)])]
+  const dir = `${ROOT}/extensions/${e.id}`
+  const prompt = [`My ${e.type} extension \`${e.id}\` ("${e.name}", folder ${dir}) is broken. Fix it.`, '', 'What broke:', ...(errs.length ? errs : ['- the error I see: (no error message was recorded)']), '',
+    'Files:', `- ${dir}/manifest.json`, ...(e.has_api ? [`- ${dir}/api.py`] : []), ...(e.type === 'page' ? [`- ${dir}/page.js`] : []), '',
+    `Use the skill ${e.type === 'block' ? 'pilot-blocks' : 'pilot-widgets-pages'}. Run \`pilot ext check ${e.id} --json\` first (its \`runtime_errors\` list what broke while I used it), fix the files of this extension only, run the check again until it exits 0, then tell me in two or three plain sentences what was wrong and what you changed.`].join('\n')
+  const origin = extOrigin(e)
+  if (body.dry_run) return { prompt, target: origin ? { session: origin } : { topic: UPDATE_TOPIC } }
+  if (origin) {
+    const s = findSession(origin.id)
+    if (s.state === 'running') { (S.queues[s.id] ||= []).push({ text: prompt, attachments: [] }); s.queue = S.queues[s.id].length; bus('sessions') }
+    else startTurn(s, prompt, [])
+    return { session: s, reused: true }
+  }
+  return { session: updateSession(`Fix the extension ${e.name}`, prompt), reused: false }
+})
 installBlocks({ R, state: () => S, fail, bus })
 // The extensions' own API (`/api/ext/<id>[/<path>]`, forwarded to their api.py `handle()` on the server): the two
 // seeded extensions answer like their example code; a LookupError is 404, a ValueError 400.
@@ -4055,7 +4088,8 @@ R('POST', '/api/extensions/:id/errors', ({ params, body }) => {
   if (!['widget', 'page'].includes(body.where)) fail(422, 'invalid', 'where must be widget or page')
   const message = String(body.message || '').slice(0, 500)
   if (!message) fail(422, 'invalid', 'message is required')
-  const stack = String(body.stack || '').split('\n').map((l) => l.trim().replace(/https?:\/\/[^/\s)]+\/ext\/[^/]+\/(?:@[^/]+\/)?/g, '')).filter(Boolean).slice(0, 6).join('\n')
+  const lines = String(body.stack || '').split('\n').map((l) => l.trim().replace(/https?:\/\/[^/\s)]+\/ext\/[^/]+\/(?:@[^/]+\/)?/g, '')).filter(Boolean)
+  const stack = (lines[0] === message ? lines.slice(1) : lines).slice(0, 6).join('\n')
   const errs = (e.runtime_errors ||= [])
   if (errs[0] && errs[0].where === body.where && errs[0].message === message) Object.assign(errs[0], { at: now(), count: errs[0].count + 1, stack: stack || errs[0].stack })
   else errs.unshift({ where: body.where, message, stack, at: now(), count: 1 })
@@ -4662,6 +4696,8 @@ function serveExt(req, res, url) {
   const n = S.fs.get(`${ROOT}/extensions/${e.id}/${m[2]}`)
   if (!n && m[2] !== 'page.js') return sendJson(res, 404, { error: 'not_found', message: `${m[2]} is not a module of extension ${e.id}` })
   res.writeHead(200, { 'Content-Type': `${EXT_MODULE_TYPES[m[3]]}; charset=utf-8`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
+  // MOCK_EXT_BROKEN=1: the Notes page's module does not parse (the page's error state, Ask for a fix)
+  if (process.env.MOCK_EXT_BROKEN && e.id === 'notes' && m[2] === 'page.js') return res.end('export function mount(el) {\n  const rows = ;\n}\n')
   res.end(n ? n.content : NOTES_PAGE_JS)
 }
 
