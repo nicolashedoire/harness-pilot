@@ -12,9 +12,9 @@ This audit lists the gaps observed in the local interface and in the code. It is
 ## Priority 2 — Claude and Codex
 
 - [x] **Statistics**: the quota shown concerns Claude only. On macOS, the message now distinguishes a sign-in that may go through the keychain from the quota being unreadable.
-- [ ] **Usage**: new turns are now broken down by agent; older turns or turns without data stay unattributed. The real prices and quotas of the subscriptions cannot be deduced from a token counter; the available data still has to be examined before showing a Codex cost or quota.
+- [x] **Usage**: new turns are broken down by agent; older turns or turns without data stay unattributed. Codex turn events carry tokens only, neither a cost nor plan limits: Settings → Stats says so and estimates nothing. The cost shown is Claude Code's own estimate, for Claude only.
 - [x] **Claude amounts**: the amounts shown are marked as indicative and no longer claim to determine billing. Usage credits can lead to extra charges; the real invoice is to be checked with Anthropic. Codex is not included in this amount.
-- [ ] **Codex counting**: turns before the fix could count cached tokens twice. New turns separate the categories; historical figures are not recalculated automatically.
+- [x] **Codex counting**: turns before the fix counted cached tokens twice. They are recalculated once from each session's log when the statistics are opened, and Settings → Stats says how many.
 - [x] **Connections and settings**: a Codex page shows the status of the CLI and the current limits; the connection was verified on the computer.
 - [x] **Agent health**: when Codex is signed in, a missing Claude sign-in is information rather than a general failure; Claude is still needed to use it and for two-agent discussions.
 - [x] **Conversation summary**: a session's menu offers a summary, the decisions and actions to select before any task is created. The real test was done with Codex; the cost of this call is not yet included in the statistics.

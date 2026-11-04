@@ -11,6 +11,7 @@ import { useLang, useT } from '@/i18n'
 import { Button, EmptyState, ProgressBar, Segmented, Sensitive, Skeleton, Switch } from '@/components/ui'
 import { Callout, SettingRow } from '@/features/common'
 import { Chart, compact } from '@/pages/dashboard/charts'
+import { fmtCost } from '@/pages/sessions/util'
 import { SettingsCard, SectionStack } from './ui'
 
 type Group = 'projects' | 'topics' | 'sessions'
@@ -139,6 +140,7 @@ function TokensCard() {
             <Tile label={t('stats.total')} value={n(data.totals.total)} hint={t('stats.turns', { count: data.totals.turns })} />
             <Tile label={t('stats.inOut')} value={`${n(data.totals.input)} / ${n(data.totals.output)}`} />
             <Tile label={t('stats.cache')} value={`${n(data.totals.cache_read)} / ${n(data.totals.cache_write)}`} hint={t('stats.cacheHint')} />
+            <Tile label={t('stats.cost')} value={`≈ ${fmtCost(data.totals.cost_usd)}`} hint={t('stats.costHint')} />
             {data.latency?.start_s != null && (
               <Tile
                 label={t('stats.turnStart')}
@@ -156,6 +158,9 @@ function TokensCard() {
               {Object.entries(data.providers).filter(([id]) => id.startsWith('plugin:')).map(([id, provider]) =>
                 <Tile key={id} label={provider.name || id} value={n(provider.total)} hint={t('stats.turns', { count: provider.turns })} />)}
             </div>
+            <p className="text-xs text-muted-foreground">{t('stats.codexHint')}</p>
+            {!!data.corrected?.turns && <p className="text-xs text-muted-foreground">
+              {t('stats.corrected', { count: data.corrected.turns, tokens: n(data.corrected.tokens) })}</p>}
           </div>}
           {days.length > 1 && (
             <div className="grid gap-1.5">
