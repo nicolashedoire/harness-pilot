@@ -270,7 +270,7 @@ weekly without `days`, a day outside 0-6, a monthly `day` outside 1-31 (`422` fo
 
 ## Crons
 ```
-Cron = {id, name, schedule,            // 5-field cron expression
+Cron = {id, name, schedule,            // 5-field cron expression, a shortcut, or @reboot (next_run null)
         kind:"shell"|"claude", command, // shell
         topic_path, prompt, model, reuse_session:bool,  // claude
         permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode
