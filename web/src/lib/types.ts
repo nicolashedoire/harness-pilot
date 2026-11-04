@@ -805,7 +805,11 @@ export type Extension = {
   permissions?: ExtensionPermissions | null
   /** Errors recorded while it ran (browser and server), since its files last changed, newest first (at most 10). */
   runtime_errors?: ExtRuntimeError[]
+  /** The session that made it (recorded by `pilot ext check` run from a turn): where "Ask for a fix" goes. */
+  origin?: { id: string; title: string; path: string } | null
 }
+/** POST /api/extensions/{id}/fix with dry_run: the message and where it would go. */
+export type ExtFixPreview = { prompt: string; target: { session: { id: string; title: string; path: string } } | { topic: string } }
 /** A runtime error of an extension: `widget` / `page` seen by the browser, `card` / `api` by the server. */
 export type ExtRuntimeError = { where: 'widget' | 'page' | 'card' | 'api'; message: string; stack: string; at: number; count: number }
 

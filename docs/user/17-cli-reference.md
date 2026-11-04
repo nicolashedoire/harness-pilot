@@ -158,8 +158,10 @@ What is checked:
 - a block plugin: `block.json`, its schema and its frame are served, its HTML is checked like a widget's, and a
   plugin that never calls `maxxing.onData` is a warning.
 
-Nothing is sent over the network and nothing changes in the running server. Without Node.js the JavaScript syntax is
-not checked (a warning says so). An extension that is turned off is skipped: none of its code runs.
+Nothing is sent over the network and the running server is not touched. Without Node.js the JavaScript syntax is not
+checked (a warning says so). An extension that is turned off is skipped: none of its code runs. Run with an id from a
+harness-pilot session (the variable `MAXXING_SESSION` that sessions set), it also records that session as the one that
+made the extension, unless another one still open already is: **Ask for a fix** in the app sends the errors there.
 
 Exit codes: `0` every extension checked works (warnings allowed), `1` at least one is broken, `2` no extension has
 that id, `3` that extension is turned off (nothing was run).

@@ -245,7 +245,10 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there, with the errors
    recorded while it ran (an HTML widget's or a page's script errors, exceptions of `card()` / `handle()`).
    To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the
-   user since its files last changed (they disappear once you change the files).
+   user since its files last changed (they disappear once you change the files). The user's **Ask for a fix** button
+   sends you a message with the error, the extension's folder and its files: fix only those files, check again until
+   it exits 0, then say in two or three sentences what was wrong. Run from this session, `pilot ext check <id>` also
+   records it as the session that made the extension: later fixes come back here.
 5. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
 Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in

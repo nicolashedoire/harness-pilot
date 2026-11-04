@@ -201,6 +201,14 @@ through), so harness-pilot can read them when you ask it to fix the widget. They
 changed: once the widget is fixed, the old ones go away by themselves (**Clear** forgets them at once). At most 10 are
 kept per extension.
 
+**Ask for a fix.** A widget of yours that fails shows its error on the card, with the lines of `api.py` it went
+through, and an **Ask for a fix** button (an HTML widget shows the error of its script under the frame). So does the
+extension's row in Settings -> Extensions. The button shows you the message harness-pilot will get - the error, the
+extension and its files - then sends it to the session that created the extension, where the agent already knows what
+it built; when that session no longer exists (or none is known), a new session opens in `system › harness`. The line
+under the button says which one. The session opens, and the agent checks the extension, fixes it and tells you what
+was wrong.
+
 Extensions live in your workspace: updates never touch them and the backup includes them.
 
 ## HTML widgets (games, custom drawings)
