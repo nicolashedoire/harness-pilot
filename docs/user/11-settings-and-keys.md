@@ -13,6 +13,7 @@ first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds the
 |---|---|
 | **General** | **layout** of this device (*Auto*: the touch layout on phones and tablets, the sidebar on computers; *Touch*; *Desktop* when the screen is wide enough), the first screen of the touch layout (*Last session* or *Dashboard*), the line under each answer, language (English/French), time zone, files root, public URL, **App** (install it on this computer or phone, below) |
 | **Appearance** | theme (dark, light, system), **colour palette** (*Zinc & blue*, *Graphite*, *Marine* or your own: neutral base, accent colour - a swatch or any colour -, neutral or accent-coloured main buttons, neutral or tinted background) with a live preview, contrast check, **Export** / **Import** of the palette as a file - the palette follows you on every device and colors the sign-in page; interface font (23, grouped by style) and code font (11; a font other than the default loads the first time you pick it) and density - saved in this browser. See [Customizing](customizing#colours-and-palettes) |
+| **Profile** | your pseudo (name up to 32 characters, badge colour, optional emoji), used when your web messages are copied to Telegram |
 | **License** | MIT license and third-party notices - see [License](license) |
 | **Support** | Configure or remove the PayPal link used by the support buttons, or hide them. Payments are handled by PayPal, not the app. |
 | **Features** | every optional feature in one place: HUD mode and "notify me when a session finishes" (this browser), web conversations in Telegram, Claude plan usage widget, the **Git & GitHub** and **Infra** pages and **Pilot mode (beta)** of the Sessions page (off by default) and presentation mode by default (for everyone) |
@@ -21,16 +22,23 @@ first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds the
 | **Claude** | authentication (status, token or API key, live test), default model, automatic compaction threshold, compaction when you come back to an idle session, smart resume (a summary written for the message you come back with), short session titles (and whether Claude writes them), automatic Claude Code updates, permission mode |
 | **Codex** | checks whether the Codex CLI used by sessions is installed and signed in; explains current capabilities and limitations |
 | **Companions** | experimental resident companions: built-in roles (observer, security, architect, reverse engineering) or your own, a manual **Start experiment** on a topic, the list of experiments and the review of a proposal - see [Resident companions](#resident-companions) below |
+| **Resident missions** | give companions a bounded mission: an architect's read-only plan, role assignments and prerequisites, limits, pause/stop and the review of each result - see [Resident missions](resident-missions) |
+| **Conversation blocks** | turn each kind of block (charts, tables, forms...) on or off; the agents only use the enabled ones - see [Conversation blocks](conversation-blocks) |
 | **Stats** | Claude plan usage when available; token counts per project, topic and session, plus a per-agent breakdown for newly recorded turns. Historical turns without an agent attribution are shown separately. Older Codex totals may overcount cached tokens. The Claude quota is experimental and may be unavailable even when Claude is signed in on macOS. |
 | **Memory** | second brain cleaner: line limit per `memory.md`, **Clean now**, size of every memory file - see [Memory](memory) |
 | **Telegram** | bot wizard, linking, threads, notification options – see [Telegram](telegram) |
+| **Voice** | speech-to-text for the microphone button and Telegram voice notes: engine (local, Groq, OpenAI or off), options and a recording test - see [Voice messages](voice) |
 | **Backup** | repository, schedule, whitelist, history, restore – see [Backup](backup) |
 | **Keys** | your secrets vault (below) |
+| **Import** | bring the memory of another agent from a zip - see [Import from another agent](import) |
+| **Trash** | what was deleted (files, folders, topics, projects, sessions): restore, delete forever, empty - see [Files](files#rename-move-delete-download) |
 | **MCP** | the MCP servers of Claude Code (a service's tools for Claude): every session or one topic, state, **Connect** (sign-in), **Remove** - see [MCP servers](28-mcp.md) |
 | **Extensions** | installed widgets and pages, enable/disable, reload – see [Dashboard widgets](dashboard-widgets) |
-| **System** | version and **Update** (with the smart update preflight), health, services (start/stop/restart), logs, **What's new** (also shown once after each update; the main new features have a **Show me** button that takes you to them and highlights them) |
+| **Pull requests** | the reviewed integration queue: arrange prerequisites, approve an exact commit, pause or cancel - see [Reviewed pull request integration](pull-requests) |
+| **System** | version and **Update** (with the smart update preflight), health, services (start/stop/restart), logs, **What's new** (also shown once after each update; the main new features have a **Show me** button that takes you to them and highlights them). In the local setup (`scripts/dev-local.sh`) it keeps the version, **Check now**, health and **What's new**, and says that service controls and automatic updates are unavailable: no **Update** button, services or logs |
 | **Updates** | every version of harness-pilot, newest first, with a search - the full history of what changed |
 | **Docs** | this documentation |
+| **Starter pack** | add a starter project for your kind of work; an existing project is never overwritten - see [Starter projects](starter-projects) |
 
 Changing the **time zone** here does not change the server clock: run
 `timedatectl set-timezone <Zone> && systemctl restart cron` too, so scheduled jobs follow (see
@@ -38,7 +46,9 @@ Changing the **time zone** here does not change the server clock: run
 
 ## Resident companions
 
-Settings -> **Companions** (experimental) runs a Codex companion that reviews the platform's own source.
+Settings -> **Companions** (experimental) runs a companion that reviews the platform's own source with the coding
+engine chosen for its role: Codex by default, Claude Code, or a trusted external engine - see
+[Resident companions](companions).
 
 - Pick a built-in role (observer, security and dependencies, architect, reverse engineering) or write your own, then
   **Start experiment** on a topic, with an optional mission. The companion works on a copy of the committed source,
@@ -50,7 +60,7 @@ Settings -> **Companions** (experimental) runs a Codex companion that reviews th
   needed); nothing is merged automatically.
 - The reverse-engineering role can use an optional external REA installation; it is neither bundled nor installed.
 - When the companions cannot be loaded, the section shows the reason and a **Retry** button instead of the form.
-- Runs start manually and need a Git checkout and the Codex CLI. The source copy is meant for reviewable experiments,
+- Runs start manually and need a Git checkout and the CLI of the role's engine. The source copy is meant for reviewable experiments,
   not as a security boundary for untrusted code.
 
 ## Install the app

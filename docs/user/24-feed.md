@@ -105,7 +105,8 @@ checks that they arrive. By default warnings and errors are pushed; in **What an
 columns choose per type of event whether it reaches this browser and whether it makes a sound (e.g. *Session
 finished: browser, silent*). A webhook or a script is pushed with all its events while its *Browser* box is ticked
 (sales ring by default), and not at all once you untick it. Push needs HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is
-forgotten by itself.
+forgotten by itself. If the server's push key is replaced (its key file lost), each browser subscribes again by
+itself the next time the app is open there.
 
 ## Good to know
 
