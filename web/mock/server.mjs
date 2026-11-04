@@ -3093,6 +3093,66 @@ for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected
   })
 }
 
+/* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
+   The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
+const IMPORT_HINTS = {
+  hermes: 'You are Hermes Agent: your memory lives in ~/.hermes/ (MEMORY.md, USER.md, memories/, skills/, sessions, cron jobs). Read all of it.',
+  'claude-code': 'You are Claude Code: read every CLAUDE.md and memory file you use (~/.claude/CLAUDE.md, the project folders, ~/.claude/projects/*/memory/), your skills (~/.claude/skills/, .claude/skills/) and anything the user keeps notes in.',
+  openclaw: 'You are OpenClaw: read your workspace (by default ~/.openclaw/workspace/: AGENTS.md, SOUL.md, USER.md, MEMORY.md, memory/*.md, skills/) and your scheduled jobs.',
+  other: 'Read every place where you keep memory, notes, instructions, skills and scheduled jobs.',
+}
+const importPrompt = (agent) => `I am moving to harness-pilot, a control room for Claude Code. Please export everything you know and keep about me and my work into ONE zip file that it can import. ${IMPORT_HINTS[agent]}
+
+Build a folder \`harness-pilot-export/\` with this layout (Markdown, UTF-8): memory.md, projects/<project>/CLAUDE.md and memory.md, projects/<project>/topics/<topic>/CLAUDE.md, memory.md and useful files, skills/<skill-name>/SKILL.md, tasks.md, crons.md, SECRETS.md (key NAMES only).
+
+NEVER write a secret value anywhere - only their names in SECRETS.md. Then zip it and give me the file.`
+const importsState = () => (S.imports ||= { uploads: {}, applying: false })
+R('GET', '/api/import/prompt', ({ q }) => {
+  const agent = Object.keys(IMPORT_HINTS).includes(q.get('agent')) ? q.get('agent') : 'other'
+  return { agent, agents: Object.keys(IMPORT_HINTS), prompt: importPrompt(agent) }
+})
+R('POST', '/api/import/upload', ({ req, rawBody }) => {
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!file || !file.data.length) fail(400, 'empty', 'The file is empty')
+  if (file.data.length > 600 * 1024 * 1024) fail(413, 'too_big', 'The archive is larger than 600 MB')
+  if (!file.data.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) fail(400, 'bad_zip', 'This is not a ZIP archive')
+  const exists = (p, t) => S.projects.some((x) => x.name === p && (!t || x.topics.some((y) => y.name === t)))
+  const plan = { id: crypto.randomBytes(12).toString('hex'), name: file.name,
+    projects: [{ name: 'freelance', exists: exists('freelance'), topics: [{ name: 'clients', source: 'projects/freelance/topics/clients', files: 6, exists: exists('freelance', 'clients') },
+      { name: 'invoices', source: 'projects/freelance/topics/invoices', files: 3, exists: exists('freelance', 'invoices') }] },
+    { name: 'acme', exists: exists('acme'), topics: [{ name: 'blog', source: 'projects/acme/topics/blog', files: 4, exists: exists('acme', 'blog') }] }],
+    skills: ['weekly-report'], aside: ['tasks.md', 'crons.md', 'SECRETS.md'], root_memory: true, files: 19, size: file.data.length,
+    skipped: [{ file: 'harness-pilot-export/.DS_Store', reason: 'hidden' }], secrets: [{ file: 'projects/freelance/topics/invoices/stripe.md', kinds: ['stripe_key'] }],
+    renamed: [{ from: 'projects/Freelance Work', to: 'projects/freelance' }] }
+  importsState().uploads[plan.id] = { plan, at: now() }
+  return plan
+})
+R('POST', '/api/import/:id/apply', async ({ params }) => {
+  const st = importsState(), up = st.uploads[params.id]
+  if (!up || now() - up.at > DAY) fail(404, 'not_found', 'This upload expired: upload the file again')
+  if (st.applying) fail(409, 'busy', 'Another import is being applied')
+  st.applying = true
+  try { await sleep(1200) } finally { st.applying = false }
+  const merged = [], topics = []
+  for (const p of up.plan.projects) {
+    let proj = S.projects.find((x) => x.name === p.name)
+    if (!proj) { proj = { name: p.name, description: '', topics: [] }; S.projects.push(proj); fsAdd(S, `${projPath(p.name)}/CLAUDE.md`, `# Project ${p.name}\n\n@memory.md\n`, now()) }
+    for (const t of p.topics) {
+      topics.push(`${p.name}/${t.name}`)
+      if (proj.topics.some((x) => x.name === t.name)) merged.push(`${topicPath(p.name, t.name)}/memory.md`)
+      else { proj.topics.push({ name: t.name, description: '' }); fsAdd(S, `${topicPath(p.name, t.name)}/memory.md`, `# ${t.name} — memory\n\n## Imported\n\nImported from the previous agent.\n`, now()) }
+    }
+  }
+  const stamp = new Date().toISOString().slice(0, 10), folder = `imports/${stamp}`, report = `${folder}/REPORT.md`
+  fsAdd(S, report, `# Import ${stamp}\n\n${up.plan.files} files from ${up.plan.name}.\n`, now(), 'text/markdown')
+  delete st.uploads[params.id]
+  bus('workspace')
+  return { ok: true, projects: up.plan.projects.map((p) => p.name), topics, files: up.plan.files - 1, merged, renamed: [{ from: 'skills/weekly-report', to: 'skills/weekly-report-imported' }],
+    skills: ['weekly-report-imported'], aside: up.plan.aside.map((a) => `${folder}/${a}`), secrets: up.plan.secrets, skipped: up.plan.skipped, folder, report,
+    finish_prompt: `An import from my previous agent was just applied. Read ${report} first, then finish it with me: merge duplicates in memory, create the open tasks from tasks.md, propose the jobs of crons.md (ask before creating any), list the keys of SECRETS.md to add in Settings -> Keys.` }
+})
+R('DELETE', '/api/import/:id', ({ params }) => { delete importsState().uploads[params.id]; return { ok: true } })
+
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
 R('GET', '/api/docs/:slug', ({ params }) => {
