@@ -47,7 +47,6 @@ These features are for Claude Code only for now:
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.
-- **Scheduled prompts** (Crons): they run with Claude Code.
 - **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
   follows its own sandbox, which still lets it read those files.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
@@ -298,6 +297,11 @@ commands that modify anything in this mode.
 - The HUD shows the plan as the answer and has a **Validate the plan** button.
 - Plan mode applies to every message of the session, Telegram included; validate the plan from the web
   app or the HUD. Compact and hand off still work normally.
+- **In a Claude Code and Codex discussion** (tick **Plan mode** when you start it, or use the box later), both
+  agents only read and work the plan out together, each reply giving the whole plan as it stands. Pause the
+  discussion (or let a reply limit pause it) to get the **Proposed plan** card. **Approve and run**: the agent
+  whose turn is next carries out the latest plan, then the discussion pauses again; **Resume** lets the other
+  agent review the work.
 
 ## Pilot mode
 
