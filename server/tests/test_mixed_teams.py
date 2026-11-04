@@ -153,6 +153,56 @@ def test_stopping_the_team_raises_no_worker_notice(client, topic, mx, monkeypatc
     assert not session_notices(client)
 
 
+def recording_codex(mx, monkeypatch):
+    """A fake Codex that writes its arguments and prompt to codex-calls.jsonl, then answers."""
+    log = mx['tmp'] / 'codex-calls.jsonl'
+    binary = mx['tmp'] / 'fake-team-codex-rec'
+    binary.write_text('''#!/usr/bin/env python3
+import json, sys
+prompt = sys.stdin.read()
+with open(LOG, 'a') as f:
+    f.write(json.dumps({'argv': sys.argv[1:], 'prompt': prompt}) + '\\n')
+print(json.dumps({'type':'thread.started','thread_id':'team-test'}), flush=True)
+print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':'Codex report'}}), flush=True)
+print(json.dumps({'type':'turn.completed','usage':{'input_tokens':1,'output_tokens':1}}), flush=True)
+'''.replace('LOG', repr(str(log))))
+    binary.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(binary))
+    return log
+
+
+def test_team_passes_the_attachments_to_both_agents_and_the_coordinator(client, topic, mx, monkeypatch):
+    from test_sessions import _png
+    log = recording_codex(mx, monkeypatch)
+    up = client.post('/api/uploads', params={'path': topic},
+                     files=[('file', ('screen.png', _png(32, 16), 'image/png')),
+                            ('file', ('notes.txt', b'hello', 'text/plain'))]).json()['files']
+    paths = [f['path'] for f in up]
+    r = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL Review the attached files.', 'attachments': paths})
+    assert r.status_code == 200, r.text
+    sid = r.json()['id']
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    listed = 'Attached files:\n' + '\n'.join(f'- {p}' for p in paths)
+    # the mission shows its files in the coordinator's thread
+    assert all_events(client, sid)[0]['attachments'] == paths
+    claude_calls = [json.loads(line) for line in (mx['tmp'] / 'fake-claude' / 'calls.jsonl').read_text().splitlines()]
+    worker, synthesis = claude_calls                          # the Claude worker, then the coordinator
+    assert 'Your assignment' in worker['prompt'] and listed in worker['prompt']
+    assert 'Synthesize their findings' in synthesis['prompt'] and listed in synthesis['prompt']
+    codex = json.loads(log.read_text().splitlines()[0])
+    assert listed in codex['prompt']                          # every file by its path...
+    assert codex['argv'][codex['argv'].index('--image') + 1] == paths[0]   # ...and the image inline
+    assert codex['argv'].count('--image') == 1
+
+
+def test_team_refuses_a_missing_attachment_or_an_empty_mission_before_starting(client, topic, mx, monkeypatch):
+    fake_codex(mx, monkeypatch)
+    before = len(client.get('/api/sessions').json())
+    r = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL x', 'attachments': ['/nope/missing.txt']})
+    assert r.status_code == 400 and r.json()['error'] == 'bad_attachment'
+    r = client.post('/api/teams', json={'path': topic, 'message': '   '})
+    assert r.status_code == 400 and r.json()['error'] == 'bad_mission'
+    assert len(client.get('/api/sessions').json()) == before  # nothing was created
 def test_team_shows_each_workers_last_actions_and_report(client, topic, mx, monkeypatch):
     from maxxing.sessions import teams
     fake_codex(mx, monkeypatch)
@@ -186,7 +236,13 @@ def test_team_live_view_is_bounded_and_cached(client, topic, mx, monkeypatch):
     first = client.get(f'/api/teams/{sid}').json()['agents'][0]
     assert first['state'] == 'running' and first['report'] is None and first['finished_at'] is None
     assert first['activity'][-1] == {'kind': 'say', 'target': 'Starting a long task.'}
-    client.get(f'/api/teams/{sid}')
     assert all(n == teams.LIVE_TAIL for _, n in reads)
-    assert len([s for s, _ in reads if s == claude]) == 1   # the second poll reused the first read (log unchanged)
+    # the worker keeps writing to its log (progress lines): hold its identity still to see the cache at work
+    ident = service.log_ident(claude)
+    real_ident = service.log_ident
+    monkeypatch.setattr(service, 'log_ident', lambda s: ident if s == claude else real_ident(s))
+    client.get(f'/api/teams/{sid}')
+    before = len([s for s, _ in reads if s == claude])
+    client.get(f'/api/teams/{sid}')
+    assert len([s for s, _ in reads if s == claude]) == before   # the second poll reused the first read (log unchanged)
     client.post(f'/api/teams/{sid}/stop')
