@@ -843,7 +843,10 @@ def test_no_license_no_remote_means_no_failing_update_job(env, tmp_path, monkeyp
     assert not up["enabled"]
     capsys.readouterr()
     assert run_cli("update", "--check") == 0
-    assert "updates unavailable (no git remote)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "updates unavailable (no git remote)" in out
+    assert "remote add origin https://github.com/nicolashedoire/harness-pilot.git" in out   # this repository's
+    assert "harness-maxxing" not in out
     _git("remote", "add", "origin", str(tmp_path / "somewhere.git"), cwd=code)
     assert cmd_core.update_source() == "git"
 
@@ -1183,6 +1186,7 @@ def test_no_license_is_never_a_warning(env, tmp_path, monkeypatch, capsys):
     assert run_cli("license", "status") == 0
     out = capsys.readouterr().out
     assert "– no Enterprise key (none is needed" in out and "updates come from the git repository" in out and "  ! " not in out
+    assert "harness-maxxing" not in out and "license activate" not in out    # no link to the original project
 
 
 @pytest.mark.parametrize("branch", ["--upload-pack=touch {mark};git-upload-pack", "-x", "a..b", "a b", "a;b", "/a",
