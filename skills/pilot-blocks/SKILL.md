@@ -139,7 +139,8 @@ raw HTML.
 ## Block plugins (new block types)
 
 A user may want a block the app does not have (map, kanban, calendar, formula...). Build it as a **block
-extension** in `{{WORKSPACE}}/extensions/<id>/` (slug id, not the name of a built-in type):
+extension** in `{{WORKSPACE}}/extensions/<id>/` (slug id, not the name of a built-in type). A Codex session cannot
+write that folder (its sandbox keeps the extensions read-only): in Codex, suggest a Claude session in `system/harness`.
 
 `block.json`
 ```json
