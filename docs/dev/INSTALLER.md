@@ -25,21 +25,26 @@ Update it with each step.
     installed because of `TOOLS=0`, components missing for the same reason);
   - `pilot uninstall --yes --purge` removed the service, the crontab block, the skills, the commands, the fail2ban
     jail, the downloaded tools, the code and the state directory, and kept the workspace.
-- **Not verified yet:** the git clone path (its default source is the original project), Ubuntu 24.04, x86_64,
-  `ACCESS=domain` (Caddy and its certificate), `ACCESS=tailscale`, the firewall and SSH hardening (a container leaves
-  them to its host), swap, `TOOLS` (Node.js, Chromium, Remotion, Scrapling), local voice, `RESTORE_FROM`, `--update`.
+- **Git path (step 2).** The installer alone (`/root/install.sh`, no source tree beside it), same gate bypass and
+  options, in a fresh Debian 12 systemd container: it cloned `nicolashedoire/harness-pilot` (`main`, partial clone,
+  `origin` set) and finished the 9 steps in 1 min 06 s. `pilot update --check` saw the newer commits of `main`;
+  `pilot update` moved the code, synced the dependencies, refreshed the skills and restarted the service (it answered
+  again); `pilot uninstall --yes --purge` was clean.
+- **Not verified yet:** Ubuntu 24.04, x86_64, `ACCESS=domain` (Caddy and its certificate), `ACCESS=tailscale`, the
+  firewall and SSH hardening (a container leaves them to its host), swap, `TOOLS=background|foreground` (Node.js,
+  Chromium, Remotion, Scrapling), local voice, `RESTORE_FROM`.
 
-## What still points to the original project
+## What pointed to the original project
 
-In `install.sh`:
+In `install.sh` (all changed in step 2):
 
-| Item | Current value | Plan |
+| Item | Before | Now |
 |---|---|---|
 | `REPO` default | the original project's GitHub repository | `nicolashedoire/harness-pilot` |
 | `BRANCH` default | `stable` | `main`: this repository has no `stable` branch, no tag and no release |
-| One-line install in the header and `--help` | a `get.` domain of the original project | the raw `install.sh` of this repository, or a clone then `bash install.sh` |
-| `LICENSE` / `LICENSE_API` | records an Enterprise key with the original project's license server | removed from the installer: harness-pilot has no license key |
-| Product name in the logo, prompts, banner and generated comments | "Harness Maxxing" | "harness-pilot" |
+| One-line install in the header and `--help` | a `get.` domain of the original project | download the raw `install.sh` of this repository, then `bash install.sh` (no pipe into a shell) |
+| `LICENSE` / `LICENSE_API` | records an Enterprise key with the original project's license server | removed: harness-pilot has no license key (a `LICENSE` given anyway gets a warning) |
+| Product name in the logo, prompts, banner and generated comments | "Harness Maxxing" | "harness-pilot", `pilot <command>` hints, a PILOT logo |
 | `CACHE_DIR` default | `/var/cache/harness-maxxing` | `/var/cache/harness-pilot` (emptied after each successful install, nothing to migrate) |
 
 In the server, reachable from a server install but outside the installer:
@@ -82,8 +87,8 @@ Renaming them needs a migration of existing installs; it is not part of this pla
 
 ## Plan
 
-1. This audit (no behaviour change).
-2. Sources: default `REPO` and `BRANCH` of this repository, product name, no license server; still disabled.
+1. This audit (no behaviour change). Done.
+2. Sources: default `REPO` and `BRANCH` of this repository, product name, no license server; still disabled. Done.
 3. Re-enable for Debian 12 and Ubuntu 24.04: remove the gate, run install, `pilot doctor` and uninstall end to end in
    systemd containers of both, the installer tests green on Linux.
 4. HTTPS with a domain (`ACCESS=domain`, Caddy): verified as far as possible without a real domain (configuration
