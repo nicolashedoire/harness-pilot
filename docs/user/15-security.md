@@ -110,7 +110,10 @@ Settings -> Keys it reads and the workspace files it reads (`permissions`, see
   before permissions keep the keys they read; each one is recorded and you are told. This stops an extension from
   reading a key by mistake or by a careless change; it is not a wall against code written to get around it, because
   `api.py` runs inside the server process and could read the keys file itself.
-- **Files and sites** used by `api.py` are declared and shown, not enforced.
+- **Sites**: an HTML widget's frame reaches only the sites it declares and you allowed, and loads scripts and styles
+  only from its own files. HTML widgets you had before permissions keep reaching the sites they use; each one is
+  recorded and you are told.
+- **Files and sites** used by `api.py` or a page are declared and shown, not enforced.
 
 It tells you what an extension is meant to use; it does not turn `api.py` or `page.js` into sandboxed code. Install
 only extensions you trust, and read their declaration before you turn them on.

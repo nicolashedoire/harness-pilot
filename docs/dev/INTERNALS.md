@@ -374,7 +374,7 @@ Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--exten
   (`extensions.make_ctx(ext, where=None, record=True)`; `where` defaults to `card` for a Card widget, `api`
   otherwise). Allowed: `vault.get(name)`; a grandfathered extension without a declaration reading a valid key name
   for the first time -> `_record_legacy` (how `legacy`, feed `extension.legacy_secrets` folded per extension, group
-  `ext-legacy:<id>`, params listing every recorded key). Refused: `PermissionDenied(eid, kind, name, reason,
+  `ext-legacy:<id>:secrets`, params listing every recorded key). Refused: `PermissionDenied(eid, kind, name, reason,
   message)` raised after `_record_denied` (state `denied`, one row per kind + name + reason, written again at most once
   a minute; `exterrors.record(id, dir, where, "PermissionDenied: ...")`; bus `extensions`; a log warning).
   `record=False` (`extcheck`) records neither refusals nor grandfathered keys, and still answers a grandfathered
@@ -383,6 +383,32 @@ Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--exten
   a version: every key `perms` declares becomes `accepted`, `refused` cleared), `forget(id)` (an extension deleted).
   `deny` and `reset` drop the `accepted` keys and keep the `legacy` ones.
 - `access(ext)` (`Extension.info()["access"]` for a widget or page), `suggested(ext)`, `detail(ext)`, `since()`.
+- Sites (HTML widgets): grants `extensions.<id>.network` like the keys. `frame_network(ext, grant)` -> `{open, hosts,
+  known}` (open = grandfathered without a declaration and not refused; hosts = declared and accepted, or all declared
+  with a valid `once` grant; known = recorded sites), `network_state(ext)` (the card's `network.state`),
+  `record_hosts(ext, hosts)` (only while grandfathered and undeclared; `LEGACY_HOSTS_MAX` 50; feed
+  `extension.legacy_network`, group `ext-legacy:<id>:network`), `set_consent(..., "once")` -> `grant` (in-memory
+  `_once`, `GRANT_TTL_S` 1 h, 500 at most), `grant_ok(id, token)`, `host_ok(host)`. `accept`, `deny` and `reset` treat
+  sites like keys.
+
+## maxxing.api.extframes - what an HTML widget frame loads by itself  (owner: organisation)
+- Public router (no `require_auth`: the frame's opaque origin gets no cookie), listed in `api.ROUTERS` before
+  `extensions` so its `/ext/{id}/f/...` routes come before the page modules' catch-all; imports `api.extensions` for
+  the `extid` convertor. `extcheck._client()` includes it first too.
+- Frame tokens: `issue(id, report) -> token` (by `api/extensions.widget_frame`, one per load, in `_frames`:
+  `{eid, exp, report, reports}`, `FRAME_TTL_S` 12 h renewed by each use, `FRAMES_MAX` 2000, expired ones dropped on
+  issue). The frame document carries `<base href="/ext/<id>/f/<token>/">` (inserted after `<meta charset>`: no new
+  line, so `_frame_offset` and exterrors' widget.html line numbers are unchanged).
+- `GET /ext/{id}/f/{token}/{rel}`: `extensions.module_file(ext, rel, FRAME_TYPES)` (enabled HTML widget without
+  error), `ASSET_CSP`, `Access-Control-Allow-Origin: *`. `POST .../@csp-report`: body read in chunks up to
+  `REPORT_MAX`, `report_hosts(body)` (both report formats), `permissions.record_hosts`, bus `extensions` when
+  something was recorded; always 204; `REPORTS_PER_FRAME`.
+- `api/extensions.widget_csp(hosts, report_uri=None)`: the limited frame policy, or its report-only form (no
+  `sandbox` / `frame-ancestors`, which a report-only policy ignores). `'self'` matches the frame's URL origin in a
+  sandboxed document (checked in Chrome: own script, image and `fetch` load; another site's script and an undeclared
+  `fetch` are blocked; the report-only policy's reports reach `@csp-report`).
+- `extensions.widget_card` gives an HTML widget's card `network: {state, hosts}`; `extensions.FRAME_TYPES` and
+  `module_file(ext, rel, types)` (suffix compared lowercased).
 - Call sites: `api/dashboard._render` catches `PermissionDenied` before the generic handler (no second exterrors
   record; `permission` in the widget), `api/extensions.forward` maps it to 403, `extcheck._check_card` reports a
   `not_allowed` refusal as a warning (the user has to allow it, the code is fine) and the others as errors.
@@ -434,7 +460,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   template literals and comments skipped) returning the specifiers after `import` / `from` / `import(` and the code
   with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
 - HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
-  position, links); an unclosed `<script>` is detected by the parser never closing it.
+  position, links); an unclosed `<script>` is detected by the parser never closing it. A widget's relative `<script src>` /
+  stylesheet must be a file its frame loads (`_frame_file_ok`: `module_file(..., FRAME_TYPES)`; a block's: none).
+  `_check_widget_network`: with a limited frame (`permissions.frame_network`), a script or stylesheet from another site
+  is an error and a site named in widget.html that `permissions.network` does not cover (`*.` wildcards) a warning;
+  a grandfathered frame gets one warning listing the sites to declare (named + recorded).
 - Permissions (widget, page): step `permissions` = OK with `permissions.summary` of what the manifest declares, WARN
   when it has no `"permissions"` key (block plugins and agents: no step). Result key `permissions` = the declaration
   or None.

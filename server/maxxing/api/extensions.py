@@ -103,7 +103,7 @@ async def extension_permissions(eid: str):
 
 
 class ConsentIn(BaseModel):
-    decision: Literal["always", "deny", "reset"]
+    decision: Literal["always", "once", "deny", "reset"]
 
 
 @router.post("/api/extensions/{eid}/consent")
@@ -113,11 +113,13 @@ async def consent(eid: str, body: ConsentIn):
         try:
             return permissions.set_consent(ext, body.decision)
         except ValueError as e:
-            raise _err(400, "not_declared", str(e)) from None
+            raise _err(400, "no_network" if "site" in str(e) else "not_declared", str(e)) from None
     access = await asyncio.to_thread(run)
-    extensions.forget_card(eid)
-    bus.invalidate("extensions")
-    return {"ok": True, "access": access}
+    grant = access.pop("grant", None)
+    if body.decision != "once":
+        extensions.forget_card(eid)
+        bus.invalidate("extensions")
+    return {"ok": True, "access": access, **({"grant": grant} if grant else {})}
 
 
 @router.post("/api/extensions/reload")
@@ -322,7 +324,7 @@ def _page_module(eid: str, rel: str) -> tuple[Path, str]:
     p = extensions.module_file(ext, rel)
     if p is None:
         raise _err(404, "not_found", f"{rel} is not a module of extension {eid} (.js .mjs .css .json in its folder)")
-    return p, extensions.MODULE_TYPES[p.suffix]
+    return p, extensions.MODULE_TYPES[p.suffix.lower()]
 
 
 async def _serve_module(eid: str, rel: str) -> FileResponse:
@@ -364,18 +366,42 @@ addEventListener('unhandledrejection',function(e){var r=e.reason;if(r&&(r.status
 apply(init.vars);})();</script>
 <style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;background:transparent;color:var(--mx-fg);font:13px/1.45 Inter,system-ui,sans-serif}</style>
 """
-WIDGET_FRAME_CSP = "sandbox allow-scripts allow-pointer-lock; frame-ancestors 'self'"
+WIDGET_FRAME_CSP = "sandbox allow-scripts allow-pointer-lock; frame-ancestors 'self'"     # a grandfathered widget
+
+
+def widget_csp(hosts: list[str], report_uri: str | None = None) -> str:
+    """The policy of an HTML widget frame limited to `hosts` (https): scripts and styles inline or from its own files
+    ('self' = the frame's token routes, api/extframes.py: the frame sends no cookie), images, sound, video and fonts
+    from its own files, data:, blob: and `hosts`, connections to its own files and `hosts` only. `report_uri`: the
+    same rules as a report-only policy (no sandbox / frame-ancestors, which a report-only policy cannot carry)."""
+    src = "".join(f" https://{h}" for h in hosts)
+    rules = (f"default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'self'; style-src 'unsafe-inline' 'self'; "
+             f"img-src data: blob: 'self'{src}; media-src data: blob: 'self'{src}; font-src data: 'self'{src}; "
+             f"connect-src 'self'{src}; worker-src blob: 'self'; form-action 'none'")
+    if report_uri:
+        return f"{rules}; report-uri {report_uri}"
+    return f"sandbox allow-scripts allow-pointer-lock; {rules}; frame-ancestors 'self'"
 
 
 @router.get("/ext/{eid}/widget-frame", include_in_schema=False)
-async def widget_frame(eid: str):
+async def widget_frame(eid: str, grant: str = ""):
+    from . import extframes
     ext = await asyncio.to_thread(extensions.get, eid)
     if ext is None or not ext.enabled or ext.error or not ext.has_html:
         raise _err(404, "not_found", f"no HTML widget for extension {eid}")
     html = await asyncio.to_thread(_own_file(ext, "widget.html").read_text, "utf-8", "replace")
     kit = await asyncio.to_thread(ui_kit_css)
-    return HTMLResponse(WIDGET_BRIDGE + f"<style>{kit}</style>\n" + html, headers={
-        "Cache-Control": "no-store", "Content-Security-Policy": WIDGET_FRAME_CSP, "Referrer-Policy": "no-referrer"})
+    net = await asyncio.to_thread(permissions.frame_network, ext, grant)
+    token = extframes.issue(eid, report=net["open"])
+    base = f"/ext/{eid}/f/{token}/"
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}
+    if net["open"]:              # before permissions: as before, and every other site it reaches is reported, recorded
+        headers["Content-Security-Policy"] = WIDGET_FRAME_CSP
+        headers["Content-Security-Policy-Report-Only"] = widget_csp(net["known"], base + "@csp-report")
+    else:
+        headers["Content-Security-Policy"] = widget_csp(net["hosts"])
+    doc = WIDGET_BRIDGE.replace('<meta charset="utf-8">', f'<meta charset="utf-8"><base href="{base}">', 1)
+    return HTMLResponse(doc + f"<style>{kit}</style>\n" + html, headers=headers)
 
 
 @router.get("/ext/{eid}/widget.html", include_in_schema=False)

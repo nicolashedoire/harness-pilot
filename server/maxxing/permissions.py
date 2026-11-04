@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 import logging
 import posixpath
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -89,6 +90,12 @@ def parse(raw: Any) -> dict | None:
         if path not in out["read"]:
             out["read"].append(path)
     return out
+
+
+def host_ok(host: str) -> bool:
+    """A host name as permissions.network takes it (blocks.HOST_RE)."""
+    from .blocks import HOST_RE
+    return bool(HOST_RE.match(host))
 
 
 def summary(perms: dict | None) -> str:
@@ -207,9 +214,14 @@ def is_legacy(eid: str) -> bool:
     return not d.get("since") or eid in (d.get("legacy") or {})
 
 
+def _granted(r: dict, kind: str = "secrets") -> dict[str, dict]:
+    """{name or host: {at, how}} granted to an extension (`kind` = secrets | network)."""
+    g = r.get(kind)
+    return {k: v for k, v in g.items() if isinstance(v, dict)} if isinstance(g, dict) else {}
+
+
 def _secrets_granted(r: dict) -> dict[str, dict]:
-    s = r.get("secrets")
-    return {k: v for k, v in s.items() if isinstance(v, dict)} if isinstance(s, dict) else {}
+    return _granted(r, "secrets")
 
 
 def check_secret(ext: Any, name: str) -> str | None:
@@ -238,26 +250,48 @@ def _message(ext: Any, name: str, reason: str) -> str:
             "(Settings -> Extensions)")
 
 
+LEGACY_HOSTS_MAX = 50                   # sites recorded for one grandfathered HTML widget at most
+
+
 def _record_legacy(ext: Any, kind: str, name: str) -> None:
-    """A grandfathered extension read the key `name` for the first time: recorded as granted before permissions existed,
-    with a feed notice listing what it has."""
+    """A grandfathered extension used a key (`kind` secret) or reached a site (`kind` network) for the first time:
+    recorded as granted before permissions existed, with a feed notice listing everything recorded so far."""
+    key = "secrets" if kind == "secret" else "network"
     with _lock:
         d = copy.deepcopy(_load())
         r = _rec(d, ext.id)
-        granted = r.setdefault("secrets", {})
-        if name in granted:
+        granted = r.setdefault(key, {})
+        if name in granted or (key == "network" and len(granted) >= LEGACY_HOSTS_MAX):
             return
         granted[name] = {"at": time.time(), "how": "legacy"}
         _save(d)
         names = sorted(k for k, v in granted.items() if v.get("how") == "legacy")
-    log.info("extension %s: key %s recorded as granted before permissions existed", ext.id, name)
+    log.info("extension %s: %s %s recorded as granted before permissions existed", ext.id, kind, name)
     from . import feed
-    feed.system(f"“{ext.label()}” keeps reading the keys {', '.join(names)}",
-                "It existed before extensions declared their permissions: the keys it reads are recorded as granted. "
+    if key == "secrets":
+        title, what = f"“{ext.label()}” keeps reading the keys {', '.join(names)}", "the keys it reads"
+        kind_, params = "extension.legacy_secrets", {"secrets": ", ".join(names)}
+    else:
+        title, what = f"“{ext.label()}” keeps reaching {', '.join(names)}", "the sites its HTML widget reaches"
+        kind_, params = "extension.legacy_network", {"hosts": ", ".join(names)}
+    feed.system(title, f"It existed before extensions declared their permissions: {what} are recorded as granted. "
                 "See Settings -> Extensions.", "info", "security", "/settings/extensions",
-                group=f"ext-legacy:{ext.id}", kind="extension.legacy_secrets",
-                params={"extension_id": ext.id, "name": ext.label(), "secrets": ", ".join(names)},
+                group=f"ext-legacy:{ext.id}:{key}", kind=kind_,
+                params={"extension_id": ext.id, "name": ext.label(), **params},
                 actions=[feed.link("open", "Open", "/settings/extensions")])
+
+
+def record_hosts(ext: Any, hosts: list[str]) -> list[str]:
+    """Sites a grandfathered HTML widget reached (its frame's report-only policy saw them): each new one is recorded as
+    granted before permissions existed. Only while the extension has no declaration and is not refused. -> the hosts
+    recorded now."""
+    if ext.permissions is not None or not is_legacy(ext.id) or _entry(ext.id).get("refused"):
+        return []
+    known = _granted(_entry(ext.id), "network")
+    new = [h for h in dict.fromkeys(hosts) if h not in known]
+    for h in new:
+        _record_legacy(ext, "network", h)
+    return new
 
 
 def _record_denied(ext: Any, kind: str, name: str, reason: str, message: str, where: str | None) -> None:
@@ -314,30 +348,57 @@ def secret_reader(ext: Any, where: str | None = None, record: bool = True) -> Ca
 
 
 # ---- the user's decision -----------------------------------------------------------------------------------------------
+GRANT_TTL_S = 3600
+_once: dict[str, tuple[str, float]] = {}
+_once_lock = threading.Lock()
+
+
 def set_consent(ext: Any, decision: str) -> dict:
-    """always: what the manifest declares is allowed (a key added later asks again) · deny: nothing it declares is
-    allowed, never asked again · reset: asked again (keys granted before permissions existed stay). -> access(ext).
-    ValueError (`not_declared`: always without a declaration; bad decision)."""
-    if decision not in ("always", "deny", "reset"):
-        raise ValueError("decision must be always, deny or reset")
+    """always: what the manifest declares is allowed - keys and sites (one added later asks again) · deny: nothing it
+    declares is allowed, never asked again · reset: asked again (what was granted before permissions existed stays) ·
+    once: its HTML widget frame may reach the declared sites for one load (a grant token, an hour, in memory).
+    -> access(ext) (+ "grant" for once). ValueError: `not_declared` (always without a declaration), `no_network` (once
+    without declared sites), bad decision."""
+    if decision not in ("always", "deny", "reset", "once"):
+        raise ValueError("decision must be always, once, deny or reset")
+    if decision in ("always", "once") and ext.permissions is None:
+        raise ValueError('this extension declares no "permissions": nothing to allow')
+    if decision == "once":
+        if not ext.permissions["network"]:
+            raise ValueError("this extension declares no site to reach")
+        token, now = secrets.token_urlsafe(18), time.time()
+        with _once_lock:
+            for k in [k for k, (_, exp) in _once.items() if exp < now]:
+                _once.pop(k, None)
+            if len(_once) > 500:
+                _once.clear()
+            _once[token] = (ext.id, now + GRANT_TTL_S)
+        return {**access(ext), "grant": token}
     if decision == "always":
-        if ext.permissions is None:
-            raise ValueError('this extension declares no "permissions": nothing to allow')
         return accept(ext.id, ext.permissions, ext=ext)
     with _lock:
         d = copy.deepcopy(_load())
         r = _rec(d, ext.id)
-        legacy = {k: v for k, v in _secrets_granted(r).items() if v.get("how") == "legacy"}
-        r["secrets"] = legacy
+        for key in ("secrets", "network"):
+            r[key] = {k: v for k, v in _granted(r, key).items() if v.get("how") == "legacy"}
         r["refused"] = time.time() if decision == "deny" else None
         _save(d)
     return access(ext)
 
 
+def grant_ok(eid: str, token: str | None) -> bool:
+    """A valid "once" grant of `eid` (set_consent)."""
+    if not token:
+        return False
+    with _once_lock:
+        hit = _once.get(token)
+    return bool(hit and hit[0] == eid and hit[1] > time.time())
+
+
 def accept(eid: str, perms: dict | None = None, ext: Any = None) -> dict:
-    """The user allowed what `perms` declares (default: the extension's current declaration): every secret it lists is
-    granted, a refusal is cleared. Called by Allow (set_consent "always") and by the Atelier when the user approves a
-    version. -> access of the extension (when it is known)."""
+    """The user allowed what `perms` declares (default: the extension's current declaration): every key and site it
+    lists is granted, a refusal is cleared. Called by Allow (set_consent "always") and by the Atelier when the user
+    approves a version. -> access of the extension (when it is known)."""
     if ext is None:
         from . import extensions
         ext = extensions.get(eid)
@@ -348,11 +409,12 @@ def accept(eid: str, perms: dict | None = None, ext: Any = None) -> dict:
     with _lock:
         d = copy.deepcopy(_load())
         r = _rec(d, eid)
-        granted = _secrets_granted(r)
-        for n in perms.get("secrets") or []:
-            if n not in granted:
-                granted[n] = {"at": now, "how": "accepted"}
-        r["secrets"] = granted
+        for key in ("secrets", "network"):
+            granted = _granted(r, key)
+            for n in perms.get(key) or []:
+                if n not in granted:
+                    granted[n] = {"at": now, "how": "accepted"}
+            r[key] = granted
         r["refused"] = None
         _save(d)
     return access(ext) if ext is not None else {}
@@ -368,32 +430,74 @@ def forget(eid: str) -> None:
             _save(d)
 
 
+# ---- the HTML widget frame's network ----------------------------------------------------------------------------------
+def frame_network(ext: Any, grant: str | None = None) -> dict:
+    """What the HTML widget frame of `ext` may reach: {open, hosts, known}.
+    open: no limit as before permissions (a grandfathered widget without a declaration, not refused): `known` = the
+    sites recorded so far (its report-only policy reports the others); otherwise `hosts` = the declared sites the user
+    allowed (all of them with a valid "once" grant), [] for a widget that declares none or was refused."""
+    r = _entry(ext.id)
+    perms = ext.permissions
+    refused = bool(r.get("refused"))
+    if perms is None:
+        if is_legacy(ext.id) and not refused:
+            return {"open": True, "hosts": [], "known": sorted(_granted(r, "network"))}
+        return {"open": False, "hosts": [], "known": []}
+    if refused:
+        return {"open": False, "hosts": [], "known": []}
+    if grant_ok(ext.id, grant):
+        return {"open": False, "hosts": list(perms["network"]), "known": []}
+    allowed = _granted(r, "network")
+    return {"open": False, "hosts": [h for h in perms["network"] if h in allowed], "known": []}
+
+
+def network_state(ext: Any) -> str:
+    """The HTML widget's network for the dashboard: open (grandfathered, not limited) · none (declares no site) ·
+    granted · ask (a declared site waits for the user) · denied (refused)."""
+    perms = ext.permissions
+    r = _entry(ext.id)
+    if r.get("refused"):
+        return "denied" if perms is None or perms["network"] else "none"
+    if perms is None:
+        return "open" if is_legacy(ext.id) else "none"
+    if not perms["network"]:
+        return "none"
+    allowed = _granted(r, "network")
+    return "granted" if all(h in allowed for h in perms["network"]) else "ask"
+
+
 # ---- what the user sees -------------------------------------------------------------------------------------------------
+def _rows(names: list[str], granted: dict, refused: bool) -> list[dict]:
+    return [{"status": "refused" if refused else "allowed" if g else "pending", "how": (g or {}).get("how"),
+             "at": (g or {}).get("at"), "_n": n} for n in names for g in [granted.get(n)]]
+
+
 def access(ext: Any, d: dict | None = None) -> dict:
     """Access of a widget or page (API.md): what runs today and what waits for the user."""
     d = _load() if d is None else d
     r = _entry(ext.id, d)
     perms = ext.permissions
     legacy = not d.get("since") or ext.id in (d.get("legacy") or {})
-    granted = _secrets_granted(r)
     refused = bool(r.get("refused"))
+    out: dict[str, Any] = {}
     if perms is not None:
         state = "declared"
-        secrets = []
-        for n in perms["secrets"]:
-            g = granted.get(n)
-            secrets.append({"name": n, "status": "refused" if refused else "allowed" if g else "pending",
-                            "how": (g or {}).get("how"), "at": (g or {}).get("at")})
+        for key, label in (("secrets", "name"), ("network", "host")):
+            out[key] = [{label: x.pop("_n"), **x} for x in _rows(perms[key], _granted(r, key), refused)]
     else:
         state = "legacy" if legacy else "undeclared"
-        secrets = [{"name": n, "status": "refused" if refused else "allowed", "how": g.get("how"), "at": g.get("at")}
-                   for n, g in sorted(granted.items()) if state == "legacy"]
+        for key, label in (("secrets", "name"), ("network", "host")):
+            names = sorted(_granted(r, key)) if legacy else []
+            out[key] = [{label: x.pop("_n"), **x} for x in _rows(names, _granted(r, key), refused)]
     return {
         "state": state,
-        "secrets": secrets,
-        "legacy": {"secrets": [{"name": n, "at": g.get("at")} for n, g in sorted(granted.items())
+        **out,
+        "network_open": state == "legacy" and not refused,
+        "legacy": {"secrets": [{"name": n, "at": g.get("at")} for n, g in sorted(_granted(r).items())
+                               if g.get("how") == "legacy"],
+                   "network": [{"host": n, "at": g.get("at")} for n, g in sorted(_granted(r, "network").items())
                                if g.get("how") == "legacy"]},
-        "pending": any(s["status"] == "pending" for s in secrets),
+        "pending": any(x["status"] == "pending" for key in ("secrets", "network") for x in out[key]),
         "refused": refused,
         "denied": [{k: x.get(k) for k in ("kind", "name", "reason", "at", "count")}
                    for x in r.get("denied") or [] if isinstance(x, dict)],
@@ -403,11 +507,12 @@ def access(ext: Any, d: dict | None = None) -> dict:
 def suggested(ext: Any, d: dict | None = None) -> dict:
     """The declaration that keeps a grandfathered extension working: what it was recorded using."""
     r = _entry(ext.id, d)
-    keep = sorted(k for k, v in _secrets_granted(r).items() if v.get("how") == "legacy")
     base = ext.permissions or {"network": [], "secrets": [], "read": []}
-    return {"network": list(base.get("network") or []),
-            "secrets": [*base.get("secrets", []), *(k for k in keep if k not in base.get("secrets", []))],
-            "read": list(base.get("read") or [])}
+    out = {"read": list(base.get("read") or [])}
+    for key in ("network", "secrets"):
+        keep = sorted(k for k, v in _granted(r, key).items() if v.get("how") == "legacy")
+        out[key] = [*base.get(key, []), *(k for k in keep if k not in base.get(key, []))]
+    return {"network": out["network"], "secrets": out["secrets"], "read": out["read"]}
 
 
 def detail(ext: Any, d: dict | None = None) -> dict:

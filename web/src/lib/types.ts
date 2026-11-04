@@ -757,7 +757,12 @@ export type Card = {
   /** HTML widget: URL of its widget.html (drawn in a sandboxed frame) and its height in px. */
   html?: string
   height?: number
+  /** HTML widget: what its frame may reach (absent from an older server). */
+  network?: CardNetwork
 }
+/** open: no limit (an extension older than permissions that declares none) · none: no site declared · granted · ask: a
+ *  declared site waits for the user · denied: refused. `hosts` = the declared sites. */
+export type CardNetwork = { state: 'open' | 'none' | 'granted' | 'ask' | 'denied'; hosts: string[] }
 export type Widget = {
   id: string
   title: string
@@ -794,8 +799,12 @@ export type ExtensionAccess = {
    *  uses is recorded) · undeclared: none, created later (no key). */
   state: 'declared' | 'legacy' | 'undeclared'
   secrets: { name: string; status: 'allowed' | 'pending' | 'refused'; how: 'accepted' | 'legacy' | null; at: number | null }[]
+  /** Sites its HTML widget frame may reach (declared: each declared site; legacy: those recorded so far). */
+  network: { host: string; status: 'allowed' | 'pending' | 'refused'; how: 'accepted' | 'legacy' | null; at: number | null }[]
+  /** Its HTML widget frame is not limited yet (legacy, not refused): the sites it reaches are recorded. */
+  network_open: boolean
   /** Recorded as granted before permissions existed. */
-  legacy: { secrets: { name: string; at: number | null }[] }
+  legacy: { secrets: { name: string; at: number | null }[]; network: { host: string; at: number | null }[] }
   pending: boolean
   refused: boolean
   denied: (ExtPermissionRefusal & { at: number; count: number })[]

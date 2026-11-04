@@ -88,6 +88,7 @@ KINDS: dict[str, tuple[str, str]] = {
     "webhook.refused": ("security", "warning"),
     "backup.restore_held": ("security", "warning"),
     "extension.legacy_secrets": ("security", "info"),
+    "extension.legacy_network": ("security", "info"),
     "instance_backup.copy_failed": ("system", "error"),
     "instance_backup.failed": ("system", "error"),
     "infra.down": ("infra", "error"),

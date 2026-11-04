@@ -91,11 +91,11 @@ def _text(s: object, cap: int) -> str:
 
 def trim_stack(stack: object, eid: str, frame_offset: int = 0) -> str:
     """At most STACK_LINES short lines, the app's own addresses made relative: `https://host/ext/<id>/@17/page.js:12:5`
-    -> `page.js:12:5` (the version segment and a query left out); a widget frame's positions become widget.html's (`frame_offset` = the lines the server serves
-    before widget.html)."""
+    -> `page.js:12:5` (the version segment, an HTML widget frame's `f/<token>/` and a query left out); a widget
+    frame's positions become widget.html's (`frame_offset` = the lines the server serves before widget.html)."""
     pre = re.escape(f"/ext/{eid}/")
-    frame_re = re.compile(r"(?:https?://[^/\s)]+)?" + pre + r"widget-frame(?:#[^:\s)]*)?:(\d+):(\d+)")
-    file_re = re.compile(r"(?:https?://[^/\s)]+)?" + pre + r"(?:@[^/\s)]+/)?([^?#:\s)]+)(?:\?[^:\s)]*)?")
+    frame_re = re.compile(r"(?:https?://[^/\s)]+)?" + pre + r"widget-frame(?:\?[^#:\s)]*)?(?:#[^:\s)]*)?:(\d+):(\d+)")
+    file_re = re.compile(r"(?:https?://[^/\s)]+)?" + pre + r"(?:@[^/\s)]+/|f/[^/\s)]+/)?([^?#:\s)]+)(?:\?[^:\s)]*)?")
 
     def frame(m: re.Match) -> str:
         line = int(m.group(1)) - frame_offset

@@ -30,6 +30,7 @@ ROUTERS = [
     "system",
     "docs",
     "dashboard",
+    "extframes",
     "extensions",
     "blocks",
     "voice",
