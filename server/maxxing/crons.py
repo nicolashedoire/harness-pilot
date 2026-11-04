@@ -49,7 +49,8 @@ MAX_DELETED = 200
 OUTPUT_TAIL = 2048
 DEFAULT_TIMEOUT = 3600
 NOTIFY_POLICIES = ("never", "failure", "always")
-KINDS = ("shell", "claude")
+KINDS = ("shell", "claude", "codex")     # claude / codex: the prompt runs as a session turn of that agent
+AGENT_KINDS = ("claude", "codex")
 KILL_GRACE_S = 5.0                       # timed-out shell job: SIGTERM, this long, then SIGKILL of its whole group
 JOBS_SLICE = "maxxing-jobs.slice"        # every job unit runs in it: its MemoryMax = budget of all jobs together
 UNIT_RUNTIME_MARGIN_S = 120              # RuntimeMaxSec of a job unit = timeout + this (the run's own kill comes first)
@@ -511,7 +512,7 @@ def _clean(job: dict) -> dict:
         raise CronError("name is required (max 80 characters)", "invalid_name")
     j["schedule"] = validate(str(j["schedule"]))
     if j["kind"] not in KINDS:
-        raise CronError("kind must be shell or claude", "invalid_kind")
+        raise CronError("kind must be shell, claude or codex", "invalid_kind")
     if j["notify"] not in NOTIFY_POLICIES:
         raise CronError("notify must be never, failure or always", "invalid_notify")
     try:
@@ -533,7 +534,7 @@ def _clean(job: dict) -> dict:
             pass                                   # multi-line scripts are fine: run via bash -lc
     else:
         if not j["prompt"].strip():
-            raise CronError("a Claude job needs a prompt", "invalid_prompt")
+            raise CronError("a Claude or Codex job needs a prompt", "invalid_prompt")
         j["topic_path"] = j["topic_path"].strip().strip("/")
         _check_topic(j["topic_path"])
     return j
@@ -1105,8 +1106,8 @@ def store_mode(sid: str, mode: str) -> None:
     store.update(sid, permission_mode=mode)
 
 
-def _run_claude(job: dict) -> tuple[bool, int, str, str | None]:
-    """Run the prompt as a Claude session turn. -> (ok, code, output_tail, session_id)."""
+def _run_agent(job: dict) -> tuple[bool, int, str, str | None]:
+    """Run the prompt as a session turn of the job's agent (Claude or Codex). -> (ok, code, output_tail, session_id)."""
     from .sessions import service                       # lazy: sessions are owned by core
     when = dt.datetime.now(tz()).strftime("%Y-%m-%d %H:%M")
     title = f"{job['name']} - {when}"
@@ -1116,13 +1117,14 @@ def _run_claude(job: dict) -> tuple[bool, int, str, str | None]:
     sid = None
     if job.get("reuse_session"):
         prev = (config.read_json(smap_path, {}) or {}).get(job["id"])
-        if prev and service.get_session(prev):
+        kept = service.get_session(prev) if prev else None
+        if kept and (kept.get("provider") or "claude") == job["kind"]:     # not when the job changed agent
             store_mode(prev, job.get("permission_mode") or "")
             service.send_message(prev, job["prompt"], source="cron")
             sid = prev
     if sid is None:
         s = service.create_session(job["topic_path"], message=job["prompt"], title=title,
-                                   model=job.get("model") or None, source="cron", notify=False,
+                                   model=job.get("model") or None, provider=job["kind"], source="cron", notify=False,
                                    cron=True, env=env, timeout_s=timeout,
                                    permission_mode=job.get("permission_mode") or "")
         sid = s["id"]
@@ -1269,8 +1271,8 @@ def run_job(cid: str) -> dict | None:
         session_id = None
         answer = None
         try:
-            if job["kind"] == "claude":
-                ok, code, answer, session_id = _run_claude(job)
+            if job["kind"] in AGENT_KINDS:
+                ok, code, answer, session_id = _run_agent(job)
                 tail = _clip_head(answer, OUTPUT_TAIL)  # an answer starts with its title and summary
             else:
                 ok, code, tail = _run_shell(job)
@@ -1312,7 +1314,7 @@ def _feed(job: dict, run: dict) -> None:
                     "crons", url, group="ok", kind="cron.succeeded", params=params)
     else:
         out = run.get("output_tail") or ""
-        body = _clip_head(out, 600) if job.get("kind") == "claude" else _clip_tail(out, 600)
+        body = _clip_head(out, 600) if job.get("kind") in AGENT_KINDS else _clip_tail(out, 600)
         run_url = f"{url}&run={run.get('id')}"
         feed.system(f"Cron failed: {job['name']}", body, "error", "crons", url, group=f"failed:{cid}",
                     kind="cron.failed", params={**params, "code": run.get("code")},
@@ -1331,7 +1333,7 @@ def _clip_tail(text: str, n: int) -> str:
 
 
 def _notify(job: dict, run: dict, answer: str | None = None) -> None:
-    """Feed + Telegram report. A Claude job's report is its answer from the start (markdown, rendered
+    """Feed + Telegram report. A Claude or Codex job's report is its answer from the start (markdown, rendered
     in Telegram); a command's report is the end of its output (where errors are)."""
     _feed(job, run)
     policy = job.get("notify", "failure")
@@ -1339,7 +1341,7 @@ def _notify(job: dict, run: dict, answer: str | None = None) -> None:
         return
     status = "OK" if run["ok"] else f"FAILED (code {run['code']})"
     header = f"{status} - {job['name']} ({fmt_duration(run['duration_s'])})"
-    claude = job.get("kind") == "claude"
+    claude = job.get("kind") in AGENT_KINDS          # an agent's answer (markdown)
     body = ""
     if not run["ok"] or policy == "always":
         if claude:

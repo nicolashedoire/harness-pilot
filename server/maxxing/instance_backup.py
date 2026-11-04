@@ -121,8 +121,10 @@ def _read_header(incoming) -> tuple[bytes, tuple[int, int, int], bytes, bytes]:
     return header, (log_n, r, p), salt, nonce
 
 
-def _crypt(source: Path, destination: Path, password: str, *, decrypt: bool = False):
-    """Authenticate the whole stream before a decrypted ZIP is admitted for inspection."""
+def _crypt(source: Path, destination: Path, password: str | None, *, decrypt: bool = False,
+           sealed: tuple[bytes, tuple[int, int, int], bytes] | None = None):
+    """Authenticate the whole stream before a decrypted ZIP is admitted for inspection. `sealed` = (salt, cost, key)
+    of a schedule: the key was derived from the passphrase with that salt and cost, which the header records."""
     try:
         with source.open('rb') as incoming, destination.open('xb') as outgoing:
             os.chmod(destination, 0o600)
@@ -136,9 +138,13 @@ def _crypt(source: Path, destination: Path, password: str, *, decrypt: bool = Fa
                 incoming.seek(len(header))
                 operation = Cipher(algorithms.AES(_key(password, salt, *cost)), modes.GCM(nonce, tag)).decryptor()
             else:
-                salt, nonce = os.urandom(16), os.urandom(12)
-                header = _HEADER.pack(MAGIC, FORMAT_VERSION, KDF_SCRYPT, *SCRYPT_DEFAULT, salt, nonce)
-                key = _key(password, salt, *SCRYPT_DEFAULT)
+                if sealed:
+                    salt, cost, key = sealed
+                else:
+                    salt, cost = os.urandom(16), SCRYPT_DEFAULT
+                    key = _key(password, salt, *cost)
+                nonce = os.urandom(12)
+                header = _HEADER.pack(MAGIC, FORMAT_VERSION, KDF_SCRYPT, *cost, salt, nonce)
                 outgoing.write(header)
                 remaining = source.stat().st_size
                 operation = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
@@ -313,7 +319,9 @@ def _description(manifest: dict) -> dict:
                                for name, root in manifest['roots'].items() if not root.get('archive')}}
 
 
-def export(password: str) -> dict:
+def export(password: str | None, *, sealed: tuple | None = None, keep: int | None = None) -> dict:
+    """`sealed` + `keep`: a scheduled export (see export_scheduled), marked `scheduled`; the older scheduled exports
+    beyond the newest `keep` are deleted before the lock is released."""
     with _lock():
         _purge_previews()
         _idle()
@@ -357,10 +365,13 @@ def export(password: str) -> dict:
                 raise SnapshotError('too_large', 'The archive exceeds the portable backup limit.', 413)
             destination = exports / f'{ident}.pilotbackup'
             uploads.check_room(destination.parent, archive.stat().st_size)
-            _crypt(archive, destination, password)
+            _crypt(archive, destination, password, sealed=sealed)
         result = {'id': ident, 'sha256': _digest(destination), 'archive_bytes': destination.stat().st_size,
-                  **_description(manifest)}
+                  'scheduled': keep is not None, **_description(manifest)}
         config.write_json(exports / f'{ident}.json', result)
+        if keep is not None:
+            for stale in [entry for entry in list_exports() if entry['scheduled']][keep:]:
+                delete_export(stale['id'])
         return result
 
 
@@ -388,6 +399,7 @@ def list_exports() -> list[dict]:
         created = meta.get('created')
         result.append({'id': path.stem, 'archive_bytes': info.st_size,
                        'created': created if isinstance(created, (int, float)) else info.st_mtime,
+                       'scheduled': meta.get('scheduled') is True,
                        **{k: meta.get(k) for k in ('sha256', 'version', 'files', 'bytes')}})
     return sorted(result, key=lambda entry: entry['created'], reverse=True)
 
@@ -625,7 +637,7 @@ def status() -> dict:
         roots, error = {}, str(problem)
     return {'max_bytes': _limit(), 'restore_hold': bool(config.load_config().get('restore_hold')),
             'integrations_paused': config.integrations_paused(),
-            'roots': roots, 'export_error': error, 'requires_idle_sessions': True}
+            'roots': roots, 'export_error': error, 'requires_idle_sessions': True, 'schedule': schedule_status()}
 
 
 def resume_integrations() -> dict:
@@ -638,3 +650,135 @@ def resume_integrations() -> dict:
     crons.sync_crontab()
     bus.invalidate('crons', 'backup', 'telegram')
     return {'ok': True, 'scheduled_jobs': len(crons.managed_lines(crons._load_raw()))}
+
+
+# ---- scheduled archives ------------------------------------------------------------------------------------------
+# The passphrase is never stored. Enabling a schedule derives the archive key once, exactly as an export would (scrypt,
+# default cost, a fresh salt), and keeps that key in secrets.json - not in the Keys vault, whose entries can be exposed
+# to agents. Scheduled archives write that salt in their header, so the passphrase alone opens them as usual.
+FREQUENCIES = {'daily': 1, 'weekly': 7}          # days between scheduled archives
+KEEP = (1, 30)
+SCHEDULE_KEY = 'instance_backup_schedule_key'    # secrets.json
+SCHEDULE_GROUP = 'instance-backup-schedule'      # feed group of the failure notice
+SCHEDULE_POLL = 10 * 60                          # the scheduler looks again at least this often
+SCHEDULE_RETRY = 30 * 60                         # a run blocked by activity is retried this soon...
+SCHEDULE_NOTIFY_AFTER = 6 * 3600                 # ...and notified once blocked this long
+_BLOCKED = {'sessions_active', 'crons_active', 'busy', 'snapshot_busy', 'source_changed'}
+
+
+def _schedule_file() -> Path:
+    return config.STATE / 'instance-backups' / 'schedule.json'     # read without creating the folder
+
+
+def _schedule() -> tuple[dict, tuple[bytes, tuple[int, int, int], bytes]] | None:
+    """(settings, sealed key) of an enabled schedule, else None."""
+    settings, stored = config.load_config().get('instance_backup_schedule'), config.load_secrets().get(SCHEDULE_KEY)
+    if not isinstance(settings, dict) or settings.get('frequency') not in FREQUENCIES or not isinstance(stored, dict):
+        return None
+    try:
+        sealed = (bytes.fromhex(stored['salt']), tuple(int(v) for v in stored['kdf']), bytes.fromhex(stored['key']))
+        hour, keep, since = int(settings['hour']), int(settings['keep']), float(settings['since'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if len(sealed[0]) != 16 or len(sealed[1]) != 3 or len(sealed[2]) != 32 or not 0 <= hour <= 23:
+        return None
+    return {'frequency': settings['frequency'], 'hour': hour, 'keep': max(KEEP[0], min(keep, KEEP[1])),
+            'since': since}, sealed
+
+
+def _slot(hour: int, after: float) -> float:
+    """The first `hour`:00 (config timezone) after `after`."""
+    from . import crons
+    return next(crons.iter_runs(f'0 {hour} * * *', after=after))
+
+
+def _next_run(settings: dict, state: dict) -> float:
+    last = state.get('last_success')
+    earliest = (last + FREQUENCIES[settings['frequency']] * 86400 - 12 * 3600) if last else settings['since']
+    return max(_slot(settings['hour'], earliest), state.get('retry_at') or 0)
+
+
+def _paused() -> bool:
+    return bool(config.load_config().get('restore_hold')) or config.integrations_paused()
+
+
+def schedule_status() -> dict:
+    current = _schedule()
+    settings = config.load_config().get('instance_backup_schedule')
+    settings = settings if isinstance(settings, dict) else {}
+    state = config.read_json(_schedule_file(), {})
+    state = state if isinstance(state, dict) else {}
+    return {'enabled': current is not None,
+            'frequency': current[0]['frequency'] if current else 'off',
+            'hour': current[0]['hour'] if current else settings.get('hour', 3),
+            'keep': current[0]['keep'] if current else settings.get('keep', 7),
+            'next_run': _next_run(current[0], state) if current and not _paused() else None,
+            'paused': _paused(), 'last_success': state.get('last_success'), 'last_id': state.get('last_id'),
+            'error': state.get('error') if current else None}
+
+
+def set_schedule(frequency: str, hour: int, keep: int, passphrase: str | None = None, store_key: bool = False) -> dict:
+    """Enable or change the schedule. A passphrase (first time, or to change it) needs `store_key`: the owner agreed
+    that a key derived from it stays on this server."""
+    if frequency not in FREQUENCIES or not isinstance(hour, int) or not 0 <= hour <= 23 \
+            or not isinstance(keep, int) or not KEEP[0] <= keep <= KEEP[1]:
+        raise SnapshotError('schedule', 'Choose daily or weekly, an hour from 0 to 23 and 1 to 30 archives to keep.')
+    current = _schedule()
+    if passphrase:
+        if not store_key:
+            raise SnapshotError('consent_required', 'Agree to keep a key derived from the passphrase on this server.')
+        salt = os.urandom(16)
+        key = _key(passphrase, salt, *SCRYPT_DEFAULT)
+        config.set_secret(SCHEDULE_KEY, {'salt': salt.hex(), 'kdf': list(SCRYPT_DEFAULT), 'key': key.hex()})
+    elif current is None:
+        raise SnapshotError('passphrase_required', 'Enter the backup passphrase to enable scheduled archives.')
+    config.update_config(instance_backup_schedule={'frequency': frequency, 'hour': hour, 'keep': keep,
+                                                   'since': current[0]['since'] if current else time.time()})
+    return schedule_status()
+
+
+def disable_schedule() -> dict:
+    """Off: the stored key goes; archives already made stay until deleted."""
+    config.set_secret(SCHEDULE_KEY, None)
+    config.update_config(instance_backup_schedule={'frequency': 'off'})
+    return schedule_status()
+
+
+def schedule_delay() -> float | None:
+    """Seconds until the next scheduled archive (<= 0: due); None when there is no schedule or it is paused."""
+    current = _schedule()
+    if current is None or _paused():
+        return None
+    state = config.read_json(_schedule_file(), {})
+    return _next_run(current[0], state if isinstance(state, dict) else {}) - time.time()
+
+
+def export_scheduled() -> dict:
+    current = _schedule()
+    if current is None:
+        raise SnapshotError('schedule_off', 'Scheduled archives are not enabled.', 409)
+    return export(None, sealed=current[1], keep=current[0]['keep'])
+
+
+def record_scheduled(result: dict | None = None, code: str = '', message: str = '') -> dict:
+    """The outcome of a scheduled run: its state, the next try and the failure notice (once per series of failures;
+    a run blocked by activity is retried soon and notified only once blocked for SCHEDULE_NOTIFY_AFTER)."""
+    from . import feed
+    now, current = time.time(), _schedule()
+    state = config.read_json(_schedule_file(), {})
+    state = state if isinstance(state, dict) else {}
+    if result is not None:
+        state = {'last_success': now, 'last_id': result.get('id')}
+        feed.system_resolve('system', SCHEDULE_GROUP)
+    else:
+        blocked = code in _BLOCKED
+        state.update(error={'code': code, 'message': message, 'at': now}, failing_since=state.get('failing_since') or now,
+                     retry_at=now + SCHEDULE_RETRY if blocked or current is None else _slot(current[0]['hour'], now + 12 * 3600))
+        if not state.get('notified') and (not blocked or now - state['failing_since'] >= SCHEDULE_NOTIFY_AFTER):
+            state['notified'] = True
+            feed.system('The scheduled instance archive failed', message, 'error', group=SCHEDULE_GROUP,
+                        kind='instance_backup.failed', params={'code': code, 'message': message[:300]},
+                        actions=[feed.link('open', 'Open', '/settings/backup')])
+    _base()
+    config.write_json(_schedule_file(), state)
+    return state

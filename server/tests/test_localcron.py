@@ -28,3 +28,35 @@ def test_local_scheduler_launches_and_records_a_real_isolated_job(mx):
     assert marker.read_text() == 'scheduled'
     run = wait_for(lambda: next((r for r in crons.read_runs() if r.get('cron_id') == job['id']), None), timeout=15)
     assert run['ok'] is True
+
+
+def test_reboot_jobs_run_once_when_the_application_starts(mx, monkeypatch):
+    boot = crons.create_job({'name': 'At startup', 'schedule': '@reboot', 'command': 'true'})
+    off = crons.create_job({'name': 'Off', 'schedule': '@reboot', 'command': 'true', 'enabled': False})
+    minute = crons.create_job({'name': 'Minute', 'schedule': '* * * * *', 'command': 'true'})
+    started = []
+    monkeypatch.setattr(crons, 'spawn_run', lambda cid: started.append(cid))
+    assert localcron.boot() == [boot['id']] and started == [boot['id']]
+    assert localcron.tick(1_700_000_000) == [minute['id']]          # the minute loop never starts it again
+    assert off['id'] not in started
+
+    def busy(cid):
+        raise crons.CronError('this job is already running', 'already_running')
+    monkeypatch.setattr(crons, 'spawn_run', busy)
+    assert localcron.boot() == []                                   # still running from before: left alone
+    config.save_config({**config.load_config(), 'integrations_paused': True})
+    monkeypatch.setattr(crons, 'spawn_run', lambda cid: started.append(cid))
+    assert localcron.boot() == [] and started == [boot['id'], minute['id']]
+
+
+def test_local_mode_startup_runs_reboot_jobs(mx, monkeypatch):
+    from fastapi.testclient import TestClient
+    from maxxing.app import create_app
+    job = crons.create_job({'name': 'At startup', 'schedule': '@reboot', 'command': 'true'})
+    started = []
+    monkeypatch.setattr(crons, 'spawn_run', lambda cid: started.append(cid))
+    monkeypatch.setattr(localcron, 'tick', lambda now=None: [])
+    monkeypatch.setenv('HARNESS_PILOT_LOCAL_MODE', '1')
+    with TestClient(create_app()):
+        wait_for(lambda: started, timeout=10)
+    assert started == [job['id']]

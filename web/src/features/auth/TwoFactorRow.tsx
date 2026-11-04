@@ -7,7 +7,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogT
 import { SettingRow } from '@/features/common'
 import { TwoFactorWait } from './TwoFactorWait'
 /** Two-step sign-in: turning it on waits for an approval in Telegram (a broken bridge cannot lock anybody out). */
-export function TwoFactorRow({ on, id = 'tg-2fa' }: { on: boolean; id?: string }) {
+export function TwoFactorRow({ on, id = 'tg-2fa', label }: { on: boolean; id?: string; label?: React.ReactNode }) {
   const t = useT()
   const qc = useQueryClient()
   const setTwo = useSetTwoFactor()
@@ -21,7 +21,7 @@ export function TwoFactorRow({ on, id = 'tg-2fa' }: { on: boolean; id?: string }
     })
   return (
     <>
-      <SettingRow label={t('twofa.setting')} description={t('twofa.settingDesc')} htmlFor={id}>
+      <SettingRow label={label ?? t('twofa.setting')} description={t('twofa.settingDesc')} htmlFor={id}>
         <div className="flex items-center gap-2">
           {on && (
             <Button variant="ghost" size="sm" loading={forget.isPending} onClick={() => forget.mutate(undefined, { onSuccess: () => toast.success(t('twofa.forgotten')) })}>

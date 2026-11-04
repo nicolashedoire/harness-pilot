@@ -14,6 +14,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
 
@@ -128,7 +129,10 @@ function buildState(scenario) {
     myThemes: ready ? [{ id: 'th_5a63e0b1c2', source: 'received', from: 'Acme team', saved: t - 2 * DAY,
       theme: { schema: 1, id: 'sauge', name: 'Sauge', description: 'Sage green on softly tinted greys.', base: 'zinc', accent: '#5f8f6b', buttons: 'accent', tint: 'tinted', tokens: { light: {}, dark: {} } } }] : [],
     team: {
-      people: { p_acme: { name: 'Acme team', emoji: '', color: 'green', server: 'https://acme.example.com', status: 'online', address: 'https://acme.example.com', peer: true, contact: true, last_seen: t - 60 } },
+      people: { p_acme: { name: 'Acme team', emoji: '', color: 'green', server: 'https://acme.example.com', status: 'online', address: 'https://acme.example.com', peer: true, contact: true, last_seen: t - 60 },
+        p_sam: { name: 'Sam', emoji: '🦊', color: 'violet', server: 'https://sam.example.net', status: 'away', address: 'https://sam.example.net', peer: true, contact: true, last_seen: t - 40 * MIN },
+        // asked to connect (Settings -> Team: accept or decline); not a contact yet
+        p_north: { name: 'North studio', emoji: '', color: 'amber', server: 'https://north.example.org', status: 'offline', address: 'https://north.example.org', peer: true, contact: false, request: true, last_seen: null } },
       chats: ready ? [{ id: 'd_acme', kind: 'dm', name: '', emoji: '', members: ['p_acme'], created: t - 3 * DAY, read_at: t - 2 * DAY, remote: true, admin: null, messages: [
         { id: 'm_00000001', author: 'p_acme', at: t - 2 * DAY - 300, text: 'Here is the palette we use for the client dashboards.', kind: 'text' },
         { id: 'm_00000002', author: 'p_acme', at: t - 2 * DAY - 240, text: 'Sauge', kind: 'theme',
@@ -932,6 +936,8 @@ function healthObj() {
   const jitter = Math.sin(Date.now() / 20000)
   const disk = { total: 80e9, free: Math.round(80e9 * 0.18), pct: 82 }
   if (!(S.scenario === 'ready' || S.scenario === 'login')) { disk.free = 52e9; disk.pct = 35 }
+  const seen = S.healthSeen || {} // POST /api/system/health/seen: an issue stops counting for 24 h
+  for (const i of issues) { i.id = i.code; i.seen = now() - (seen[i.id] || 0) < DAY }
   return { ok: !issues.some((i) => i.level === 'error'), issues, cpu_pct: +(23 + jitter * 8).toFixed(1), load: [+(0.42 + jitter * 0.1).toFixed(2), 0.38, 0.31],
     mem: { total: 8e9, avail: Math.round(3.1e9 + jitter * 2e8) }, disk, uptime_s: Math.round(now() - S.bootAt),
     claude_auth: S.claude.auth.ok, backup_age_h: last ? +((now() - last.at) / HOUR).toFixed(1) : null, failed_logins_1h: fails, at: now() }
@@ -1207,7 +1213,7 @@ function R(method, pattern, handler, opts = {}) {
   const keys = []
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }).replace(/\*$/, '(.*)') + '$')
   if (pattern.endsWith('*')) keys.push('rest')
-  routes.push({ method, re, keys, handler, public: !!opts.public })
+  routes.push({ method, re, keys, handler, public: !!opts.public, csrf: opts.csrf !== false })
 }
 
 /* ---- auth */
@@ -1949,6 +1955,154 @@ R('POST', '/api/trash/:id/restore', ({ params }) => {
 R('DELETE', '/api/trash/:id', ({ params }) => { const it = trashFind(params.id); S.trash = S.trash.filter((x) => x !== it); return { ok: true } })
 R('DELETE', '/api/trash', () => { const deleted = trashState().length; S.trash = []; return { ok: true, deleted } })
 
+/* ---- Files page extras (api/files.py, filesite.py, videos.py): image previews, archive listings, HTML pages with
+   their assets (sandboxed, token in the URL), file mtimes, video copies, zip downloads. The zips are real (stored,
+   not compressed); archive listings read zip files only (415 for tar / gzip in the mock). */
+function zipStore(entries) { // [{name, data, mtime}] -> a ZIP buffer, method 0 (stored), UTF-8 names
+  const parts = [], central = []
+  let off = 0
+  for (const { name, data, mtime } of entries) {
+    const n = Buffer.from(name), d = new Date((mtime || now()) * 1000), crc = zlib.crc32(data)
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
+    const h = Buffer.alloc(30)
+    h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt16LE(0x0800, 6); h.writeUInt16LE(time, 10); h.writeUInt16LE(date, 12)
+    h.writeUInt32LE(crc, 14); h.writeUInt32LE(data.length, 18); h.writeUInt32LE(data.length, 22); h.writeUInt16LE(n.length, 26)
+    const c = Buffer.alloc(46)
+    c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0800, 8); c.writeUInt16LE(time, 12); c.writeUInt16LE(date, 14)
+    c.writeUInt32LE(crc, 16); c.writeUInt32LE(data.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(n.length, 28); c.writeUInt32LE(off, 42)
+    parts.push(h, n, data); central.push(c, n); off += 30 + n.length + data.length
+  }
+  const cd = Buffer.concat(central), end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16)
+  return Buffer.concat([...parts, cd, end])
+}
+function zipList(buf) { // the central directory of a ZIP file
+  const e = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  if (e < 0) return null
+  const out = []
+  let p = buf.readUInt32LE(e + 16)
+  for (let i = 0; i < buf.readUInt16LE(e + 10) && buf.readUInt32LE(p) === 0x02014b50; i++) {
+    const nl = buf.readUInt16LE(p + 28), name = buf.subarray(p + 46, p + 46 + nl).toString('utf8')
+    out.push({ name, size: buf.readUInt32LE(p + 24), dir: name.endsWith('/'), mtime: null })
+    p += 46 + nl + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32)
+  }
+  return out
+}
+const fileBytes = (n) => (Buffer.isBuffer(n.content) ? n.content : Buffer.from(String(n.content ?? '')))
+const filesUnder = (abs) => [...S.fs.entries()].filter(([k, n]) => n.type === 'file' && (k === abs || k.startsWith(abs + '/')) && !k.slice(abs.length + 1).split('/').some((x) => x.startsWith('.')))
+const sendZip = (res, name, entries) => {
+  const buf = zipStore(entries)
+  res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': buf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="${name}"` })
+  res.end(buf)
+  return RAW
+}
+R('GET', '/api/files/preview', ({ q, res }) => {
+  const abs = absPath(q.get('path')), n = S.fs.get(abs)
+  if (n.type !== 'file' || !String(n.mime).startsWith('image/')) fail(415, 'unsupported', 'Not an image')
+  const body = fileBytes(n), svg = body.subarray(0, 5).toString() === '<svg '
+  res.writeHead(200, { 'Content-Type': svg ? 'image/svg+xml' : n.mime, 'Content-Length': body.length, 'Cache-Control': 'private, max-age=86400' })
+  res.end(body)
+  return RAW
+})
+R('GET', '/api/files/archive', ({ q }) => {
+  const abs = absPath(q.get('path')), n = S.fs.get(abs)
+  if (n.type !== 'file') fail(404, 'not_found', 'Not a file')
+  const entries = zipList(fileBytes(n)) || fail(415, 'unsupported', 'The mock lists ZIP archives only')
+  return { path: abs, format: 'zip', entries: entries.slice(0, 5000), count: entries.length, total_size: entries.reduce((a, x) => a + x.size, 0), truncated: entries.length > 5000, size: fileBytes(n).length }
+})
+const siteTokens = new Map() // token -> { dir, file, until }
+R('GET', '/api/files/site-url', ({ q }) => {
+  const abs = absPath(q.get('path'))
+  if (!/\.html?$/i.test(abs)) fail(415, 'unsupported', 'Only .html and .htm pages')
+  const token = crypto.randomBytes(16).toString('hex')
+  siteTokens.set(token, { dir: path.posix.dirname(abs), until: now() + 2 * HOUR })
+  return { url: `/api/files/site/${token}/${encodeURIComponent(path.posix.basename(abs))}`, expires_in: 7200 }
+})
+R('GET', '/api/files/site/:token/*', ({ params, res }) => {
+  const t = siteTokens.get(params.token)
+  if (!t || t.until < now()) fail(404, 'not_found', 'This page link expired')
+  const rel = decodeURIComponent(params.rest || ''), abs = path.posix.normalize(`${t.dir}/${rel}`)
+  if (!abs.startsWith(t.dir + '/') || rel.split('/').some((x) => x.startsWith('.')) || !/\.(html?|css|m?js|wasm|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|svg|avif|ico|mp3|ogg|wav|mp4|webm)$/i.test(abs)) fail(403, 'forbidden', 'Not a web asset of this page')
+  const n = S.fs.get(abs)
+  if (!n || n.type !== 'file') fail(404, 'not_found', 'No such file')
+  const body = fileBytes(n)
+  res.writeHead(200, { 'Content-Type': mimeOf(abs), 'Content-Length': body.length, 'Cache-Control': 'no-store',
+    'Content-Security-Policy': "sandbox allow-scripts allow-popups allow-forms allow-modals allow-downloads; frame-ancestors 'self'" })
+  res.end(body)
+  return RAW
+}, { public: true })
+R('POST', '/api/files/stat', ({ body }) => {
+  const paths = Array.isArray(body.paths) ? body.paths.slice(0, 500) : fail(422, 'invalid', 'paths must be a list')
+  return { mtimes: Object.fromEntries(paths.map((p) => { const n = typeof p === 'string' && p.startsWith('/') ? S.fs.get(p) : null; return [p, n && n.type === 'file' ? n.mtime : null] })) }
+})
+const videoCopies = () => (S.videoCopies ||= {}) // `${path}|${q}` -> queued at
+const VIDEO_QS = [720, 480] // below the 1080p original
+function videoInfo(abs) {
+  const n = S.fs.get(abs)
+  if (n.type !== 'file' || !String(n.mime).startsWith('video/')) fail(415, 'unsupported', 'Not a video')
+  const qualities = VIDEO_QS.map((q) => {
+    const at = videoCopies()[`${abs}|${q}`], age = at ? now() - at : -1
+    return at === undefined ? { q, state: 'none', progress: 0 } : age < 1 ? { q, state: 'queued', progress: 0 } : age < 6 ? { q, state: 'running', progress: +((age - 1) / 5).toFixed(2) } : { q, state: 'ready', progress: 1 }
+  })
+  return { width: 1920, height: 1080, codec: 'avc1.640028', bitrate: 6200000, duration: 42.5, fps: 30, has_audio: true, rotation: 0, qualities, auto: 720 }
+}
+R('GET', '/api/files/video', ({ q }) => videoInfo(absPath(q.get('path'))))
+R('POST', '/api/files/video/prepare', ({ body }) => {
+  const abs = absPath(body.path), q = Number(body.q)
+  videoInfo(abs)
+  if (!VIDEO_QS.includes(q)) fail(422, 'invalid', 'This quality is not offered for this video')
+  videoCopies()[`${abs}|${q}`] ??= now()
+  return videoInfo(abs)
+})
+R('GET', '/api/files/video/stream', ({ q, res }) => {
+  const abs = absPath(q.get('path')), info = videoInfo(abs)
+  if (info.qualities.find((x) => x.q === Number(q.get('q')))?.state !== 'ready') fail(404, 'not_ready', 'This copy is not ready yet')
+  const body = fileBytes(S.fs.get(abs))
+  res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': body.length, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' })
+  res.end(body)
+  return RAW
+})
+const zipTokens = new Map() // token -> { paths, until }
+function zipPlan(paths) {
+  const seen = new Set(), entries = []
+  for (const abs of paths) {
+    const base = path.posix.dirname(abs)
+    for (const [k, n] of filesUnder(abs)) {
+      let name = k.slice(base.length + 1)
+      if (seen.has(k)) continue
+      seen.add(k)
+      while (entries.some((e) => e.name === name)) name = name.replace(/(\.[^./]+)?$/, ' (2)$1')
+      entries.push({ name, data: fileBytes(n), mtime: n.mtime })
+    }
+  }
+  return entries
+}
+R('GET', '/api/files/zip', ({ q, res }) => {
+  if (q.get('token')) {
+    const t = zipTokens.get(q.get('token'))
+    if (!t || t.until < now()) fail(404, 'not_found', 'This download expired')
+    return sendZip(res, t.name, zipPlan(t.paths))
+  }
+  const abs = absPath(q.get('path'))
+  if (S.fs.get(abs).type !== 'dir') fail(404, 'not_found', 'Not a folder')
+  const entries = zipPlan([abs])
+  if (q.get('check') === '1') return { count: entries.length, size: entries.reduce((a, e) => a + e.data.length, 0) }
+  return sendZip(res, `${path.posix.basename(abs) || 'files'}.zip`, entries)
+})
+R('POST', '/api/files/zip', ({ body }) => {
+  if (!Array.isArray(body.paths) || !body.paths.length || body.paths.length > 1000) fail(422, 'invalid', 'paths: 1 to 1000')
+  if (body.paths.some((p) => typeof p !== 'string' || !p.startsWith('/'))) fail(400, 'bad_path', 'Absolute paths only')
+  const paths = [...new Set(body.paths.map((p) => absPath(p)))].filter((p, _, all) => !all.some((o) => o !== p && p.startsWith(o + '/')))
+  const entries = zipPlan(paths), dirs = new Set(paths.map((p) => path.posix.dirname(p)))
+  const token = crypto.randomBytes(16).toString('hex'), name = dirs.size === 1 ? `${path.posix.basename([...dirs][0]) || 'files'}.zip` : 'files.zip'
+  zipTokens.set(token, { paths, name, until: now() + 120 })
+  return { count: entries.length, size: entries.reduce((a, e) => a + e.data.length, 0), name, token, expires_in: 120 }
+})
+R('POST', '/api/telegram/webhook/remove', ({ body }) => {
+  if (!body.token && !S.telegram.token) fail(400, 'not_configured', 'No Telegram bot is configured')
+  return { ok: true }
+})
+
 /* ---- tasks */
 const TASK_FIELDS = ['title', 'notes', 'status', 'priority', 'due', 'project_id', 'topic_path', 'labels', 'order']
 function applyTask(tk, body) {
@@ -2534,6 +2688,24 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+/* ---- profile (api/settings.py): the pseudo shown on the user's messages and in notifications. The legacy hello /
+   feedback / license routes talk to the original project's cloud: like the server by default (no MAXXING_LICENSE_PING),
+   they answer 404 not_found after sign-in, whatever the method. */
+const PROFILE_COLORS = ['clay', 'blue', 'violet', 'green', 'amber', 'rose', 'teal', 'zinc']
+const profileState = () => (S.profile ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? { name: 'Alex', color: 'blue', emoji: '' } : { name: '', color: '', emoji: '' })
+R('GET', '/api/settings/profile', () => ({ ...profileState() }))
+R('PUT', '/api/settings/profile', ({ body }) => {
+  const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').split(/\s+/).filter(Boolean).join(' ').slice(0, 32)
+  const color = String(body.color || ''), emoji = String(body.emoji || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (color && !PROFILE_COLORS.includes(color)) fail(400, 'invalid_color', `color: ${PROFILE_COLORS.join(', ')} or empty`)
+  if ([...emoji].length > 8 || /\s/.test(emoji)) fail(400, 'invalid_emoji', 'emoji: one emoji or initials (8 characters at most) or empty')
+  const next = { name, color, emoji }
+  if (JSON.stringify(next) !== JSON.stringify(profileState())) { S.profile = next; bus('profile') }
+  return { ...S.profile }
+})
+for (const what of ['register', 'feedback', 'license']) for (const method of ['GET', 'PUT', 'POST', 'DELETE'])
+  R(method, `/api/settings/${what}`, () => fail(404, 'not_found', 'Not available in this project'))
+
 // The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
 R('PUT', '/api/settings/look', ({ body }) => {
   if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
@@ -2560,14 +2732,20 @@ const teamChatOut = (c) => {
     unread: msgs.filter((m) => m.author !== 'me' && m.at > (c.read_at || 0)).length, updated: last ? last.at : c.created }
 }
 const teamChat = (id) => S.team.chats.find((c) => c.id === id) || fail(404, 'not_found', 'Chat not found')
-R('GET', '/api/team', () => ({ me: 'me', people: { ...S.team.people, me: { name: 'Me', emoji: '', color: 'blue', server: '', status: 'online' } },
+R('GET', '/api/team', () => ({ me: 'me', people: { ...Object.fromEntries(Object.entries(S.team.people).filter(([, p]) => !p.request)), me: { name: 'Me', emoji: '', color: 'blue', server: '', status: 'online' } },
   chats: S.team.chats.map(teamChatOut).sort((a, b) => b.updated - a.updated), reactions: ['👍', '❤️', '😂', '🎉', '🤔', '👀'], typing: {} }))
 R('GET', '/api/team/connections', () => ({ ok: true, address: 'https://ui.example.com', reason: '', insecure: false, open_invites: 0,
-  contacts: Object.entries(S.team.people).map(([id, p]) => ({ address: p.address, id, name: p.name, emoji: p.emoji, color: p.color, status: 'accepted', fingerprint: '7F3A-91C2', since: now() - 9 * DAY, last_seen: p.last_seen })) }))
+  contacts: Object.entries(S.team.people).map(([id, p]) => ({ address: p.address, id, name: p.name, emoji: p.emoji, color: p.color, status: p.request ? 'request' : p.waiting ? 'waiting' : 'accepted', fingerprint: p.fingerprint || '7F3A-91C2', since: p.since || now() - 9 * DAY, last_seen: p.last_seen })) }))
 R('GET', '/api/team/chats/:id', ({ params }) => { const c = teamChat(params.id); return { chat: teamChatOut(c), messages: c.messages } })
 R('POST', '/api/team/chats', ({ body }) => {
-  const who = (body.members || []).filter((m) => S.team.people[m])
+  const who = (body.members || []).filter((m) => S.team.people[m] && S.team.people[m].contact)
   if (!who.length) fail(400, 'no_members', 'Choose at least one contact')
+  if (body.kind === 'group') {
+    const g = { id: 'g_' + crypto.randomBytes(8).toString('hex'), kind: 'group', name: String(body.name || '').trim().slice(0, 60) || who.map((m) => S.team.people[m].name).join(', '), emoji: String(body.emoji || ''),
+      members: who, created: now(), read_at: now(), remote: false, admin: 'me', messages: [] }
+    S.team.chats.push(g); bus('team')
+    return teamChatOut(g)
+  }
   let c = S.team.chats.find((x) => x.kind === 'dm' && x.members[0] === who[0])
   if (!c) { c = { id: 'd_' + crypto.randomBytes(8).toString('hex'), kind: 'dm', name: '', emoji: '', members: [who[0]], created: now(), read_at: now(), remote: true, admin: null, messages: [] }; S.team.chats.push(c); bus('team') }
   return teamChatOut(c)
@@ -2576,9 +2754,11 @@ for (const what of ['read', 'typing']) R('POST', `/api/team/chats/:id/${what}`, 
 R('POST', '/api/team/presence', () => ({ ok: true }))
 R('POST', '/api/team/chats/:id/messages', ({ params, body }) => {
   const c = teamChat(params.id)
+  if (c.left) fail(409, 'left', 'You left this group')
   const text = String(body.text || '').trim().slice(0, 8000)
-  if (!text) fail(400, 'empty', 'Empty message')
-  const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text, kind: 'text' }
+  const files = (Array.isArray(body.files) ? body.files : []).map((f) => S.fs.get(f.path) && { path: f.path, name: path.basename(f.path), size: S.fs.get(f.path).size, mime: S.fs.get(f.path).mime }).filter(Boolean)
+  if (!text && !files.length) fail(400, 'empty', 'Empty message')
+  const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text, kind: 'text', ...(body.reply_to ? { reply_to: body.reply_to } : {}), ...(files.length ? { files } : {}) }
   c.messages.push(m); c.read_at = m.at; bus('team')
   return m
 })
@@ -2588,6 +2768,127 @@ R('POST', '/api/team/chats/:id/themes', ({ params, body }) => {
   const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text: String(body.theme.name || '').slice(0, 60), kind: 'theme', theme: body.theme }
   c.messages.push(m); c.read_at = m.at; bus('team')
   return m
+})
+
+// Groups, edits, reactions, polls, summaries, forwarding to a session, files, connections (team.py, teampeer.py).
+const teamMsg = (c, mid) => c.messages.find((m) => m.id === mid) || fail(404, 'not_found', 'Message not found')
+const teamMine = (m) => { if (m.author !== 'me') fail(403, 'not_yours', 'Only your own messages'); if (m.deleted) fail(409, 'deleted', 'This message was deleted'); return m }
+const teamPost = (c, m) => { c.messages.push(m); c.read_at = m.at; bus('team'); return m }
+R('POST', '/api/team/chats/:id/group', ({ params, body }) => {
+  const c = teamChat(params.id)
+  if (c.kind !== 'group') fail(400, 'not_a_group', 'Only a group can be changed')
+  if (c.admin !== 'me') fail(403, 'not_admin', 'Only the creator of the group can change it')
+  if (body.name !== undefined) c.name = String(body.name).trim().slice(0, 60) || c.name
+  if (body.emoji !== undefined) c.emoji = String(body.emoji).slice(0, 8)
+  for (const id of body.add || []) if (S.team.people[id]?.contact && !c.members.includes(id)) c.members.push(id)
+  c.members = c.members.filter((id) => !(body.remove || []).includes(id))
+  bus('team')
+  return teamChatOut(c)
+})
+R('POST', '/api/team/chats/:id/leave', ({ params }) => {
+  const c = teamChat(params.id)
+  if (c.kind !== 'group') fail(400, 'not_a_group', 'Only a group can be left')
+  c.left = 'self'; bus('team')
+  return teamChatOut(c)
+})
+R('POST', '/api/team/chats/:id/mute', ({ params, body }) => { const c = teamChat(params.id); c.muted = !!body.muted; bus('team'); return teamChatOut(c) })
+R('POST', '/api/team/chats/:id/messages/:mid/edit', ({ params, body }) => {
+  const m = teamMine(teamMsg(teamChat(params.id), params.mid))
+  if (m.kind !== 'text') fail(400, 'not_editable', 'Only text messages can be edited')
+  const text = String(body.text || '').trim().slice(0, 8000)
+  if (!text) fail(400, 'empty', 'Empty message')
+  Object.assign(m, { text, edited: now() }); bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/messages/:mid/delete', ({ params }) => {
+  const m = teamMine(teamMsg(teamChat(params.id), params.mid))
+  Object.assign(m, { text: '', deleted: now() }); delete m.files; delete m.theme; delete m.poll; bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/messages/:mid/react', ({ params, body }) => {
+  const m = teamMsg(teamChat(params.id), params.mid), emoji = String(body.emoji || '')
+  if (!emoji || [...emoji].length > 4) fail(400, 'bad_emoji', 'One emoji')
+  const who = ((m.reactions ||= {})[emoji] ||= [])
+  if (who.includes('me')) who.splice(who.indexOf('me'), 1); else who.push('me')
+  if (!who.length) delete m.reactions[emoji]
+  bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/polls', ({ params, body }) => {
+  const c = teamChat(params.id), question = String(body.question || '').trim(), options = (body.options || []).map((o) => String(o).trim()).filter(Boolean)
+  if (!question || options.length < 2 || options.length > 12) fail(400, 'bad_poll', 'A question and 2 to 12 options')
+  return teamPost(c, { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text: question, kind: 'poll',
+    poll: { question, multi: !!body.multi, options: options.map((label, i) => ({ id: `o${i + 1}`, label: label.slice(0, 200), votes: [] })) } })
+})
+R('POST', '/api/team/chats/:id/messages/:mid/vote', ({ params, body }) => {
+  const m = teamMsg(teamChat(params.id), params.mid)
+  if (m.kind !== 'poll') fail(400, 'not_a_poll', 'This message is not a poll')
+  const opt = m.poll.options.find((o) => o.id === body.option) || fail(400, 'bad_option', 'Unknown option')
+  const had = opt.votes.includes('me')
+  if (!m.poll.multi) for (const o of m.poll.options) o.votes = o.votes.filter((v) => v !== 'me')
+  if (had) opt.votes = opt.votes.filter((v) => v !== 'me'); else opt.votes.push('me')
+  bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/summarize', async ({ params, body }) => {
+  const c = teamChat(params.id), lastSummary = c.messages.filter((m) => m.kind === 'summary').at(-1)
+  const picked = c.messages.filter((m) => !m.deleted && m.kind !== 'summary' && (body.ids ? body.ids.includes(m.id) : m.at > (body.since ?? lastSummary?.at ?? 0)))
+  if (!picked.length) fail(400, 'nothing_to_summarize', 'No message to summarize')
+  await sleep(1500)
+  const names = [...new Set(picked.map((m) => (m.author === 'me' ? 'You' : S.team.people[m.author]?.name || 'Someone')))]
+  return teamPost(c, { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), kind: 'summary',
+    text: `**Summary of ${picked.length} message${picked.length > 1 ? 's' : ''}** (${names.join(', ')})\n\n- ${picked.slice(-4).map((m) => (m.kind === 'theme' ? `[colour theme] ${m.text}` : m.text.split('\n')[0].slice(0, 120))).join('\n- ')}` })
+})
+R('POST', '/api/team/chats/:id/messages/:mid/forward', ({ params, body }) => {
+  const c = teamChat(params.id), m = teamMsg(c, params.mid), text = String(body.text || '').trim()
+  if (!text) fail(400, 'empty', 'Empty message')
+  let s
+  if (body.session) s = findSession(body.session)
+  else {
+    if (!S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose a topic')
+    const t = now()
+    s = { id: uuid(), title: String(body.title || text).slice(0, 60), path: body.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null,
+      context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+    S.sessions.push(s); S.events[s.id] = []
+  }
+  const author = m.author === 'me' ? 'You' : S.team.people[m.author]?.name || 'Someone'
+  startTurn(s, `${text}\n\n> ${author} wrote in Team:\n> ${m.text.split('\n').join('\n> ')}`, (m.files || []).map((f) => f.path))
+  ;(m.sent ||= []).push({ session: s.id, title: s.title, at: now() })
+  bus('team', 'sessions', 'workspace')
+  return { session: s, message: m }
+})
+R('POST', '/api/team/files', ({ req, rawBody }) => {
+  const files = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!files.length) fail(422, 'invalid', 'No file in the request')
+  const d = new Date(), dir = `${ROOT}/team/attachments/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  return { files: files.map((f) => { const p = uniquePath(`${dir}/${f.name}`); fsAdd(S, p, isText(f.mime) ? f.data.toString('utf8') : f.data, now(), f.mime); return { path: p, name: path.basename(p), size: f.data.length, mime: f.mime } }) }
+})
+R('POST', '/api/team/connections/invite', () => ({ invitation: `https://ui.example.com#${crypto.randomBytes(6).toString('base64url')}`, expires: now() + 15 * MIN }))
+R('POST', '/api/team/connections/join', ({ body }) => {
+  const m = /^(https:\/\/[a-z0-9.-]+(?::\d+)?)#[A-Za-z0-9_-]{6,}$/i.exec(String(body.invitation || '').trim())
+  if (!m) fail(400, 'bad_invitation', 'Paste the whole invitation: https://<address>#<code>')
+  const address = m[1].toLowerCase()
+  if (Object.values(S.team.people).some((p) => p.address === address)) fail(409, 'exists', 'Already connected to this address')
+  const id = 'p_' + crypto.createHash('sha1').update(address).digest('hex').slice(0, 8), fingerprint = crypto.randomBytes(4).toString('hex').toUpperCase().replace(/(....)(....)/, '$1-$2')
+  S.team.people[id] = { name: address.replace(/^https:\/\//, '').split('.')[0], emoji: '', color: 'teal', server: address, status: 'offline', address, peer: true, contact: false, waiting: true, fingerprint, since: now(), last_seen: null }
+  const g = GEN
+  setTimeout(() => { if (g === GEN && S.team.people[id]?.waiting) { Object.assign(S.team.people[id], { waiting: false, contact: true, status: 'online', last_seen: now() }); bus('team') } }, 4000).unref() // the other side accepts
+  bus('team')
+  return { address, fingerprint }
+})
+R('POST', '/api/team/connections/answer', ({ body }) => {
+  const [id, p] = Object.entries(S.team.people).find(([, x]) => x.address === body.address && x.request) || fail(404, 'not_found', 'No request from this address')
+  if (body.accept) Object.assign(p, { request: false, contact: true, status: 'online', since: now(), last_seen: now() }); else delete S.team.people[id]
+  bus('team')
+  return { ok: true }
+})
+R('POST', '/api/team/connections/remove', ({ body }) => {
+  const [id] = Object.entries(S.team.people).find(([, x]) => x.address === body.address) || fail(404, 'not_found', 'Unknown contact')
+  delete S.team.people[id]
+  S.team.chats = S.team.chats.filter((c) => !(c.kind === 'dm' && c.members[0] === id))
+  for (const c of S.team.chats) c.members = c.members.filter((m) => m !== id)
+  bus('team')
+  return { ok: true }
 })
 
 // Saved themes ("My themes") and the theme a session wrote (real validation: server/maxxing/themes.py clean_theme).
@@ -2907,7 +3208,8 @@ R('GET', '/api/system/logs', ({ q }) => {
   const n = Math.min(2000, Math.max(1, parseInt(q.get('lines') || '200', 10) || 200))
   return { lines: journal(unit, n) }
 })
-R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3 }))
+R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3,
+  auto_update: { enabled: !!S.autoUpdate, tried: null, last_check: null }, report: S.updateReport ? { at: S.updateReport.at, version: S.updateReport.version, ok: S.updateReport.ok, problems: S.updateReport.problems } : null }))
 R('POST', '/api/system/update', () => ({ ok: true }))
 R('GET', '/api/system/changelog', () => ({ version: VERSION, entries: [
   { version: VERSION, label: 'unreleased', current: true, body: '- **Bulk task actions**: select several tasks and change them at once.\n- **Notifications** when Claude finishes.' },
@@ -3093,6 +3395,51 @@ for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected
   })
 }
 
+/* ---- update checks (server/maxxing/smartupdate.py), Codex status, automatic updates, health issues marked as seen.
+   The preflight shows an update that needs adapting one customization; "Verify" finds one extension to fix. */
+const UPDATE_TOPIC = 'projects/system/topics/harness' // cmd_core.update_topic(): created on first use in the mock
+const updateTopic = () => {
+  let p = S.projects.find((x) => x.name === 'system')
+  if (!p) { p = { name: 'system', description: 'Harness itself: tutorial, help, updates.', topics: [] }; S.projects.push(p) }
+  if (!p.topics.some((x) => x.name === 'harness')) { p.topics.push({ name: 'harness', description: 'Updates and customizations of this server' }); fsAdd(S, `${UPDATE_TOPIC}/CLAUDE.md`, '# Topic harness\n', now()) }
+  return UPDATE_TOPIC
+}
+const updateReport = (ok) => ({ at: now(), version: VERSION, ok, problems: ok ? 0 : 1,
+  extensions: [{ id: 'shop-sales', name: 'Shop sales', type: 'widget', ok: true, error: '' }, { id: 'notes', name: 'Notes', type: 'page', ok: true, error: '' },
+    { id: 'broken-widget', name: 'Broken widget', type: 'widget', ok: ok, error: ok ? '' : 'SyntaxError in api.py line 12', skipped: false }],
+  checks: [{ id: 'shop-widget', title: 'Shop sales widget on the dashboard', check: 'GET /api/ext/shop-sales/summary answers 200', ok: true, output: '200 OK in 38 ms' }] })
+function updateSession(title, prompt) {
+  const t = now(), s = { id: uuid(), title, path: updateTopic(), state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null,
+    context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+  S.sessions.push(s); S.events[s.id] = []
+  startTurn(s, prompt)
+  bus('sessions', 'workspace')
+  return s
+}
+R('POST', '/api/system/health/seen', ({ body }) => {
+  if (!healthObj().issues.some((i) => i.id === body.id)) fail(404, 'not_found', 'No current issue with this id')
+  const seen = (S.healthSeen ||= {})
+  if (body.seen === false) delete seen[body.id]; else seen[body.id] = now()
+  bus('health')
+  return healthObj()
+})
+R('GET', '/api/system/codex', () => (S.scenario === 'ready' || S.scenario === 'maxxing' ? { installed: true, authenticated: true, reason: null } : { installed: true, authenticated: false, reason: 'not_authenticated' }))
+R('PUT', '/api/system/auto-update', ({ body }) => { S.autoUpdate = !!body.enabled; return { ok: true, enabled: S.autoUpdate } })
+R('GET', '/api/system/update/preflight', async ({ q }) => {
+  if (q.get('refresh')) await sleep(1500)
+  return { ok: true, verdict: 'adapt', current: VERSION, latest: '2.0.1', behind: 3,
+    customs: [{ id: 'c_7f3a', title: 'Shop sales widget on the dashboard', why: 'Shows the day’s orders next to the server card.', files: ['web/src/features/dashboard/ShopCard.tsx', 'server/maxxing/widgets.py'],
+      status: 'review', conflicts: [], overlap: ['server/maxxing/widgets.py'] }],
+    unsaved: [], web_changes: ['web/src/features/dashboard'], extensions: [{ id: 'broken-widget', name: 'Broken widget', api: 1, reason: 'Extension API 1 is no longer loaded: move it to API 2' }],
+    notes: [{ version: '2.0.1' }], changelog: '- **Bulk task actions**: select several tasks and change them at once.\n- Faster dashboard cards.' }
+})
+R('GET', '/api/system/update/report', () => ({ report: S.updateReport || null }))
+R('POST', '/api/system/update/verify', async () => { await sleep(1800); S.updateReport = updateReport(false); return { report: S.updateReport } })
+R('POST', '/api/system/update/assist', () => ({ session: updateSession('Adapt my changes, then update', 'Adapt the customizations of this server to the next version (see the preflight), then run the update.') }))
+R('POST', '/api/system/update/fix', () => {
+  if (!S.updateReport || S.updateReport.ok) fail(409, 'nothing_to_fix', 'The last verification found nothing broken')
+  return { session: updateSession(`Fix after the update to ${S.updateReport.version}`, 'The last verification found a problem: Broken widget (SyntaxError in api.py line 12). Fix it and verify again.') }
+})
 /* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
    The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
 const IMPORT_HINTS = {
@@ -3176,7 +3523,7 @@ index 1a2b3c4..5d6e7f8 100644
 +++ b/docs/user/notes.md
 @@ -1,3 +1,4 @@
  # Notes
- 
+
  Short notes about the product.
 +- ${prqRemote(item).title}.
 `
@@ -3267,6 +3614,45 @@ R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
   Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
   return prqOut()
 })
+
+/* ---- small gaps: tree order, one job, backup preview, search index stats, incoming webhooks */
+const orderBy = (items, names) => { // listed names first in that order, the others A-Z (projects/.order.json, .maxxing.json)
+  const at = new Map(names.map((n, i) => [n, i]))
+  return [...items].sort((a, b) => (at.has(a.name) ? at.get(a.name) : 1e6) - (at.has(b.name) ? at.get(b.name) : 1e6) || a.name.localeCompare(b.name))
+}
+R('PUT', '/api/workspace/order', ({ body }) => {
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  S.projects = orderBy(S.projects, body.names.map(String)); bus('workspace')
+  return { projects: S.projects.map((p) => p.name) }
+})
+R('PUT', '/api/workspace/projects/:project/order', ({ params, body }) => {
+  const p = S.projects.find((x) => x.name === params.project) || fail(404, 'not_found', 'Unknown project')
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  p.topics = orderBy(p.topics, body.names.map(String)); bus('workspace')
+  return { topics: p.topics.map((t) => t.name) }
+})
+R('GET', '/api/crons/:id', ({ params }) => cronOut(S.crons.find((x) => x.id === params.id) || fail(404, 'not_found', 'Cron not found')))
+R('POST', '/api/backup/preview', async ({ body }) => {
+  if (!S.backup.configured) fail(409, 'not_configured', 'Configure the backup repository first')
+  await sleep(900)
+  const files = [...S.fs.entries()].filter(([, n]) => n.type === 'file').map(([k]) => k.slice(ROOT.length + 1)).filter((k) => /(^|\/)(CLAUDE|memory)\.md$|^tasks\.json$/.test(k)).sort()
+  const paths = { create: ['projects/acme/topics/newsletter/memory.md'], replace: files.filter((f) => f.endsWith('memory.md')).slice(0, 3), unchanged: files.filter((f) => !f.endsWith('memory.md')),
+    held: ['extensions/shop-sales/api.py'], skip: [] }
+  return { ok: true, commit: (body.ref && /^[0-9a-f]{7,40}$/.test(body.ref) ? body.ref : S.backup.history.filter((h) => h.ok).at(-1)?.commit || sha().slice(0, 7)).padEnd(40, '0'), hold: true,
+    counts: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.length])), paths, settings: true, crons: true, mcp: false }
+})
+R('GET', '/api/search/stats', () => ({ counts: { session: S.sessions.length, file: [...S.fs.values()].filter((n) => n.type === 'file').length,
+  memory: [...S.fs.keys()].filter((k) => k.endsWith('/memory.md')).length, task: S.tasks.tasks.length }, bytes: 3.4e6, refreshed_at: now() - 4 * MIN }))
+// Incoming webhook: the token is the permission. Signatures are not verified in the mock; the rules of a missing secret are.
+R('POST', '/api/hooks/:token', ({ params, body }) => {
+  const h = S.feed.hooks.find((x) => x.token === params.token) || fail(404, 'not_found', 'Unknown hook')
+  if (h.kind !== 'generic' && !h.secret) fail(401, 'secret_required', `A ${h.kind} hook needs its signing secret`)
+  if (typeof body !== 'object' || Array.isArray(body)) fail(400, 'bad_payload', 'Unexpected payload')
+  const title = h.kind === 'generic' ? String(body.title || 'Webhook') : h.kind === 'stripe' ? String(body.type || 'stripe event') : h.kind === 'github' ? 'GitHub event' : 'Shopify event'
+  const e = feedAdd(S, { source: h.name, kind: 'webhook', level: ['info', 'success', 'warning', 'error'].includes(body.level) ? body.level : 'info', title: title.slice(0, 200), body: String(body.body || '').slice(0, 2000) })
+  bus('feed')
+  return { ok: true, duplicate: false, id: e.id }
+}, { public: true, csrf: false }) // called by Stripe, GitHub…: no cookie, no CSRF header
 
 /* ---- dashboard & extensions */
 R('GET', '/api/dashboard', () => dashboard())
@@ -3757,7 +4143,7 @@ async function handleApi(req, res, url) {
   if (!candidates.length) return sendJson(res, 404, { error: 'not_found', message: `No route for ${p}` })
   const route = candidates.find((r) => r.method === req.method)
   if (!route) return sendJson(res, 405, { error: 'method_not_allowed', message: `${req.method} not allowed on ${p}` })
-  if (req.method !== 'GET' && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
+  if (req.method !== 'GET' && route.csrf && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
   const authed = isAuthed(req)
   if (!route.public && !authed) return sendJson(res, 401, { error: 'auth_required', message: 'Please log in' })
   const m = route.re.exec(p)
