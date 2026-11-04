@@ -18,6 +18,7 @@ def document(base: str, hosts: list[str], kit: str) -> tuple[str, str]:
            f"base-uri {base}")
     doc = (f'<!doctype html><html data-mx-kit><head><meta charset="utf-8"><base href="{html.escape(base, quote=True)}">'
            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-           f'<style>html,body{{margin:0;min-height:100%;background:var(--background);color:var(--foreground)}}{kit}</style>'
+           f'<style>html,body{{margin:0;min-height:100%;background:var(--background);color:var(--foreground);'
+           f'font:14px/1.5 var(--mx-font-sans,Inter,system-ui,sans-serif)}}{kit}</style>'
            f'<script>{BRIDGE.read_text()}</script></head><body><main id="page"></main></body></html>')
     return doc, csp
