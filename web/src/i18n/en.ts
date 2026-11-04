@@ -3350,6 +3350,12 @@ export const en = {
   'blocks.panel.label': 'Opened beside',
   'blocks.panel.close': 'Close the panel',
   'blocks.panel.closeTab': 'Close {title}',
+  'blocks.beside.opened': 'Opened beside',
+  'blocks.beside.label': '{title}, opened beside',
+  'blocks.beside.show': 'Show',
+  'blocks.beside.showLabel': 'Show {title} in the side panel',
+  'blocks.beside.back': 'Bring back',
+  'blocks.beside.backLabel': 'Bring {title} back into the conversation',
   // Conversation view (pages/sessions: turns, activity, composer, header)
   'conv.intervention': 'Your intervention',
   'conv.summarised': 'Conversation summarised to continue',
