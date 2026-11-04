@@ -24,12 +24,15 @@ On macOS, the doctor recognizes Claude's Keychain sign-in and reads listening ad
 port inspection is a warning, not proof that nothing is listening. It describes the launchd configuration
 without claiming that an agent is stopped simply because the command runs in another terminal; use the printed
 `service status` command to inspect it. Linux firewall and service checks are marked as inapplicable.
-Local tool paths may belong to your account or root, but foreign ownership or writable code paths still fail
-verification. Linux package versions and package contents are not verified for these user-managed tools.
+Local tool paths may belong to your account or root. Another owner, or a folder anyone can write to, fails
+verification. Folders your Mac's administrators can write to are normal (Homebrew's `/opt/homebrew/bin` and
+`/opt/homebrew/Cellar`, `/usr/local/bin` on an Intel Mac); one that another group can write to is a warning.
+Linux package versions and package contents are not verified for these user-managed tools.
 
 Add `--live` for a small real Claude request, using the same isolated test as **Settings → Claude → Test**.
 A timeout, context or quota error is reported as a failed request, not an expired sign-in. Real authentication
-errors still fail. Missing optional tools and a publicly exposed listener remain diagnostic issues.
+errors still fail; without Claude Code the line says it is not installed. Missing optional tools and a publicly
+exposed listener remain diagnostic issues.
 
 **Where the logs are.**
 
@@ -174,6 +177,13 @@ certificate on the first request: `journalctl -u caddy` shows why it failed. Val
 
 **Every session fails at once.** Claude is not signed in or the token expired: Settings -> Claude ->
 Test, or `pilot doctor --live`. Renew with `claude setup-token`.
+
+**Settings → Claude → Test fails, but sessions work.** The test, like `pilot doctor --live`, does not read
+Claude Code's `settings.json` files, so none of your hooks runs during a test. What only those files set is
+then missing: an `apiKeyHelper`, or variables of their `env` block such as a gateway in `ANTHROPIC_BASE_URL`, a
+proxy, or `CLAUDE_CODE_USE_BEDROCK`. If Claude Code reaches the model that way, the test can fail while
+sessions work: a session's reply is the better check, or set those variables in the environment of the server
+itself (the test passes that environment on).
 
 **A session stays "running".** Press Stop. If it persists: `systemctl list-units 'maxxing-*'` and
 read that unit's journal.
