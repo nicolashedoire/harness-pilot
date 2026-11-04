@@ -646,7 +646,7 @@ def cmd_init(a) -> int:
     if a.quiet:
         return 0
     c = r["config"]
-    print(f"Harness Maxxing {__version__} - init")
+    print(f"harness-pilot {__version__} - init")
     line(OK, f"state      {config.STATE}")
     line(OK, f"config     bind {c['bind']}:{c['port']}  tz {c['timezone']}  lang {c['language']}"
              + (f"  url {c['public_url']}" if c["public_url"] else ""))
@@ -680,7 +680,7 @@ def _cfg_init(p: argparse.ArgumentParser) -> None:
     p.add_argument("--language", choices=["en", "fr"], help="UI language")
     p.add_argument("--system-clock", choices=["follow", "keep"],
                    help="follow: the system zone follows the configured one; keep: never touch it (shared server)")
-    p.add_argument("--claude-dir", help="Claude Code folder for Harness Maxxing (default ~/.claude): another one keeps "
+    p.add_argument("--claude-dir", help="Claude Code folder for harness-pilot (default ~/.claude): another one keeps "
                                         "it apart from a Claude Code already used here ('' = ~/.claude)")
     p.add_argument("--secret-from-stdin", metavar="NAME",
                    help=f"store a secret read from stdin ({', '.join(STDIN_SECRETS)})")
@@ -725,9 +725,9 @@ def uv_bin() -> str | None:
 def claude_auth() -> tuple[str | None, str]:
     """-> (method, detail). method None = not signed in."""
     if config.get_secret("claude_oauth_token"):
-        return "oauth_token", "long-lived token stored in Harness Maxxing"
+        return "oauth_token", "long-lived token stored in harness-pilot"
     if config.get_secret("anthropic_api_key"):
-        return "api_key", "API key stored in Harness Maxxing"
+        return "api_key", "API key stored in harness-pilot"
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return "oauth_token", "CLAUDE_CODE_OAUTH_TOKEN in the environment"
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -1180,7 +1180,7 @@ def check_caddy(cfg: dict) -> Check | None:
         return _c("caddy", OK, "served by your own web server (no Caddy)", str(config.STATE / "reverse-proxy.conf"))
     if not CADDY_SITE.exists():
         if (cfg.get("public_url") or "").startswith("https://"):
-            return _c("caddy", WARN, "public URL is https but no Caddy site for Harness Maxxing",
+            return _c("caddy", WARN, "public URL is https but no Caddy site for harness-pilot",
                       str(CADDY_SITE), "re-run install.sh with ACCESS=domain (or configure your own proxy)")
         return None
     code, out = run(["caddy", "validate", "--config", str(CADDYFILE), "--adapter", "caddyfile"], timeout=30)
@@ -1588,7 +1588,7 @@ def cmd_doctor(a) -> int:
         print(json.dumps({"ok": ok, "version": __version__, "state": str(config.STATE),
                           "checks": checks}, indent=2))
         return 0 if ok else 1
-    print(f"Harness Maxxing {__version__} - doctor")
+    print(f"harness-pilot {__version__} - doctor")
     for c in checks:
         line(c["level"], c["title"] + (f"  ({c['detail']})" if c["detail"] and c["level"] == OK else ""),
              "" if c["level"] == OK else "; ".join(x for x in (c["detail"], c["fix"]) if x))
@@ -1730,7 +1730,7 @@ def notify_update(info: dict) -> bool:
                 params={"version": info["latest"], "current": info["current"], "topic": update_topic()},
                 actions=[feed.link("open", "Open", url)])
     url = (config.load_config().get("public_url") or "").rstrip("/")
-    text = (f"Harness Maxxing {info['latest']} is available (installed: {info['current']}, "
+    text = (f"harness-pilot {info['latest']} is available (installed: {info['current']}, "
             f"{info['behind']} new commit(s)).\nOpen the topic {update_topic()}"
             + (f" ({url}/sessions)" if url else "") + " and say: update")
     try:
@@ -1747,7 +1747,7 @@ def cmd_update_check(a) -> int:
     if a.json:
         print(json.dumps(info, indent=2))
         return 0 if info.get("ok") else 1
-    print(f"Harness Maxxing {__version__} - update check")
+    print(f"harness-pilot {__version__} - update check")
     if not info.get("ok"):
         line(FAIL, "cannot check for updates", info.get("error", ""))
         return 1
@@ -1913,7 +1913,7 @@ def cmd_update(a) -> int:
     if a.notify or a.json:
         print("--notify and --json only apply to --check", file=sys.stderr)
         return 2
-    print(f"Harness Maxxing {__version__} - update")
+    print(f"harness-pilot {__version__} - update")
     if not (config.CODE / ".git").exists():
         line(FAIL, f"{config.CODE} is not a git clone - re-run install.sh")
         return 1
@@ -1975,7 +1975,7 @@ def cmd_update(a) -> int:
                  f"{detail} | check: git -C {config.CODE} verify-commit {target[:8]} ; import the maintainer's "
                  "key (gpg --import) or set gpg.ssh.allowedSignersFile ; or turn the check off: "
                  "update_verify_signature false in config.json")
-            _notify(f"Harness Maxxing update stopped: the new version {target[:8]} is not signed by a trusted "
+            _notify(f"harness-pilot update stopped: the new version {target[:8]} is not signed by a trusted "
                     "key (update_verify_signature). Nothing changed.")
             return 1
         line(OK, detail)
@@ -2076,7 +2076,7 @@ def cmd_update(a) -> int:
                   "\n  # adapt each conflicting file so the customization still does what CUSTOMIZATIONS.md says"
                   "\n  git add <files> && GIT_EDITOR=true git rebase --continue      # repeat until done"
                   "\n  pilot update --resume")
-            _notify(f"Harness Maxxing {info['target_version'] or 'update'}: your customizations need to be adapted "
+            _notify(f"harness-pilot {info['target_version'] or 'update'}: your customizations need to be adapted "
                     f"before updating (nothing changed). Open the topic {update_topic()} and say: update")
             return 3
         line(OK, f"{len(mine)} customization(s) carried over onto the new version")
@@ -2147,7 +2147,7 @@ def _update_finish(a, old: str) -> int:
     if code != 0 or not _healthy(new_version):
         line(FAIL, "the new version does not start" if code == 0 else "restart failed", out.strip()[-300:])
         _rollback(old, "health", restart=True, target=new, target_version=new_version)
-        _notify(f"Harness Maxxing {new_version} did not start and was rolled back - nothing lost. "
+        _notify(f"harness-pilot {new_version} did not start and was rolled back - nothing lost. "
                 f"Open the topic {update_topic()} and say: update")
         return 4
     line(OK, f"service {SERVICE} restarted ({new_version} answers)")
@@ -2200,7 +2200,7 @@ def cmd_update_preflight(a) -> int:
     if a.json:
         print(json.dumps(rep, indent=2, default=str))
         return 0 if rep.get("ok") else 1
-    print(f"Harness Maxxing {__version__} - update preflight (nothing is changed)")
+    print(f"harness-pilot {__version__} - update preflight (nothing is changed)")
     if not rep.get("ok"):
         line(FAIL, "cannot check", rep.get("error", ""))
         return 1
@@ -2238,7 +2238,7 @@ def cmd_update_verify(a) -> int:
     if a.json:
         print(json.dumps(rep, indent=2, default=str))
         return 0 if rep["ok"] else 1
-    print(f"Harness Maxxing {__version__} - verification")
+    print(f"harness-pilot {__version__} - verification")
     for x in rep["extensions"]:
         if x.get("skipped"):
             line(INFO, f"extension {x['id']}: turned off")
@@ -2506,7 +2506,7 @@ def cmd_uninstall(a) -> int:
     if not _confirm(f"Remove {what}?", a.yes):
         print("Aborted.")
         return 1
-    print("Harness Maxxing - uninstall")
+    print("harness-pilot - uninstall")
     try:
         changed = (config.STATE / "install-manifest").read_text().splitlines()
     except OSError:
@@ -2549,14 +2549,14 @@ def cmd_uninstall(a) -> int:
         if _is_state_dir(config.STATE):
             _purge_dir(config.STATE, "state")
         elif config.STATE.is_dir():
-            line(WARN, f"{config.STATE} does not look like a Harness Maxxing state directory (no config.json) - kept")
+            line(WARN, f"{config.STATE} does not look like a harness-pilot state directory (no config.json) - kept")
     if a.purge_workspace:
         ws = Path(cfg["workspace"])
         if _is_workspace_dir(ws):
             shutil.rmtree(ws.resolve(), ignore_errors=True)
             line(OK, f"workspace removed ({ws})")
         elif ws.exists() or ws.is_symlink():
-            line(WARN, f"{ws} does not look like a Harness Maxxing workspace (a link, a system directory, or no "
+            line(WARN, f"{ws} does not look like a harness-pilot workspace (a link, a system directory, or no "
                        "CLAUDE.md nor projects/) - kept")
     else:
         line(INFO, f"workspace kept: {cfg['workspace']}")

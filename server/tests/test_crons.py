@@ -475,7 +475,7 @@ def test_removed_jobs_are_kept_and_restored(org, monkeypatch, capsys):
 
     rows = crons.deleted_jobs()
     assert [(d["job"]["id"], d["reason"]) for d in rows] == [
-        (b["id"], "vanished (jobs.json edited outside Harness Maxxing)"), (a["id"], "deleted")]
+        (b["id"], "vanished (jobs.json edited outside harness-pilot)"), (a["id"], "deleted")]
     assert cmd_cron._handler(types.SimpleNamespace(cron_cmd="deleted")) == 0
     assert a["id"] in capsys.readouterr().out
 
