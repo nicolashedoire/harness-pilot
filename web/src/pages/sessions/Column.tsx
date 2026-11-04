@@ -905,7 +905,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                     return r.messages
                   }}
                   steering={steer.isPending}
-                  onAsk={session?.provider === 'claude' || !session?.provider ? () => void onAsk() : undefined}
+                  onAsk={!session?.provider?.startsWith('plugin:') ? () => void onAsk() : undefined}
                   asking={takeQueue.isPending || aside.pending}
                   clearingQueue={clearQueue.isPending}
                   onSend={onSend}
