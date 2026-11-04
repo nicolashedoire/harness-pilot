@@ -246,9 +246,10 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    pilot ext propose <id> --summary "Shows today's orders and revenue from the Shopify store."
    ```
    The summary is what the user reads first: what it does, in one or two plain sentences (for a change: what
-   changed). Exit `1` = its check failed, nothing was submitted. Otherwise tell the user the creation is **waiting
-   for them in the Atelier** (they see what it asks for - network hosts, secrets - and the files, then add it to the
-   dashboard, ask for a change or refuse it). Do not say it is on the dashboard: it is not until they approve it.
+   changed). Exit `1` = its check failed, nothing was submitted. Otherwise it prints a ```` ```proposal ```` block:
+   put it in your answer as it is, and tell the user the creation is **waiting for them in the Atelier** (the card
+   shows what it asks for - network hosts, secrets - and its files; they add it to the dashboard, ask for a change or
+   refuse it). Do not say it is on the dashboard: it is not until they approve it.
 5. A message starting with `[Atelier] The user asked for a change` is the user's review: make the change in the same
    draft folder, check it again and propose again (the new proposal replaces the old one).
 6. To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the

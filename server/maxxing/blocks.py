@@ -190,6 +190,11 @@ BUILTINS: list[dict[str, Any]] = [
                  "kind": {"enum": ["task", "cron", "notification", "file", "session", "project", "extension",
                                    "other"]},
                  "title": _s(200), "subtitle": _s(300), "id": _s(200), "path": _s(4096), "href": _s(2000)}}}}}},
+    {"type": "proposal", "icon": "package-check", "category": "organisation",
+     "hint": "A creation waiting in the Atelier for the user's approval: paste the block `pilot ext propose` printed.",
+     "fields": '{draft: "d_<12 hex>" (the id pilot ext propose printed), title?}',
+     "schema": {"type": "object", "required": ["draft"], "properties": {
+         "draft": {"type": "string", "minLength": 14, "maxLength": 14}, "title": _s(120)}}},
 ]
 BUILTIN_TYPES = {b["type"] for b in BUILTINS}
 

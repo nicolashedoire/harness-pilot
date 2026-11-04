@@ -6,7 +6,7 @@ import { withGroups } from '@/i18n'
 import { Skeleton } from '@/components/ui/skeleton'
 
 /** Built-in block types (server/maxxing/blocks.py BUILTINS). */
-export const BUILTIN_BLOCK_TYPES = new Set(['chart', 'table', 'stats', 'list', 'timeline', 'progress', 'terminal', 'diff', 'file', 'link', 'form', 'checklist', 'app', 'created'])
+export const BUILTIN_BLOCK_TYPES = new Set(['chart', 'table', 'stats', 'list', 'timeline', 'progress', 'terminal', 'diff', 'file', 'link', 'form', 'checklist', 'app', 'created', 'proposal'])
 /** Built-ins that also take raw text (not JSON) as their body. */
 export const RAW_BLOCK_TYPES = new Set(['terminal', 'diff', 'app'])
 /** Fence languages never taken for a plugin block (blocks.py RESERVED_TYPES). */

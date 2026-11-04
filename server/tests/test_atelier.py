@@ -87,6 +87,11 @@ def test_propose_then_approve_a_new_widget(client, mx, capsys, monkeypatch):
     assert code == 0, err
     did = _draft_id(out)
     assert "waiting for the user's approval" in out and "waiting for them in the Atelier" in out
+    assert '```proposal\n{"draft": "' + did + '", "title": "Weather"}\n```' in out
+    from maxxing import blocks
+    p = next(b for b in blocks.BUILTINS if b["type"] == "proposal")
+    assert blocks.validate(p["schema"], {"draft": did, "title": "Weather"}) == []
+    assert blocks.validate(p["schema"], {"draft": "nope"}) != []
     assert not (folder / atelier.REQUEST).exists()                 # registered in this process
     # nothing installed, nothing on the dashboard
     assert not (mx["ws"] / "extensions" / "weather").exists()
