@@ -1648,6 +1648,22 @@ R('GET', '/api/stream', ({ req, res }) => {
   return RAW
 })
 
+/* ---- space labels (server/maxxing/api/space_labels.py): the owner's personal / agents / shared marks on folders and
+   files, keyed by absolute path; `unclassified` removes the mark */
+const labelsState = () => (S.spaceLabels ||= S.scenario === 'ready' || S.scenario === 'maxxing'
+  ? { [`${ROOT}/projects/personal`]: 'personal', [`${ROOT}/projects/ops`]: 'agents' } : {})
+R('GET', '/api/space-labels', () => Object.fromEntries(Object.entries(labelsState()).filter(([p]) => S.fs.has(p))))
+R('PUT', '/api/space-labels', ({ body }) => {
+  if (!['personal', 'agents', 'shared', 'unclassified'].includes(body.label)) fail(422, 'invalid', 'label must be personal, agents, shared or unclassified')
+  const p = typeof body.path === 'string' && body.path.startsWith('/') ? path.posix.normalize(body.path).replace(/(.)\/$/, '$1') : fail(400, 'bad_path', 'An absolute path is required.')
+  const files = S.settings.files_root || ROOT
+  if (![ROOT, files].some((r) => p === r || p.startsWith(r + '/'))) fail(403, 'forbidden', 'Path is outside the workspace and files root.')
+  if (!S.fs.has(p)) fail(404, 'not_found', 'Item not found.')
+  if (body.label === 'unclassified') delete labelsState()[p]; else labelsState()[p] = body.label
+  bus('space-labels')
+  return { path: p, label: body.label }
+})
+
 /* ---- files */
 function absPath(p, { must = true } = {}) {
   const raw = p == null || p === '' ? ROOT : String(p)
