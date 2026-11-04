@@ -15,6 +15,8 @@ export type Tint = 'neutral' | 'tinted'
 export type Layout = 'auto' | 'touch' | 'desktop'
 /** First screen of the touch layout when the app opens on `/`: the last session, or the dashboard. */
 export type TouchHome = 'session' | 'dashboard'
+/** Sounds of the notifications in this browser (features/notifications/sound.ts). */
+export type SoundSet = 'chime' | 'soft' | 'none'
 export const ACCENTS = ['blue', 'clay', 'violet', 'green', 'amber', 'rose'] as const
 export type Accent = (typeof ACCENTS)[number]
 
@@ -40,14 +42,18 @@ type UIState = {
   presentation: boolean
   /** The guided tour was completed or skipped (it starts automatically once, after onboarding). */
   tourDone: boolean
-  /** Desktop notification when a Claude session finishes its turn (this browser). */
-  notifyDone: boolean
-  /** Notifications panel next to the dashboard widgets (wide screens). */
-  feedPanel: boolean
+  /** Which notifications this browser shows (toast, system notification, push): `<kind>` or `source:<name>` -> on.
+   *  Missing = the default (features/notifications/prefs.ts). Settings -> Notifications -> "What and where". */
+  notifyPrefs: Record<string, boolean>
+  /** This browser has a push subscription (the service worker shows the notifications while no tab is focused). */
+  pushOn: boolean
   /** Notification for a new Team message (a chat that is not on screen, not muted). */
   notifyTeam: boolean
-  /** Short sound with that notification. */
-  notifySound: boolean
+  /** Sounds of the notifications (this browser): which set, how loud (0-1), and per `<kind>` / `source:<name>`
+   *  whether it rings (missing = the default, features/notifications/prefs.ts). */
+  soundSet: SoundSet
+  soundVolume: number
+  soundPrefs: Record<string, boolean>
   /** The unread badges (sidebar, tab bar, tree) pulse. */
   badgePulse: boolean
   /** HUD mode: each session gets a button opening its floating bar (this browser). */
@@ -67,8 +73,9 @@ type UIState = {
   setTouchHome: (h: TouchHome) => void
   setPresentation: (on: boolean) => void
   setTourDone: (done: boolean) => void
-  setNotify: (p: Partial<Pick<UIState, 'notifyDone' | 'notifyTeam' | 'notifySound' | 'badgePulse'>>) => void
-  setFeedPanel: (v: boolean) => void
+  setNotify: (p: Partial<Pick<UIState, 'notifyTeam' | 'badgePulse' | 'pushOn' | 'soundSet' | 'soundVolume'>>) => void
+  setNotifyPrefs: (p: Record<string, boolean>) => void
+  setSoundPrefs: (p: Record<string, boolean>) => void
   setHud: (on: boolean) => void
   adoptLook: (look: Look) => void
 }
@@ -94,10 +101,12 @@ export const useUI = create<UIState>()(
       touchHome: 'session',
       presentation: false,
       tourDone: false,
-      notifyDone: false,
+      notifyPrefs: {},
+      pushOn: false,
       notifyTeam: true,
-      feedPanel: true,
-      notifySound: true,
+      soundSet: 'chime',
+      soundVolume: 0.6,
+      soundPrefs: {},
       badgePulse: false,
       hud: false,
       lookChosen: false,
@@ -115,7 +124,8 @@ export const useUI = create<UIState>()(
       setPresentation: (presentation) => set({ presentation }),
       setTourDone: (tourDone) => set({ tourDone }),
       setNotify: (p) => set(p),
-      setFeedPanel: (feedPanel) => set({ feedPanel }),
+      setNotifyPrefs: (p) => set((s) => ({ notifyPrefs: { ...s.notifyPrefs, ...p } })),
+      setSoundPrefs: (p) => set((s) => ({ soundPrefs: { ...s.soundPrefs, ...p } })),
       setHud: (hud) => set({ hud }),
       adoptLook: ({ theme, accent, tint }) => set({ theme, accent, tint }),
     }),
@@ -139,6 +149,17 @@ export const useUI = create<UIState>()(
         if (!(out.monoFont in MONO_FONTS)) out.monoFont = 'system'
         if (out.layout !== 'touch' && out.layout !== 'desktop') out.layout = 'auto'
         if (out.touchHome !== 'dashboard') out.touchHome = 'session'
+        // Saved before notifyPrefs: "Notify me when a session finishes" was the only choice (off by default) - kept.
+        const legacy = out as typeof out & { notifyDone?: boolean; feedPanel?: boolean; notifySound?: boolean }
+        if (!p.notifyPrefs || typeof p.notifyPrefs !== 'object') out.notifyPrefs = legacy.notifyDone === false ? { 'session.done': false } : {}
+        // "Play a sound" (on / off) became a set of sounds.
+        if (p.soundSet === undefined && legacy.notifySound === false) out.soundSet = 'none'
+        if (out.soundSet !== 'soft' && out.soundSet !== 'none') out.soundSet = 'chime'
+        if (typeof out.soundVolume !== 'number' || !(out.soundVolume >= 0 && out.soundVolume <= 1)) out.soundVolume = 0.6
+        if (!out.soundPrefs || typeof out.soundPrefs !== 'object') out.soundPrefs = {}
+        delete legacy.notifyDone
+        delete legacy.feedPanel
+        delete legacy.notifySound
         return out
       },
     },

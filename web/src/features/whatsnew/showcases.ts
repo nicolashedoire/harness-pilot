@@ -5,6 +5,8 @@
 import { showDiagram } from '@/components/ui/diagram'
 import { sessionsList, type TourStep } from '@/tour/steps'
 import { useTouchNav } from '@/components/shell/TouchNav'
+import { useNotificationCenter } from '@/features/notifications/store'
+import { isCompact } from '@/stores/media'
 
 const DEMO_DIAGRAM = `flowchart LR
   A[Question] --> B{Claude}
@@ -36,6 +38,18 @@ export const SHOWCASES: Record<string, TourStep[]> = {
   'topic-permissions': [{ id: 'topic-permissions', targets: ['tree'], title: 'show.permissions.title', body: 'show.permissions.body', route: sessionsList, before: (c) => c.mobile && useTouchNav.getState().setPanel('sessions') }],
   'pc-browser': [{ id: 'pc-browser', targets: ['pc-browser'], title: 'show.pcBrowser.title', body: 'show.pcBrowser.body', route: (c) => (c.pathname === '/settings/mcp' ? null : '/settings/mcp') }],
   'mobile-header': [{ id: 'mobile-header', targets: [], title: 'show.mobileHeader.title', body: 'show.mobileHeader.body' }],
+  // the sidebar entry (touch layout: its tile in the ⊞ drawer); "Try it" opens the centre (desktop)
+  notifications: [
+    {
+      id: 'notifications',
+      targets: ['nav-notifications'],
+      title: 'show.notifications.title',
+      body: 'show.notifications.body',
+      before: (c) => c.mobile && useTouchNav.getState().setPanel('app'),
+      cta: 'show.try',
+      after: () => !isCompact() && useNotificationCenter.getState().setOpen(true),
+    },
+  ],
   'touch-nav': [{ id: 'touch-nav', targets: ['touch-sessions', 'nav'], title: 'show.touchNav.title', body: 'show.touchNav.body', before: (c) => c.mobile && useTouchNav.getState().setPanel(null) }],
 }
 

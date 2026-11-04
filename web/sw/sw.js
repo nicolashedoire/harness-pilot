@@ -7,12 +7,19 @@
  *   /assets/* (hashed)      cache-first (immutable), filled at install (app shell) and on demand (lazy chunks)
  *   other static files      stale-while-revalidate (icons, fonts, manifest, favicon)
  *   /api/*, /ext/*, non-GET, cross-origin   never touched (straight to the network)
+ *
+ * Web Push (docs/dev/API.md "Web Push"): `push` shows the notification - in the UI language and with the sound
+ * choices of this browser, read from the JSON the app keeps in the `mx-prefs` cache (features/notifications/push.ts);
+ * nothing when a window of the app is focused (the app shows its own notice). `notificationclick` runs an action
+ * (a link, or one of the allowed POSTs) or opens the event's page in the running app.
  */
 const VERSION = '__MX_VERSION__'
 const PRECACHE = __MX_PRECACHE__
 const SHELL = `mx-shell-${VERSION}`
 const ASSETS = `mx-assets-${VERSION}`
 const OFFLINE = '/offline.html'
+const PREFS = 'mx-prefs'
+const PREFS_URL = '/__mx/notify-prefs.json'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,7 +37,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keep = new Set([SHELL, ASSETS])
+      const keep = new Set([SHELL, ASSETS, PREFS])
       for (const k of await caches.keys()) if (k.startsWith('mx-') && !keep.has(k)) await caches.delete(k)
       if (self.registration.navigationPreload) await self.registration.navigationPreload.enable().catch(() => {})
       await self.clients.claim()
@@ -99,6 +106,100 @@ self.addEventListener('fetch', (event) => {
         return hit
       }
       return net
+    })(),
+  )
+})
+
+/* ------------------------------------------------------------------ Web Push */
+const POST_ALLOWED = [/^\/api\/crons\/[A-Za-z0-9_-]{1,64}\/run$/, /^\/api\/sessions\/[A-Za-z0-9_-]{1,64}\/discussion\/resume$/]
+const appPath = (u) => typeof u === 'string' && /^\/(?![/\\])/.test(u)
+
+async function notifyPrefs() {
+  try {
+    const hit = await (await caches.open(PREFS)).match(PREFS_URL)
+    return hit ? await hit.json() : null
+  } catch (e) {
+    return null
+  }
+}
+
+/** A template of the app's language filled with the event's params, or null (missing param, unknown kind). */
+function fill(tpl, params) {
+  if (typeof tpl !== 'string') return null
+  const s = tpl.replace(/\{([a-z_][a-z0-9_]*)\}/g, (m, k) => (params && params[k] != null ? String(params[k]) : m))
+  return /\{[a-z_][a-z0-9_]*\}/.test(s) ? null : s
+}
+
+/** Does it ring: the server's `silent` (the subscription's preference for that kind), refined by this browser's
+ *  choices the server cannot hold (sounds off on this device, the sound of each webhook / script source). */
+function rings(p, d) {
+  if (p && p.muted) return false
+  if (p && d.category === 'webhooks' && p.soundSources && p.soundSources[d.source] != null) return !!p.soundSources[d.source]
+  if (typeof d.silent === 'boolean') return !d.silent
+  if (p && d.kind && p.sound && d.kind in p.sound) return !!p.sound[d.kind]
+  if (d.category === 'webhooks') return /^(stripe|shopify)\./.test(d.kind || '')
+  return d.level === 'warning' || d.level === 'error'
+}
+
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    (async () => {
+      let d = {}
+      try {
+        d = event.data ? event.data.json() : {}
+      } catch (e) {
+        d = { title: event.data ? event.data.text() : '' }
+      }
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      if (wins.some((w) => w.focused && w.visibilityState === 'visible')) return // the app shows it
+      const p = await notifyPrefs()
+      const params = d.params || {}
+      const title = (p && p.titles && fill(p.titles[d.kind], params)) || d.title || 'harness-pilot'
+      const body = (p && p.bodies && fill(p.bodies[d.kind], params)) || d.body || ''
+      const actions = (Array.isArray(d.actions) ? d.actions : [])
+        .filter((a) => (a.type === 'post' ? POST_ALLOWED.some((r) => r.test(a.url)) : appPath(a.url) || /^https:\/\//.test(a.url)))
+        .slice(0, 2)
+      const icon = (p && p.icon) || '/icons/harness-pilot-192.png'
+      await self.registration.showNotification(title, {
+        body,
+        tag: d.tag || (d.id ? `feed-${d.id}` : undefined),
+        icon,
+        badge: icon,
+        silent: !rings(p, d),
+        data: { id: d.id, url: d.url || '/notifications', actions },
+        actions: actions.map((a, i) => ({ action: `a${i}`, title: (p && p.actions && p.actions[a.id]) || a.label })),
+      })
+    })(),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const data = event.notification.data || {}
+  event.waitUntil(
+    (async () => {
+      const act = event.action && Array.isArray(data.actions) ? data.actions[Number(event.action.slice(1))] : null
+      const api = (path, body) =>
+        fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'X-Maxxing': '1', 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).catch(() => null)
+      if (data.id) await api('/api/feed/read', { ids: [data.id] })
+      if (act && act.type === 'post') {
+        if (POST_ALLOWED.some((r) => r.test(act.url))) await api(act.url)
+        return
+      }
+      let url = (act && act.url) || data.url || '/notifications'
+      if (url === '/feed') url = '/notifications'
+      if (!appPath(url)) {
+        if (/^https:\/\//.test(url)) return self.clients.openWindow(url)
+        url = '/notifications'
+      }
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      const win = wins.find((w) => new URL(w.url).origin === self.location.origin)
+      if (win) {
+        await win.focus()
+        win.postMessage({ type: 'NAVIGATE', url }) // the app navigates without a reload
+        return
+      }
+      return self.clients.openWindow(url)
     })(),
   )
 })

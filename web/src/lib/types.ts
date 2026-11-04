@@ -221,13 +221,74 @@ export type McpAddBody = { name: string; where: string; type: 'http' | 'sse' | '
 
 /* ---------------------------------------------------------------- Notifications feed */
 export type FeedLevel = 'info' | 'success' | 'warning' | 'error'
-export type FeedEvent = { id: number; at: number; source: string; level: FeedLevel; title: string; body: string; url: string; count: number; read: boolean }
-export type FeedList = { events: FeedEvent[]; more: boolean; unread: number; sources: { source: string; total: number; unread: number }[] }
+/** The type filter of the notifications (from the source: sessions, crons, system / security / infra, anything else). */
+export type FeedCategory = 'sessions' | 'crons' | 'system' | 'webhooks'
+/** `link`: navigate (app path) or open (https); `post`: POST that /api path (allowlisted, see lib/feed.ts). */
+export type FeedAction = { id: string; label: string; type: 'link' | 'post'; url: string }
+export type FeedParams = Record<string, string | number | boolean | null>
+/** The fields after `read` came with kinds (API.md "Feed"): optional, an older server sends the first nine only. */
+export type FeedEvent = {
+  id: number
+  at: number
+  source: string
+  level: FeedLevel
+  title: string
+  body: string
+  url: string
+  count: number
+  read: boolean
+  /** Stable dotted key (`cron.failed`...): the web translates `feed.kind.<kind>.title` with `params`. */
+  kind?: string
+  params?: FeedParams
+  actions?: FeedAction[]
+  category?: FeedCategory
+  /** Needs attention: warning / error, unread and not resolved. */
+  pending?: boolean
+  resolved_at?: number | null
+  first_at?: number
+}
+export type FeedOccurrence = { at: number; title: string; body: string; params?: FeedParams }
+export type FeedDetail = FeedEvent & { occurrences: FeedOccurrence[] }
+export type FeedCounts = { total: number; unread: number; pending: number }
+export type FeedSourceCount = { source: string; total: number; unread: number; pending?: number }
+export type FeedList = {
+  events: FeedEvent[]
+  more: boolean
+  unread: number
+  pending?: number
+  sources: FeedSourceCount[]
+  /** Counts of the last 30 days, whatever the filters (every category present). */
+  categories?: Record<FeedCategory, FeedCounts>
+  kinds?: Record<string, FeedCounts>
+}
+/** Badges: `GET /api/feed/summary` (or computed from the latest events on an older server). */
+export type FeedSummary = { unread: number; pending: number; categories?: Record<FeedCategory, FeedCounts> }
 export type FeedRule = 'auto' | 'off' | 'silent' | 'loud'
 export type FeedHookKind = 'stripe' | 'shopify' | 'github' | 'generic'
 export type FeedHook = { id: string; name: string; kind: FeedHookKind; created: number; url: string; has_secret: boolean }
 export type FeedSource = { source: string; label: string; builtin: boolean; rule: FeedRule; own_thread: boolean }
-export type FeedSettings = { telegram: boolean; sources: FeedSource[]; hooks: FeedHook[]; kinds: FeedHookKind[]; rules: FeedRule[] }
+/** A kind of event for the Telegram rules: `rule` its own (`auto` = none), `default` what `auto` gives now. */
+export type EventKind = { kind: string; category: FeedCategory; source: string; level: FeedLevel; builtin: boolean; rule: FeedRule; default: Exclude<FeedRule, 'auto'>; own_thread: boolean }
+export type FeedSettings = {
+  telegram: boolean
+  sources: FeedSource[]
+  hooks: FeedHook[]
+  kinds: FeedHookKind[]
+  rules: FeedRule[]
+  /** Per-kind Telegram rules (absent on an older server: the per-source rules only). */
+  kind_rules?: Record<string, FeedRule>
+  event_kinds?: EventKind[]
+}
+export type FeedSettingsBody = { telegram?: boolean; rules?: Record<string, FeedRule>; kind_rules?: Record<string, FeedRule> }
+
+/* ---------------------------------------------------------------- Web Push */
+/** Pushed when `kinds[kind]` is set (its `enabled` decides), else when the level is in `levels`; rings when that kind's
+ *  `sound` (else `sound`) is true. */
+export type PushPrefs = { levels: FeedLevel[]; sound: boolean; kinds: Record<string, { enabled: boolean; sound: boolean }> }
+export type PushSubscriptionInfo = { id: string; endpoint: string; label: string; created: number; last_ok: number | null; last_error: string | null; prefs: PushPrefs }
+/** `missing`: the server has no push endpoints (older version). */
+export type PushInfo = { available: boolean; public_key: string | null; subscriptions: PushSubscriptionInfo[]; missing?: boolean }
+export type PushSubscribeBody = { endpoint: string; keys: { p256dh: string; auth: string }; label?: string; prefs?: PushPrefs }
 
 /* ---------------------------------------------------------------- Import */
 export type ImportAgent = 'hermes' | 'claude-code' | 'openclaw' | 'other'

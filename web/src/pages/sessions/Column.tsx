@@ -90,6 +90,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { TaskBar } from './Tasks'
 import { forgetLog, getLog, loadEarlier, loadLog, seedEmptyLog, useLogSelect, useSessionLog, useSessionStream } from './log'
 import { PlanChip, PlanNotice } from './Plan'
+import { PausedBanner, pausedOnLimit } from './PausedBanner'
 import { MaxxingControls, MaxxingMeter } from './MaxxingMeter'
 import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
 import { MobileTabsSlot, TabsToggle } from './Tabs'
@@ -752,6 +753,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
             </Button>
           </div>
         )}
+        {session && pausedOnLimit(session) && <PausedBanner session={session} />}
         <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
           {notFound ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
@@ -840,7 +842,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
               session ? (
                 <>
                   {session.provider === 'codex' || session.provider === 'debate' || session.provider === 'discussion' ? <span className="text-xs font-medium">{session.provider === 'codex' ? 'Codex' : 'Claude Code ↔ Codex'}</span> : <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} />}
-                  {session.debate_paused && <span className="text-xs text-muted-foreground">{t(session.discussion_pause_reason === 'limit' ? 'sessions.discussionLimitReached' : 'sessions.discussionPaused')}</span>}
+                  {session.debate_paused && !pausedOnLimit(session) && <span className="text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
                   {(session.provider === 'discussion' || session.provider === 'debate') && (running || session.debate_paused) && (
                     <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
                       <Button variant="ghost" size="icon-sm" aria-label={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')} loading={pauseDiscussion.isPending || resumeDiscussion.isPending} onClick={() => session.debate_paused ? resumeDiscussion.mutate(sid) : pauseDiscussion.mutate(sid)}>
