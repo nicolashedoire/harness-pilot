@@ -33,7 +33,7 @@ export type TwoFactorPoll = { ok: boolean; status: 'pending' | 'approved'; expir
 export type ChangePasswordBody = { current: string; new: string }
 
 /* ---------------------------------------------------------------- Onboarding */
-export type OnboardingStepKey = 'password' | 'claude' | 'workspace' | 'telegram' | 'backup' | 'profile'
+export type OnboardingStepKey = 'password' | 'claude' | 'codex' | 'workspace' | 'telegram' | 'backup' | 'profile'
 export type OnboardingState = { completed: boolean; steps: Record<OnboardingStepKey, boolean> }
 
 /* ---------------------------------------------------------------- Claude */
