@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -78,7 +79,9 @@ def test_a_new_runner_does_not_inherit_the_dead_runners_pid(mx, monkeypatch):
 
 def test_claude_killed_by_the_oom_killer_says_so(mx, monkeypatch, tmp_path):
     """Claude SIGKILLed while the unit's oom_kill counter went up: the turn error speaks of memory, not of code -9."""
-    rel = next((x[3:].strip() for x in open("/proc/self/cgroup").read().splitlines() if x.startswith("0::")), None)
+    cgroup = Path("/proc/self/cgroup")                 # read only where it exists: no /proc on macOS
+    lines = cgroup.read_text().splitlines() if cgroup.is_file() else []
+    rel = next((x[3:].strip() for x in lines if x.startswith("0::")), None)
     if rel is None:
         pytest.skip("no cgroup v2")
     events = tmp_path / "cg" / rel.lstrip("/") / "memory.events"

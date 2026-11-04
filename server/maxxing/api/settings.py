@@ -247,13 +247,24 @@ class RegisterIn(BaseModel):
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
-@router.get("/register")
+def _legacy_cloud() -> None:
+    """register / feedback / license talk to the original project's service, which is not this project's backend:
+    the routes answer 404 unless MAXXING_LICENSE_PING=1 (register._offline). The modules stay for the update logic."""
+    from .. import register
+    if register._offline():
+        raise HTTPException(404, detail={"error": "not_found", "message": "not available on this server"})
+
+
+_LEGACY = [Depends(_legacy_cloud)]
+
+
+@router.get("/register", dependencies=_LEGACY)
 def get_register():
     from .. import register
     return register.state()
 
 
-@router.put("/register")
+@router.put("/register", dependencies=_LEGACY)
 async def put_register(body: RegisterIn):
     """Say hello to the authors or stop (docs/user/23-license.md). Talks to the cloud: in a thread."""
     from .. import feedback, register
@@ -270,14 +281,14 @@ class FeedbackIn(BaseModel):
     message: str
 
 
-@router.get("/feedback")
+@router.get("/feedback", dependencies=_LEGACY)
 def get_feedback():
     """What the Feedback dialog prefills: the last email used, the version sent along."""
     from .. import feedback
     return feedback.defaults()
 
 
-@router.post("/feedback")
+@router.post("/feedback", dependencies=_LEGACY)
 async def post_feedback(body: FeedbackIn):
     """Send a bug report / idea to the authors (api.harness-maxxing.com/v1/feedback). Email required."""
     from .. import feedback
@@ -298,13 +309,13 @@ def _license_state() -> dict:
                                    "enabled", "moved_to_git")}
 
 
-@router.get("/license")
+@router.get("/license", dependencies=_LEGACY)
 def get_license():
     """The optional Enterprise key (docs/user/23-license.md). Never the key itself."""
     return _license_state()
 
 
-@router.put("/license")
+@router.put("/license", dependencies=_LEGACY)
 async def put_license(body: LicenseIn):
     from .. import license
     key = body.key.strip()
@@ -318,7 +329,7 @@ async def put_license(body: LicenseIn):
     return _license_state()
 
 
-@router.delete("/license")
+@router.delete("/license", dependencies=_LEGACY)
 async def delete_license():
     from .. import license
     await asyncio.to_thread(license.remove_key)
