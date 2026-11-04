@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The Codex model is now chosen from a list instead of typed: a new Codex session, a discussion, a mixed team and a scheduled Codex prompt list the models that the Codex command where harness-pilot runs offers to your account, with **Default** (Codex's own choice) and **Other…** for any other model. Models chosen before are kept as they are.
 - Agents use the current `pilot` command in the workspace instructions kept from older installations, including `pilot doctor`. `pilot init` (so `pilot update`) and the start of the local app refresh the product's own instructions once per workspace, and only when `pilot` is harness-pilot: where another program has that name, they keep `maxxing`, the same command. Your own text, and a line you change back later, stays as you wrote it; existing conversation messages stay in the history.
 - On Telegram, a message sent while the previous answer was still arriving could leave the status message of its own turn stuck on "Working…" after the final summary, with "typing…" shown after the answer. Its turn now has a single status, which ends on the summary.
 - Codex sessions no longer count their tokens several times. Codex reports the running total of its conversation after each answer, and every answer added that whole total again: the tokens under each Codex answer and on the Stats page now show what that answer used. Totals recorded before this update stay as they were.

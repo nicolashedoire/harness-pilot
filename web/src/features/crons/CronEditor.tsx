@@ -28,6 +28,7 @@ import {
 import { Combobox } from '@/components/ui/combobox'
 import { Callout } from '@/features/common'
 import { AGENT_NAME, AgentIcon } from '@/features/agents/AgentIcon'
+import { CodexModelField } from '@/features/codex/CodexModelField'
 import { SchedulePicker } from './SchedulePicker'
 import { UNIT_S, splitTimeout, type TimeoutUnit } from './schedule'
 
@@ -267,7 +268,7 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
           <div className="grid gap-5 sm:grid-cols-2">
             {f.kind === 'codex' ? (
               <FormField label={t('crons.field.model')} hint={t('sessions.codexModelHint')}>
-                <Input value={f.model} onChange={(e) => set('model', e.target.value.trim())} maxLength={100} spellCheck={false} autoCapitalize="off" autoCorrect="off" data-testid="cron-codex-model" />
+                <CodexModelField value={f.model} onChange={(v) => set('model', v)} />
               </FormField>
             ) : (
               <FormField label={t('crons.field.model')}>

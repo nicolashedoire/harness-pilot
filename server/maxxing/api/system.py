@@ -238,6 +238,13 @@ async def media_tools():
     return await asyncio.to_thread(mediatools.status)
 
 
+@router.get("/system/codex/models")
+async def codex_models():
+    """The Codex model pickers (new session, discussion, mixed team, scheduled prompt): see maxxing/codex_models.py."""
+    from .. import codex_models as cm
+    return await asyncio.to_thread(cm.models)
+
+
 @router.get("/system/local-service")
 async def get_local_service():
     """Settings -> System, local mode on macOS: the optional launchd agent of scripts/macos-service.sh (read-only;

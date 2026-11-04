@@ -1392,6 +1392,15 @@ R('POST', '/api/auth/totp/recovery-codes', ({ body }) => {
 R('GET', '/api/onboarding', () => onboardingObj())
 R('POST', '/api/onboarding/complete', () => { S.onboarding_completed = true; return { ok: true } })
 
+/* ---- codex models (the Codex model pickers: new session, discussion, mixed team, scheduled prompt) */
+R('GET', '/api/system/codex/models', () => ({ source: 'cli', models: [
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Latest frontier agentic coding model.' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', description: 'Balanced agentic coding model for everyday work.' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', description: 'Fast and affordable agentic coding model.' },
+  { id: 'gpt-5.5', label: 'GPT-5.5', description: 'Frontier model for complex coding, research, and real-world work.' },
+  { id: 'gpt-5.2', label: 'GPT-5.2', description: 'Optimized for professional work and long-running agents.' },
+] }))
+
 /* ---- claude */
 R('GET', '/api/claude/status', () => ({ ...clone(S.claude), models: MODELS }))
 R('POST', '/api/claude/auth', async ({ body }) => {
