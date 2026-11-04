@@ -23,7 +23,7 @@ give are written into the topic's `memory.md`, so the project becomes yours from
   cards) or **None**. You can also create your own project there.
 - **Any time later**: **Settings -> Starter pack**, then **Add** on a card.
 - **By asking**: in `system/harness`, say "add the freelance pack".
-- **From the server**: `maxxing packs list`, then `maxxing packs add freelance` (several ids at once work).
+- **From the server**: `pilot packs list`, then `pilot packs add freelance` (several ids at once work).
 
 Add a pack as many times as you like: each time it is a **new project** - `ecommerce`, then `ecommerce-2` for a
 second store, and so on (rename it from the Sessions page). Nothing existing is ever touched. The pack's
@@ -34,7 +34,7 @@ the Crons page, or ask in the topic ("enable the orders report").
 
 The first card, **Default projects**, is what a new install starts with: `general/inbox` and `system`
 (tutorial, help, harness). **Put back** re-creates the ones you deleted, and any missing file, without
-overwriting your edits. From the server: `maxxing packs add basics`.
+overwriting your edits. From the server: `pilot packs add basics`.
 
 ## Making it yours
 

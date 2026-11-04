@@ -79,7 +79,7 @@ such as an ads account adds a few thousand) and time at the start of each turn (
 - the servers added to its topic (or project), always;
 - the servers Claude asked for in this session.
 
-When Claude needs a server it was not given, it runs `maxxing mcp load <name>` (it knows which ones exist) and stops;
+When Claude needs a server it was not given, it runs `pilot mcp load <name>` (it knows which ones exist) and stops;
 harness-pilot continues by itself with the server loaded (at most twice in a row), and the topic keeps it from then on.
 When a message needs a **claude.ai connector** (Google Drive, Gmail...), that message loads every server, as before
 (Claude Code loads connectors only all together). The **Browser of my PC** is always loaded.
@@ -124,4 +124,4 @@ The memory backup keeps the list of servers (values that look like secrets blank
 names: use `${KEY_NAME}` for them so a restore works as is; plain settings such as `LOG_LEVEL=debug` are kept); a restore adds back the missing ones.
 Sign-ins must be done again on a new server.
 
-From a terminal: `maxxing mcp list|add|remove` (see [CLI reference](17-cli-reference.md)).
+From a terminal: `pilot mcp list|add|remove` (see [CLI reference](17-cli-reference.md)).

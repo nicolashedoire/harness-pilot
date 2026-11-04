@@ -31,6 +31,6 @@ if not config.config_path().exists():
 cmd_core.copy_templates(ws)
 PY
 if [ "${1:-}" = "link" ]; then
-  exec uv run --locked maxxing setup-link
+  exec uv run --locked pilot setup-link
 fi
-exec uv run --locked maxxing serve --host 127.0.0.1 --port 8787
+exec uv run --locked pilot serve --host 127.0.0.1 --port 8787   # `maxxing` = the same command

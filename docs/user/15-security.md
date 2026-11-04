@@ -42,7 +42,7 @@ file still can.
 ## Who can reach the UI
 
 - The server listens only on `127.0.0.1` (behind Caddy) or on the Tailscale IP – **never** on
-  `0.0.0.0` or a public address. `maxxing doctor` fails if it does.
+  `0.0.0.0` or a public address. `pilot doctor` fails if it does.
 - **Domain mode**: HTTPS only (Caddy, Let's Encrypt), with HSTS, `X-Frame-Options: SAMEORIGIN`,
   `nosniff` and a strict referrer policy (the server sends the same headers itself, whatever the mode).
 - **Tailscale mode**: only devices of your tailnet can connect.
@@ -77,8 +77,8 @@ The installer hardens the server (step "Server security"; `bash /opt/claude-maxx
   it needs, Chromium, Remotion, the speech models, Garage) has a pinned version and sha256 in
   `server/maxxing/deps.toml`, shipped with each signed release; Caddy's repository key must have the expected
   fingerprint and its apt source is written by the installer. A download that does not match installs nothing.
-  `maxxing deps verify` re-checks the installed binaries and that no file of them can be replaced by another user
-  (the doctor does it too); `maxxing deps check` looks the versions up in the osv.dev vulnerability database, and a
+  `pilot deps verify` re-checks the installed binaries and that no file of them can be replaced by another user
+  (the doctor does it too); `pilot deps check` looks the versions up in the osv.dev vulnerability database, and a
   weekly job notifies you when one is affected. Temporary files never go to the shared `/tmp`.
 - **Memory**: the web service has its own memory limit (60 % of the RAM), sessions and scheduled jobs run in their
   own capped units, and oversized requests are refused before they are read.
@@ -87,25 +87,25 @@ The installer hardens the server (step "Server security"; `bash /opt/claude-maxx
   in the way of the product (no new privileges, read-only kernel settings, no kernel modules or kernel
   log, read-only cgroups, no set-uid files, a cap on processes). They live in
   `/etc/systemd/system/claude-maxxing.service.d/10-hardening.conf`. Installs older than 2.0.0a32 get
-  it with `maxxing harden` (restarts the service; if it does not come back, the change is undone);
-  `maxxing harden --undo` removes it. The service still runs as root: Claude sessions run in their own
+  it with `pilot harden` (restarts the service; if it does not come back, the change is undone);
+  `pilot harden --undo` removes it. The service still runs as root: Claude sessions run in their own
   units and are not limited by it (they get the lighter protections described at the top of this page).
 
 Recommended on top: SSH keys instead of passwords (`PasswordAuthentication no` once your key works).
-`maxxing doctor` warns if any of the three is missing.
+`pilot doctor` warns if any of the three is missing.
 
 ## Sign-in
 
 - **Setup token**: the first visit requires the one-time link printed by the installer
-  (`maxxing setup-link`), so whoever finds the URL first cannot claim your instance. It is deleted
+  (`pilot setup-link`), so whoever finds the URL first cannot claim your instance. It is deleted
   once the password is set.
 - **Password**: at least 12 characters for a new password (an older, shorter one still signs in), stored as a
-  scrypt hash. Change it in Settings -> Security or with `maxxing password` on the server; changing it signs every
+  scrypt hash. Change it in Settings -> Security or with `pilot password` on the server; changing it signs every
   browser out. Wrong current passwords in that form are throttled like sign-ins.
 - **Session cookie**: signed, `HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS, valid 30 days.
   **Sign out** revokes that browser's cookie on the server too (a copied cookie stops working); your other
   browsers stay signed in. Live views already open in a signed-out browser (conversations, the dashboard's updates)
-  stop within 15 seconds. To sign out **every** browser, change the password (Settings, or `maxxing password`).
+  stop within 15 seconds. To sign out **every** browser, change the password (Settings, or `pilot password`).
 - **CSRF**: every change request must carry the `X-Maxxing: 1` header, which another website cannot
   send.
 - **Request size**: a request from a browser that is not signed in is refused before the server reads it
@@ -123,7 +123,7 @@ Recommended on top: SSH keys instead of passwords (`PasswordAuthentication no` o
 ## Telegram
 
 The gateway answers only the chat linked with the one-time code, and only the Telegram account that opened
-the link. A chat linked without its owner (by hand, or by a very old version) answers nobody - `maxxing doctor`
+the link. A chat linked without its owner (by hand, or by a very old version) answers nobody - `pilot doctor`
 warns, link it again from Settings -> Telegram. Anyone with access to that Telegram account can drive Claude:
 protect it (2-step verification).
 
@@ -174,4 +174,4 @@ for your plan.
 - [ ] SSH with a key (password login disabled).
 - [ ] Strong UI password; Telegram account protected.
 - [ ] Memory backup to a private repository.
-- [ ] `maxxing doctor` all green.
+- [ ] `pilot doctor` all green.

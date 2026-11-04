@@ -33,9 +33,11 @@ JOBS_SLICE_PATH = Path("/etc/systemd/system/maxxing-jobs.slice")
 SYSTEMD_DIR = Path("/run/systemd/system")          # present when systemd is PID 1
 CADDYFILE = Path("/etc/caddy/Caddyfile")
 CADDY_SITE = Path("/etc/caddy/claude-maxxing.caddy")
-BIN_LINK = Path("/usr/local/bin/maxxing")
+BIN_LINK = Path("/usr/local/bin/maxxing")         # written by install.sh: the venv's script, or a state-dir wrapper
+PILOT_LINK = Path("/usr/local/bin/pilot")          # the CLI's name; `maxxing` stays a permanent alias (ensure_cli_alias)
 PRODUCT_SKILLS_EXTRA = ("memory", "memory-compaction", "video-motion-design", "pdf-document", "image-edit",
-                        "seo-audit", "web-scraping")                     # + every skill named maxxing-*
+                        "seo-audit", "web-scraping")                     # + every skill named pilot-*
+PRODUCT_SKILL_PREFIXES = ("pilot-", "maxxing-")    # maxxing-* = the names of earlier versions (renames.SKILL_RENAMES)
 UPDATE_TOKEN = "github_update_token"
 STDIN_SECRETS = (UPDATE_TOKEN, "claude_oauth_token", "anthropic_api_key")
 COMPACTION_JOB = {
@@ -173,13 +175,15 @@ def _save_install_state(**kw: Any) -> None:
 
 
 # ---- product skills ------------------------------------------------------------------------
+def is_product_skill(name: str) -> bool:
+    return name.startswith(PRODUCT_SKILL_PREFIXES) or name in PRODUCT_SKILLS_EXTRA
+
+
 def product_skill_names() -> list[str]:
     d = config.SKILLS_DIR
     if not d.is_dir():
         return []
-    return sorted(p.name for p in d.iterdir()
-                  if (p / "SKILL.md").is_file()
-                  and (p.name.startswith("maxxing-") or p.name in PRODUCT_SKILLS_EXTRA))
+    return sorted(p.name for p in d.iterdir() if (p / "SKILL.md").is_file() and is_product_skill(p.name))
 
 
 def skills_target() -> Path:
@@ -202,7 +206,10 @@ def _render_skill_tree(dst: Path, variables: dict[str, str]) -> None:
 
 
 def install_skills() -> dict:
-    """Copy product skills to ~/.claude/skills (overwrite them only, text files rendered), drop obsolete ones."""
+    """Copy product skills to ~/.claude/skills (overwrite them only, text files rendered), drop obsolete ones.
+    A renamed skill (renames.SKILL_RENAMES) is obsolete under its old name: the copy we installed is deleted, a copy
+    we have no record of is moved to the trash (Claude must never see both names)."""
+    from .renames import SKILL_RENAMES
     dst_root = skills_target()
     dst_root.mkdir(parents=True, exist_ok=True)
     names = product_skill_names()
@@ -225,10 +232,16 @@ def install_skills() -> dict:
         installed.append(n)
     for n in sorted(previous - set(names)):
         dst = dst_root / n
-        if n.startswith("maxxing-") or n in PRODUCT_SKILLS_EXTRA:
+        if is_product_skill(n):
             if dst.is_dir() and not dst.is_symlink():
                 shutil.rmtree(dst, ignore_errors=True)
                 removed.append(n)
+    for old, new in SKILL_RENAMES.items():
+        dst = dst_root / old
+        if old not in previous and old not in names and new in installed and dst.is_dir() and not dst.is_symlink():
+            bak = config.state_dir("trash", "skills") / f"{old}-{int(time.time())}"
+            shutil.move(str(dst), str(bak))
+            backed_up.append(str(bak))
     _save_install_state(skills=installed)
     return {"installed": installed, "removed": removed, "backed_up": backed_up}
 
@@ -380,6 +393,12 @@ def update_topic() -> str:
 
 
 # ---- default managed jobs ------------------------------------------------------------------
+MORNING_TASKS_PROMPT = ("Use the pilot-tasks skill to read tasks.json. Reply with a short morning brief: "
+                        "overdue tasks, then tasks due today, one line each (title, due date, priority), "
+                        "most urgent first, then the number of tasks in progress. If nothing is due, say "
+                        "so in one line. Do not change any task.")
+
+
 def default_jobs() -> list[tuple[str, dict]]:
     """(key, job) created once by init. Shell commands use the absolute `maxxing` path."""
     crons = _optional("crons")
@@ -393,11 +412,7 @@ def default_jobs() -> list[tuple[str, dict]]:
             "timeout_s": 300}),
         ("morning-tasks", {
             "name": "Morning tasks", "schedule": "0 8 * * *", "kind": "claude",
-            "topic_path": "projects/general/topics/inbox",
-            "prompt": ("Use the maxxing-tasks skill to read tasks.json. Reply with a short morning brief: "
-                       "overdue tasks, then tasks due today, one line each (title, due date, priority), "
-                       "most urgent first, then the number of tasks in progress. If nothing is due, say "
-                       "so in one line. Do not change any task."),
+            "topic_path": "projects/general/topics/inbox", "prompt": MORNING_TASKS_PROMPT,
             "model": "", "reuse_session": False, "enabled": False, "notify": "always", "timeout_s": 600}),
     ] + _deps_jobs(mx)
 
@@ -505,6 +520,31 @@ def ensure_jobs_slice() -> str:
 
 
 # ---- init ----------------------------------------------------------------------------------
+def _pilot_link_is_ours() -> bool:
+    return PILOT_LINK.is_symlink() and os.readlink(PILOT_LINK) in (BIN_LINK.name, str(BIN_LINK))
+
+
+def ensure_cli_alias() -> str:
+    """`pilot` is the CLI's name, `maxxing` its permanent alias (crontab lines, scripts and habits keep working).
+    install.sh writes /usr/local/bin/maxxing (a link to the venv's script, or a wrapper that sets the state dir);
+    /usr/local/bin/pilot is a link to it: one entry point, the same state, on new installs and after an update.
+    A `pilot` that is not ours is never replaced. Skipped without the installed command and in tests/dev
+    (MAXXING_SPAWN=direct, where `uv run pilot` works from the venv)."""
+    if os.environ.get("MAXXING_SPAWN") == "direct":
+        return "skipped (dev)"
+    if not (BIN_LINK.is_symlink() or BIN_LINK.is_file()):
+        return f"skipped (no {BIN_LINK})"
+    if _pilot_link_is_ours():
+        return "ok"
+    if PILOT_LINK.is_symlink() or PILOT_LINK.exists():
+        return f"{PILOT_LINK} is another program - kept (use `maxxing`)"
+    try:
+        PILOT_LINK.symlink_to(BIN_LINK.name if PILOT_LINK.parent == BIN_LINK.parent else str(BIN_LINK))
+    except OSError as e:
+        return f"not created: {e}"
+    return "created"
+
+
 def _cfg_raw() -> dict:
     raw = config.read_json(config.config_path(), {})
     return raw if isinstance(raw, dict) else {}
@@ -563,6 +603,9 @@ def do_init(a: argparse.Namespace) -> dict:
     report["skills"] = install_skills()
     report["claude_settings"] = "defaults set (transcripts kept, no AI credit in commits)" if claude_settings_defaults() else "unchanged"
     report["crons"] = "skipped (--no-crons)" if a.no_crons else ensure_default_crons()
+    from . import renames                         # old skill names in what earlier versions generated
+    report["renamed"] = renames.migrate(ws)
+    report["cli"] = ensure_cli_alias()
     report["jobs_slice"] = ensure_jobs_slice()
     report["service_memory"] = ensure_service_memory()
     cr = _optional("crons")
@@ -605,6 +648,10 @@ def cmd_init(a) -> int:
              + (f", removed {', '.join(sk['removed'])}" if sk["removed"] else ""))
     for b in sk["backed_up"]:
         line(WARN, f"an existing skill was replaced; previous copy kept in {b}")
+    rn = r["renamed"]
+    if rn["files"] or rn["jobs"]:
+        line(OK, f"renamed    new skill names in {len(rn['files'])} workspace file(s), {len(rn['jobs'])} job prompt(s)")
+    line(OK if r["cli"] in ("ok", "created") else INFO, f"command    pilot: {r['cli']} (maxxing still works)")
     line(OK, f"claude     {r['claude_settings']}")
     line(INFO if "skipped" in r["crons"] or "not" in r["crons"] else OK, f"jobs       {r['crons']}")
     if r.get("secret"):
@@ -1386,10 +1433,10 @@ def check_git(fetch: bool = True) -> Check:
                 "health": "the last update did not start and was rolled back",
                 "dependencies": "the last update failed (dependencies) and was rolled back"}.get(p.get("reason"), "update pending")
         return _c("git", WARN, f"update pending: {what}", detail,
-                  f"open the topic {update_topic()} and say: update  (skill maxxing-customize)")
+                  f"open the topic {update_topic()} and say: update  (skill pilot-customize)")
     if st["dirty"]:
         return _c("git", WARN, f"{len(st['dirty'])} unsaved change(s) in the code directory", detail,
-                  'maxxing custom save "what it does" --why "why"  (skill maxxing-customize)')
+                  'maxxing custom save "what it does" --why "why"  (skill pilot-customize)')
     if behind:
         return _c("git", WARN, f"{behind} update(s) available", detail, "maxxing update")
     return _c("git", OK, ("up to date" if behind == 0 else "version check unavailable")
@@ -1826,7 +1873,7 @@ def cmd_update(a) -> int:
                                   why=f"auto-saved by maxxing update ({', '.join(dirty[:5])}) - "
                                       f"give it a real title and reason (topic {update_topic()})")
                 line(WARN, f"{len(dirty)} uncommitted change(s) saved as customization {it['id']}",
-                     "Claude: rename it with the real purpose (skill maxxing-customize)")
+                     "Claude: rename it with the real purpose (skill pilot-customize)")
             except customs.CustomError as e:
                 line(FAIL, "uncommitted changes in the code directory cannot be kept", str(e))
                 return 1
@@ -1879,7 +1926,7 @@ def cmd_update(a) -> int:
                     _back_to(old)
                     line(FAIL, f"customization \"{c['title']}\" cannot be carried to branch {branch}"
                          f" - nothing changed, {__version__} keeps running", out.strip()[-300:])
-                    print(f"\nFor Claude (topic {update_topic()}, skill maxxing-customize): adapt it on {branch}"
+                    print(f"\nFor Claude (topic {update_topic()}, skill pilot-customize): adapt it on {branch}"
                           f"\n  cd {config.CODE} && git checkout {branch} && git cherry-pick {c['commit'][:12]}"
                           "\n  # resolve, git add, GIT_EDITOR=true git cherry-pick --continue, then: maxxing update")
                     return 3
@@ -1901,7 +1948,7 @@ def cmd_update(a) -> int:
                               why=f"auto-saved by maxxing update ({', '.join(dirty[:5])}) - "
                                   f"give it a real title and reason (topic {update_topic()})")
             line(WARN, f"{len(dirty)} uncommitted change(s) saved as customization {it['id']}",
-                 "Claude: rename it with the real purpose (skill maxxing-customize)")
+                 "Claude: rename it with the real purpose (skill pilot-customize)")
         except customs.CustomError as e:
             line(FAIL, "uncommitted changes in the code directory cannot be kept", str(e))
             _unstash_web()
@@ -1950,7 +1997,7 @@ def cmd_update(a) -> int:
             line(FAIL, f"your customizations conflict with the new version {info['target_version'] or target[:8]}"
                  f" - nothing changed, {__version__} keeps running",
                  "conflicting files: " + (", ".join(files) or "?"))
-            print(f"\nFor Claude (topic {update_topic()}, skill maxxing-customize):"
+            print(f"\nFor Claude (topic {update_topic()}, skill pilot-customize):"
                   f"\n  cd {config.CODE} && "
                   + ('git stash push -u -q -m "maxxing update: edits of the web UI" -- web/ && ' if web_back else "")
                   + (f"git checkout {branch} && " if switched else "") + f"git rebase origin/{branch}"
@@ -2379,7 +2426,7 @@ def _cfg_harden(p: argparse.ArgumentParser) -> None:
 
 def cmd_uninstall(a) -> int:
     cfg = config.load_config()
-    what = "service, Caddy site, crontab block, CLI link and product skills"
+    what = "service, Caddy site, crontab block, CLI links (pilot, maxxing) and product skills"
     if a.purge:
         what += f", the code ({config.CODE}) and the state ({config.STATE})"
     if a.purge_workspace:
@@ -2415,6 +2462,9 @@ def cmd_uninstall(a) -> int:
         if d.is_dir() and not d.is_symlink():
             shutil.rmtree(d, ignore_errors=True)
     line(OK, "product skills removed")
+    if _pilot_link_is_ours():
+        PILOT_LINK.unlink()
+        line(OK, f"{PILOT_LINK} removed")
     if BIN_LINK.is_symlink() or (BIN_LINK.is_file() and "claude-maxxing" in BIN_LINK.read_text(errors="ignore")):
         BIN_LINK.unlink()
         line(OK, f"{BIN_LINK} removed")

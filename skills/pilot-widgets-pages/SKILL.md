@@ -1,11 +1,11 @@
 ---
-name: maxxing-extension
-description: Build a Harness Maxxing extension - a dashboard widget (a Card with stats, lists, charts, or a free-form HTML widget such as a game or canvas) or a full page with its own API - in <workspace>/extensions/<id>/. Use when the user asks for a new widget, a dashboard card, a mini-game, a custom page, an integration shown in the UI, or to fix an existing extension. Always the first choice before touching the product code.
+name: pilot-widgets-pages
+description: Build a harness-pilot extension - a dashboard widget (a Card with stats, lists, charts, or a free-form HTML widget such as a game or canvas) or a full page with its own API - in <workspace>/extensions/<id>/. Use when the user asks for a new widget, a dashboard card, a mini-game, a custom page, an integration shown in the UI, or to fix an existing extension. Always the first choice before touching the product code.
 ---
 
 # Extensions (widgets & pages)
 
-Extensions live in `<workspace>/extensions/<id>/` (workspace from `maxxing status`, here
+Extensions live in `<workspace>/extensions/<id>/` (workspace from `pilot status`, here
 `{{WORKSPACE}}`). Product updates never touch them and the memory backup includes them.
 
 - **widget**: `manifest.json` + `api.py` with `card(ctx)` returning a **Card** (JSON). The UI draws
@@ -30,7 +30,7 @@ build extra widgets: they sit next to it on the dashboard.
 | numbers, lists, charts, status from some data source | widget with `card(ctx)` |
 | a mini-game, a canvas, an interactive or custom-drawn card | HTML widget |
 | a whole screen (form, board, editor, report) | page |
-| to change how the product itself behaves (a server rule, a CLI command…) and no extension can do it | a **core customization**: skill `maxxing-customize` - never edit the code directory without it |
+| to change how the product itself behaves (a server rule, a CLI command…) and no extension can do it | a **core customization**: skill `pilot-customize` - never edit the code directory without it |
 
 Extensions survive every update untouched. Say so to the user: they never need to wait for the
 authors to add something an extension can do.

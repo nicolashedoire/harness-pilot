@@ -60,7 +60,7 @@ missing and never re-create a project or topic you deleted.
 - **Starter projects**: ready-made projects for an online store, an affiliate site, a content creator, apps, a
   second brain or a freelance business - their topics already know the job (Settings -> Starter pack).
 - **Notifications**: a feed next to the widgets (and a Telegram thread if you want) for cron jobs, sales,
-  orders, deployments and your scripts - Stripe, Shopify, GitHub or any webhook, or `maxxing feed post`.
+  orders, deployments and your scripts - Stripe, Shopify, GitHub or any webhook, or `pilot feed post`.
 - **Your look**: light or dark, six accent colors (the logo follows), a neutral or tinted background,
   23 interface fonts and 11 code fonts.
 - **Customize and import**: change the product's code and keep your changes across updates; import

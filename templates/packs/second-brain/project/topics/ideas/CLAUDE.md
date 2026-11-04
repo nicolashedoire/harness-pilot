@@ -25,7 +25,7 @@ ideas did I have about the garden?", "triage my ideas".
 
 - Tags: use the list in `memory.md`; propose a new tag only when none fits. Typical: area (`#work`,
   `#home`), type (`#business`, `#content`, `#project`, `#gift`), effort (`#quick`, `#big`).
-- Triage, for each inbox idea, one of: `do` (becomes a task: `maxxing-tasks` skill, after a yes),
+- Triage, for each inbox idea, one of: `do` (becomes a task: `pilot-tasks` skill, after a yes),
   `develop` (own file in `notes/`), `project` (suggest a project or topic for it), `later`
   (stays, tagged `#someday`), `drop` (moved to `archive.md` with the date).
 - During triage show ideas in small batches (5-7), with your suggested decision; the user decides.

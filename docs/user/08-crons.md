@@ -48,19 +48,19 @@ In local mode, the scheduler checks jobs in the time zone configured in Settings
 On the legacy server, the cron daemon fires jobs in the **server's system time zone**, while the UI (schedule preview,
 next runs, history) uses the time zone of Settings -> General. Both must be the same, otherwise a
 job shown "at 07:00" runs at another hour. On a fresh server, the zone you pick in the onboarding
-(or Settings -> General) also becomes the system zone; `maxxing doctor` warns if they differ.
+(or Settings -> General) also becomes the system zone; `pilot doctor` warns if they differ.
 
 On a server already in use (other scheduled jobs, other services), the installer **keeps the server
 clock** (`system_clock = keep` in the configuration): harness-pilot then writes each job's crontab
-line to fire every hour at its minutes, and `maxxing cron run <id> --if-due` checks the schedule in
+line to fire every hour at its minutes, and `maxxing cron run <id> --if-due` (`maxxing` = `pilot`) checks the schedule in
 your zone before running - so jobs still run at the times you see, daylight saving included, and
-the other programs keep their clock. Switch with `maxxing init --system-clock keep|follow`.
+the other programs keep their clock. Switch with `pilot init --system-clock keep|follow`.
 
 To change the system zone by hand (mode `follow`):
 
 ```bash
 timedatectl set-timezone Europe/Paris && systemctl restart cron
-maxxing init --timezone Europe/Paris && systemctl restart claude-maxxing
+pilot init --timezone Europe/Paris && systemctl restart claude-maxxing
 ```
 
 ## Built-in jobs
@@ -69,10 +69,10 @@ maxxing init --timezone Europe/Paris && systemctl restart claude-maxxing
   installation, turned on when you finish the onboarding with Claude signed in - so it never fails before
   Claude is connected; if you skipped that step, enable it on the Crons page; you can edit, disable or delete it).
 - **Memory backup** – created when you configure the [Backup](backup) (default 04:40).
-- **Check for updates** – Mondays 09:00, shell job `maxxing update --check --notify`: when a new
+- **Check for updates** – Mondays 09:00, shell job `pilot update --check --notify`: when a new
   version exists, a Telegram message tells you to open the topic `system/harness` (`system/update` on servers installed before 2.0.0a33) and say "update".
   It never updates by itself. On a server with neither a git remote nor a license (a local copy) it is created
-  disabled (nothing to check); `maxxing update --check` then says "updates unavailable (no git remote)".
+  disabled (nothing to check); `pilot update --check` then says "updates unavailable (no git remote)".
 - **Morning tasks** (disabled) – daily 08:00, Claude job in `general/inbox` (`system/tasks` before 2.0.0a33):
   overdue and today's tasks, sent on Telegram. Enable it on the Crons page.
 - **Renewal reminder** – created when you ask for subscription reminders (Mondays 09:30, in the topic that keeps
@@ -96,11 +96,11 @@ Each enabled job becomes one line in root's crontab, inside a block that harness
 ```
 
 Lines outside the block are yours and never touched; they are listed read-only as "external" jobs. If the
-closing line of the block gets deleted by hand, only the `maxxing cron run` lines are treated as managed: your own
-lines after it are kept.
-From a terminal: `maxxing cron list`, `maxxing cron run <id>` (runs it in your terminal and waits),
-`maxxing cron sync` (rewrites the block), `maxxing cron deleted` (the removed jobs kept) and
-`maxxing cron restore <id>` (puts one back). Two runs of the same job never overlap.
+closing line of the block gets deleted by hand, only the `maxxing cron run` lines (`maxxing` = the earlier name of
+`pilot`, the same command: these lines never change) are treated as managed: your own lines after it are kept.
+From a terminal: `pilot cron list`, `pilot cron run <id>` (runs it in your terminal and waits),
+`pilot cron sync` (rewrites the block), `pilot cron deleted` (the removed jobs kept) and
+`pilot cron restore <id>` (puts one back). Two runs of the same job never overlap.
 
 ### Memory and time limits
 
@@ -110,7 +110,7 @@ A scheduled run starts exactly like **Run now**: in its own systemd unit (`maxxi
 - each job may use at most `unit_memory_max` of the RAM (default 75 %, the same cap as a session);
 - all the jobs running at the same time share one budget, `jobs_memory_max` (default 75 % of the RAM, the
   `maxxing-jobs.slice` unit). To change it, set `jobs_memory_max` in `/var/lib/claude-maxxing/config.json`
-  (`"3G"`, `"50%"`, or `""` for none), then run `maxxing init`;
+  (`"3G"`, `"50%"`, or `""` for none), then run `pilot init`;
 - past its timeout, a shell job gets a stop signal, then 5 seconds later everything it started is killed, even a
   program that ignores the stop signal.
 

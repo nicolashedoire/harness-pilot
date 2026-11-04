@@ -13,6 +13,37 @@ while a105-a107 went straight to `main`. No code change in this commit: version 
 CHANGELOG entry summarises a103 + a104 because installs on `stable` jump from a107 and `maxxing update` only prints
 the headings above the installed version.
 
+### Current project changes (unreleased): product skills `maxxing-*` -> `pilot-*`, command `pilot`
+
+- Skills renamed (folders, front matter `name:`, every cross-reference in skills, templates, docs, code, tests):
+  setup, doctor, telegram, backup, tasks, mcp, customize, infra keep their suffix (`maxxing-x` -> `pilot-x`);
+  `maxxing-cron` -> `pilot-crons`, `maxxing-feed` -> `pilot-notifications`, `maxxing-extension` -> `pilot-widgets-pages`.
+  Mapping: `server/maxxing/renames.py` `SKILL_RENAMES` (keep every pair). The other skills keep their names.
+  Skill texts name the product `harness-pilot` and show `pilot ...` commands (one line per skill: `maxxing` still works).
+- `cmd_core.install_skills()`: product skills = `PRODUCT_SKILL_PREFIXES` (`pilot-`, `maxxing-`) + `PRODUCT_SKILLS_EXTRA`
+  (`is_product_skill()`). Upgrade: the new folders are installed, the old copies listed in install.json `skills` are
+  deleted (as any obsolete product skill), an old-named folder that is not listed (manual copy, install older than the
+  manifest) is moved to `<state>/trash/skills/` (reported in `backed_up`). Test: `test_renames.py`.
+- `renames.migrate(ws)`, run by every `init` after the default jobs (report key `renamed: {files, jobs}`, printed when
+  not empty): exact old skill names -> new ones, only in product text - a workspace line copied from a template whose
+  renamed text equals a line of the current rendered template (CLI name and product name ignored in the comparison;
+  starter packs mapped to `projects/<project>` and `<project>-N`), and job prompts equal, once renamed, to a shipped
+  prompt (`COMPACTION_JOB`, new `cmd_core.MORNING_TASKS_PROMPT`, packs' `crons[].prompt`). User-written lines and job
+  prompts are untouched (left to Claude with the user). Idempotent; atomic writes keep the file mode.
+- Command `pilot`: pyproject `[project.scripts]` has `pilot` and `maxxing` -> `maxxing.cli:main` (no uv.lock change;
+  `uv sync` creates `.venv/bin/pilot`). argparse `prog` = the name called (`cli.prog_name()`, `pilot` for `python -m
+  maxxing`); description names the alias. `cmd_core.ensure_cli_alias()` (every init, report key `cli`): symlink
+  `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing` next to install.sh's `BIN_LINK` (venv link or state-dir wrapper:
+  same program, same state); never replaces a foreign `pilot`; skipped with `MAXXING_SPAWN=direct` or without
+  BIN_LINK. `uninstall` removes PILOT_LINK only when it is that link. Unchanged on purpose: crontab lines and default
+  job commands (`crons.maxxing_bin()`), `python -m maxxing`, the package, `MAXXING_*`, state paths, unit names
+  (`maxxing-cron-<id>`, `maxxing-<sid8>`), User-Agents. `scripts/dev-local.sh` runs `uv run pilot`; install.sh's
+  final hints show `pilot`; `conftest.py` points BIN_LINK / PILOT_LINK into tmp for every test.
+- `web/src/features/infra/InfraPage.tsx` ("Ask Claude" text: `pilot infra list --json`, skill `pilot-infra`): source
+  only, `web/dist` not rebuilt in this change (the next build picks it up).
+- `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old skill name back
+  outside the history files (CHANGELOG.md, this file, docs/upgrade/<version>.md): re-apply the rename there.
+
 ## 2.0.0-alpha.107 - 2026-11-03
 
 Audit fixes (Radar, one commit each with its test): idle compaction settings read defensively; crons never save over

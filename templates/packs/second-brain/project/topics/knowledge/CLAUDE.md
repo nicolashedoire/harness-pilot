@@ -48,6 +48,6 @@ note on sleep", "make a note on compound interest from what we just discussed".
 
 ## Automations
 
-- No job is created by this pack. On request (`maxxing-cron` skill): a monthly "gardening" run
+- No job is created by this pack. On request (`pilot-crons` skill): a monthly "gardening" run
   listing orphan notes, duplicates and notes marked `(to check)`, or a weekly "resurface" message
   with one older note to reread.

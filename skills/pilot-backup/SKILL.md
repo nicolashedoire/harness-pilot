@@ -1,6 +1,6 @@
 ---
-name: maxxing-backup
-description: Configure, run, check or restore the Harness Maxxing memory backup (private GitHub repository), explain what is saved and the secret scanner, and move an installation to a new server. Use when the user mentions backup, restore, losing the server, migration, or the backup check fails.
+name: pilot-backup
+description: Configure, run, check or restore the harness-pilot memory backup (private GitHub repository), explain what is saved and the secret scanner, and move an installation to a new server. Use when the user mentions backup, restore, losing the server, migration, or the backup check fails.
 ---
 
 # Memory backup
@@ -28,15 +28,16 @@ The push is also refused if the repository is (or became) public.
 3. Run a first backup and check the commit on GitHub.
 
 ## Operate
+Server command: `pilot` (`maxxing`, its earlier name, still works).
 ```bash
-maxxing backup status      # repo, private, schedule, last run (at, ok, commit, files, error)
-maxxing backup run         # back up now
-maxxing doctor             # "backup" check warns if the last success is older than 48 h
+pilot backup status      # repo, private, schedule, last run (at, ok, commit, files, error)
+pilot backup run         # back up now
+pilot doctor             # "backup" check warns if the last success is older than 48 h
 ```
 Schedule and whitelist: Settings -> Backup. History: Settings -> Backup -> history.
 
 ## Restore
-- Same server, files damaged: Settings -> Backup -> Restore (or `maxxing backup restore`). Current
+- Same server, files damaged: Settings -> Backup -> Restore (or `pilot backup restore`). Current
   files are moved to the trash first; only whitelisted files are written.
 - A single older version of one file: the repo is plain git - browse it on GitHub (history of the
   file) and copy the content back.
@@ -57,4 +58,4 @@ one server - stop the old one first), re-enable the backup.
 | 401 / 403 from GitHub | token expired or lacks Contents: write on that repo -> new token in Settings -> Backup |
 | repo is public | make it private on GitHub, then run again |
 | secret detected in `<file>` | remove it from the file (keep only the key name), run again |
-| non-fast-forward | the repo was edited elsewhere -> `maxxing backup run` again; ask before forcing anything |
+| non-fast-forward | the repo was edited elsewhere -> `pilot backup run` again; ask before forcing anything |

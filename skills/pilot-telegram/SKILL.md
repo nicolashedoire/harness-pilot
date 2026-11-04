@@ -1,11 +1,11 @@
 ---
-name: maxxing-telegram
-description: Explain, configure or troubleshoot the Harness Maxxing Telegram bridge - creating the bot with BotFather, linking the chat, one thread per open session, starting sessions from the phone, sending messages and files, cron reports and sign-in alerts. Use when the user mentions Telegram, the bot, threads, or phone notifications.
+name: pilot-telegram
+description: Explain, configure or troubleshoot the harness-pilot Telegram bridge - creating the bot with BotFather, linking the chat, one thread per open session, starting sessions from the phone, sending messages and files, cron reports and sign-in alerts. Use when the user mentions Telegram, the bot, threads, or phone notifications.
 ---
 
 # Telegram bridge
 
-Harness Maxxing has a built-in Telegram gateway (no separate bot program). One bot, one linked
+harness-pilot has a built-in Telegram gateway (no separate bot program). One bot, one linked
 private chat that **mirrors the Sessions page: one thread per open session** (named
 `<topic> · <title>`), plus "Crons" (job reports) and "Alerts" (sign-in alerts). A thread IS the
 session: continue it from the web UI or the phone. Open sessions = not archived, not started by a
@@ -51,10 +51,11 @@ it is now in the conversation log (rotate with BotFather `/revoke` if needed).
   the mirrored answers ring instead).
 
 ## Check / troubleshoot
+Server command: `pilot` (`maxxing`, its earlier name, still works).
 ```bash
-maxxing telegram status        # configured, bot, chat, poller running + last answer from Telegram, pending link, poll error, sync error, threads
-maxxing telegram test          # sends a test message + checks poller and webhook (exit 1 on a problem)
-maxxing doctor                 # warns: poller stopped / no getUpdates for 5 min, token rejected, sync failed
+pilot telegram status        # configured, bot, chat, poller running + last answer from Telegram, pending link, poll error, sync error, threads
+pilot telegram test          # sends a test message + checks poller and webhook (exit 1 on a problem)
+pilot doctor                 # warns: poller stopped / no getUpdates for 5 min, token rejected, sync failed
 journalctl -u claude-maxxing -n 100 --no-pager | grep -i telegram
 ```
 `poll_error` (the poller: 401 `token_rejected`, 409 `conflict`, `unreachable`) and `sync_error` (thread sync)

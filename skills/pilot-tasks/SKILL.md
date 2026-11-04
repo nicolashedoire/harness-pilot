@@ -1,11 +1,11 @@
 ---
-name: maxxing-tasks
-description: Read or edit the Harness Maxxing task board (<workspace>/tasks.json) safely - add, update, move, complete or list tasks and task projects. Use when the user talks about their tasks, to-do list, kanban, what is due today, or asks to add/close a task.
+name: pilot-tasks
+description: Read or edit the harness-pilot task board (<workspace>/tasks.json) safely - add, update, move, complete or list tasks and task projects. Use when the user talks about their tasks, to-do list, kanban, what is due today, or asks to add/close a task.
 ---
 
 # Tasks (tasks.json)
 
-The Tasks page of the UI reads `<workspace>/tasks.json` (workspace from `maxxing status`, here
+The Tasks page of the UI reads `<workspace>/tasks.json` (workspace from `pilot status`, here
 `{{WORKSPACE}}/tasks.json`). The server re-reads the file when it changes, so your edits show up
 in the UI within seconds.
 
@@ -24,7 +24,7 @@ in the UI within seconds.
 ```
 - `status`: `todo` | `doing` | `done`. `priority`: 0 (none) … 3 (urgent). `due`: `YYYY-MM-DD` or null.
 - `project_id` refers to `projects[].id`. Every workspace project has its task project, linked by
-  `"workspace": "<project folder name>"` (created by Harness, renamed with the project): to file a task under
+  `"workspace": "<project folder name>"` (created by harness-pilot, renamed with the project): to file a task under
   workspace project `acme`, use the id of the project whose `workspace` is `acme`. Projects without `workspace`
   are free projects (e.g. "Personal"); a task may also have no project. `hidden: true` = left out of the
   page's projects bar. Never delete a linked project.
@@ -55,4 +55,4 @@ tmp = p + ".tmp"; json.dump(d, open(tmp, "w"), indent=2, ensure_ascii=False); os
 
 ## Answering questions
 "What is due today?" -> tasks with `status != done` and `due <= today` (in the configured time zone,
-`maxxing status`/config), overdue first, then by priority. Quote titles, keep it short.
+`pilot status`/config), overdue first, then by priority. Quote titles, keep it short.

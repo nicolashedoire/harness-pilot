@@ -51,13 +51,13 @@ signing secret if you have it, **Create**: copy the URL into the service. The di
 ## From any script
 
 ```bash
-maxxing feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
+pilot feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
   --body "From billing@acme.example" --dedupe "msg-1234"
 ```
 
 `--level` info | success | warning | error · `--source` short name · `--url` link · `--dedupe KEY`
 (the same key twice is ignored) · `--group KEY` (fold repeats) · `--quiet` (never to Telegram).
-`maxxing feed list`, `maxxing feed read-all`. Run the script with a cron job.
+`pilot feed list`, `pilot feed read-all`. Run the script with a cron job.
 
 Just ask Claude: *"notify me when an e-mail from my accountant arrives"*, *"tell me when the site is
 down"*, *"connect my Shopify orders"* - it writes the script and the job, or sets up the webhook.

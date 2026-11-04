@@ -1,6 +1,6 @@
 ---
-name: maxxing-feed
-description: Send things to the Harness Maxxing notifications feed (dashboard panel + optional Telegram "Notifications" thread) instead of chat messages. Use when the user says "notify me when…", "tell me if…", "alert me", "keep an eye on…", wants sales / orders / deployments / important e-mails / stock / any script result reported, or asks to connect Stripe, Shopify, GitHub or a webhook.
+name: pilot-notifications
+description: Send things to the harness-pilot notifications feed (dashboard panel + optional Telegram "Notifications" thread) instead of chat messages. Use when the user says "notify me when…", "tell me if…", "alert me", "keep an eye on…", wants sales / orders / deployments / important e-mails / stock / any script result reported, or asks to connect Stripe, Shopify, GitHub or a webhook.
 ---
 
 # Notifications feed
@@ -14,14 +14,15 @@ Docs: `docs/user/24-feed.md` (Settings -> Docs -> Notifications).
 | The thing to watch | Do this |
 |---|---|
 | A service that sends webhooks (Stripe, Shopify, GitHub, or any JSON) **and the server has a domain (HTTPS)** | Settings -> Notifications -> **Add a webhook** (or the API below) and paste its URL into the service, with the signing secret |
-| Anything else (mail box, an API without webhooks, a website, a file, a computation) | a small script + a cron job that runs it and calls `maxxing feed post` only when something matters |
+| Anything else (mail box, an API without webhooks, a website, a file, a computation) | a small script + a cron job that runs it and calls `pilot feed post` only when something matters |
 | Cron jobs, updates, sign-ins | nothing to do: they are in the feed already |
 
 Without a domain (Tailscale only), services cannot reach webhooks: use the script way.
 
-## maxxing feed post
+## pilot feed post
+Server command: `pilot` (`maxxing`, its earlier name, still works).
 ```bash
-maxxing feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
+pilot feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
   --body "From billing@acme.example" --url "https://mail.example.com/..." --dedupe "msg-<message-id>"
 ```
 - `--level` info | success | warning | error. Auto Telegram rule: error rings, warning is silent,
@@ -31,11 +32,11 @@ maxxing feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level w
   same item again (message id, order id, date of the check).
 - `--group KEY`: repeats fold into one unread row ("Backups OK x7") - for routine successes.
 - `--url`: https://... or an app path (`/files?path={{WORKSPACE}}/...`, `/crons?job=<id>`).
-- `--quiet`: never to Telegram. `maxxing feed list [--unread]`, `maxxing feed read-all`.
+- `--quiet`: never to Telegram. `pilot feed list [--unread]`, `pilot feed read-all`.
 
 Script rules: post only what the user asked for (filter in the script, e.g. only mails from these
 senders or with these words); keep the state needed for dedupe; never post secrets; run it with
-`maxxing cron` (see the maxxing-cron skill), `notify: never` on the job (the feed is the report).
+`pilot cron` (see the pilot-crons skill), `notify: never` on the job (the feed is the report).
 
 ## Webhooks through the API (local, with the admin cookie) or the UI
 `POST /api/feed/hooks {name, kind: stripe|shopify|github|generic, secret?}` -> `{url, ...}`.

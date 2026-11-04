@@ -50,7 +50,7 @@ Settings -> Keys and mention only the key name).
 - **Clean now**: starts the compaction immediately, in a session at the workspace root that you
   can watch.
 - The list shows every `memory.md` with its line count; files over the limit are in red.
-- From a shell: `maxxing memory` prints the same list.
+- From a shell: `pilot memory` prints the same list.
 
 ## Editing memory yourself
 

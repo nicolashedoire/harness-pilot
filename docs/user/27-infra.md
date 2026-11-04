@@ -96,7 +96,7 @@ seen on a real account: if a line shows an error, ask Claude from that line (it 
   server's keys is accepted there, the window gives you one line to run on that server, then **Try again**.
 - In the panel of a connected server: change the **name shown** (the internal name, used in links, never changes) or
   **Disconnect** it (nothing changes on the server).
-- From the terminal: `maxxing infra server connect <IP or Hostinger VPS id>`, `server rename NAME "Label"`.
+- From the terminal: `pilot infra server connect <IP or Hostinger VPS id>`, `server rename NAME "Label"`.
 
 harness-pilot only reads the other servers (sites, ports and services, Docker, databases, buckets, disk, memory). The
 server needs `python3` (every usual Linux has it).
@@ -114,7 +114,7 @@ auto-renewed).
 
 ## Create things on this server
 
-Ask Claude in plain words; it follows a fixed recipe (skill `maxxing-infra`, command `maxxing infra`) so everything
+Ask Claude in plain words; it follows a fixed recipe (skill `pilot-infra`, command `pilot infra`) so everything
 is done the same way, checked before it is applied, and appears on the page:
 
 - **"Put this folder online"** -> `https://<your harness-pilot address>/<name>/`, at once, no DNS. These pages run
@@ -129,7 +129,7 @@ is done the same way, checked before it is applied, and appears on the page:
 - **"Create a bucket"** -> S3 storage on this server (Garage), its keys in **Keys** (`S3_<NAME>_...`), optionally
   public at `https://<your harness-pilot address>/<name>/`. Files stay on this disk: for big public files Cloudflare R2 is
   often better, Claude says so.
-- **"Add my other server 203.0.113.7"** -> Claude connects it (`maxxing infra server connect`); if it does not
+- **"Add my other server 203.0.113.7"** -> Claude connects it (`pilot infra server connect`); if it does not
   accept a key of this server yet, Claude tells you the line to run there.
 
 ## In conversations
@@ -148,14 +148,14 @@ Lines: `site`, `database`, `bucket`, `domain`, `server`, `worker`, `pages`, `id`
 
 ## Terminal
 
-`maxxing infra status`, `maxxing infra list [--kind site] [--json]`, `maxxing infra refresh`, and the recipes:
+`pilot infra status`, `pilot infra list [--kind site] [--json]`, `pilot infra refresh`, and the recipes:
 `site add|remove|list`, `db install|create|sqlite|backup`, `bucket install|create`, `server connect|add|rename|remove|list`,
 `domain add|remove|list`,
-`annotate`. See `maxxing infra --help` and the CLI reference.
+`annotate`. See `pilot infra --help` and the CLI reference.
 
 ## Safety of `infra.json`
 
 The servers of `<workspace>/infra.json` are reached through `ssh` by the server itself, so Claude may not edit that
-file (it is in the deny rules of every turn, like the folder settings); use `maxxing infra server add` or the page.
+file (it is in the deny rules of every turn, like the folder settings); use `pilot infra server add` or the page.
 An entry written by hand that the CLI would refuse (odd user, host or key path) is ignored. One provider that does
 not answer (Cloudflare, Hostinger, a server) only leaves its own section empty: checks and alerts of the rest go on.
