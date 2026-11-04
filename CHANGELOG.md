@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The **Studio** has its settings (the gear at the top): let the creations that declare no network and no key go live by themselves (off by default; you get a notification), and choose how long versions are kept (90 days, and always the 10 newest, by default).
 - The notifications of the Studio (a creation waiting for your approval, one added without asking) are now worded in your language, and have their own row in the notification settings: they ring by default.
 - When an agent proposes a widget, a page or a block, its answer shows a violet card: what it is, what it does and asks for, its files and its check, a preview run only when you ask, and **Add to the dashboard**, **Ask for a change** (written in the card, sent to the agent) or **Open in the Studio**. It updates by itself when the proposal is registered or decided.
 - Every creation in the **Studio** has its page: its versions, newest first, with what the agent did, in which session, how you approved it and whether it worked while it was active; **Changes** shows what each version changed and **Back here** returns to an earlier one. A broken creation shows the error with **Ask for a fix** and **Go back** to the last version that worked; files changed outside the Studio can be accepted as a new version. **History** lists the proposals of the last 30 days and what became of them.

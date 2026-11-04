@@ -4340,5 +4340,18 @@ export const en = {
   "atelier.card.loadFailed": "The proposal could not be loaded",
   "atelier.card.files": "{count} files",
   "atelier.card.files#one": "{count} file",
+  "atelier.settings.title": "Studio settings",
+  "atelier.settings.desc": "What goes live without you, and how long versions are kept.",
+  "atelier.settings.failed": "The settings could not be loaded",
+  "atelier.settings.auto": "Turn on safe creations by themselves",
+  "atelier.settings.autoDesc": "Creations that declare no network and no secret: no site on the internet, no key. They go live as soon as the agent proposes them, and a notification tells you. Everything else still waits for your approval.",
+  "atelier.settings.autoNote": "Off by default. A declaration is what the creation says it uses: its check must pass, but its server code is not locked in. Every version stays kept and can be undone from its page.",
+  "atelier.settings.keep": "Keeping versions",
+  "atelier.settings.keepDesc": "A version stays while it is younger than this or among the newest of its creation. The active version, and the one a waiting proposal builds on, are always kept.",
+  "atelier.settings.days": "Keep for (days)",
+  "atelier.settings.versions": "Always keep the newest (versions)",
+  "atelier.settings.range": "A whole number from {min} to {max}",
+  "atelier.settings.save": "Save",
+  "atelier.menu": "History and settings",
 
 }
