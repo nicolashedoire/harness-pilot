@@ -31,7 +31,29 @@ From a session's **More actions** menu, **Summary and actions** asks Codex to su
 
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
 
-Some features described below apply to Claude sessions only; Codex support is still evolving.
+## What works with Codex
+
+A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
+are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact** and
+**Hand off** ([Compact vs hand off](#compact-vs-hand-off)). It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
+unrestricted access to the computer.
+
+These features are for Claude Code only for now:
+
+- **Side questions**: not offered for Codex sessions, discussions or debates.
+- **MCP servers** (Settings → MCP): only Claude's turns load them. Codex starts without any MCP server, yours
+  (`~/.codex/config.toml`) included.
+- **Claude swarm** and the **Agent map**.
+- The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
+  does not report its context size. Compact it yourself from the session menu.
+- **Scheduled prompts** (Crons): they run with Claude Code.
+- **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
+  follows its own sandbox, which still lets it read those files.
+- The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
+- **New sessions started from Telegram** use Claude Code.
+
+**Summary and actions** works the other way round: it needs a signed-in Codex, whatever the session's agent.
 
 ## Layout
 
