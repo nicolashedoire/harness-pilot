@@ -745,6 +745,8 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `deps.vulnerable` | system | warning | `count` | `open` | – |
 | `deps.update_failed` | system | warning | `count, names` | `open` | – |
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
+| `mission.completed` | system | info | `title` | `open` | – |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
 | `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
@@ -833,6 +835,26 @@ a day, `search.db` is VACUUMed when more than 25 % of its pages are free (and it
 |---|---|---|---|
 | GET | `/api/search?q=&kinds=session,file,memory,task&limit=30` | – | `{results:[{kind, id (session id / file path / task id), path, title, snippet, at, score}], took_ms}` — every word required, as a prefix, accent-insensitive, BM25 (title x4), one result per session/file/task; `snippet` marks matches with `\u0002`…`\u0003` |
 | GET | `/api/search/stats` | – | `{counts:{session, file, memory, task}, bytes, refreshed_at}` |
+
+
+## Resident missions
+
+Authenticated owner routes, with mutations under the usual CSRF guard:
+
+| Method/path | Behavior |
+| --- | --- |
+| GET `/api/missions` | List durable mission states, assignments, session references, counters and limits |
+| POST `/api/missions` | Create draft `{title, path, goal, steps?, max_runs?, max_minutes?, max_tokens?, concurrent?, interval_minutes?, max_cycles?}`; no model call |
+| GET `/api/missions/{id}` | Mission detail |
+| PUT `/api/missions/{id}/plan` | Replace an unexecuted plan with `{steps}` |
+| POST `/api/missions/{id}/control` | `{action: "plan" | "start" | "pause" | "stop", fingerprint?: plan_fingerprint}`; plan requests read-only architect work, start requires the current plan fingerprint and explicitly authorizes those assignments and limits |
+| POST `/api/missions/{id}/steps/{step}/skip` | Explicit owner skip of an interrupted, failed or rejected step of a paused mission (409 `busy` otherwise: stopped, budget and completed are terminal) |
+
+Each step has `{id, title, role, instruction, after: earlierStepIds[]}`. IDs are unique, roles must already exist, one to eight steps, instructions up to 2000 characters. Goals are at most 2000 characters. Mission state lives under private `<state>/resident-missions/`; edits use per-mission flock and atomic writes. A worker leader processes every two seconds, launching at most two resident sessions installation-wide. Automatic processing can be disabled with `MAXXING_MISSIONS_WORKER=0` for isolated tests.
+
+Phases: draft, planning, plan_review, active, paused, completed, stopped, budget. Step states include pending, starting, running, review, complete, failed, rejected, interrupted and explicitly skipped. Planning is a counted companion launch. A mission whose `origin_state` is not the current state directory (restored or moved state) is paused with reason `restored` only when it was `active` or `planning`; other phases keep theirs. Run keys persist before process creation and reconcile tagged sessions after interruption; unknown launches wait up to 180 seconds before requiring attention, not an automatic retry. `companions.run` accepts internal purpose, launch key, timeout and guarded message launch; normal manual runs retain their behavior.
+
+Plans from agents are parsed from their full bounded assistant text, never the 200-character list preview. No automatic role adoption, PR publication or code application occurs. Reports, not patches, pass between dependent steps. New-source checks prevent repeated approved patches across cycles. Feed kinds `mission.review` and `mission.completed` use normal notification preferences. The user guide documents soft token limits, deadline latency, trusted-process boundaries and current limits.
 
 ## Agent provider catalog
 
