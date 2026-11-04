@@ -29,8 +29,15 @@ an ordinary extension: delete its folder, or turn it off in Settings -> Extensio
 ## 1. manifest.json
 
 ```json
-{"id": "notes-board", "name": "Notes board", "type": "page", "icon": "sticky-note", "version": "1.0.0"}
+{"id": "notes-board", "name": "Notes board", "type": "page", "icon": "sticky-note", "version": "1.0.0",
+ "permissions": {}}
 ```
+
+`permissions` says what the page uses beyond its own folder: the keys of Settings -> Keys its `api.py` reads
+(`"secrets": ["CRM_TOKEN"]`), the workspace files and folders it reads (`"read": ["projects/clients"]`) and the sites it
+reaches (`"network": ["api.example.com"]`). `{}` = none of them. Same rules as for widgets: see
+[Dashboard widgets](dashboard-widgets#permissions). A key the page has not been allowed to read yet makes its API
+answer `403` with `{"error": "permission_required", "permission": {"name": ...}}`: allow it in Settings -> Extensions.
 
 `name` can also be `{"en": "Notes board", "fr": "Tableau de notes"}`: the app shows the one of its language.
 `"api": 1` (optional, default 1) is the version of the extension contract the page is written for: if a future
@@ -49,7 +56,7 @@ def handle(ctx, method, path, query, body):
 
 | Argument | Value |
 |---|---|
-| `ctx` | same as for widgets: `id`, `workspace`, `state_dir`, `secret(name)`, `config` |
+| `ctx` | same as for widgets: `id`, `workspace`, `state_dir`, `secret(name)` (the keys it declares and you allowed), `config` |
 | `method` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` |
 | `path` | the part after `/api/ext/<id>/` (e.g. `notes`, `notes/42`) |
 | `query` | query-string parameters as a dict |

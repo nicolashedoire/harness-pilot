@@ -305,6 +305,11 @@ def test_preview_runs_the_draft_only_when_asked(client, mx, capsys, monkeypatch)
     assert marker.exists() and r["kind"] == "card" and r["error"] is None
     assert r["card"]["title"] == "s1" and r["card"]["blocks"][0]["value"] == "None"   # undeclared secret: None
     assert not (mx["ws"] / "extensions" / "shop").exists() and extensions.get("shop") is None
+    # approving it grants what it declares, nothing more (maxxing.permissions)
+    from maxxing import permissions
+    assert client.post(f"/api/atelier/drafts/{did}/approve").status_code == 200
+    ext = extensions.get("shop")
+    assert permissions.check_secret(ext, "SHOP") is None and permissions.check_secret(ext, "OTHER") == "undeclared"
 
 
 def test_html_widget_preview_frame(client, mx, capsys, monkeypatch):

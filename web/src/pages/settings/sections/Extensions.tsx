@@ -4,6 +4,7 @@ import { useExtensions, usePinExtension, useReloadExtensions, useToggleExtension
 import { useT } from '@/i18n'
 import { Badge, Button, EmptyState, NamedIcon, Skeleton, Switch, toast } from '@/components/ui'
 import { RuntimeErrors } from '@/features/extensions/RuntimeErrors'
+import { ExtensionPermissions } from '@/features/extensions/Permissions'
 import { AskFixButton, FixTarget } from '@/features/extensions/AskFix'
 import { SettingsCard, SectionStack } from './ui'
 
@@ -61,6 +62,7 @@ export function ExtensionsSection() {
                       <span className="font-mono break-all">{x.error}</span>
                     </p>
                   )}
+                  {!x.error && <ExtensionPermissions ext={x} />}
                   {x.error && (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5">
                       <AskFixButton ext={x} />

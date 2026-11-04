@@ -167,7 +167,7 @@ def test_html_widget_document(org):
     assert "never closed" in extcheck.check("open")["error"]
     _ext(org, "empty", {"type": "widget"}, widget_html="  \n")
     assert extcheck.check("empty")["error"] == "widget.html is empty"
-    _ext(org, "ok", {"type": "widget"}, widget_html="<p id=p></p><script>p.textContent = maxxing.theme</script>")
+    _ext(org, "ok", {"type": "widget", "permissions": {}}, widget_html="<p id=p></p><script>p.textContent = maxxing.theme</script>")
     assert extcheck.check("ok")["status"] == "ok"
 
 

@@ -2,11 +2,13 @@
 // turned on or off here; the agents are told the enabled list. Detail panel, catalogue of ideas, "create one".
 import * as React from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Bot, ChevronRight, Globe, Plus, ShieldCheck, Sparkles, TriangleAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
 import { Badge, Button, EmptyState, NamedIcon, Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle, Skeleton, Switch, Textarea, confirm } from '@/components/ui'
-import { useCreateSession, useWorkspace } from '@/lib/queries'
+import { api, ApiError } from '@/lib/api'
+import { qk, useCreateSession, workspaceQuery } from '@/lib/queries'
 import { useBlockConsent, useBlocks, useToggleBlock } from '@/features/blocks/queries'
 import { builtinDesc, categoryLabel, pluginLabel } from '@/features/blocks/labels'
 import { SAMPLES } from '@/features/blocks/samples'
@@ -30,12 +32,31 @@ const IDEAS = [
   { id: 'roadmap', icon: 'calendar-range', net: false },
 ] as const
 
-/** A session in the system topic (or the workspace root) asking harness-pilot to build a block plugin. */
+const HARNESS = { project: 'system', topic: 'harness', path: 'projects/system/topics/harness' }
+const HARNESS_DESC = 'Updates and customizations of this server'
+
+/** The topic that builds the plugin: system/harness (system/update on older workspaces), created again (with its
+ *  project) when the user deleted it - never the workspace root, where a session reaches every project's files. */
+async function ensureHarnessTopic(qc: QueryClient): Promise<string> {
+  const tree = await qc.fetchQuery(workspaceQuery())
+  const project = tree.projects.find((p) => p.name === HARNESS.project)
+  const found = project?.topics.find((x) => x.name === HARNESS.topic) ?? project?.topics.find((x) => x.name === 'update')
+  if (found) return found.path
+  const ok409 = (e: unknown) => {
+    if (!(e instanceof ApiError && e.status === 409)) throw e
+  }
+  if (!project) await api.post('/api/workspace/projects', { name: HARNESS.project }).catch(ok409)
+  await api.post(`/api/workspace/projects/${HARNESS.project}/topics`, { name: HARNESS.topic, description: HARNESS_DESC }).catch(ok409)
+  void qc.invalidateQueries({ queryKey: qk.workspace })
+  return HARNESS.path
+}
+
+/** A session in the system topic asking harness-pilot to build a block plugin. */
 function useCreatePlugin() {
   const t = useT()
   const navigate = useNavigate()
   const create = useCreateSession()
-  const { data: ws } = useWorkspace()
+  const qc = useQueryClient()
   return React.useCallback(
     async (what: string) => {
       const prompt = t('blocks.create.prompt', { what: what.trim() || t('blocks.create.what') })
@@ -50,11 +71,11 @@ function useCreatePlugin() {
         confirmText: t('blocks.create.start'),
       })
       if (!ok) return
-      const system = ws?.projects.find((p) => p.name === 'system')?.topics.find((tp) => tp.name === 'harness')
-      const s = await create.mutateAsync({ path: system?.path ?? '', message: prompt, title: t('blocks.create.sessionTitle') })
+      const path = await ensureHarnessTopic(qc)
+      const s = await create.mutateAsync({ path, message: prompt, title: t('blocks.create.sessionTitle') })
       navigate(`/sessions?session=${encodeURIComponent(s.id)}`)
     },
-    [t, ws, create, navigate],
+    [t, qc, create, navigate],
   )
 }
 

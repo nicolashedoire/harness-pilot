@@ -97,7 +97,7 @@ The id (folder name) is a lowercase slug: letters, digits, dashes. Reserved ids:
 
 ```json
 {"id": "disk-usage", "name": "Disk usage", "type": "widget", "icon": "hard-drive",
- "version": "1.0.0", "api": 1, "span": 1, "ttl": 60}
+ "version": "1.0.0", "api": 1, "span": 1, "ttl": 60, "permissions": {}}
 ```
 
 | Key | Meaning |
@@ -107,6 +107,7 @@ The id (folder name) is a lowercase slug: letters, digits, dashes. Reserved ids:
 | `icon` | an icon name in kebab-case (`gauge`, `chart-line`, `shopping-cart`, `users`, `receipt`...) from the app's set of [lucide](https://lucide.dev/icons) icons; a name the app does not ship shows a puzzle piece |
 | `span` | width in grid columns: 1, 2 or 3 |
 | `ttl` | seconds the result is cached (default 300). The refresh button bypasses it. |
+| `permissions` | what the widget uses beyond its own folder: sites, keys, workspace files (see [Permissions](#permissions)). `{}` = nothing |
 
 ### 3. api.py
 
@@ -137,10 +138,47 @@ timeout) only blocks other extensions ("extensions are busy" until it returns), 
 | `id` | the extension id |
 | `workspace` | workspace path |
 | `state_dir` | a folder reserved for this extension (cache, data) |
-| `secret(name)` | value of a key from Settings -> Keys, or `None` |
+| `secret(name)` | value of a key from Settings -> Keys (`None` when it is missing), if the extension may read it (see [Permissions](#permissions)) |
 | `config` | `{"timezone", "language", "public_url"}` |
 
-Never hard-code a token: store it in Settings -> Keys and read it with `ctx["secret"]("MY_TOKEN")`.
+Never hard-code a token: store it in Settings -> Keys, declare it in the manifest's `permissions` and read it with
+`ctx["secret"]("MY_TOKEN")`.
+
+### Permissions
+
+The manifest says what the extension uses, so you can see it before you turn it on:
+
+```json
+"permissions": {"network": ["api.example.com"], "secrets": ["SHOP_TOKEN"], "read": ["projects/shop"]}
+```
+
+| Key | Lists |
+|---|---|
+| `network` | the sites an HTML widget reaches (host names such as `api.example.com` or `*.example.com`, no `https://`, at most 8) |
+| `secrets` | the keys of Settings -> Keys that `api.py` reads with `ctx["secret"](name)` (at most 32) |
+| `read` | the files and folders of your workspace that `api.py` reads, relative to the workspace (`projects/shop`, `tasks.json`; `.` = all of it; at most 32) |
+
+Every key is optional and `"permissions": {}` means "none of them". The extension's own folder and its `state_dir`
+are always its own: never list them. A mistake in this block (a host with `https://`, a path with `..`, an unknown
+key) is shown as the extension's error. `pilot ext check` prints what an extension declares, and warns when its
+manifest has no `permissions` at all.
+
+**Keys are limited to what is declared and allowed.** `ctx["secret"](name)` returns a key only when the manifest
+lists it in `secrets` and you allowed it. The first time, the card shows **This widget asks to read the key ...**
+with **Allow** and **Refuse** (also in Settings -> Extensions, on the extension's row, and in the Atelier when you
+approve it). A key the manifest does not list, or one you refused, stops `card()` with a clear error (shown on the
+card, recorded with the extension's errors, reported by `pilot ext check`). A key added to the manifest later asks
+again; **Withdraw the permission** in Settings asks again too.
+
+**Extensions you already had keep working.** An extension that existed before permissions and has no `permissions`
+block still reads the keys it uses. The first time it reads each one, harness-pilot records it as *granted before
+permissions existed* and tells you in the notifications ("... keeps reading the keys ..."); Settings -> Extensions
+lists them on its row with **Permissions not declared**. Once its manifest gets a `permissions` block, the declared
+keys it was already reading stay allowed without asking. An extension created later with no `permissions` block
+reads no key.
+
+The other permissions are shown, not enforced yet: `read` describes the files `api.py` opens, and `network` the sites
+it reaches - `api.py` runs inside the server with its rights (see [Security](security#what-extensions-can-do)).
 
 ### 4. The Card schema
 
@@ -220,7 +258,7 @@ widget in HTML instead. Same folder, with `widget.html` instead of (or next to) 
 
 ```
 /root/maxxing/extensions/snake-widget/
-  manifest.json     {"type": "widget", "name": "Snake", "icon": "gamepad-2", "height": 300}
+  manifest.json     {"type": "widget", "name": "Snake", "icon": "gamepad-2", "height": 300, "permissions": {}}
   widget.html       one self-contained file: inline <style> and <script>
   api.py            optional: handle(ctx, method, path, query, body) for data it saves or fetches
 ```
