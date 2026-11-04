@@ -471,6 +471,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.boot()` once (every
+  enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while `integrations_paused`), then
+  `localcron.tick()` every 15 s (the current minute, claimed in `<state>/local-cron-minutes.json`; never `@reboot`).
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
