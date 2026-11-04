@@ -36,7 +36,7 @@ uv run --locked python - <<'PY'
 import os
 import sys
 from pathlib import Path
-from maxxing import config, cmd_core
+from maxxing import config, cmd_core, renames
 
 ws = Path(os.environ['HARNESS_PILOT_WORKSPACE']).resolve()
 if not config.config_path().exists():
@@ -45,6 +45,8 @@ if not config.config_path().exists():
                         'permission_mode': 'default', 'claude_auto_update': False,
                         'auto_update': False})
 cmd_core.copy_templates(ws)
+renames.migrate_workspace(ws)                  # original product lines only; custom instructions stay intact
+renames.migrate_cli_workspace(ws)              # no default-job creation or prompt migration in local setup
 try:
     cmd_core.install_skills()                   # like `pilot init`, into MAXXING_SKILLS_DIR and MAXXING_CODEX_SKILLS_DIR
 except Exception as e:                          # never keeps the server from starting

@@ -783,6 +783,13 @@ prompts written or edited by the user are left (upgrade notes ask Claude to prop
 Idempotent, runs on every init (cheap: only template-mapped files that still contain an old name are read
 twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old name back.
 
+`renames.migrate_cli_workspace(ws)` also refreshes legacy CLI references in template-owned `CLAUDE.md` lines.
+It matches the rendered current template, including the two known earlier alias-note variants, and leaves edited
+or custom lines alone. Paths, Python module names and service identifiers remain unchanged. Symlinked files or
+parents are skipped. `migrate(ws)` includes these paths in its existing `files` list after skill migration;
+local setup runs the two workspace-only migrations without changing scheduled jobs. Rewrites are atomic and
+keep permissions. Existing conversation history is not rewritten.
+
 ## Service sandboxing (`pilot harden`)
 - `cmd_core.HARDENING` = drop-in `/etc/systemd/system/claude-maxxing.service.d/10-hardening.conf`
   (`hardening_path()` derives it from `UNIT_PATH`); install.sh writes the byte-identical text (a test checks it).
