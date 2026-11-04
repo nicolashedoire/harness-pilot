@@ -1,18 +1,21 @@
 // Settings -> Appearance: theme, colour palette (presets, accent swatches + any colour, button style, background),
-// a live preview, export / import of the palette as a theme file, then fonts and density.
-// The palette is a Theme object (src/lib/theme, docs/dev/DESIGN.md "Themes") kept by stores/ui.ts.
+// a live preview, share / export of the palette, My themes (saved themes, import from a file or a code, the theme
+// generator at ?create=1), then fonts and density.
+// The palette is a Theme object (src/lib/theme, docs/dev/DESIGN.md "Themes") kept by stores/ui.ts; the shared
+// theme blocks (previews, review, share, generator) live in src/features/themes.
 import * as React from 'react'
-import { AlertTriangle, Check, CheckCircle2, Download, Monitor, Moon, Plus, Sun, Upload } from 'lucide-react'
+import { useSearchParams } from 'react-router'
+import { AlertTriangle, Check, Download, Monitor, Moon, Plus, Share2, Sun } from 'lucide-react'
 import { useUI, PRESETS, resolveTheme, type Density, type Palette, type Theme } from '@/stores/ui'
-import {
-  ACCENTS, ACCENT_SWATCH, deriveTokens, expandTheme, isAccentName, matchPreset, normalizeHex, parseThemeFile, seedContrast, themeIssues,
-  type ButtonStyle, type ContrastIssue, type Mode, type ThemeReport, type Tint, type TokenMap,
-} from '@/lib/theme'
-import { cn, slugify } from '@/lib/utils'
+import { ACCENTS, ACCENT_SWATCH, deriveTokens, isAccentName, matchPreset, normalizeHex, seedContrast, themeIssues, type ButtonStyle, type Mode, type Tint } from '@/lib/theme'
+import { cn } from '@/lib/utils'
 import { useT, type TKey } from '@/i18n'
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Segmented, Switch, Tooltip, toast } from '@/components/ui'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Button, Segmented, Tooltip } from '@/components/ui'
 import { SettingRow } from '@/features/common'
+import { ContrastStatus, downloadTheme, MiniPreview, PalettePreview, themeName } from '@/features/themes/Preview'
+import { ShareThemeDialog } from '@/features/themes/ShareDialog'
+import { MyThemesCard } from '@/features/themes/MyThemes'
+import { ThemeCreator } from '@/features/themes/Creator'
 import { SettingsCard, SectionStack } from './ui'
 import { FontPickers } from './General'
 
@@ -27,21 +30,6 @@ function useMode(): Mode {
     return () => mq.removeEventListener('change', force)
   }, [theme])
   return resolveTheme(theme)
-}
-
-const presetName = (t: (k: TKey) => string, p: Palette) => (matchPreset(p) ? t(`colors.preset.${matchPreset(p)!.id}` as TKey) : p.name || t('colors.preset.custom'))
-
-/** Mini drawing of a palette: page, a card line, the filled button and an accent dot. */
-function MiniPreview({ tokens, className }: { tokens: TokenMap; className?: string }) {
-  return (
-    <span aria-hidden className={cn('flex h-16 flex-col justify-between rounded-lg border p-2', className)} style={{ background: tokens.background, borderColor: tokens.border }}>
-      <span className="h-2.5 w-[70%] rounded-[3px]" style={{ background: tokens.card, boxShadow: `inset 0 0 0 1px ${tokens.border}` }} />
-      <span className="flex items-center gap-1">
-        <span className="h-3.5 w-9 rounded-[4px]" style={{ background: tokens.action }} />
-        <span className="size-[7px] rounded-full" style={{ background: tokens.primary }} />
-      </span>
-    </span>
-  )
 }
 
 function PresetCards({ mode }: { mode: Mode }) {
@@ -180,164 +168,20 @@ export function AccentPicker() {
   )
 }
 
-function ContrastStatus({ issues }: { issues: ContrastIssue[] }) {
-  const t = useT()
-  if (!issues.length)
-    return (
-      <span className="flex items-center gap-2 text-[13px] text-success" data-testid="contrast-ok">
-        <CheckCircle2 className="size-4" /> {t('colors.contrastOk')}
-      </span>
-    )
-  return (
-    <details className="text-[13px]" data-testid="contrast-issues">
-      <summary className="flex cursor-pointer items-center gap-2 text-warning">
-        <AlertTriangle className="size-4" /> {t('colors.contrastIssues', { count: issues.length })}
-      </summary>
-      <ul className="mt-2 grid gap-1 text-xs text-muted-foreground">
-        {issues.map((i) => (
-          <li key={`${i.mode}${i.fg}${i.bg}`}>{t('colors.contrastPair', { fg: i.fg, bg: i.bg, mode: t(`theme.${i.mode}` as TKey), ratio: i.ratio, min: i.min })}</li>
-        ))}
-      </ul>
-    </details>
-  )
-}
-
-/** The real components in the current palette (or in `tokens`, for a theme not applied yet). */
-function PalettePreview({ tokens, className }: { tokens?: TokenMap; className?: string }) {
-  const t = useT()
-  const [sound, setSound] = React.useState(true)
-  const [done, setDone] = React.useState(true)
-  const [mode, setMode] = React.useState<'on' | 'off'>('on')
-  const style = tokens ? (Object.fromEntries(Object.entries(tokens).map(([k, v]) => [`--${k}`, v])) as React.CSSProperties) : undefined
-  return (
-    <div style={style} className={cn('grid gap-3 rounded-xl border bg-sidebar p-4 text-foreground [accent-color:var(--action)]', className)} data-testid="palette-preview">
-      <h4 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t('colors.preview')}</h4>
-      <div className="flex gap-2.5 rounded-lg border bg-card p-3">
-        <span aria-hidden className="mt-px size-4 shrink-0 rounded-full border-2 border-destructive" />
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          <span className="text-[13px] font-semibold">{t('colors.previewNotif')}</span>
-          <span className="text-xs text-muted-foreground">{t('colors.previewMeta')}</span>
-          <span className="mt-2 flex flex-wrap gap-1.5">
-            <Button size="sm" tabIndex={-1}>{t('colors.previewRetry')}</Button>
-            <Button size="sm" variant="outline" tabIndex={-1}>{t('colors.previewOpen')}</Button>
-          </span>
-        </div>
-        <span aria-label={t('colors.unread')} className="mt-1.5 size-[7px] shrink-0 rounded-full bg-primary" />
-      </div>
-      <div className="grid gap-3 rounded-lg border bg-card p-3 text-[13px]">
-        <label className="flex items-center gap-2.5">
-          <span className="flex-1">{t('colors.previewSound')}</span>
-          <Switch checked={sound} onCheckedChange={setSound} />
-        </label>
-        <label className="flex items-center gap-2.5">
-          <Checkbox checked={done} onCheckedChange={(c) => setDone(!!c)} />
-          <span>{t('colors.previewDone')}</span>
-        </label>
-        <div role="radiogroup" aria-label={t('colors.previewSound')} className="flex flex-wrap gap-4">
-          {(['on', 'off'] as const).map((v) => (
-            <label key={v} className="flex items-center gap-2">
-              <input type="radio" name={tokens ? 'preview-import' : 'preview'} checked={mode === v} onChange={() => setMode(v)} className="size-4" />
-              {t(v === 'on' ? 'colors.previewWithSound' : 'colors.previewSilent')}
-            </label>
-          ))}
-        </div>
-        <a href="/docs" onClick={(e) => e.preventDefault()} className="w-fit text-primary underline underline-offset-2">
-          {t('colors.previewLink')}
-        </a>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button tabIndex={-1}>{t('colors.previewNew')}</Button>
-        <Button variant="outline" tabIndex={-1}>{t('common.cancel')}</Button>
-      </div>
-    </div>
-  )
-}
-
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-/** Export the palette as `<name>.theme.json` (every token written out), import one (validate -> preview -> apply). */
-function ThemeFileButtons({ mode }: { mode: Mode }) {
+/** Share the palette (Team, file, theme code) and export it as a file. */
+function PaletteActions() {
   const t = useT()
   const palette = useUI((s) => s.palette)
-  const input = React.useRef<HTMLInputElement>(null)
-  const [pending, setPending] = React.useState<{ theme: Palette; report: ThemeReport } | null>(null)
-  const exportIt = () => {
-    const name = presetName(t, palette)
-    const file = { ...expandTheme(palette), name }
-    download(`${slugify(name) || 'palette'}.theme.json`, `${JSON.stringify(file, null, 2)}\n`)
-  }
-  const onFile = async (f: File | undefined) => {
-    if (!f) return
-    const parsed = parseThemeFile(await f.text())
-    if (!parsed.theme) toast.error(t('colors.importBad'))
-    else setPending({ theme: parsed.theme, report: parsed.report })
-  }
+  const [share, setShare] = React.useState(false)
   return (
     <>
-      <Button variant="outline" size="sm" onClick={exportIt} data-testid="palette-export">
+      <Button variant="outline" size="sm" onClick={() => setShare(true)} data-testid="palette-share">
+        <Share2 /> {t('themegen.share')}
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => downloadTheme(palette, themeName(t, palette))} data-testid="palette-export">
         <Download /> {t('colors.export')}
       </Button>
-      <Button variant="outline" size="sm" onClick={() => input.current?.click()} data-testid="palette-import">
-        <Upload /> {t('colors.import')}
-      </Button>
-      <input
-        ref={input}
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={(e) => {
-          void onFile(e.target.files?.[0])
-          e.target.value = ''
-        }}
-      />
-      <Dialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('colors.importTitle')}</DialogTitle>
-            <DialogDescription>
-              {pending && (pending.theme.name || t('colors.preset.custom'))}
-              {pending?.theme.author ? ` · ${t('colors.by', { author: pending.theme.author })}` : ''}
-            </DialogDescription>
-          </DialogHeader>
-          {pending && (
-            <div className="grid gap-3">
-              {pending.theme.description && <p className="text-[13px] text-muted-foreground">{pending.theme.description}</p>}
-              <PalettePreview tokens={deriveTokens(pending.theme, mode)} />
-              {pending.report.errors.length > 0 && (
-                <details className="text-[13px]">
-                  <summary className="cursor-pointer text-warning">{t('colors.importErrors', { count: pending.report.errors.length })}</summary>
-                  <ul className="mt-1 grid gap-0.5 font-mono text-xs text-muted-foreground">
-                    {pending.report.errors.map((e) => <li key={e}>{e}</li>)}
-                  </ul>
-                </details>
-              )}
-              {pending.report.fixed.length > 0 && <p className="text-[13px] text-muted-foreground">{t('colors.importFixed', { count: pending.report.fixed.length })}</p>}
-              <ContrastStatus issues={pending.report.issues} />
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPending(null)}>{t('common.cancel')}</Button>
-            <Button
-              onClick={() => {
-                if (pending) useUI.getState().setPalette(pending.theme)
-                setPending(null)
-              }}
-              data-testid="palette-import-apply"
-            >
-              {t('colors.importApply')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ShareThemeDialog theme={share ? palette : null} open={share} onOpenChange={setShare} />
     </>
   )
 }
@@ -348,7 +192,7 @@ function ColoursCard() {
   const ui = useUI()
   const issues = React.useMemo(() => themeIssues(ui.palette), [ui.palette])
   return (
-    <SettingsCard title={t('colors.title')} description={t('colors.desc')} actions={<ThemeFileButtons mode={mode} />}>
+    <SettingsCard title={t('colors.title')} description={t('colors.desc')} actions={<PaletteActions />}>
       <div className="grid gap-5">
         <SettingRow label={t('shell.theme')} className="py-0">
           <Segmented<Theme>
@@ -426,6 +270,9 @@ function TextCard() {
 
 export function AppearanceSection() {
   const t = useT()
+  const mode = useMode()
+  const [params] = useSearchParams()
+  if (params.get('create')) return <ThemeCreator backTo="/settings/appearance" />
   return (
     <SectionStack>
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -434,6 +281,7 @@ export function AppearanceSection() {
           <PalettePreview />
         </aside>
       </div>
+      <MyThemesCard mode={mode} onCreate="/settings/appearance?create=1" />
       <TextCard />
     </SectionStack>
   )
