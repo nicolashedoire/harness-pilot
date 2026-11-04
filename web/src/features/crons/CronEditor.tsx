@@ -1,8 +1,9 @@
 // Job editor (create / edit / duplicate). Errors from the server are mapped to their field.
 import * as React from 'react'
 import { Bot, Terminal } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useT } from '@/i18n'
-import { isApiError } from '@/lib/api'
+import { api, isApiError } from '@/lib/api'
 import { useClaudeStatus, useSaveCron, useTelegram, useWorkspace } from '@/lib/queries'
 import type { Cron, CronKind, CronNotify, CronPermissionMode } from '@/lib/types'
 import {
@@ -26,6 +27,7 @@ import {
 } from '@/components/ui'
 import { Combobox } from '@/components/ui/combobox'
 import { Callout } from '@/features/common'
+import { AGENT_NAME, AgentIcon } from '@/features/agents/AgentIcon'
 import { SchedulePicker } from './SchedulePicker'
 import { UNIT_S, splitTimeout, type TimeoutUnit } from './schedule'
 
@@ -71,7 +73,7 @@ function initial(seed: EditorSeed, copyName: (n: string) => string): Form {
     name: seed.mode === 'duplicate' ? copyName(j.name) : j.name,
     kind: j.kind,
     command: j.command,
-    topic_path: j.kind === 'claude' ? j.topic_path : null,
+    topic_path: j.kind !== 'shell' ? j.topic_path : null,
     prompt: j.prompt,
     model: j.model,
     reuse_session: j.reuse_session,
@@ -122,6 +124,8 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
   const { data: claude } = useClaudeStatus()
   const { data: ws } = useWorkspace()
   const { data: tg } = useTelegram()
+  // a Codex job runs with the server's Codex sign-in (the same check as Settings -> Codex)
+  const codex = useQuery({ queryKey: ['codex-status'], queryFn: () => api.get<{ authenticated: boolean | null }>('/api/system/codex'), staleTime: 10_000, enabled: f.kind === 'codex' })
   const set = <K extends keyof Form>(k: K, v: Form[K]) => {
     setF((cur) => ({ ...cur, [k]: v }))
     const fk = (k === 'topic_path' ? 'topic' : k === 'unit' ? 'timeout' : k) as Field
@@ -148,7 +152,7 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
     const e: Partial<Record<Field, string>> = {}
     if (!f.name.trim()) e.name = t('crons.err.name')
     if (f.kind === 'shell' && !f.command.trim()) e.command = t('crons.err.command')
-    if (f.kind === 'claude') {
+    if (f.kind !== 'shell') {
       if (!f.prompt.trim()) e.prompt = t('crons.err.prompt')
       if (f.topic_path === null) e.topic = t('crons.err.topic')
     }
@@ -197,8 +201,8 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
       <div className="grid gap-2">
         <Label>{t('crons.field.kind')}</Label>
         <Segmented<CronKind>
-          value={f.kind}
-          onChange={(k) => set('kind', k)}
+          value={f.kind === 'codex' ? 'claude' : f.kind}
+          onChange={(k) => set('kind', k === 'claude' && f.kind === 'codex' ? 'codex' : k)}
           aria-label={t('crons.field.kind')}
           options={[
             { value: 'shell', label: t('crons.kind.shell'), icon: <Terminal /> },
@@ -225,6 +229,22 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
         </FormField>
       ) : (
         <div className="grid gap-5">
+          <div className="grid gap-2">
+            <Label>{t('crons.field.agent')}</Label>
+            <Segmented<CronKind>
+              value={f.kind}
+              onChange={(k) => {
+                set('kind', k)
+                set('model', '') // a Claude model id means nothing to Codex, and the reverse
+              }}
+              aria-label={t('crons.field.agent')}
+              options={[
+                { value: 'claude', label: AGENT_NAME.claude, icon: <AgentIcon agent="claude" size={14} label={null} /> },
+                { value: 'codex', label: AGENT_NAME.codex, icon: <AgentIcon agent="codex" size={14} label={null} /> },
+              ]}
+            />
+            {f.kind === 'codex' && codex.data && codex.data.authenticated === false && <Callout tone="warning">{t('crons.codexNotConnected')}</Callout>}
+          </div>
           <FormField label={t('crons.field.topic')} error={errors.topic} hint={t('crons.topicHint')}>
             <Combobox value={topicValue} onChange={(v) => set('topic_path', v === '__root' ? '' : v)} options={topicOptions} placeholder={t('crons.pickTopic')} searchPlaceholder={t('tasks.searchTopic')} />
           </FormField>
@@ -240,9 +260,15 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
             />
           </FormField>
           <div className="grid gap-5 sm:grid-cols-2">
-            <FormField label={t('crons.field.model')}>
-              <Select value={f.model || '__default'} onValueChange={(v) => set('model', v === '__default' ? '' : v)} options={modelOptions} />
-            </FormField>
+            {f.kind === 'codex' ? (
+              <FormField label={t('crons.field.model')} hint={t('sessions.codexModelHint')}>
+                <Input value={f.model} onChange={(e) => set('model', e.target.value.trim())} maxLength={100} spellCheck={false} autoCapitalize="off" autoCorrect="off" data-testid="cron-codex-model" />
+              </FormField>
+            ) : (
+              <FormField label={t('crons.field.model')}>
+                <Select value={f.model || '__default'} onValueChange={(v) => set('model', v === '__default' ? '' : v)} options={modelOptions} />
+              </FormField>
+            )}
             <div className="grid content-start gap-2">
               <Label htmlFor="cron-reuse">{t('crons.field.reuse')}</Label>
               <div className="flex min-h-9 items-center gap-3">
@@ -251,7 +277,7 @@ function EditorForm({ seed, onCancel, onSaved }: { seed: EditorSeed; onCancel: (
               </div>
             </div>
           </div>
-          <FormField label={t('crons.field.permission')} hint={t('crons.permissionHint')}>
+          <FormField label={t('crons.field.permission')} hint={f.kind === 'codex' ? t('crons.codexPermissionHint') : t('crons.permissionHint')}>
             <Select
               value={f.permission_mode || '__inherit'}
               onValueChange={(v) => set('permission_mode', (v === '__inherit' ? '' : v) as CronPermissionMode)}

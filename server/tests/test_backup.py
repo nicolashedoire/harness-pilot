@@ -679,3 +679,45 @@ def test_a_secret_in_a_file_name_that_is_not_utf8_is_recorded(gh, ws):
     assert r["ok"] is False and r["code"] == "secret_found"
     h = backup.history()[0]
     assert h["ok"] is False and h["leaks"][0]["file"] == "projects/acme/topics/blog/caf?.md"
+
+
+def test_space_labels_round_trip(gh, ws, mx_state):
+    """The labels of the saved files and of their folders go into `_maxxing/space-labels.json` and come back on
+    restore, on the items as restored; a label never names a file the backup leaves out."""
+    from maxxing.api import space_labels as labels_api
+
+    def label(rel: str, value: str) -> None:
+        labels_api.set_label(labels_api.LabelIn(path=str(ws / rel), label=value))
+
+    bare = gh.add_repo(REPO)
+    assert backup.configure(REPO, GH_TOKEN)["ok"]
+    label("memory.md", "shared")
+    label("projects/acme", "personal")
+    label("projects/acme/topics/blog", "agents")
+    label("projects/acme/topics/blog/draft.md", "personal")        # not whitelisted: its name stays out
+    label("projects/acme/topics/blog/attachments", "personal")     # never saved
+    saved = backup.run()
+    assert saved["ok"], saved
+    expected = {"memory.md": "shared", "projects/acme": "personal", "projects/acme/topics/blog": "agents"}
+    assert json.loads(_clone_files(bare, mx_state / "clone")["_maxxing/space-labels.json"]) == expected
+    # this server loses its labels and a labelled file is replaced (another inode: its old label no longer applies)
+    (mx_state / "state/space-labels/labels.json").unlink()
+    (ws / "memory.md").unlink()
+    (ws / "memory.md").write_text("- changed\n")
+    assert labels_api.list_labels() == {}
+    _in_use()
+    assert backup.preview(saved["commit"])["labels"] == 3
+    restored = backup.restore(saved["commit"])
+    assert restored["ok"] and restored["labels"] == 3 and not restored["warnings"]
+    assert labels_api.list_labels() == {str(ws / rel): value for rel, value in expected.items()}
+
+
+def test_restored_space_labels_stay_in_the_workspace(ws, mx_state):
+    (mx_state / "outside.md").write_text("x\n")
+    saved = {"../outside.md": "personal", "/etc": "shared", "memory.md": "agents", "projects/acme": "bogus",
+             "projects/missing": "shared", "": "personal"}
+    r = backup._apply({f"{backup.META_DIR}/space-labels.json": json.dumps(saved).encode()}, hold=True)
+    from maxxing.api import space_labels as labels_api
+    assert r["ok"] and r["labels"] == 1 and labels_api.list_labels() == {str(ws / "memory.md"): "agents"}
+    r = backup._apply({f"{backup.META_DIR}/space-labels.json": b"[1, 2]"}, hold=True)
+    assert r["ok"] and r["labels"] == 0 and r["warnings"] == ["labels"]
