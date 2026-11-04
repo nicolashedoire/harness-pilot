@@ -18,7 +18,7 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [x] **Santé des agents** : si Codex est connecté, l'absence de connexion Claude est une information plutôt qu'une panne générale ; Claude reste nécessaire pour l'utiliser et pour les discussions à deux.
 - [x] **Synthèse des échanges** : le menu d'une session propose un résumé, les décisions et des actions à sélectionner avant toute création de tâche. L'essai réel a été effectué avec Codex ; le coût de cet appel n'est pas encore intégré aux statistiques.
 - [x] **Mémoire partagée** : depuis la synthèse, le texte peut être relu et modifié avant ajout explicite à la mémoire du sujet. Codex la lit au prochain tour ; Claude la charge normalement au démarrage d'un nouveau fil. Les écritures refusent les liens symboliques et une mémoire trop volumineuse pour Codex.
-- [x] **Connexions des sessions** : les mises à jour des conversations utilisent des requêtes courtes pour éviter de saturer les connexions du navigateur quand plusieurs sessions sont ouvertes.
+- [x] **Connexions des sessions** : les conversations utilisent des requêtes courtes ; les onglets compatibles partagent une connexion d'actualisation et prennent le relais si elle ferme. Essai local avec plusieurs onglets ; les navigateurs sans coordination conservent une connexion par onglet.
 - [ ] **Fonctions inégales** : plusieurs pages et indications supposent Claude ; vérifier pour chaque parcours si Codex, le dialogue et Telegram sont réellement pris en charge et signaler les limites.
 
 ## Priorité 3 — cohérence générale et documentation
@@ -33,5 +33,5 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
 - [x] **Tests isolés des tâches et sauvegardes** : 92 tests passent sur macOS avec un GitHub simulé ; un test de nom de fichier non UTF-8 est ignoré lorsque le système de fichiers l'interdit. Cela ne valide pas une sauvegarde réelle du compte utilisateur.
 - [x] **Tests isolés Telegram** : 43 tests de format, de synchronisation et de connexion passent avec des services simulés ; une connexion et une discussion réelles avec un bot restent à vérifier.
-- [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions.
+- [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions. Le formulaire de discussion à deux a été contrôlé en largeur mobile ; les autres parcours restent à examiner.
 - [ ] Ajouter des tests ciblés pour les corrections, puis valider les parcours dans l'interface locale.
