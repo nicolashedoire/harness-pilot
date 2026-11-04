@@ -701,6 +701,45 @@ does not cover MCP tools; checked with codex-cli 0.150.1 against a stub model an
 runner notes once (meta `codex_mcp_tools`) when the read-only rule applies. Claude's OAuth sign-ins and claude.ai connectors are not shared (Codex keeps its own tokens).
 The runner notes the skipped servers in the conversation when that list changes (meta `codex_mcp_skipped`).
 
+## maxxing.sessions.codex - sandbox and Protect the secrets
+`codex.sandbox_args(mode)` is the sandbox of every `codex exec` the server starts (`command()`: turns, scheduled jobs,
+companions, summaries; `fork_command()`: side questions, always read-only): read-only in `default` / `plan`,
+workspace-write otherwise, never full access. With config `protect_secrets` off, or when none of
+`spawn.secret_paths()` (`<state>/secrets.json`, `~/.ssh`) exists, it is `--sandbox read-only|workspace-write`.
+Otherwise the same sandbox is given as a Codex permission profile that also denies those paths:
+`-c default_permissions="protected"` and `-c permissions.protected={extends = ":read-only" | ":workspace",
+filesystem = {...}}`, with `"<path>" = "deny"` for each existing path (absolute, not resolved: Codex canonicalizes)
+and, for workspace-write, `":workspace_roots" = {"." = "write", ".git" = "read", ".codex" = "read", ".agents" =
+"read"}` (`WORKSPACE_READ_ONLY`). No `--sandbox` then: it silently replaces `default_permissions`.
+Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub Responses API and fake secrets:
+- `deny` refuses read, write, rename, delete, `stat` and directory listing to every command Codex runs (shell,
+  `python open()`, `cp`, `find`), through a symlink, through `/tmp` vs `/private/tmp`, inside the writable folder (it
+  beats `"." = "write"`), and makes `ln` (hard link) fail; spawned sub-agents (`multi_agent_v1.spawn_agent`), `exec
+  resume` (also of a thread started with `--sandbox`) and `exec --ephemeral fork` get the same profile. A missing
+  path is accepted (only existing ones are passed anyway).
+- A profile that `extends = ":workspace"` loses the built-in's read-only `.git`, `.codex` and `.agents` (the built-in
+  `:workspace` and `--sandbox workspace-write` keep them), hence the `:workspace_roots` table; with it, writes match
+  `--sandbox workspace-write` (folder and below, `/tmp`, `$TMPDIR`; not the repository root above the folder, its
+  `.git`, nor other folders; `.git` / `.codex` / `.agents` cannot be created), network stays off, and MCP tool
+  approval (`tools_approval`) behaves the same.
+- A topic's `.codex/config.toml` with `sandbox_mode` does not switch the profile off (`--ignore-user-config`: no
+  folder is trusted); a `sandbox_mode` in `/etc/codex/config.toml` would (the docs say any loaded `sandbox_mode` or
+  `--sandbox` wins over `default_permissions`).
+- Not covered: MCP servers (Codex starts them outside its sandbox: a server could read the file), `view_image`
+  (read by the Codex process: a real image in those folders still reaches the model; a key or `secrets.json` gives
+  "unsupported image data"), and `apply_patch`'s verification, done in the Codex process before the sandboxed write
+  is refused: it never returns the file, but its error tells a matching context line from a wrong one.
+Linux (bubblewrap): the same checks in Debian 12 arm64 containers (codex-cli 0.150.1 from npm, bubblewrap 0.8.0), as
+root (privileged container, like the server's own root) and as uid 1000 (user namespaces): the argv of `command()` /
+`fork_command()` in every mode, resume and fork refuse both paths (`Permission denied`; the path is masked, so `ln`
+gives "Invalid cross-device link" and `mv` "Device or resource busy"), writes / `.git` / `/tmp` / network match
+`--sandbox`, and a missing deny path is accepted. Where bubblewrap cannot create namespaces (a default unprivileged
+container): with `--sandbox` the turn runs and every command fails ("No permissions to create new namespace"); with
+the profile the turn fails at start ("fs sandbox helper failed": Codex reads AGENTS.md through the sandbox). Codex
+refuses to put its `codex-linux-sandbox` helper under `/tmp`: a `CODEX_HOME` there breaks both forms. Managed
+`requirements.toml` `deny_read` would work with `--sandbox` but lives in `/etc/codex` (root, every Codex run of the
+machine): not used.
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`

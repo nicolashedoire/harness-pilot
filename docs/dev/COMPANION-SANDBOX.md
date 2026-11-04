@@ -9,8 +9,8 @@ operating-system boundary. This page records what each engine can enforce on mac
 
 | Engine | Experiment turn | OS-level write limit |
 |---|---|---|
-| Codex | `codex exec --sandbox workspace-write` (acceptEdits) | yes: Codex's Seatbelt profile, writes limited to the working directory and temporary folders, network off by default |
-| Codex | planner: `--sandbox read-only` | yes: no writes |
+| Codex | `codex exec --sandbox workspace-write` (acceptEdits), or the same sandbox as the `protected` permission profile with Protect the secrets (INTERNALS.md `maxxing.sessions.codex`) | yes: Codex's Seatbelt profile, writes limited to the working directory and temporary folders, network off by default; with Protect the secrets, secrets.json and `~/.ssh` cannot be read either |
+| Codex | planner: `--sandbox read-only` (or the read-only `protected` profile) | yes: no writes |
 | Claude Code | `--permission-mode acceptEdits` | no: file tools stay in the working directory (edits outside it need an approval that a headless turn cannot get), but a Bash command that is allowed (user or project allow rules) can write anywhere the user can |
 | External adapter | `permission_mode` in the request | whatever the adapter enforces; harness-pilot cannot check it |
 

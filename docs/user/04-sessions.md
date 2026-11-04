@@ -41,6 +41,13 @@ are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn,
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
 
+**Protect the secrets** (Settings → Claude, on by default) applies to Codex too: its sandbox refuses to read or change
+the server's `secrets.json` and `~/.ssh` in every mode, for every command Codex runs, a script included. Outside that
+sandbox: the MCP servers Codex starts, and its image viewer, which could still show it a picture stored in those
+folders. Checked on macOS and on Linux. On a Linux machine where Codex's sandbox cannot start (bubblewrap without
+user namespaces, as in some containers), a Codex turn now stops with that error instead of answering without running
+commands; turning **Protect the secrets** off brings the old behaviour back, without this protection.
+
 These features are for Claude Code only for now:
 
 - **MCP sign-ins and connectors**: Codex gets the MCP servers of Settings → MCP (see [MCP servers](28-mcp.md#codex);
@@ -49,8 +56,7 @@ These features are for Claude Code only for now:
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.
-- **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
-  follows its own sandbox, which still lets it read those files.
+- The extra rules of Claude's permission settings (`claude_deny`): Codex only follows its own sandbox.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
 - **New sessions started from Telegram** use Claude Code.
 

@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from conftest import all_events, wait_idle
+from conftest import all_events, codex_profile, codex_sandbox, wait_idle
+from maxxing import config
 from maxxing.sessions import codex
 
 
@@ -42,14 +43,17 @@ print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "outpu
     assert asked.json()['answer'] == 'Codex: où en es-tu ?' and asked.json()['agent'] == 'codex'
     fork = [json.loads(line) for line in calls.read_text().splitlines()][-1]['argv']
     assert fork[fork.index('fork') + 1] == 'codex-thread-123' and '--ephemeral' in fork and 'resume' not in fork
-    assert fork[fork.index('--sandbox') + 1] == 'read-only' and fork[-1] == '-'
+    assert codex_sandbox(fork) == 'read-only' and fork[-1] == '-'
+    secrets = str(mx['state'] / 'secrets.json')               # Protect the secrets (on by default) in every run
+    assert codex_profile(requests[0]['argv'])['filesystem'][secrets] == 'deny'
+    assert codex_profile(fork)['filesystem'][secrets] == 'deny'
     assert [e['text'] for e in all_events(client, sid) if e['type'] == 'assistant'] == ['Codex: premier', 'Codex: deuxième']
     assert client.get(f'/api/sessions/{sid}').json()['turns'] == 2
 
 
 def test_codex_sandbox_and_events():
-    assert codex.command('', 'default')[codex.command('', 'default').index('--sandbox') + 1] == 'read-only'
-    assert codex.command('', 'bypass')[codex.command('', 'bypass').index('--sandbox') + 1] == 'workspace-write'
+    assert codex_sandbox(codex.command('', 'default')) == 'read-only'
+    assert codex_sandbox(codex.command('', 'bypass')) == 'workspace-write'
     command = codex.events({'type': 'item.completed', 'item': {'id': 'item-1', 'type': 'command_execution',
                            'command': 'pwd', 'aggregated_output': '/tmp', 'exit_code': 0}})
     assert command[0]['message']['content'][0]['id'] == command[1]['message']['content'][0]['tool_use_id']
@@ -58,6 +62,36 @@ def test_codex_sandbox_and_events():
                           'cache_write_input_tokens': 10, 'output_tokens': 7}})[0]['usage']
     assert usage == {'input_tokens': 50, 'output_tokens': 7, 'cache_read_input_tokens': 40,
                      'cache_creation_input_tokens': 10}
+
+
+def test_protect_secrets_gives_codex_a_profile_that_denies_them(mx, monkeypatch, tmp_path):
+    """Protect the secrets: the same sandbox as a permission profile denying secrets.json and ~/.ssh (checked by hand
+    with codex-cli 0.150.1, INTERNALS.md maxxing.sessions.codex); never `--sandbox` with it, which would replace it."""
+    home = tmp_path / 'h "o" mé'                       # quotes and accents survive the inline TOML
+    (home / '.ssh').mkdir(parents=True)
+    monkeypatch.setenv('HOME', str(home))
+    secrets = mx['state'] / 'secrets.json'
+    secrets.write_text('{}')
+    denied = {str(secrets): 'deny', str(home / '.ssh'): 'deny'}
+    for mode in ('default', 'plan'):
+        assert codex_profile(codex.command('', mode)) == {'extends': ':read-only', 'filesystem': denied}
+    for mode in ('acceptEdits', 'bypass'):                # .git / .codex / .agents stay read-only, as with --sandbox
+        assert codex_profile(codex.command('thread-1', mode)) == {'extends': ':workspace', 'filesystem': {
+            ':workspace_roots': {'.': 'write', '.git': 'read', '.codex': 'read', '.agents': 'read'}, **denied}}
+    fork = codex.fork_command('thread-1')               # side questions: read-only too
+    assert codex_profile(fork) == {'extends': ':read-only', 'filesystem': denied} and fork[-3:] == ['fork', 'thread-1', '-']
+    # only the paths that exist; none left: the plain sandbox
+    (home / '.ssh').rmdir()
+    assert codex_profile(codex.command('', 'plan'))['filesystem'] == {str(secrets): 'deny'}
+    secrets.unlink()
+    assert codex_profile(codex.command('', 'plan')) is None and codex_sandbox(codex.command('', 'plan')) == 'read-only'
+    # the setting off: the plain sandbox, even with the files there
+    secrets.write_text('{}')
+    config.update_config(protect_secrets=False)
+    for mode, sandbox in (('default', 'read-only'), ('bypass', 'workspace-write')):
+        argv = codex.command('', mode)
+        assert codex_profile(argv) is None and argv[argv.index('--sandbox') + 1] == sandbox
+        assert not any(a.startswith(('default_permissions', 'permissions.')) for a in argv)
 
 
 def test_codex_status_reports_login_without_exposing_cli_output(client, monkeypatch):

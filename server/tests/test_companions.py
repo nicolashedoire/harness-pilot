@@ -20,7 +20,7 @@ def test_proposal_review_and_decision(client, topic, mx, monkeypatch):
 import json, pathlib, subprocess, sys
 prompt = sys.stdin.read()
 assert 'complete user journey' in prompt and 'visual design and accessibility' in prompt
-assert '--sandbox' in sys.argv and 'workspace-write' in sys.argv
+assert 'workspace-write' in sys.argv or 'extends = ":workspace"' in ' '.join(sys.argv)   # --sandbox or the protect-secrets profile
 assert not subprocess.check_output(['git', 'remote']).strip()
 assert pathlib.Path('../architecture.json').is_file()
 pathlib.Path('app.txt').write_text('improved\\n')

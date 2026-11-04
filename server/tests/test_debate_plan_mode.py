@@ -2,7 +2,7 @@
 one agent implements it and the discussion pauses for the other one's review."""
 import json
 
-from conftest import wait_for
+from conftest import codex_sandbox, wait_for
 from maxxing.sessions import runner
 
 CODEX = '''#!/usr/bin/env python3
@@ -33,7 +33,7 @@ def test_plan_mode_discussion_is_read_only_until_the_owner_validates(client, top
     assert first['argv'][first['argv'].index('--permission-mode') + 1] == 'plan'
     assert '--dangerously-skip-permissions' not in first['argv'] and 'with the other agent' in first['prompt']
     review = codex()[0]
-    assert review['argv'][review['argv'].index('--sandbox') + 1] == 'read-only'
+    assert codex_sandbox(review['argv']) == 'read-only'
     assert 'Work out a plan for the user' in review['prompt']
     r = client.post(f'/api/sessions/{sid}/plan/approve', json={'text': 'Plan validated - go ahead.'})
     assert r.status_code == 200, r.text
@@ -45,7 +45,7 @@ def test_plan_mode_discussion_is_read_only_until_the_owner_validates(client, top
     assert len(codex()) == 1                                   # paused: the review waits for the owner
     assert client.post(f'/api/sessions/{sid}/discussion/resume').status_code == 200
     wait_for(lambda: len(codex()) == 2, 20)
-    assert codex()[1]['argv'][codex()[1]['argv'].index('--sandbox') + 1] == 'workspace-write'
+    assert codex_sandbox(codex()[1]['argv']) == 'workspace-write'
     client.post(f'/api/sessions/{sid}/stop')
 
 
