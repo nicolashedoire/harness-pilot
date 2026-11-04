@@ -19,7 +19,7 @@ Sessions use your own connected agent accounts. Your prompts and relevant contex
 | **Session** | A conversation with Claude Code, Codex, or both. A topic can have many sessions. |
 | **Memory** | Plain markdown files: `CLAUDE.md` (instructions) and `memory.md` (what was learned) at three levels: workspace, project, topic. Claude loads them automatically. |
 | **Skills** | Instructions Claude Code loads when they are relevant. harness-pilot ships skills to set itself up, diagnose problems, write extensions and keep memory tidy. |
-| **Cron (job)** | A shell command or a Harness prompt run on a schedule, with history and Telegram reports. |
+| **Cron (job)** | A shell command or a harness-pilot prompt run on a schedule, with history and Telegram reports. |
 
 A session started in `projects/acme/topics/blog/` automatically knows the global memory, the
 `acme` project memory and the `blog` topic memory. You never have to re-explain the context.
@@ -53,7 +53,7 @@ missing and never re-create a project or topic you deleted.
 - **Team** (Settings -> Features): chat with the people you work with, server to server; Claude summarizes
   what you pick and any message can go to a session.
 - **Tasks**: a kanban board stored in `tasks.json`, which Claude can read and update.
-- **Crons**: scheduled shell commands or Harness prompts, with history and Telegram reports.
+- **Crons**: scheduled shell commands or harness-pilot prompts, with history and Telegram reports.
 - **Telegram**: talk to the same sessions from your phone, one thread per open session.
 - **Backup**: your memory pushed every day to a private GitHub repository.
 - **Dashboard and extensions**: built-in widgets plus your own widgets and pages.

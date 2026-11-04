@@ -219,11 +219,11 @@ class Runner:
         if idle:
             hours, tokens = idle
             if smart:
-                text = (f"Back after {hours}: Harness summarized the session ({tokens}k tokens) for your message "
+                text = (f"Back after {hours}: harness-pilot summarized the session ({tokens}k tokens) for your message "
                         "before sending it - cheaper from now on (smart resume, Settings -> Claude). The history "
                         "stays displayed here.")
             else:
-                text = (f"Back after {hours}: the cache had expired, Harness summarized the session ({tokens}k tokens) "
+                text = (f"Back after {hours}: the cache had expired, harness-pilot summarized the session ({tokens}k tokens) "
                         "before your message - cheaper from now on (idle compaction, Settings -> Claude). The history "
                         "stays displayed here.")
             self.note(text)                            # under the lock: written before the summary turn starts
@@ -270,6 +270,16 @@ class Runner:
             role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
+        swarm_count = meta.get('swarm_agents')
+        if actor == 'claude' and kind == 'user' and type(swarm_count) is int and 2 <= swarm_count <= 6:
+            team = (f'[Agent team requested by the user]\nAct as the coordinator. When the task can be split into '
+                    f'independent parts, delegate to {swarm_count} native Claude Code subagents using the Agent tool. '
+                    'Launch their Agent calls together in the same assistant message with run_in_background: false; '
+                    'do not wait for one to finish before starting another. Give each a distinct concrete assignment, '
+                    'avoid overlapping edits, wait for '
+                    'their results, and synthesize them for the user. If delegation is unavailable or unsuitable, '
+                    'say so clearly; do not pretend agents were launched. Follow the session permissions.')
+            item = {**item, 'preface': '\n\n'.join(filter(None, [team, item.get('preface')]))}
         if actor == "codex":
             return self._codex_turn(item, meta, cfg, cwd, kind, is_debate)
         mode = effective_mode(meta, cfg)
@@ -304,7 +314,7 @@ class Runner:
             csid = str(uuid.uuid4())
             store.update(self.sid, csid=csid, fresh=True)
             self.note("The previous conversation thread was no longer available. A new thread was started in "
-                      "this session: the history above is kept, but Harness no longer remembers it.", "warn")
+                      "this session: the history above is kept, but harness-pilot no longer remembers it.", "warn")
             a = self.attempt(base + ["--session-id", csid], prompt, cwd, env, timeout_s, hold=False, csid=csid)
             a.fresh = True
         else:
@@ -313,7 +323,7 @@ class Runner:
         if a.saw_init:
             store.update(self.sid, fresh=False)
         if a.stopped and self.interrupted and not a.timed_out:
-            self.note("Interrupted to take your new message into account - Harness continues the task with it.")
+            self.note("Interrupted to take your new message into account - harness-pilot continues the task with it.")
         elif a.stopped:
             self.note("Stopped." if not a.timed_out else f"Turn stopped after {timeout_s} s (timeout).",
                       "warn")
@@ -425,12 +435,12 @@ class Runner:
                 return
             streak = int(item.get("mcp_continue") or 0) + 1
             if streak > mcp_auto.CONTINUE_MAX:
-                self.note(f"MCP server {', '.join(new)} loaded for the next message (Harness did not continue by "
+                self.note(f"MCP server {', '.join(new)} loaded for the next message (harness-pilot did not continue by "
                           "itself again).")
                 return
             with store.edit(self.sid) as m:
                 m["queue"] = [mcp_auto.continue_item(new, streak)] + (m.get("queue") or [])
-            self.note(f"MCP server {', '.join(new)} loaded: Harness continues the turn.")
+            self.note(f"MCP server {', '.join(new)} loaded: harness-pilot continues the turn.")
         except Exception as e:                         # noqa: BLE001 - never fails a turn
             self.note(f"MCP auto-loading: {e}"[:300], "warn")
 
@@ -502,7 +512,7 @@ class Runner:
                 return
             m["queue"] = [{"text": SUMMARY_PROMPT, "attachments": [], "source": "system", "kind": "compact",
                            "auto": True, "at": time.time()}] + q
-        self.note(f"The context reached {a.context_tokens // 1000}k tokens: Harness summarizes this session and "
+        self.note(f"The context reached {a.context_tokens // 1000}k tokens: harness-pilot summarizes this session and "
                   "continues in a fresh thread (automatic compaction, Settings -> Claude). The history stays "
                   "displayed here.")
 
@@ -721,7 +731,7 @@ class Runner:
                         m["queue"] = q
                     else:
                         m["queue"] = [_seed(seed)] + q
-                self.note("Context compacted: Harness continues in a fresh thread seeded with the summary "
+                self.note("Context compacted: harness-pilot continues in a fresh thread seeded with the summary "
                           "above; the history stays displayed here.")
             else:
                 self.note("Compaction impossible (the summary turn failed) - session unchanged.", "warn")

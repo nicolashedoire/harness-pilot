@@ -103,7 +103,7 @@ Session = {
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
-| POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath}` | `Session` (starts the first turn if message or voice) |
+| POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6}` | `Session` (starts the first turn if message or voice). `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
 | GET | `/api/sessions/{id}` | – | `Session` |
 | PATCH | `/api/sessions/{id}` | `{title?, model?, archived?, notify?, plan_mode?, favorite?, path?}` | `Session` (`plan_mode:false` also clears `plan_ready`; `favorite` is carried over by a hand-off; `path` moves the session to another topic and its Claude transcript with it - `400 bad_path`, `409 busy` while a turn runs or messages wait; `model`: an id of letters, digits and `._:@/[]-`, 100 characters at most, not starting with `-`, else `400 bad_model`, also on create) |
 | POST | `/api/sessions/{id}/plan/approve` | `{text?}` (shown in the thread as the user's message) | `{queued:bool, session:Session}` — plan mode off, then a turn that tells Claude to implement its latest plan (queue item flag `plan_approved`, kept by steer like `hud`) |

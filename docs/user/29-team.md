@@ -14,19 +14,19 @@ The list has two tabs: **Chats** and **Friends** (your contacts, who is online, 
 
 ## Connecting with someone
 
-Every Harness talks straight to the other one, server to server: no harness-pilot server in between, ours
+Every harness-pilot talks straight to the other one, server to server: no harness-pilot server in between, ours
 included.
 
 1. **Team -> Connections -> Create an invitation**: a link `https://ui.example.com#...`, valid 15 minutes, usable
    once. Send it to the person through a channel you trust (a message, a call...).
-2. They paste it in **Connections -> Join** on their Harness and click **Send the request**.
+2. They paste it in **Connections -> Join** on their harness-pilot and click **Send the request**.
 3. You see their request with a fingerprint like `7F3A-91C2`; they see the same one. Check it with them (by
    phone or another app), then **Accept**.
 
 > **Connect only with people you trust.** A contact can send you messages and files, and see your name and avatar.
 > Nothing they write ever reaches Claude by itself, but read what you forward to a session.
 
-Both servers need a **public address** (Harness installed with a domain, `https://`). Team does not work through
+Both servers need a **public address** (harness-pilot installed with a domain, `https://`). Team does not work through
 Tailscale nor on a local network: the other server could not reach yours. Connections shows why when it is not
 ready. **Remove** a contact in Connections: their server is told and can no longer write to you. To connect
 again with someone who is still a contact (a reinstalled server, for example), they remove you first, then use a
@@ -45,12 +45,12 @@ new invitation: an invitation never replaces an existing contact.
 - **Reactions**, **Reply** on hover of a message. Your own messages can be **edited** or **deleted** for everyone
   (Up arrow in an empty message box edits your last one).
 - **Seen** under your last message, **writing…** while someone types, and each friend's presence (online, or seen
-  5 min ago): it shows while their Harness is open in a browser.
+  5 min ago): it shows while their harness-pilot is open in a browser.
 - **Notifications** for new messages of the chats you are not looking at: Settings -> Notifications -> Team
   messages. **Mute** a chat (its menu) to silence it.
 - **Groups**: their creator renames them, adds friends and removes members; anyone can **leave** (final). The
   thread says who joined, was removed or left.
-- A small clock on a message: not delivered yet to someone (their server is off); Harness retries for 7 days.
+- A small clock on a message: not delivered yet to someone (their server is off); harness-pilot retries for 7 days.
 
 ## Summarize
 

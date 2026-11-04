@@ -3,10 +3,7 @@ section: Extending
 ---
 # Skills
 
-Skills are instructions Claude Code loads on its own when a task matches their description. Claude
-Maxxing installs its skills in `~/.claude/skills/`, so they are available in **every** session.
-The copies name the real folders of your install (code, workspace, state), so they stay right when the
-installer used other paths than the defaults; `maxxing init` (run by every update) writes them again.
+Skills are instructions Claude Code may load when a task matches their description. The inherited Linux setup installs project skills in Claude's skills directory. The local startup script does not install or overwrite your personal Claude skills; availability depends on your existing Claude configuration and workspace. Codex has its own skills mechanism, and parity with the Claude skills below has not been validated.
 
 ## Shipped skills
 

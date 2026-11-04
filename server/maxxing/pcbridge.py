@@ -158,9 +158,9 @@ def start_pairing(browser: str, os_name: str, autostart: bool = True) -> dict:
 def _pairing_for(code: str) -> dict:
     p = load().get("pairing") or {}
     if not p or not isinstance(code, str) or not code:
-        raise PcError(403, "bad_code", "No pairing in progress: create a new download in Harness Maxxing")
+        raise PcError(403, "bad_code", "No pairing in progress: create a new download in harness-pilot")
     if time.time() > float(p.get("expires") or 0):
-        raise PcError(403, "expired", "This download expired: create a new one in Harness Maxxing")
+        raise PcError(403, "expired", "This download expired: create a new one in harness-pilot")
     if not hmac.compare_digest(_hash(code.strip().upper()), str(p.get("code_hash") or "")):
         raise PcError(403, "bad_code", "Unknown pairing code")
     return p
@@ -322,13 +322,13 @@ def install_script(kind: str, code: str, server_url: str, target: str) -> str:
                 "$exe = Join-Path $dir 'HarnessPC.exe'\n"
                 f"Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile $exe\n"
                 "Start-Process -FilePath $exe\n"
-                "Write-Host 'Harness PC started: check Harness Maxxing -> Settings -> MCP.'\n")
+                "Write-Host 'Harness PC started: check harness-pilot -> Settings -> MCP.'\n")
     return ("#!/bin/sh\nset -e\n"
             'dir="$HOME/.local/bin"; mkdir -p "$dir"; f="$dir/harness-pc"\n'
             f"curl -fsSL '{url}' -o \"$f\"\nchmod 700 \"$f\"\n"
             '[ "$(uname)" = Darwin ] && xattr -d com.apple.quarantine "$f" 2>/dev/null || true\n'
             'nohup "$f" >/dev/null 2>&1 &\n'
-            "echo 'Harness PC started: check Harness Maxxing -> Settings -> MCP.'\n")
+            "echo 'Harness PC started: check harness-pilot -> Settings -> MCP.'\n")
 
 
 # ---- MCP registration ------------------------------------------------------------------------------------------
@@ -930,7 +930,7 @@ def cached_tools() -> list[dict]:
 
 OFFLINE_TEXT = ("The browser of the user's PC is not reachable: the Harness PC program is not running or the PC is "
                 "off / asleep. Tell the user, who can start Harness PC on the computer (Settings -> MCP -> Browser "
-                "of my PC in Harness Maxxing).")
+                "of my PC in harness-pilot).")
 
 
 def _offered(tools: list[dict]) -> list[dict]:

@@ -37,11 +37,15 @@ Five fields: `minute hour day-of-month month day-of-week`.
 | `30 8 * * 1-5` | weekdays at 08:30 |
 | `0 9 1 * *` | the 1st of each month at 09:00 |
 | `0 */6 * * *` | every 6 hours |
-| `@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot` | shortcuts |
+| `@daily`, `@hourly`, `@weekly`, `@monthly` | shortcuts |
+
+`@reboot` is not supported by the local scheduler.
 
 ### Time zone
 
-The cron daemon fires jobs in the **server's system time zone**, while the UI (schedule preview,
+In local mode, the scheduler checks jobs in the time zone configured in Settings, without changing the system clock. The remainder of this section describes the inherited Linux server setup, which is not validated for this repository.
+
+On the legacy server, the cron daemon fires jobs in the **server's system time zone**, while the UI (schedule preview,
 next runs, history) uses the time zone of Settings -> General. Both must be the same, otherwise a
 job shown "at 07:00" runs at another hour. On a fresh server, the zone you pick in the onboarding
 (or Settings -> General) also becomes the system zone; `maxxing doctor` warns if they differ.
@@ -80,6 +84,8 @@ you delete is never re-created. With notify "always", the report includes the jo
 answer of a Claude job), so a reminder arrives as a readable message.
 
 ## How it works
+
+In local mode, an in-process scheduler starts jobs while the app is open; it does not modify the system crontab. The following description applies to the inherited Linux server implementation.
 
 Each enabled job becomes one line in root's crontab, inside a block that harness-pilot manages:
 
@@ -121,8 +127,8 @@ the memory limits do not.
 Secrets flagged "expose" in Settings -> Keys are available as environment variables to shell jobs
 and Claude sessions.
 
-A shell job runs with the same Claude setup as your sessions (Harness' Claude Code folder and the Claude
-account connected in Harness), so a script can call `claude -p "..."` itself - for example a script that
+A shell job runs with the same Claude setup as your sessions (harness-pilot' Claude Code folder and the Claude
+account connected in harness-pilot), so a script can call `claude -p "..."` itself - for example a script that
 prepares data, asks Claude for a text, then publishes it.
 
 ## Tips for Claude jobs

@@ -89,7 +89,7 @@ REF_GRACE = 5.0                # a message missing that long from the queue (sto
 STATUS_WORDS = {
     "en": {"working": "Working…", "done": "Done", "failed": "Stopped with an error", "steps": "steps",
            "step": "step", "earlier": "earlier steps"},
-    "fr": {"working": "Harness travaille…", "done": "Terminé", "failed": "Arrêté sur une erreur", "steps": "étapes",
+    "fr": {"working": "harness-pilot travaille…", "done": "Terminé", "failed": "Arrêté sur une erreur", "steps": "étapes",
            "step": "étape", "earlier": "étapes précédentes"},
 }
 
@@ -182,7 +182,7 @@ WORDS = {
            "notify_only": "This thread only receives notifications - write in a session thread or in the main chat.",
            "in_thread": "/{cmd} is about one session: send it in that session's thread.",
            "start_failed": "Could not start the session: {err}. Your messages are kept - choose a topic again (buttons above).",
-           "restarted_new": "Harness restarted before your new session was started: {n} message(s) not handled - send them again, please."},
+           "restarted_new": "harness-pilot restarted before your new session was started: {n} message(s) not handled - send them again, please."},
     "fr": {"where": "Où mettre cette session ?", "more": "Autres topics…",
            "started": "🆕 <b>{title}</b> · {where}", "moved": "🆕 <b>{title}</b> · {where}\n→ la suite dans le fil <b>{name}</b>",
            "auto": " (sans réponse : topic par défaut)", "ready": "Écris ton message ici.",
@@ -193,13 +193,13 @@ WORDS = {
            "notify_only": "Ce fil ne reçoit que des notifications - écris dans le fil d'une session ou dans le chat principal.",
            "in_thread": "/{cmd} concerne une session : envoyez-la dans le fil de cette session.",
            "start_failed": "Impossible de démarrer la session : {err}. Vos messages sont gardés - choisissez à nouveau un topic (boutons au-dessus).",
-           "restarted_new": "Harness a redémarré avant de créer votre nouvelle session : {n} message(s) non traité(s) - renvoyez-les, s'il vous plaît."},
+           "restarted_new": "harness-pilot a redémarré avant de créer votre nouvelle session : {n} message(s) non traité(s) - renvoyez-les, s'il vous plaît."},
 }
 
 # Bot texts beyond the "new session" flow (same languages as WORDS; English is the fallback of _w).
 WORDS["en"].update({
     "help": ("<b>harness-pilot</b> - this chat: <i>{topic}</i>\n\n"
-             "Write a message (text, voice note, photo or file) to talk to Harness in this topic. Each thread is one "
+             "Write a message (text, voice note, photo or file) to talk to harness-pilot in this topic. Each thread is one "
              "topic of your workspace; the conversation is the same session you see in the web UI.\n\n"
              "/new [title] - new session in this topic\n"
              "/sessions - choose which session this chat talks to\n"
@@ -209,7 +209,7 @@ WORDS["en"].update({
              "/topic - pick the topic of the main chat (when threads are off)"),
     "help_threads": ("<b>harness-pilot</b> - here: {here}\n\n"
                      "Every open session of the web UI has its own thread here (same conversation, both ways). "
-                     "Write in a session's thread to talk to Harness there; write in the main chat (or create a "
+                     "Write in a session's thread to talk to harness-pilot there; write in the main chat (or create a "
                      "thread) to start a new session - you choose its topic. /close (or archiving the session in "
                      "the web UI) closes it: the thread goes away, the conversation stays in the web UI.\n\n"
                      "/new [title] - new session (its own thread)\n"
@@ -224,11 +224,11 @@ WORDS["en"].update({
     "cmd_stop": "Stop the running turn", "cmd_close": "Close this session (archived, thread deleted)",
     "cmd_model": "Choose the model of the session", "cmd_status": "Session status: state, model, cost, queue",
     "cmd_topic": "Pick the topic (when threads are off)", "cmd_help": "What this bot can do",
-    "queued": "⏳ Queued - Harness is still working on the previous message.",
+    "queued": "⏳ Queued - harness-pilot is still working on the previous message.",
     "nothing_running": "Nothing is running.", "stopped": "⏹ Stopped.",
     "unsupported": "This kind of message is not supported yet - send text, a photo or a file.",
     "notify_only_topic": "This thread only receives notifications - write in a topic thread.",
-    "edited": "Edits are not sent to Harness - send a new message.",
+    "edited": "Edits are not sent to harness-pilot - send a new message.",
     "no_sessions": "⚠️ Sessions are not available on this server yet.",
     "save_failed": "⚠️ Could not save the file: {error}",
     "voice_off": "🎤 Voice messages are off. Turn them on in the web UI: Settings → Voice.",
@@ -236,20 +236,20 @@ WORDS["en"].update({
     "voice_download": "⚠️ Could not download the audio: {error}",
     "voice_failed": "⚠️ Transcription failed: {error}",
     "voice_empty": "🎤 I could not hear any speech in this message.",
-    "restarted": "Harness restarted while your last message was being handled: send it again, please.",
-    "restarted_voice": "Harness restarted while your last voice note was being handled: send it again, please.",
+    "restarted": "harness-pilot restarted while your last message was being handled: send it again, please.",
+    "restarted_voice": "harness-pilot restarted while your last voice note was being handled: send it again, please.",
     "model_set": "Model set to <b>{model}</b>.", "model_of": "Model of this session: {model}{note}",
     "model_last": " (last answer: {model})",
     "model_unknown": "Unknown model \"{model}\". Choose one of: {choices} (or \"default\").",
     "st_topic": "Topic: {v}", "st_state": "State: {v}", "st_queued": " · {n} queued", "st_model": "Model: {v}",
-    "st_turns": "Turns: {n} · cost {cost}", "st_context": "Context: {n} tokens", "st_error": "Last error: {v}",
+    "st_turns": "Turns: {n} · Claude amount ≈ {cost} (indicative; Codex excluded)", "st_context": "Context: {n} tokens", "st_error": "Last error: {v}",
     "cb_not_allowed": "Not allowed.", "cb_not_here": "Not available here.",
     "cb_session_gone": "This session no longer exists.", "cb_switched": "Switched.", "cb_model": "Model changed.",
     "cb_topic_gone": "This topic no longer exists.", "cb_topic": "Topic changed.", "cb_unknown": "Unknown action.",
     "cb_done": "Already done.", "cb_error": "Error: {error}",
     "no_session_topic": "No session in this topic yet - just write a message.", "running": " · running",
     "which_session": "Which session should this chat talk to?", "no_session_here": "No session here.",
-    "stop_first": "Harness is still working - /stop first, then /close.", "archived": "🗄 <b>{title}</b> archived.",
+    "stop_first": "harness-pilot is still working - /stop first, then /close.", "archived": "🗄 <b>{title}</b> archived.",
     "archived_kept": "🗄 Archived (Telegram did not delete this thread - delete it by hand).",
     "which_topic": "Which topic should the main chat talk to?",
     "topic_note": "(Threads are on: each thread already maps to its topic; this only affects the main chat.)",
@@ -262,7 +262,7 @@ WORDS["fr"].update({
     "threads_on": "Les fils sont activés : chaque session ouverte a son propre fil. Écrivez dans le chat principal pour en démarrer une.",
     "notify_only": "Ce fil ne reçoit que des notifications - écrivez dans le fil d'une session ou dans le chat principal.",
     "help": ("<b>harness-pilot</b> - ce chat : <i>{topic}</i>\n\n"
-             "Écrivez un message (texte, message vocal, photo ou fichier) pour parler à Harness dans ce topic. Chaque "
+             "Écrivez un message (texte, message vocal, photo ou fichier) pour parler à harness-pilot dans ce topic. Chaque "
              "fil est un topic de votre workspace ; la conversation est la même session que dans l'interface web.\n\n"
              "/new [titre] - nouvelle session dans ce topic\n"
              "/sessions - choisir la session à laquelle ce chat parle\n"
@@ -272,7 +272,7 @@ WORDS["fr"].update({
              "/topic - choisir le topic du chat principal (fils désactivés)"),
     "help_threads": ("<b>harness-pilot</b> - ici : {here}\n\n"
                      "Chaque session ouverte de l'interface web a son propre fil ici (même conversation, dans les deux "
-                     "sens). Écrivez dans le fil d'une session pour parler à Harness ; écrivez dans le chat principal (ou "
+                     "sens). Écrivez dans le fil d'une session pour parler à harness-pilot ; écrivez dans le chat principal (ou "
                      "créez un fil) pour démarrer une nouvelle session - vous choisissez son topic. /close (ou archiver "
                      "la session dans l'interface web) la ferme : le fil disparaît, la conversation reste dans "
                      "l'interface web.\n\n"
@@ -288,11 +288,11 @@ WORDS["fr"].update({
     "cmd_stop": "Arrêter le tour en cours", "cmd_close": "Fermer cette session (archivée, fil supprimé)",
     "cmd_model": "Choisir le modèle de la session", "cmd_status": "État de la session : modèle, coût, file",
     "cmd_topic": "Choisir le topic (fils désactivés)", "cmd_help": "Ce que ce bot sait faire",
-    "queued": "⏳ En file d'attente - Harness travaille encore sur le message précédent.",
+    "queued": "⏳ En file d'attente - harness-pilot travaille encore sur le message précédent.",
     "nothing_running": "Rien n'est en cours.", "stopped": "⏹ Arrêté.",
     "unsupported": "Ce type de message n'est pas encore pris en charge - envoyez du texte, une photo ou un fichier.",
     "notify_only_topic": "Ce fil ne reçoit que des notifications - écrivez dans le fil d'un topic.",
-    "edited": "Les modifications ne sont pas transmises à Harness - envoyez un nouveau message.",
+    "edited": "Les modifications ne sont pas transmises à harness-pilot - envoyez un nouveau message.",
     "no_sessions": "⚠️ Les sessions ne sont pas encore disponibles sur ce serveur.",
     "save_failed": "⚠️ Impossible d'enregistrer le fichier : {error}",
     "voice_off": "🎤 Les messages vocaux sont désactivés. Activez-les dans l'interface web : Réglages → Voix.",
@@ -300,20 +300,20 @@ WORDS["fr"].update({
     "voice_download": "⚠️ Impossible de télécharger l'audio : {error}",
     "voice_failed": "⚠️ La transcription a échoué : {error}",
     "voice_empty": "🎤 Aucune parole entendue dans ce message.",
-    "restarted": "Harness a redémarré pendant le traitement de votre dernier message : renvoyez-le, s'il vous plaît.",
-    "restarted_voice": "Harness a redémarré pendant le traitement de votre dernier message vocal : renvoyez-le, s'il vous plaît.",
+    "restarted": "harness-pilot a redémarré pendant le traitement de votre dernier message : renvoyez-le, s'il vous plaît.",
+    "restarted_voice": "harness-pilot a redémarré pendant le traitement de votre dernier message vocal : renvoyez-le, s'il vous plaît.",
     "model_set": "Modèle choisi : <b>{model}</b>.", "model_of": "Modèle de cette session : {model}{note}",
     "model_last": " (dernière réponse : {model})",
     "model_unknown": "Modèle inconnu « {model} ». Choisissez parmi : {choices} (ou « default »).",
     "st_topic": "Topic : {v}", "st_state": "État : {v}", "st_queued": " · {n} en attente", "st_model": "Modèle : {v}",
-    "st_turns": "Tours : {n} · coût {cost}", "st_context": "Contexte : {n} tokens", "st_error": "Dernière erreur : {v}",
+    "st_turns": "Tours : {n} · montant Claude ≈ {cost} (indicatif ; Codex non compris)", "st_context": "Contexte : {n} tokens", "st_error": "Dernière erreur : {v}",
     "cb_not_allowed": "Non autorisé.", "cb_not_here": "Indisponible ici.",
     "cb_session_gone": "Cette session n'existe plus.", "cb_switched": "Session changée.", "cb_model": "Modèle changé.",
     "cb_topic_gone": "Ce topic n'existe plus.", "cb_topic": "Topic changé.", "cb_unknown": "Action inconnue.",
     "cb_done": "Déjà fait.", "cb_error": "Erreur : {error}",
     "no_session_topic": "Aucune session dans ce topic pour l'instant - écrivez simplement un message.",
     "running": " · en cours", "which_session": "À quelle session ce chat doit-il parler ?",
-    "no_session_here": "Aucune session ici.", "stop_first": "Harness travaille encore - /stop d'abord, puis /close.",
+    "no_session_here": "Aucune session ici.", "stop_first": "harness-pilot travaille encore - /stop d'abord, puis /close.",
     "archived": "🗄 <b>{title}</b> archivée.",
     "archived_kept": "🗄 Archivée (Telegram n'a pas supprimé ce fil - supprimez-le à la main).",
     "which_topic": "À quel topic le chat principal doit-il parler ?",
@@ -2308,7 +2308,7 @@ class Gateway:
                 pass
 
     async def _ask_about_event(self, msg: dict, val: str) -> str:
-        """"Ask Harness" under a feed event: a new session (default topic, its own thread) about it."""
+        """"Ask harness-pilot" under a feed event: a new session (default topic, its own thread) about it."""
         from .. import feed
         try:
             ev = await asyncio.to_thread(feed.get, int(val))
@@ -3129,7 +3129,7 @@ def feed_message(ev: dict) -> tuple[str, dict]:
     parts = fmt.render(fmt.head(raw, 700), fmt.LIMIT - len(top) - len(foot) - 3)
     body = (parts[0] + "\n…" if len(parts) > 1 else parts[0]) if parts else ""
     text = top + (f"\n{body}" if body else "") + foot
-    row = [{"text": "🤖 Ask Harness", "callback_data": f"f:{ev['id']}"}]
+    row = [{"text": "🤖 Ask harness-pilot", "callback_data": f"f:{ev['id']}"}]
     url = ev.get("url") or ""
     if url.startswith("/"):
         base = (config.load_config().get("public_url") or "").rstrip("/")
@@ -3189,7 +3189,7 @@ def send_test() -> dict:
     Sending only proves the bot can WRITE; what it receives depends on the poller (running, last
     successful getUpdates) and on no webhook being set -> {ok, sent, poller:{running, last_poll_ok,
     last_poll_age, error, error_code}, webhook:{url, pending_updates, last_error}|None, problems:[str]}."""
-    sent = _send_sync(ROOT, ["✅ <b>harness-pilot</b> is connected. Write here to talk to Harness."], False)
+    sent = _send_sync(ROOT, ["✅ <b>harness-pilot</b> is connected. Write here to talk to harness-pilot."], False)
     st = status()
     webhook = None
     tok = token()

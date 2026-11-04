@@ -701,7 +701,7 @@ def test_render_status_is_compact():
     steps = [{"id": str(i), "text": f"Read f{i}.py", "state": "ok"} for i in range(12)]
     steps.append({"id": "x", "text": "Bash: " + "find / -name '*.log' -mtime -2 " * 4, "state": "run"})
     html = gateway.render_status(steps, [], 75, None, "fr")
-    assert html.startswith("⏳ <b>Harness travaille…</b> · 1:15\n<blockquote>")
+    assert html.startswith("⏳ <b>harness-pilot travaille…</b> · 1:15\n<blockquote>")
     assert html.count("\n") == 3                                  # header + the last 3 steps
     assert "Read f10.py" in html and "Read f9.py" not in html
     long_line = html.splitlines()[-1]

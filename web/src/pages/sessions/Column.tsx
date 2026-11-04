@@ -20,6 +20,7 @@ import {
   ListChecks,
   Minimize2,
   MoreHorizontal,
+  Network,
   Sparkles,
   Trash2,
   Upload,
@@ -38,7 +39,7 @@ import { Logo } from '@/components/shell/Logo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useUI } from '@/stores/ui'
 import { openHud } from './Hud'
-import { costTip, useCostIsBilled, useResultLine } from './resultLine'
+import { costTip, useResultLine } from './resultLine'
 import { useT } from '@/i18n'
 import {
   useClaudeStatus,
@@ -96,6 +97,7 @@ import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
 import { MobileTabsSlot, TabsToggle } from './Tabs'
 import { AsidePanel, useAside } from './Aside'
 import { SessionSummary } from './Summary'
+import { AgentMap } from './AgentMap'
 import { LayoutPicker } from './LayoutPicker'
 import { MIN_W } from './layouts'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
@@ -438,6 +440,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const body = React.useRef<HTMLDivElement>(null)
   const [dragFiles, setDragFiles] = React.useState(false)
   const [summaryOpen, setSummaryOpen] = React.useState(false)
+  const [agentMapOpen, setAgentMapOpen] = React.useState(false)
 
   const notFound = (isError && isApiError(error) && error.status === 404) || deleted
   const running = session?.state === 'running'
@@ -678,6 +681,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={!session?.turns} onSelect={() => setSummaryOpen(true)}>
                   <ListChecks /> {t('summary.title')}
                 </DropdownMenuItem>
+                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={actions.archive}>
                   {session?.archived ? <ArchiveRestore /> : <Archive />} {session?.archived ? t('sessions.menu.unarchive') : t('sessions.menu.archive')}
                 </DropdownMenuItem>
@@ -745,6 +749,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
           onNotify={actions.notify}
         />
         <SessionSummary key={sid} sid={sid} path={path} open={summaryOpen} onOpenChange={setSummaryOpen} />
+        {agentMapOpen && <AgentMap key={`agents-${sid}`} sid={sid} running={running} open onOpenChange={setAgentMapOpen} />}
         {session?.archived && (
           <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
             <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
@@ -842,6 +847,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
               session ? (
                 <>
                   {session.provider === 'codex' || session.provider === 'debate' || session.provider === 'discussion' ? <span className="text-xs font-medium">{session.provider === 'codex' ? 'Codex' : 'Claude Code ↔ Codex'}</span> : <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} />}
+                  {!!session.swarm_agents && <Button type="button" variant="ghost" size="sm" onClick={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</Button>}
                   {session.debate_paused && !pausedOnLimit(session) && <span className="text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
                   {(session.provider === 'discussion' || session.provider === 'debate') && (running || session.debate_paused) && (
                     <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
@@ -904,7 +910,6 @@ function ColumnHeader({
   slim?: boolean
 }) {
   const t = useT()
-  const billed = useCostIsBilled()
   const showCost = !useResultLine().hidden.includes('cost')
   const notifyTip = !tgLinked ? t('sessions.notify.unavailable') : session?.notify ? t('sessions.notify.on') : t('sessions.notify.off')
   const maxxing = useMaxxingEnabled()
@@ -948,9 +953,9 @@ function ColumnHeader({
               {session.source === 'cron' && <Clock className="size-3.5 shrink-0" aria-label={t('sessions.source.cron')} />}
               <span className="ml-auto flex shrink-0 items-center gap-3 tabular-nums">
                 {(!session.provider || session.provider === 'claude') && session.cost_usd > 0 && showCost && (
-                  <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, billed, session.turns)}</span>}>
+                  <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, session.turns)}</span>}>
                     <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <Sensitive length={4}>{fmtCost(session.cost_usd)}</Sensitive>
+                      <Sensitive length={4}>≈ {fmtCost(session.cost_usd)}</Sensitive>
                     </span>
                   </Tooltip>
                 )}
@@ -1035,9 +1040,9 @@ function ColumnHeader({
             )}
             <span className="ml-auto flex shrink-0 items-center gap-2.5 tabular-nums">
               {(!session.provider || session.provider === 'claude') && session.cost_usd > 0 && showCost && (
-                <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, billed, session.turns)}</span>}>
+                <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, session.turns)}</span>}>
                   <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <Sensitive length={4}>{fmtCost(session.cost_usd)}</Sensitive>
+                    <Sensitive length={4}>≈ {fmtCost(session.cost_usd)}</Sensitive>
                   </span>
                 </Tooltip>
               )}
@@ -1216,7 +1221,8 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [title, setTitle] = React.useState('')
   const [model, setModel] = React.useState('')
   const [codexModel, setCodexModel] = React.useState('')
-  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both'>('claude')
+  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm'>('claude')
+  const [swarmAgents, setSwarmAgents] = React.useState('3')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
   const [durationMinutes, setDurationMinutes] = React.useState('')
@@ -1256,11 +1262,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const options = topics.map((tp) => ({ value: tp.path, label: mask(`${tp.project} / ${tp.name}`, 10) }))
   const valid = topics.some((tp) => tp.path === col.path)
   const validLimits = (!turnLimit || (+turnLimit >= 1 && +turnLimit <= 200 && Number.isInteger(+turnLimit))) && (!durationMinutes || (+durationMinutes >= 1 && +durationMinutes <= 1440 && Number.isInteger(+durationMinutes)))
-  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : {}
+  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : provider === 'swarm' ? { swarm_agents: Number(swarmAgents) } : {}
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
-      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, attachments, plan_mode: planMode || undefined })
+      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, attachments, plan_mode: planMode || undefined })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text, attachments, queued: false })
       saveDraft(`new:${col.path}`, '')
@@ -1276,7 +1282,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const onSendVoice = async (file: File) => {
     try {
       const up = await uploadAttachment(col.path, file)
-      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
+      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text: '', attachments: [], queued: false, voice: true })
       becomeSession(col.key, s.id)
@@ -1340,8 +1346,13 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }]} />
+              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('swarm.provider') }]} />
             </div>
+            {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
+              <Label htmlFor={`swarm-count-${col.key}`}>{t('swarm.count')}</Label>
+              <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
+              <p className="text-xs text-muted-foreground">{t('swarm.hint')}</p>
+            </div>}
             {provider === 'both' && <div className="grid gap-1.5">
               <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>
               <Select id={`conversation-mode-${col.key}`} value={conversationMode} onValueChange={(v) => setConversationMode(v as 'discussion' | 'debate')} options={[{ value: 'discussion', label: t('sessions.discussion') }, { value: 'debate', label: t('sessions.debate') }]} />
@@ -1366,7 +1377,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
                 <ModelPicker chosen={model} onChange={setModel} />
               </div>
             </div>}
-            {provider !== 'claude' && <div className="grid gap-1.5">
+            {(provider === 'codex' || provider === 'both') && <div className="grid gap-1.5">
               <Label htmlFor={`codex-model-${col.key}`}>{t('sessions.codexModel')}</Label>
               <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
               <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>

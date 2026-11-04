@@ -17,7 +17,7 @@ deployments, important e-mails, any script's result - in one place instead of ch
 - **Push notifications** (optional): allow them on a phone or a computer and the important events arrive even when
   no tab is open - per type of event, with or without sound.
 - **Telegram** (optional): the bot posts in the thread **Notifications** by itself - no Claude, instant.
-  Under each message, **Ask Harness** opens a session about it, and **Open** follows its link.
+  Under each message, **Ask harness-pilot** opens a session about it, and **Open** follows its link.
 
 Click an event to mark it read and open its link (the cron job's history, the Stripe payment, the
 GitHub run…). Its **…** menu marks it read or deletes it. Repeated events fold into one row
@@ -101,5 +101,5 @@ HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is for
 ## Good to know
 
 - Events are kept 30 days. They live on your server (`/var/lib/claude-maxxing/feed.db`).
-- A webhook's content comes from outside: *Ask Harness* treats it as data, never as instructions, and opens the
+- A webhook's content comes from outside: *Ask harness-pilot* treats it as data, never as instructions, and opens the
   session in plan mode (Claude explains, it changes nothing until you approve a plan).

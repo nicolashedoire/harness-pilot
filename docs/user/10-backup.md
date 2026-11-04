@@ -39,7 +39,7 @@ credentials, logs, `attachments/`, `.git`, `node_modules`, virtual environments,
 
 1. On GitHub, create a **fine-grained personal access token**:
    - Repository access: only the backup repository (or all repositories if you want Claude
-     Maxxing to create it);
+     the application to create it);
    - Permissions: **Contents: read and write**, **Metadata: read**; add **Administration: read and
      write** only if the repository must be created for you.
 2. In Settings -> Backup enter `owner/name` and the token; tick "create the repository" if it does
@@ -48,6 +48,8 @@ credentials, logs, `attachments/`, `.git`, `node_modules`, virtual environments,
 
 A daily job **Memory backup** is created (default 04:40). Change the schedule and the whitelist in
 Settings -> Backup.
+
+In local mode, scheduled backups run only while the app is running; missed runs are not replayed. Check the backup history and the private repository after setup. The backup flow has automated tests with a simulated GitHub service, but has not yet been verified against a real GitHub account in this version.
 
 ## Restore
 

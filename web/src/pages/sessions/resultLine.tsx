@@ -3,9 +3,9 @@
 import * as React from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { useT, type TKey } from '@/i18n'
-import { useClaudeStatus, useSaveSettings, useSettings } from '@/lib/queries'
+import { useSaveSettings, useSettings } from '@/lib/queries'
 import { cn } from '@/lib/utils'
-import type { ClaudeAuthMethod, ResultField } from '@/lib/types'
+import type { ResultField } from '@/lib/types'
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui'
 
 export const RESULT_FIELDS: { id: ResultField; label: TKey }[] = [
@@ -29,16 +29,9 @@ export function useResultLine() {
   return { hidden, toggle }
 }
 
-/** With an API key the cost is billed; with a Claude subscription (or unknown sign-in) it is Claude Code's
- *  estimate at API prices, not charged. */
-export function useCostIsBilled(): boolean {
-  const { data } = useClaudeStatus()
-  return (data?.auth.method as ClaudeAuthMethod) === 'api_key'
-}
-
-export function costTip(t: ReturnType<typeof useT>, billed: boolean, turns?: number): string {
+export function costTip(t: ReturnType<typeof useT>, turns?: number): string {
   const what = turns == null ? t('sessions.result.costTurn') : t('sessions.result.costTotal', { count: turns })
-  return `${what} ${billed ? t('sessions.result.costBilled') : t('sessions.result.costEstimate')}`
+  return `${what} ${t('sessions.result.costEstimate')}`
 }
 
 /** The ⚙ at the end of the line: shown on hover / focus with a mouse, always (faint) on a touch screen. */

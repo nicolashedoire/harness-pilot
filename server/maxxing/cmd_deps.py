@@ -60,7 +60,7 @@ def cmd_deps(a) -> int:
                         params={"count": len(failed), "names": ", ".join(r["name"] for r in failed)[:300]},
                         actions=[feed.link("open", "Open", "/settings/system")])
             from .telegram import gateway
-            gateway.system_alert("Dependency update failed (Harness Maxxing):\n" + body)
+            gateway.system_alert("Dependency update failed (harness-pilot):\n" + body)
         if a.quiet and failed:
             for r in failed:
                 print(f"{r['name']}: {r['text']}", file=sys.stderr)
