@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The customizing guide and Claude's instructions now say exactly what an update keeps: your workspace and extensions untouched, saved changes to the server, CLI and skills replayed on the new version, and nothing changed in the web interface (`web/`), which updates set aside. To change what the app shows, Claude builds a page or a widget instead of editing the interface.
 - The harness topic now tells Claude to test the widgets and pages it builds with `pilot ext check`, like the extensions skill, instead of trying `curl` on an address that needs your signed-in browser.
 - `pilot update --verify` (and the check after an update) now reports a widget that answers with an error message, such as a missing key, instead of counting it as working.
 - New `pilot ext check <id>` (all extensions without an id): runs a dashboard widget, a page or a conversation block plugin the way the server does and says what is broken - the error of `card()` with the lines of `api.py` it went through, blocks the dashboard drops, a script of an HTML widget that does not parse, a module of a page that is missing or not served. When harness-pilot writes or fixes an extension, it now runs this check and fixes what fails before telling you it is done.

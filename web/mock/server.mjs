@@ -3675,7 +3675,7 @@ const updateTopic = () => {
 const updateReport = (ok) => ({ at: now(), version: VERSION, ok, problems: ok ? 0 : 1,
   extensions: [{ id: 'shop-sales', name: 'Shop sales', type: 'widget', ok: true, error: '' }, { id: 'notes', name: 'Notes', type: 'page', ok: true, error: '' },
     { id: 'broken-widget', name: 'Broken widget', type: 'widget', ok: ok, error: ok ? '' : 'SyntaxError in api.py line 12', skipped: false }],
-  checks: [{ id: 'shop-widget', title: 'Shop sales widget on the dashboard', check: 'GET /api/ext/shop-sales/summary answers 200', ok: true, output: '200 OK in 38 ms' }] })
+  checks: [{ id: 'c-20261020-7f3a', title: 'Mirror up to 80 sessions on Telegram', check: "grep -q 'MAX_THREADS = 80' $MAXXING_CODE/server/maxxing/telegram/gateway.py", ok: true, output: '' }] })
 function updateSession(title, prompt) {
   const t = now(), s = { id: uuid(), title, path: updateTopic(), state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null,
     context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
@@ -3754,8 +3754,9 @@ R('PUT', '/api/system/auto-update', ({ body }) => { S.autoUpdate = !!body.enable
 R('GET', '/api/system/update/preflight', async ({ q }) => {
   if (q.get('refresh')) await sleep(1500)
   return { ok: true, verdict: 'adapt', current: VERSION, latest: '2.0.1', behind: 3,
-    customs: [{ id: 'c_7f3a', title: 'Shop sales widget on the dashboard', why: 'Shows the day’s orders next to the server card.', files: ['web/src/features/dashboard/ShopCard.tsx', 'server/maxxing/widgets.py'],
-      status: 'review', conflicts: [], overlap: ['server/maxxing/widgets.py'] }],
+    // a customization is a server change (pilot custom save refuses web/); edits of web/ only show as web_changes
+    customs: [{ id: 'c-20261020-7f3a', title: 'Mirror up to 80 sessions on Telegram', why: 'I keep more than 50 sessions open and want each one in its own thread.', files: ['server/maxxing/telegram/gateway.py'],
+      status: 'review', conflicts: [], overlap: ['server/maxxing/telegram/gateway.py'] }],
     unsaved: [], web_changes: ['web/src/features/dashboard'], extensions: [{ id: 'broken-widget', name: 'Broken widget', api: 1, reason: 'Extension API 1 is no longer loaded: move it to API 2' }],
     notes: [{ version: '2.0.1' }], changelog: '- **Bulk task actions**: select several tasks and change them at once.\n- Faster dashboard cards.' }
 })

@@ -6,9 +6,16 @@ description: Customize harness-pilot itself and keep the change through updates.
 # Customizations of the product code
 
 The user owns this server and may change anything - including harness-pilot itself. Never answer
-"ask the authors" or "it would be erased by the next update". Changes are recorded as
-**customizations**: local git commits in the code directory, listed in `<workspace>/CUSTOMIZATIONS.md`
-and carried over by every `pilot update`.
+"ask the authors"; say exactly what an update keeps:
+- **kept untouched**: the workspace (projects, memory, tasks, extensions: widgets, pages, block plugins), the
+  scheduled jobs and the settings. An extension is the first choice (section 0).
+- **replayed**: a change of the product outside `web/` (server, CLI, skills, templates) recorded as a
+  **customization** - a local git commit in the code directory, listed in `<workspace>/CUSTOMIZATIONS.md`. `pilot
+  update` replays it on the new version; when the new code changed the same place, the update stops with nothing
+  changed (exit 3) and you adapt it (section 2). An unsaved change found by the update is saved as one first.
+- **not kept**: any change under `web/` (the sources or the built `web/dist`). `pilot custom save` refuses it and
+  `pilot update` sets it aside (`git stash` in the code directory): the new version's interface runs without it.
+  Rebuild what it does as a page or widget extension, and tell the user before they rely on it.
 
 Paths: code directory = `pilot status` -> Code (here `{{CODE_DIR}}`), workspace =
 `pilot status` -> Workspace (here `{{WORKSPACE}}`).
@@ -21,7 +28,7 @@ Paths: code directory = `pilot status` -> Code (here `{{CODE_DIR}}`), workspace 
 | the product to behave differently and nothing above can do it | a **customization** (this skill) |
 
 Never customize `web/` (the UI is shipped pre-built in `web/dist` and cannot be rebuilt on this
-server: `pilot custom save` refuses it) - build a page or widget extension instead.
+server: `pilot custom save` refuses it, `pilot update` sets it aside) - build a page or widget extension instead.
 
 ## 1. Make a customization
 Server command: `pilot` (`maxxing`, its earlier name, still works).
@@ -40,7 +47,8 @@ Server command: `pilot` (`maxxing`, its earlier name, still works).
    The `--check` is run after every update (`pilot update --verify`, from the workspace, `$MAXXING_CODE` =
    code directory): e.g. `grep -q 'LIMIT = 50' $MAXXING_CODE/server/maxxing/rules.py`, or a `curl -fsS` of the
    endpoint it adds. Add or change it later with `pilot custom check <id> "<command>"`.
-4. Tell the user it is recorded and will be kept by updates; note it in this topic's memory.md.
+4. Tell the user it is recorded and that updates replay it (you adapt it if a new version changes the same
+   code); note it in this topic's memory.md.
 
 `pilot custom` (status) lists customizations, unsaved changes and any pending update.
 `pilot custom drop <id>` removes one (ask first; restart afterwards).
