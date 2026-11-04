@@ -40,7 +40,7 @@ In **Sessions**, create a session and select **Claude Code + Codex**. Choose a c
 
 You can assign roles to each agent, save reusable role configurations, and choose a Claude model and a separate Codex model identifier. Model availability depends on the corresponding account; leaving a field empty uses that agent's default.
 
-The session menu can generate a reviewable summary, decisions, and suggested actions using Codex. Select the proposed actions you want before adding them to the task board. Summary requests use the connected Codex account and are not yet included in the turn statistics.
+The session menu can generate a reviewable summary, decisions, and suggested actions using Codex. Select the proposed actions you want before adding them to the task board. You can also review and edit the summary before explicitly saving it to the topic's shared `memory.md`. Codex reads this memory on its next turn; Claude normally loads it when starting a new thread. Summary requests use the connected Codex account and are not yet included in the turn statistics.
 
 To follow discussions in Telegram, configure a bot in **Settings → Telegram** and enable mirroring. Telegram setup is separate from connecting the agents.
 

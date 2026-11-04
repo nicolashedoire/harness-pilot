@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useT } from '@/i18n'
 import { api, errorMessage, seg } from '@/lib/api'
 import { useCreateTask } from '@/lib/queries/tasks'
-import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Spinner, toast } from '@/components/ui'
+import { Button, Checkbox, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Spinner, Textarea, toast } from '@/components/ui'
 
 type Summary = { summary: string; decisions: string[]; actions: { title: string; notes: string }[]; truncated: boolean }
 
@@ -15,10 +15,27 @@ export function SessionSummary({ sid, path, open, onOpenChange }: { sid: string;
   const [error, setError] = React.useState('')
   const [selected, setSelected] = React.useState<number[]>([])
   const [created, setCreated] = React.useState<number[]>([])
+  const [memoryOpen, setMemoryOpen] = React.useState(false)
+  const [memoryText, setMemoryText] = React.useState('')
+  const [memorySaving, setMemorySaving] = React.useState(false)
+  const [memorySaved, setMemorySaved] = React.useState(false)
   const generate = async () => {
-    setLoading(true); setError(''); setData(null); setSelected([]); setCreated([])
-    try { setData(await api.post<Summary>(`/api/sessions/${seg(sid)}/summary`)) }
+    setLoading(true); setError(''); setData(null); setSelected([]); setCreated([]); setMemoryOpen(false); setMemorySaved(false)
+    try {
+      const result = await api.post<Summary>(`/api/sessions/${seg(sid)}/summary`)
+      setData(result)
+      setMemoryText(Array.from([result.summary, ...(result.decisions.length ? [t('summary.decisions') + ':', ...result.decisions.map((d) => '- ' + d)] : [])].join('\n\n')).slice(0, 12000).join(''))
+    }
     catch (e) { setError(errorMessage(e)) } finally { setLoading(false) }
+  }
+  const saveMemory = async () => {
+    if (!memoryText.trim() || memorySaving || memorySaved) return
+    setMemorySaving(true)
+    try {
+      await api.post(`/api/sessions/${seg(sid)}/summary/memory`, { text: memoryText })
+      setMemorySaved(true); toast.success(t('summary.memorySaved'))
+    } catch (e) { toast.error(errorMessage(e)) }
+    finally { setMemorySaving(false) }
   }
   const addTasks = async () => {
     if (!data || creating) return
@@ -46,6 +63,13 @@ export function SessionSummary({ sid, path, open, onOpenChange }: { sid: string;
           <section><h3 className="mb-1 font-semibold">{t('summary.decisions')}</h3>{data.decisions.length ? <ul className="list-disc space-y-1 pl-5">{data.decisions.map((d, i) => <li key={i}>{d}</li>)}</ul> : <p className="text-muted-foreground">{t('summary.none')}</p>}</section>
           <section><h3 className="mb-1 font-semibold">{t('summary.actions')}</h3><p className="mb-2 text-xs text-muted-foreground">{t('summary.review')}</p>
             {data.actions.length ? <div className="grid gap-2">{data.actions.map((a, i) => <label key={i} className="flex items-start gap-2 rounded-md border p-2"><Checkbox checked={selected.includes(i)} disabled={created.includes(i)} onCheckedChange={(on) => setSelected((old) => on === true ? [...old, i] : old.filter((n) => n !== i))} /><span className="grid gap-1"><span>{a.title}{created.includes(i) && ` · ${t('summary.added')}`}</span>{a.notes && <span className="text-xs text-muted-foreground">{a.notes}</span>}</span></label>)}</div> : <p className="text-muted-foreground">{t('summary.none')}</p>}
+          </section>
+          <section className="grid gap-2 rounded-md border p-3">
+            <h3 className="font-semibold">{t('summary.memory')}</h3>
+            <p className="text-xs text-muted-foreground">{t('summary.memoryHelp')}</p>
+            {!memoryOpen && <Button type="button" variant="outline" onClick={() => setMemoryOpen(true)}>{t('summary.memoryReview')}</Button>}
+            {memoryOpen && <><Textarea aria-label={t('summary.memoryEdit')} maxLength={12000} value={memoryText} onChange={(e) => { setMemoryText(e.target.value); setMemorySaved(false) }} />
+              <Button type="button" variant="outline" onClick={saveMemory} disabled={!memoryText.trim() || memorySaving || memorySaved}>{memorySaved ? t('summary.memorySaved') : t('summary.memorySave')}</Button></>}
           </section>
         </div>}
         <DialogFooter>

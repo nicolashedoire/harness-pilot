@@ -1,6 +1,7 @@
 import json
 import pytest
 
+from maxxing import workspace
 from maxxing.sessions import codex, store, summary
 
 
@@ -51,3 +52,32 @@ def test_summary_does_not_launch_twice_for_the_same_session():
     finally:
         with summary._lock:
             summary._busy.discard('same-session')
+
+
+def test_reviewed_memory_is_appended_and_read_by_codex(client, topic):
+    meta = store.new_meta(topic, 'Discussion', provider='discussion')
+    store.create(meta)
+    folder = workspace.topic_dir(topic)
+    memory = folder / 'memory.md'
+    before = memory.read_text()
+    result = client.post(f"/api/sessions/{meta['id']}/summary/memory", json={'text': 'Décision validée : commencer petit.'})
+    assert result.status_code == 200, result.text
+    assert memory.read_text().startswith(before)
+    assert 'Décision validée : commencer petit.' in codex.workspace_context(workspace.root(), folder)
+
+
+def test_memory_rejects_symlinks_and_oversized_file(client, topic, mx):
+    meta = store.new_meta(topic, 'Discussion', provider='discussion')
+    store.create(meta)
+    memory = workspace.topic_dir(topic) / 'memory.md'
+    outside = mx['tmp'] / 'outside.txt'
+    outside.write_text('unchanged')
+    memory.unlink()
+    memory.symlink_to(outside)
+    url = f"/api/sessions/{meta['id']}/summary/memory"
+    assert client.post(url, json={'text': 'safe text'}).status_code == 409
+    assert outside.read_text() == 'unchanged'
+    memory.unlink()
+    memory.write_text('x' * 32760)
+    assert client.post(url, json={'text': 'safe text'}).status_code == 409
+    assert memory.read_text() == 'x' * 32760

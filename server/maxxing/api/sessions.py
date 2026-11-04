@@ -90,6 +90,10 @@ class AskIn(_Text):
     question: str = ""
 
 
+class MemoryIn(_Text):
+    text: str = Field(min_length=1, max_length=12000)
+
+
 class ApproveIn(_Text):
     text: str = ""      # what the conversation shows (the client's language), e.g. "Plan validated - go ahead."
 
@@ -198,6 +202,12 @@ async def ask_aside(sid: str, body: AskIn):
 async def summarize_session(sid: str):
     from ..sessions import summary
     return await _call(summary.generate, sid)
+
+
+@router.post('/sessions/{sid}/summary/memory')
+async def session_summary_memory(sid: str, body: MemoryIn):
+    from ..sessions import summary
+    return await _call(summary.save_memory, sid, body.text)
 
 
 @router.post("/sessions/{sid}/plan/approve")

@@ -1,11 +1,15 @@
 """Generate a reviewable summary without modifying the conversation or creating tasks."""
 from __future__ import annotations
 
+import fcntl
 import json
+import os
+import stat
 import subprocess
 import tempfile
 import threading
 from pathlib import Path
+from datetime import datetime, timezone
 
 from .. import config
 from . import codex, service, spawn
@@ -25,6 +29,37 @@ SCHEMA = {
 MAX_TEXT = 50_000
 _lock = threading.Lock()
 _busy: set[str] = set()
+
+
+def save_memory(sid: str, text: str) -> dict:
+    """Append only text explicitly approved by the user to the session's topic memory."""
+    text = text.strip()
+    if not text:
+        raise SessionError(400, 'empty_memory', 'There is no text to save.')
+    meta = service._require(sid)
+    cwd = Runner._cwd(config.load_config(), meta)
+    if cwd is None:
+        raise SessionError(409, 'no_topic', 'The topic folder no longer exists.')
+    path = Path(cwd) / 'memory.md'
+    entry = ('\n\n## Discussion — ' + datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+             + '\n\n' + text + '\n').encode('utf-8')
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise SessionError(409, 'invalid_memory', 'The topic memory is not a regular file.')
+            # Codex reads at most 32 KiB from each context file; never append invisible text.
+            if info.st_size + len(entry) > 32768:
+                raise SessionError(409, 'memory_full', 'The topic memory is full. Edit or compact memory.md first.')
+            if os.write(fd, entry) != len(entry):
+                raise SessionError(500, 'memory_write', 'Only part of the memory could be saved; check memory.md.')
+        finally:
+            os.close(fd)
+    except OSError:
+        raise SessionError(409, 'memory_unavailable', 'Cannot safely open the topic memory.md file.') from None
+    return {'ok': True}
 
 
 def _transcript(sid: str) -> tuple[str, bool]:

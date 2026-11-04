@@ -17,6 +17,8 @@ The new-session form also accepts separate Claude and Codex models. The Codex mo
 
 From a session's **More actions** menu, **Summary and actions** asks Codex to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The summary request uses the connected Codex account and is not yet included in turn statistics.
 
+You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
+
 Some features described below apply to Claude sessions only; Codex support is still evolving.
 
 ## Layout
