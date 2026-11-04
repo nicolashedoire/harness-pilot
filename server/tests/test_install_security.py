@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -19,12 +20,30 @@ from maxxing import backup, cli, config, security
 INSTALL = Path(__file__).resolve().parents[2] / "install.sh"
 
 
-def test_legacy_installer_refuses_execution_before_host_changes():
-    result = subprocess.run(['bash', str(INSTALL), '--check'], capture_output=True, text=True,
-                            timeout=10, env={'PATH': '/usr/bin:/bin'})
-    assert result.returncode == 1
-    assert 'legacy Linux installer is disabled' in result.stderr
-    assert 'scripts/dev-local.sh' in result.stderr
+def _bash_major() -> int:
+    r = subprocess.run(['bash', '-c', 'echo "${BASH_VERSINFO[0]}"'], capture_output=True, text=True, timeout=10)
+    return int(r.stdout.strip() or 0)
+
+
+@pytest.mark.skipif(_bash_major() < 4, reason="the installer needs bash 4 or newer")
+def test_installer_runs_and_its_help_and_bad_options_change_nothing():
+    """The installer is enabled again (Debian 12, Ubuntu 24.04): --help and an unknown option stop before any check
+    or change of this machine."""
+    run = partial(subprocess.run, capture_output=True, text=True, timeout=10, env={'PATH': '/usr/bin:/bin'})
+    r = run(['bash', str(INSTALL), '--help'])
+    assert r.returncode == 0 and 'harness-pilot installer' in r.stdout, r.stderr
+    assert 'raw.githubusercontent.com/nicolashedoire/harness-pilot/main/install.sh' in r.stdout
+    r = run(['bash', str(INSTALL), '--nope'])
+    assert r.returncode == 1 and 'unknown option: --nope' in r.stderr
+
+
+def test_installer_refuses_sh_and_an_old_bash():
+    r = subprocess.run(['sh', str(INSTALL), '--help'], capture_output=True, text=True, timeout=10,
+                       env={'PATH': '/usr/bin:/bin'})
+    if 'harness-pilot installer' in r.stdout:      # `sh` is a bash >= 4 on this system: nothing to refuse
+        return
+    assert r.returncode == 1                        # dash (Debian, Ubuntu) or the bash 3.2 of macOS
+    assert 'Run this installer with bash' in r.stderr or 'needs bash 4 or newer' in r.stderr, r.stderr
 
 
 def sh(snippet: str, **env: str) -> subprocess.CompletedProcess:
