@@ -22,9 +22,16 @@ export function isApiError(e: unknown, code?: string): e is ApiError {
   return e instanceof ApiError && (code === undefined || e.code === code)
 }
 
+let localText: ((code: string) => string | undefined) | null = null
+/** Registered once by the app: the words, in the UI language, of an error raised before any answer of the server
+ *  (status 0, e.g. `network`). */
+export function onLocalErrorText(fn: (code: string) => string | undefined) {
+  localText = fn
+}
+
 /** Human-readable message for any thrown value. */
 export function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) return e.message || e.code
+  if (e instanceof ApiError) return (e.status === 0 && localText?.(e.code)) || e.message || e.code
   if (e instanceof Error) return e.message
   return String(e)
 }

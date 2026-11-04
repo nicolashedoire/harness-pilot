@@ -203,3 +203,40 @@ def test_team_refuses_a_missing_attachment_or_an_empty_mission_before_starting(c
     r = client.post('/api/teams', json={'path': topic, 'message': '   '})
     assert r.status_code == 400 and r.json()['error'] == 'bad_mission'
     assert len(client.get('/api/sessions').json()) == before  # nothing was created
+def test_team_shows_each_workers_last_actions_and_report(client, topic, mx, monkeypatch):
+    from maxxing.sessions import teams
+    fake_codex(mx, monkeypatch)
+    sid = client.post('/api/teams', json={'path': topic, 'message': 'Look around for the team.'}).json()['id']
+    team = client.get(f'/api/teams/{sid}').json()
+    assert team['created'] and all(a['started_at'] == team['created'] for a in team['agents'])
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    claude, codex = client.get(f'/api/teams/{sid}').json()['agents']
+    # the Claude worker said something, ran `ls -la`, then answered: the last three, oldest first
+    assert [a['kind'] for a in claude['activity']] == ['say', 'run', 'say']
+    assert claude['activity'][0]['target'] == 'Let me look at the folder.'
+    assert claude['activity'][1]['target'] == 'ls -la'
+    assert claude['report'].startswith(claude['activity'][2]['target'].rstrip('…'))
+    assert len(claude['report']) <= teams.REPORT_MAX + 1   # the start of a long answer only
+    assert codex['report'] == 'Codex independent report'
+    assert [a['kind'] for a in codex['activity']] == ['say']
+    for agent in (claude, codex):
+        assert agent['finished_at'] and agent['finished_at'] >= agent['started_at']
+
+
+def test_team_live_view_is_bounded_and_cached(client, topic, mx, monkeypatch):
+    from maxxing.sessions import service, teams
+    fake_codex(mx, monkeypatch, delay=6)
+    sid = client.post('/api/teams', json={'path': topic, 'message': 'SLOW still working'}).json()['id']
+    claude = client.get(f'/api/teams/{sid}').json()['agents'][0]['id']
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['agents'][0]['activity'])
+    reads = []
+    real = service._tail_events
+    monkeypatch.setattr(service, '_tail_events', lambda s, n=0: reads.append((s, n)) or real(s, n))
+    teams._live.clear()
+    first = client.get(f'/api/teams/{sid}').json()['agents'][0]
+    assert first['state'] == 'running' and first['report'] is None and first['finished_at'] is None
+    assert first['activity'][-1] == {'kind': 'say', 'target': 'Starting a long task.'}
+    client.get(f'/api/teams/{sid}')
+    assert all(n == teams.LIVE_TAIL for _, n in reads)
+    assert len([s for s, _ in reads if s == claude]) == 1   # the second poll reused the first read (log unchanged)
+    client.post(f'/api/teams/{sid}/stop')

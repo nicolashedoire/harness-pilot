@@ -105,8 +105,13 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, agents: [{..., state, session}]}`; `state` = `stopped` once the user stopped that worker,
-  else the session's state (`missing` when it is gone). A session without a team -> 404 `not_found`.
+- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+  `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
+  session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
+  (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
+  `ACTIVITY_MAX` (3) tool calls and texts, the first `REPORT_MAX` (600) characters of its last answer once it stopped.
+  Cached per worker in `_live` (64 entries) on `(service.log_ident, running)`: the panel's polls re-read a log only
+  when it changed.
 - `stop_agent(sid, agent_id)`: only while `working` and that worker runs (else 409 `not_running`), marks it
   `stopped` and stops it alone. `stop(sid)`: phase `stopped`, running workers marked, every worker and the
   coordinator stopped. Both call `service.stop(..., _team_internal=True)`.
