@@ -46,6 +46,14 @@ export function fmtDate(at: number, lang: string, tz?: string, opts?: Intl.DateT
   return cached('d', lang, o, () => new Intl.DateTimeFormat(lang, o)).format(new Date(at * 1000))
 }
 
+/** The 24-hour "HH:MM" times of a server text (humanised cron schedules) in the language's time format,
+ *  so they match the dates around them: "every day at 04:40" -> "every day at 4:40 AM" in English. */
+export function fmtClockTimes(text: string, lang: string): string {
+  return text.replace(/\b([01]\d|2[0-3]):([0-5]\d)\b/g, (_, h: string, m: string) =>
+    fmtDate(Date.UTC(2000, 0, 1, +h, +m) / 1000, lang, 'UTC', { dateStyle: undefined, timeStyle: 'short' }),
+  )
+}
+
 /** "3 min ago" / "in 2 h" — `at` in Unix seconds. */
 export function fmtRelative(at: number, lang: string, now = Date.now() / 1000): string {
   const diff = at - now

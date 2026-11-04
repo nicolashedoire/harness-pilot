@@ -6,7 +6,7 @@ import { useLang, useT, type TKey } from '@/i18n'
 import { fmtDate, fmtRelative } from '@/lib/format'
 import { useCronPreview, useSettings } from '@/lib/queries'
 import { Input, Label, Select, Skeleton } from '@/components/ui'
-import { cap } from './parts'
+import { scheduleText } from './parts'
 import { PRESET_KINDS, fromPreset, hhmm, toPreset, weekdayNames, type Preset, type PresetKind } from './schedule'
 
 export function useDebounced<T>(v: T, ms = 300) {
@@ -195,7 +195,7 @@ export function SchedulePreview({ schedule }: { schedule: string }) {
         <div className="grid gap-2">
           <p className="flex items-center gap-2 font-medium first-letter:uppercase">
             <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
-            <span>{cap(p.human)}</span>
+            <span>{scheduleText(p.human, lang)}</span>
           </p>
           {p.next.length > 0 ? (
             <div className="grid gap-1">

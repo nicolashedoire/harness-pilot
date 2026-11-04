@@ -35,10 +35,11 @@ import {
   useMask,
 } from '@/components/ui'
 import { CronEditor, type EditorSeed } from '@/features/crons/CronEditor'
-import { KindBadge, LastRun, RunsHistory, cap, useNow } from '@/features/crons/parts'
+import { KindBadge, LastRun, RunsHistory, scheduleText, useNow } from '@/features/crons/parts'
 
 export default function CronsPage() {
   const t = useT()
+  const lang = useLang()
   const [params, setParams] = useSearchParams()
   const jobId = params.get('job')
   const q = useCrons()
@@ -149,7 +150,7 @@ export default function CronsPage() {
               {external.map((e, i) => (
                 <li key={i} className="grid gap-1.5 px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="font-medium">{cap(e.human || e.schedule)}</span>
+                    <span className="font-medium">{scheduleText(e.human || e.schedule, lang)}</span>
                     <Badge variant="outline" className="font-mono">
                       {e.schedule}
                     </Badge>
@@ -242,6 +243,7 @@ function RunButton({ job, actions, withLabel }: { job: Cron; actions: Actions; w
 
 function JobRow({ job, tz, now, onOpen, onToggle, actions }: { job: Cron; tz?: string; now: number; onOpen: () => void; onToggle: (v: boolean) => void; actions: Actions }) {
   const t = useT()
+  const lang = useLang()
   return (
     <li className={cn('flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/40', !job.enabled && 'opacity-70')} data-job-id={job.id}>
       <button type="button" onClick={onOpen} className="grid min-w-0 flex-1 gap-1 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -259,7 +261,7 @@ function JobRow({ job, tz, now, onOpen, onToggle, actions }: { job: Cron; tz?: s
           {!job.enabled && <Badge variant="muted">{t('crons.disabled')}</Badge>}
         </span>
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-muted-foreground">
-          <span className="font-medium text-foreground/80">{cap(job.human)}</span>
+          <span className="font-medium text-foreground/80">{scheduleText(job.human, lang)}</span>
           <span aria-hidden className="max-sm:hidden">·</span>
           <NextRun job={job} tz={tz} now={now} />
         </span>
@@ -342,7 +344,7 @@ function JobSheet({
                 <Sensitive length={10}>{job.name}</Sensitive>
               </SheetTitle>
               <SheetDescription>
-                {cap(job.human)} · <code className="font-mono text-xs">{job.schedule}</code>
+                {scheduleText(job.human, lang)} · <code className="font-mono text-xs">{job.schedule}</code>
               </SheetDescription>
               <div className="flex flex-wrap gap-2 pt-1">
                 <RunButton job={job} actions={actions} withLabel />
