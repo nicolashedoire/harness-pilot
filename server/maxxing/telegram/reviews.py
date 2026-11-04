@@ -94,15 +94,15 @@ async def handle(gw, msg: dict, value: str) -> str:
         return _w('missing')
     sid, fingerprint = params
     try:
-        result = await asyncio.to_thread(companions.review, sid)
-        if result['fingerprint'] != fingerprint or result['session'].get('state') == 'running':
-            return _w('changed')
         if action == 'd':
-            tid = await gw.reopen_thread(sid, result['session'])
+            tid = await gw.reopen_thread(sid)
             if tid is None:
                 return _w('unavailable')
             sent = await gw.send_html(msg['chat']['id'], tid, fmt.escape(_w('conversation')))
             return _w('opened' if sent else 'delivery')
+        result = await asyncio.to_thread(companions.review, sid)
+        if result['fingerprint'] != fingerprint or result['session'].get('state') == 'running':
+            return _w('changed')
         if (result.get('decision') or {}).get('fingerprint') == fingerprint:
             return _w('decided')
         patch = _patch(result)

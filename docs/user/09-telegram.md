@@ -171,7 +171,7 @@ reviewed in the application, where the full proposal is available.
 
 **Discuss** opens the same companion session in its own Telegram thread. Write your question there; it appears
 in the web conversation too. `/status` checks its state and `/stop` interrupts its current work. The button itself
-does not make an extra model call. Creating a thread while Telegram is still being synchronized no longer produces
+does not make an extra model call. Discussion remains available when an older proposal cannot be approved. Creating a thread while Telegram is still being synchronized no longer produces
 an unsupported-message reply. When Telegram has just accepted Threaded Mode, return to Settings -> Telegram and
 press **Retry** to synchronize it.
 

@@ -114,7 +114,9 @@ import { Composer, type ComposerHandle } from './Composer'
 import { QuotePill } from './Quote'
 import { FileMenu } from './FileMenu'
 import { ItemContext } from './Items'
+import { agentName, sessionAgents } from '@/features/agents/AgentIcon'
 import { AgentChip, ContextGauge, ModelPicker, StateBadge } from './Widgets'
+import { ModePanel, ModePicker } from './NewSessionModes'
 import { absTopicDir, fileQuote, modelLabel, topicLabel } from './util'
 import { CONTENT_MIME, contentDragLeave, contentDragOver, contentDrop, useContentDrag, type Dropped } from './contentDrag'
 
@@ -145,6 +147,7 @@ function MobileTabs() {
 
 /* ---------------------------------------------------------------- shell */
 export function ColumnShell({ col, index, count, variant, place, children }: { col: Col; index: number; count: number; variant: ColumnVariant; place?: Place; children: React.ReactNode }) {
+  const t = useT()
   const focused = useSessionsUI((s) => s.focused === col.key)
   const focus = useSessionsUI((s) => s.focus)
   const strip = React.useContext(StripContext)
@@ -166,7 +169,7 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
     <section
       ref={ref}
       data-col={col.key}
-      aria-label={`Column ${index + 1}`}
+      aria-label={t('sessions.columnN', { n: index + 1 })}
       onFocusCapture={() => isCol && focus(col.key)}
       onPointerDownCapture={() => isCol && focus(col.key)}
       onDragOver={(e) => {
@@ -226,7 +229,7 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize"
+          aria-label={t('shell.resize')}
           onPointerDown={(e) => strip.startColResize(place?.top ?? col.key, e)}
           onDoubleClick={() => strip.resetColWidth(place?.top ?? col.key)}
           // Just past the right edge (never over the column's own scrollbar); the strip keeps an 8 px gutter at its
@@ -238,7 +241,7 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
         <div
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize"
+          aria-label={t('shell.resize')}
           onPointerDown={strip.startRowResize}
           onDoubleClick={strip.resetRowSplit}
           className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize touch-none after:absolute after:inset-x-0 after:top-1 after:h-[3px] after:transition-colors hover:after:bg-primary/40 active:after:bg-primary/60"
@@ -633,7 +636,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   // the last turn ended on a question of the agent (AskUserQuestion): its options answer it in one click
   const asked = useLogSelect(sid, lastQuestion)
   const question = !running && !planReady && failed === null ? asked : null
-  const agentName = session?.provider_name || (session?.provider === 'codex' ? 'Codex' : 'Claude Code')
+  const replyAgent = agentName(sessionAgents(session?.provider)[0], t, session?.provider_name)
   // a paused discussion ends with the date of its pause (and the limit it reached)
   const pauseKey = duo && session?.debate_paused ? [session.discussion_paused_at, session.discussion_pause_reason, session.discussion_turns, session.discussion_turn_limit, session.discussion_duration_seconds, session.discussion_elapsed].join('|') : ''
   const card = React.useMemo(
@@ -643,10 +646,10 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       ) : failed ? (
         <FailedTurn sid={sid} error={failed} onRetry={(text, attachments) => void sendNow.current(text, attachments)} />
       ) : question ? (
-        <QuestionCard question={question} agent={agentName} onAnswer={(text) => void sendNow.current(text, [])} onOther={() => composer.current?.focus()} />
+        <QuestionCard question={question} agent={replyAgent} onAnswer={(text) => void sendNow.current(text, [])} onOther={() => composer.current?.focus()} />
       ) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [planReady, failed, sid, planReady && session?.id, question, agentName],
+    [planReady, failed, sid, planReady && session?.id, question, replyAgent],
   )
   const tail = React.useMemo(
     () => (pauseKey && session ? <>{<PauseSeparator session={session} />}{card}</> : card),
@@ -661,9 +664,9 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       send: (text) => sendNow.current(text, []),
       openPanel: panel.open,
       beside,
-      agent: duo ? undefined : agentName,
+      agent: duo ? undefined : replyAgent,
     }),
-    [sid, panel.open, beside, duo, agentName],
+    [sid, panel.open, beside, duo, replyAgent],
   )
 
   // (a picture dragged from a thread carries a file too: that is a content drag)
@@ -872,7 +875,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                       : duo
                         ? t('conv.composer.intervene')
                         : session
-                          ? t('conv.composer.replyTo', { agent: agentName })
+                          ? t('conv.composer.replyTo', { agent: replyAgent })
                           : undefined
                   }
                   hint={duo ? t('conv.composer.duoHint') : t('conv.composer.hint')}
@@ -1428,6 +1431,8 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const options = topics.map((tp) => ({ value: tp.path, label: mask(`${tp.project} / ${tp.name}`, 10) }))
   const valid = topics.some((tp) => tp.path === col.path)
   const validLimits = (!turnLimit || (+turnLimit >= 1 && +turnLimit <= 200 && Number.isInteger(+turnLimit))) && (!durationMinutes || (+durationMinutes >= 1 && +durationMinutes <= 1440 && Number.isInteger(+durationMinutes)))
+  // Modes that take written messages only: the composer's attach button is off and says why (voice is dictated).
+  const noAttach = provider === 'team' ? t('mixedTeam.noAttachments') : plugin && adapter && !adapter.capabilities.includes('attachments') ? t('agentProviders.textOnly') : null
   const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : provider === 'swarm' ? { swarm_agents: Number(swarmAgents) } : {}
 
   const onSend = async (text: string, attachments: string[]) => {
@@ -1508,68 +1513,69 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
           {variant === 'mobile' && <MobileTabs />}
           <div className="flex h-5 items-center text-[11px] text-muted-foreground">{t('sessions.new.subtitle')}</div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto grid w-full max-w-[560px] gap-4 px-4 py-6">
-            <div className="grid gap-1.5">
-              <Label htmlFor={`topic-${col.key}`}>{t('sessions.new.topic')}</Label>
-              <Combobox id={`topic-${col.key}`} value={col.path} onChange={(v) => setNewPath(col.key, v)} options={options} placeholder={t('sessions.new.pickTopic')} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={`title-${col.key}`}>
-                {t('sessions.new.titleLabel')} <span className="font-normal text-muted-foreground">{t('sessions.new.optional')}</span>
-              </Label>
-              <Input id={`title-${col.key}`} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('sessions.new.titlePlaceholder')} maxLength={120} autoComplete="off" />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('sessions.swarm.provider') }, { value: 'team', label: t('mixedTeam.provider') }, ...agentProviders.filter(p=>!p.builtin).map(p=>({value:p.id,label:p.name}))]} />
-            </div>
-            {plugin && !adapter?.capabilities.includes('attachments') && <p className="text-xs text-muted-foreground">{t('agentProviders.textOnly')}</p>}
-            {provider === 'team' && <p className="rounded-lg border p-3 text-xs text-muted-foreground">{t('mixedTeam.hint')}</p>}
-            {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
-              <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
-              <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
-              <p className="text-xs text-muted-foreground">{t('sessions.swarm.hint')}</p>
-            </div>}
-            {provider === 'both' && <div className="grid gap-1.5">
-              <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>
-              <Select id={`conversation-mode-${col.key}`} value={conversationMode} onValueChange={(v) => setConversationMode(v as 'discussion' | 'debate')} options={[{ value: 'discussion', label: t('sessions.discussion') }, { value: 'debate', label: t('sessions.debate') }]} />
-              <p className="text-xs text-muted-foreground">{t('sessions.debateHint')}</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5"><Label htmlFor={`turn-limit-${col.key}`}>{t('sessions.discussionTurnLimit')}</Label><Input id={`turn-limit-${col.key}`} type="number" min={1} max={200} value={turnLimit} onChange={(e) => setTurnLimit(e.target.value)} placeholder={t('sessions.discussionUnlimited')} /></div>
-                <div className="grid gap-1.5"><Label htmlFor={`duration-limit-${col.key}`}>{t('sessions.discussionDuration')}</Label><Input id={`duration-limit-${col.key}`} type="number" min={1} max={1440} value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder={t('sessions.discussionUnlimited')} /></div>
+        <div className="@container min-h-0 flex-1 overflow-y-auto">
+          {/* Wide: the form and the mode cards on the left, the mode's settings under them, "What will happen" on the
+              right (it spans the rows, the last one takes its extra height). Narrow: one column, the panel right
+              under the cards. */}
+          <div className="mx-auto grid w-full max-w-[560px] gap-4 px-4 py-6 @3xl:max-w-[1040px] @3xl:grid-cols-[minmax(0,1fr)_minmax(17rem,21rem)] @3xl:grid-rows-[auto_auto_1fr] @3xl:gap-x-6">
+            <div className="grid min-w-0 content-start gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor={`topic-${col.key}`}>{t('sessions.new.topic')}</Label>
+                <Combobox id={`topic-${col.key}`} value={col.path} onChange={(v) => setNewPath(col.key, v)} options={options} placeholder={t('sessions.new.pickTopic')} />
               </div>
-              <p className="text-xs text-muted-foreground">{t('sessions.discussionLimitsHint')}</p>
-              <Label htmlFor={`preset-${col.key}`}>{t('sessions.preset')}</Label>
-              <Select id={`preset-${col.key}`} value={preset} onValueChange={choosePreset} options={[{ value: 'default', label: t('sessions.presetDefault') }, { value: 'review', label: t('sessions.presetReview') }, { value: 'build', label: t('sessions.presetBuild') }, ...presets.map((p) => ({ value: p.id, label: p.name }))]} />
-              <Label htmlFor={`claude-role-${col.key}`}>{t('sessions.claudeRole')}</Label>
-              <Textarea id={`claude-role-${col.key}`} value={claudeRole} maxLength={2000} onChange={(e) => setClaudeRole(e.target.value)} minRows={2} placeholder={t('sessions.rolePlaceholder')} />
-              <Label htmlFor={`codex-role-${col.key}`}>{t('sessions.codexRole')}</Label>
-              <Textarea id={`codex-role-${col.key}`} value={codexRole} maxLength={2000} onChange={(e) => setCodexRole(e.target.value)} minRows={2} placeholder={t('sessions.rolePlaceholder')} />
-              <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
-              {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
-            </div>}
-            {provider !== 'codex' && !plugin && provider !== 'team' && <div className="grid gap-1.5">
-              <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
-              <div>
-                <ModelPicker chosen={model} onChange={setModel} />
+              <div className="grid gap-1.5">
+                <Label htmlFor={`title-${col.key}`}>
+                  {t('sessions.new.titleLabel')} <span className="font-normal text-muted-foreground">{t('sessions.new.optional')}</span>
+                </Label>
+                <Input id={`title-${col.key}`} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('sessions.new.titlePlaceholder')} maxLength={120} autoComplete="off" />
               </div>
-            </div>}
-            {(provider === 'codex' || provider === 'both' || plugin) && <div className="grid gap-1.5">
-              <Label htmlFor={`codex-model-${col.key}`}>{t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
-              <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
-              <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>
-            </div>}
-            {provider !== 'both' && provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
-              <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
-              <span className="grid gap-0.5 leading-tight">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  <ListChecks className="size-3.5 text-primary" /> {t('plan.newLabel')}
+              <ModePicker name={`provider-${col.key}`} value={provider} onChange={(v) => { setProvider(v); setModel(''); setPlanMode(false) }} plugins={agentProviders.filter((p) => !p.builtin)} swarmAgents={swarmAgents} />
+            </div>
+            <ModePanel mode={provider} adapter={adapter} swarmAgents={swarmAgents} className="@3xl:sticky @3xl:top-0 @3xl:col-start-2 @3xl:row-span-3 @3xl:row-start-1 @3xl:self-start" />
+            <div className="grid min-w-0 content-start gap-4 @3xl:col-start-1">
+              {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
+                <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
+                <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
+              </div>}
+              {provider === 'both' && <div className="grid gap-1.5">
+                <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>
+                <Select id={`conversation-mode-${col.key}`} value={conversationMode} onValueChange={(v) => setConversationMode(v as 'discussion' | 'debate')} options={[{ value: 'discussion', label: t('sessions.discussion') }, { value: 'debate', label: t('sessions.debate') }]} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5"><Label htmlFor={`turn-limit-${col.key}`}>{t('sessions.discussionTurnLimit')}</Label><Input id={`turn-limit-${col.key}`} type="number" min={1} max={200} value={turnLimit} onChange={(e) => setTurnLimit(e.target.value)} placeholder={t('sessions.discussionUnlimited')} /></div>
+                  <div className="grid gap-1.5"><Label htmlFor={`duration-limit-${col.key}`}>{t('sessions.discussionDuration')}</Label><Input id={`duration-limit-${col.key}`} type="number" min={1} max={1440} value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder={t('sessions.discussionUnlimited')} /></div>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('sessions.discussionLimitsHint')}</p>
+                <Label htmlFor={`preset-${col.key}`}>{t('sessions.preset')}</Label>
+                <Select id={`preset-${col.key}`} value={preset} onValueChange={choosePreset} options={[{ value: 'default', label: t('sessions.presetDefault') }, { value: 'review', label: t('sessions.presetReview') }, { value: 'build', label: t('sessions.presetBuild') }, ...presets.map((p) => ({ value: p.id, label: p.name }))]} />
+                <Label htmlFor={`claude-role-${col.key}`}>{t('sessions.claudeRole')}</Label>
+                <Textarea id={`claude-role-${col.key}`} value={claudeRole} maxLength={2000} onChange={(e) => setClaudeRole(e.target.value)} minRows={2} placeholder={t('sessions.rolePlaceholder')} />
+                <Label htmlFor={`codex-role-${col.key}`}>{t('sessions.codexRole')}</Label>
+                <Textarea id={`codex-role-${col.key}`} value={codexRole} maxLength={2000} onChange={(e) => setCodexRole(e.target.value)} minRows={2} placeholder={t('sessions.rolePlaceholder')} />
+                <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
+                {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
+              </div>}
+              {provider !== 'codex' && !plugin && provider !== 'team' && <div className="grid gap-1.5">
+                <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
+                <div>
+                  <ModelPicker chosen={model} onChange={setModel} />
+                </div>
+              </div>}
+              {(provider === 'codex' || provider === 'both' || plugin) && <div className="grid gap-1.5">
+                <Label htmlFor={`codex-model-${col.key}`}>{t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
+                <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
+                <p className="text-xs text-muted-foreground">{plugin ? t('agentProviders.modelHint', { name: agentName('plugin', t, adapter?.name) }) : t('sessions.codexModelHint')}</p>
+              </div>}
+              {provider !== 'both' && provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
+                <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
+                <span className="grid gap-0.5 leading-tight">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    <ListChecks className="size-3.5 text-primary" /> {t('plan.newLabel')}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{t('plan.newHint')}</span>
                 </span>
-                <span className="text-xs text-muted-foreground">{t('plan.newHint')}</span>
-              </span>
-            </label>}
-            <p className="text-[13px] text-muted-foreground">{t('sessions.new.hint')}</p>
+              </label>}
+              <p className="text-[13px] text-muted-foreground">{t('sessions.new.hint')}</p>
+            </div>
           </div>
         </div>
         <Composer
@@ -1578,8 +1584,9 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
           draftKey={`new:${col.path}`}
           topicPath={col.path}
           disabledReason={!valid ? t('sessions.new.pickTopic') : provider === 'both' && !validLimits ? t('sessions.discussionLimitsInvalid') : plugin && !adapter ? t('agentProviders.unavailable') : !plugin && provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null}
+          attachDisabledReason={noAttach}
           onSend={onSend}
-          onSendVoice={onSendVoice}
+          onSendVoice={noAttach ? undefined : onSendVoice}
           autoFocus={variant !== 'mobile'}
           placeholder={planMode ? t('plan.placeholder') : t('sessions.new.placeholder')}
         />

@@ -7,7 +7,7 @@ page. Code lives in `web/` (React 19 + TypeScript strict + Vite + Tailwind v4 + 
 web/
   index.html               theme bootstrap script (no flash): theme, cached palette CSS (`mx-theme`) — mirrors src/stores/ui.ts
   vite.config.ts           dev proxy /api + /ext → MAXXING_API (default http://127.0.0.1:8801)
-  mock/server.mjs          zero-dependency mock of the whole API (port 8809, scenarios) — see "Mock"
+  mock/server.mjs          zero-dependency mock of part of the API (port 8809, scenarios) — see "Mock"
   src/
     main.tsx  App.tsx      providers (QueryClient, Tooltip, Router, ConfirmHost, Toaster)
     routes.tsx             THE route table (lazy pages)
@@ -192,7 +192,7 @@ exported / imported files, the server's `look.palette`):
 | `Sensitive`, `useMask()`, `usePresentation()` | presentation mode, see §6. |
 
 Shared feature blocks (`src/features`): the theme blocks of `features/themes` (§1 "Themes"), `Callout` (inline result/explanation, tones success/error/warning/info),
-`Steps` (numbered instructions), `OptionCard` (radio card), `SettingRow` (label left, control right), and the
+`Steps` (numbered instructions), `OptionCard` (radio card; `media` puts a logo tile first and the radio mark last, as the new session's agent modes), `SettingRow` (label left, control right), and the
 domain components reused by onboarding **and** settings: `ClaudeConnect`, `ClaudeDefaults`, `CreateProjectTopic`
 (+ `SlugPreview`), `TelegramSetup` (+ `ThreadList`), `BackupSetup` (+ `BackupWhy`), `RegionFields`.
 
@@ -354,7 +354,10 @@ default" (applied once per new browser).
 
 `useT()` → `t('key', {vars})`. English is the reference (`en.ts`); `fr.ts` is typed
 `Record<keyof typeof en, string>` so a missing translation fails the build. Plurals: add `key#one` (used when
-`count` is 1 — French: 0 or 1). Keys are grouped by area (`common.*`, `nav.*`, `settings.*`, `onb.*`…). The language
+`count` is 1 — French: 0 or 1). Keys are grouped by area (`common.*`, `nav.*`, `settings.*`, `onb.*`…). Accessible names
+(`aria-label`, `title`, `alt`, `sr-only` text) go through `t()` too: `web/tests/i18n-labels.test.ts` fails on a literal
+one (product names aside). An error raised in the browser before the server answers (`ApiError` status 0, `network`)
+is worded by `errorMessage` in the UI language (`onLocalErrorText`, registered in `App.tsx`). The language
 comes from server settings once signed in (stored locally too for the login page). Format dates/numbers with
 `lib/format.ts` + the current language and the configured time zone.
 
@@ -388,7 +391,12 @@ Don't
 
 ## 9. Mock & visual checks
 
-`web/mock/server.mjs` implements every API.md endpoint with in-memory, product-neutral data and serves `web/dist`:
+`web/mock/server.mjs` implements part of the API.md endpoints with in-memory, product-neutral data and serves
+`web/dist`. It is incomplete: on 2026-11-04 it answered 141 of the server's 304 `/api` method + path pairs. Mostly
+covered: auth, Claude, workspace, sessions, files, tasks, crons, feed, backup, Telegram, dashboard, blocks. Not
+covered at all: companions, resident missions, pull requests, instance backups, space labels, MCP, Git, Infra,
+voice, trash, import, starter packs and the PC bridge. A route it does not implement answers
+`404 {"error":"not_found","message":"No route for …"}`. Run it with
 `MOCK_PORT=8809 MOCK_SCENARIO=ready|onboarding|login|setup|maxxing node mock/server.mjs`
 (`maxxing`: 30 more sessions that keep finishing at random, for Maxxing mode; `MOCK_PASSWORD=…` asks for that password;
 `MOCK_DIST=…` serves another build)
@@ -455,7 +463,12 @@ group of the user menu, the palette and Settings › General. The closing card l
 - `useGlobalBus` batches server invalidations (250 ms) and `AppShell` prefetches the page chunks and the
   sessions list when idle (skipped on Save-Data / 2G).
 - Settings: `SectionStack` wraps each card in `.mx-rise` (28 ms apart, cards after the 5th together, section heading first); the desktop sub-nav
-  highlight is one absolute element moved with `transform` (items are `h-9` + `gap-0.5` = 2.375rem apart).
+  highlight is one absolute element moved with `transform` (items are `h-9` + `gap-0.5` = 2.375rem apart; each group heading,
+  `h-7` + `gap-0.5`, adds 1.875rem).
+- Settings menu: the sections are grouped under headings (`SETTINGS_GROUPS` in `pages/settings/sections.ts`: You, Agents, Data,
+  Integrations, Platform; every section has a `group`, the list is in menu order), Support last without a heading. On a
+  computer a search above the menu filters it (name, description, keywords; case and accents ignored; Enter opens the first
+  match, Escape clears); only the menu scrolls, with its edge fade. The phone tabs keep one row, a thin divider between groups.
 - Lists that change under the user (session rows, columns): `lib/presence.ts`. `usePresence` keeps a removed
   item rendered while it leaves; `animateOut` takes it out of the flow (absolute, parent `relative`) and fades
   it; `useFlip` slides the others from their previous place; `animateIn` fades + slides new ones. Transform and

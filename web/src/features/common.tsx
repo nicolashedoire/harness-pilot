@@ -41,7 +41,8 @@ export function Steps({ items, className }: { items: React.ReactNode[]; classNam
   )
 }
 
-/** Selectable card used as a radio option (permission mode, auth kind…). */
+/** Selectable card used as a radio option (permission mode, auth kind…). With `media` (a logo in a small tile, e.g. the
+ *  agent modes of a new session), the tile leads and the radio mark moves to the end. */
 export function OptionCard({
   selected,
   onSelect,
@@ -49,8 +50,10 @@ export function OptionCard({
   description,
   badge,
   icon: Icon,
+  media,
   name,
   value,
+  className,
 }: {
   selected: boolean
   onSelect: () => void
@@ -58,21 +61,27 @@ export function OptionCard({
   description?: React.ReactNode
   badge?: React.ReactNode
   icon?: typeof Info
+  media?: React.ReactNode
   name: string
   value: string
+  className?: string
 }) {
+  const mark = (
+    <span className={cn('mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border', selected ? 'border-action' : 'border-input')}>
+      {selected && <span className="size-2 rounded-full bg-action" />}
+    </span>
+  )
   return (
     <label
       className={cn(
         'relative flex cursor-pointer gap-3 rounded-lg border p-3.5 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
         selected ? 'border-primary/60 bg-primary/5' : 'hover:bg-accent/50',
+        className,
       )}
     >
       <input type="radio" name={name} value={value} checked={selected} onChange={onSelect} className="sr-only" />
-      <span className={cn('mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border', selected ? 'border-action' : 'border-input')}>
-        {selected && <span className="size-2 rounded-full bg-action" />}
-      </span>
-      <span className="grid min-w-0 flex-1 gap-1">
+      {media ? <span className={cn('flex h-8 min-w-8 shrink-0 items-center justify-center gap-0.5 rounded-lg px-1.5', selected ? 'bg-primary/10' : 'bg-muted')}>{media}</span> : mark}
+      <span className="grid min-w-0 flex-1 content-start gap-1">
         <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
           {Icon && <Icon className="size-4 text-muted-foreground" />}
           {title}
@@ -80,6 +89,7 @@ export function OptionCard({
         </span>
         {description && <span className="text-[13px] text-muted-foreground">{description}</span>}
       </span>
+      {media && mark}
     </label>
   )
 }

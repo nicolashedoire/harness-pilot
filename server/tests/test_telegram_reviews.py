@@ -107,6 +107,20 @@ async def test_discuss_reuses_companion_thread_then_phone_message_and_stop(api, 
     await wait_for(lambda: svc.sessions[sid]['state'] == 'idle', what='phone stops companion')
 
 
+@pytest.mark.parametrize('change', ['fingerprint', 'running', 'large'])
+async def test_discuss_still_opens_when_proposal_is_not_decidable(tg, proposal, change):
+    ev, result, _, _, tid = proposal
+    if change == 'fingerprint':
+        result['fingerprint'] = 'b' * 64
+    elif change == 'running':
+        result['session']['state'] = 'running'
+    else:
+        result['patch'] = 'x' * (reviews.MAX_REVIEW + 1)
+
+    assert 'own thread' in await click(tg, ev, 'd')
+    assert tg.sent()[-1]['message_thread_id'] == tid
+
+
 async def test_topic_creation_during_fallback_is_not_unsupported_input(api, tg, svc):
     await _link(api, tg)
     gateway.update_state(topics_enabled=False)

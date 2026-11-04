@@ -26,6 +26,10 @@ Click **New job** and fill in:
 **Run now** starts a job immediately. The history shows the last runs with their output tail; for
 Claude jobs, a link opens the session.
 
+A run killed before its end (the app or the computer stopped, out of memory) is recorded as *interrupted* by the
+next run of the job, which also stops the command it left running - on macOS as on Linux - but only when it is
+still the same process: a process number reused by another program is never touched.
+
 ## Schedule syntax
 
 Five fields: `minute hour day-of-month month day-of-week`.
@@ -43,7 +47,7 @@ Five fields: `minute hour day-of-month month day-of-week`.
 
 ### Time zone
 
-In local mode, the scheduler checks jobs in the time zone configured in Settings, without changing the system clock. The page shows schedules, next runs and history in that zone, with the time format of your language (*4:40 AM* in English, *04:40* in French). On the night clocks go back, a job set in the repeated hour runs in both passes. The remainder of this section describes the inherited Linux server setup, which is not validated for this repository.
+In local mode, the scheduler checks jobs in the time zone configured in Settings, without changing the system clock. The page shows schedules, next runs and history in that zone, in your language and its time format (*Every day at 4:40 AM* in English, *Tous les jours à 04:40* in French). On the night clocks go back, a job set in the repeated hour runs in both passes. The remainder of this section describes the inherited Linux server setup, which is not validated for this repository.
 
 On the legacy server, the cron daemon fires jobs in the **server's system time zone**, while the UI (schedule preview,
 next runs, history) uses the time zone of Settings -> General. Both must be the same, otherwise a

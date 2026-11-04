@@ -7,10 +7,11 @@ import { useNavigate } from 'react-router'
 import { translate, type TKey } from '@/i18n'
 import { appIconSrc } from '@/lib/accent'
 import { nearestAccent } from '@/lib/theme'
-import { useFeedSettings, usePatchPush, usePushInfo } from '@/lib/queries'
+import { useDeletePush, useFeedSettings, usePatchPush, usePushInfo, useSubscribePush } from '@/lib/queries'
 import type { PushInfo, PushPrefs, PushSubscribeBody } from '@/lib/types'
 import { useUI } from '@/stores/ui'
 import { PREF_ROWS, pushPrefs, pushSources, rowSound, sourceKey, type PushSource } from './prefs'
+import { keyBytes, sameServerKey } from './pushKey'
 
 /** Read by sw/sw.js (same names there). */
 const PREFS_CACHE = 'mx-prefs'
@@ -35,21 +36,18 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
   return r ? r.pushManager.getSubscription().catch(() => null) : null
 }
 
-function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
-  const s = atob(b64url.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (b64url.length % 4)) % 4))
-  const out = new Uint8Array(new ArrayBuffer(s.length))
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i)
-  return out
-}
-
 /** Asks the browser for a subscription (permission prompt) and returns the body for the server. `sources`: the
- *  webhooks and scripts of the matrix (pushSources). */
+ *  webhooks and scripts of the matrix (pushSources). A subscription made with another server key is replaced. */
 export async function subscribeBrowser(publicKey: string, sources: PushSource[] = []): Promise<PushSubscribeBody> {
   const r = await registration()
   if (!r) throw new Error('no_service_worker')
   if (Notification.permission === 'default' && (await Notification.requestPermission()) !== 'granted') throw new Error('denied')
   if (Notification.permission !== 'granted') throw new Error('denied')
   let sub = await r.pushManager.getSubscription()
+  if (sub && !sameServerKey(sub.options?.applicationServerKey, publicKey)) {
+    await sub.unsubscribe().catch(() => false)
+    sub = null
+  }
   if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) })
   const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
   const { notifyPrefs, soundPrefs, soundSet } = useUI.getState()
@@ -156,6 +154,10 @@ export function usePushSync() {
   const patch = usePatchPush()
   const patchRef = React.useRef(patch.mutate)
   patchRef.current = patch.mutate
+  const subscribe = useSubscribePush()
+  const del = useDeletePush()
+  const renewRef = React.useRef({ subscribe: subscribe.mutateAsync, del: del.mutateAsync })
+  renewRef.current = { subscribe: subscribe.mutateAsync, del: del.mutateAsync }
 
   // the worker's copy of the texts and sounds
   React.useEffect(() => {
@@ -170,6 +172,18 @@ export function usePushSync() {
       if (!own) {
         // unsubscribed elsewhere (another browser profile reset, the server removed a dead endpoint)
         if (!(await currentSubscription())) useUI.getState().setNotify({ pushOn: false })
+        return
+      }
+      // subscribed with a key the server no longer has: every push is refused, subscribe again (no prompt: allowed)
+      const sub = await currentSubscription()
+      if (sub && info.public_key && Notification.permission === 'granted' && !sameServerKey(sub.options?.applicationServerKey, info.public_key)) {
+        try {
+          const body = await subscribeBrowser(info.public_key, pushSources(feedSettings))
+          await renewRef.current.subscribe(body)
+          if (body.endpoint !== own.endpoint) await renewRef.current.del(own.id)
+        } catch {
+          /* the browser or the server refused: the switch in Settings -> Notifications tries again */
+        }
         return
       }
       const want = pushPrefs(notifyPrefs, soundPrefs, soundSet, pushSources(feedSettings))

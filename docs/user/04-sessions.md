@@ -9,19 +9,19 @@ stopped.
 
 ## Claude subagent team
 
-Choose **Claude Code — agent team** when creating a session and request two to six subagents. Claude acts as coordinator and is instructed to split suitable work into independent tasks, use its native subagents in parallel, and combine their results. This is a request to Claude, not a guarantee of the number of agents or a hard concurrency limit. Each agent's work consumes the relevant account's usage allowance and follows the session's permissions.
+Choose **Claude swarm** under **Several agents** when creating a session and request two to six subagents. Claude acts as coordinator and is instructed to split suitable work into independent tasks, use its native subagents in parallel, and combine their results. This is a request to Claude, not a guarantee of the number of agents or a hard concurrency limit. Each agent's work consumes the relevant account's usage allowance and follows the session's permissions.
 
-Open **Agent map** from the session menu to inspect agent calls present in the loaded conversation, their status and their reported result. Load earlier messages to include older calls. Claude's internal subagent transcripts are not always available. Stop the session to interrupt the current turn; verify the displayed statuses and resulting files afterward.
+Open **Agent map** from the session menu to inspect agent calls present in the loaded conversation, their status and their reported result. Load earlier messages to include older calls. Claude's internal subagent transcripts are not always available. Subagents cannot be stopped one by one: they run inside Claude's current turn, and Claude Code does not stop a single one of them on request. Stop the session to interrupt the coordinator and all its subagents; verify the displayed statuses and resulting files afterward.
 
 ## Mixed Claude and Codex team
 
-Choose **Claude Code + Codex — mixed team** and send a written mission. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. This first version uses these two fixed roles and does not automatically split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
+Choose **Mixed team** under **Several agents** and send a written mission. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. This first version uses these two fixed roles and does not automatically split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
 
-Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Attachments and voice messages are not supported in this mode yet.
+While the team works, its panel above the message box shows the steps (**Starting**, **Agents working**, **Synthesis**, **Done**) and, for each agent, how long it has worked, its last actions (files read, searches, commands, what it says) and, once it has finished, the start of its report. The panel folds to one line when the team is over; click it to open it again. Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Attachments and voice messages are not supported in this mode yet.
 
 ## Claude Code and Codex together
 
-When creating a session, choose **Claude Code + Codex**, then select a collaborative discussion or a debate. Each agent retains its own conversation and receives the other agent's latest answer. The session header shows how far it went (**Reply 6 of 20 · 14 min of 30**), each agent answers with its mark and its name in its own colour, a line on the left of its replies, and your own messages sent during the exchange are labelled **Your intervention**. **Pause after this reply** and **Stop** sit in the message box while the agents talk. Optional reply-count and duration limits pause the discussion after the current reply. A banner above the conversation then shows when it paused and which limit it reached (*Paused at 03:12 · limit of 20 replies*), with **Change limits** and **Resume**; the same pause is marked in the thread. Resuming after a limit starts a new period with the same limits; to let the agents go further in the same period, choose **Change limits** (in the banner, or in the session's **…** menu at any time), raise the limit (or empty the field: no limit), then **Save and resume**. The pause button lets the current response finish, and the resume button continues the exchange. Sending a message during a turn interrupts that turn so the agent can take your intervention into account. Stop ends the automatic exchange. Each turn uses the corresponding agent's connected account.
+When creating a session, choose **Debate** under **Several agents**, then select a collaborative discussion or a debate. Each agent retains its own conversation and receives the other agent's latest answer. The session header shows how far it went (**Reply 6 of 20 · 14 min of 30**), each agent answers with its mark and its name in its own colour, a line on the left of its replies, and your own messages sent during the exchange are labelled **Your intervention**. **Pause after this reply** and **Stop** sit in the message box while the agents talk. Optional reply-count and duration limits pause the discussion after the current reply. A banner above the conversation then shows when it paused and which limit it reached (*Paused at 03:12 · limit of 20 replies*), with **Change limits** and **Resume**; the same pause is marked in the thread. Resuming after a limit starts a new period with the same limits; to let the agents go further in the same period, choose **Change limits** (in the banner, or in the session's **…** menu at any time), raise the limit (or empty the field: no limit), then **Save and resume**. The pause button lets the current response finish, and the resume button continues the exchange. Sending a message during a turn interrupts that turn so the agent can take your intervention into account. Stop ends the automatic exchange. Each turn uses the corresponding agent's connected account.
 
 You can assign a different role to each agent, choose a built-in pair of roles, and save named configurations for later sessions. Roles are included in the instructions sent to the corresponding agent on every turn. Saved configurations live in the server's local state.
 
@@ -31,7 +31,29 @@ From a session's **More actions** menu, **Summary and actions** asks Codex to su
 
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
 
-Some features described below apply to Claude sessions only; Codex support is still evolving.
+## What works with Codex
+
+A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
+are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact** and
+**Hand off** ([Compact vs hand off](#compact-vs-hand-off)). It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
+unrestricted access to the computer.
+
+These features are for Claude Code only for now:
+
+- **Side questions**: not offered for Codex sessions, discussions or debates.
+- **MCP servers** (Settings → MCP): only Claude's turns load them. Codex starts without any MCP server, yours
+  (`~/.codex/config.toml`) included.
+- **Claude swarm** and the **Agent map**.
+- The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
+  does not report its context size. Compact it yourself from the session menu.
+- **Scheduled prompts** (Crons): they run with Claude Code.
+- **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
+  follows its own sandbox, which still lets it read those files.
+- The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
+- **New sessions started from Telegram** use Claude Code.
+
+**Summary and actions** works the other way round: it needs a signed-in Codex, whatever the session's agent.
 
 ## Layout
 
@@ -137,6 +159,14 @@ counters; on a touch screen **+** stays visible and a long press opens the menu.
 
 Pick a topic, click **New session**, write your message. The session runs in the topic folder, so
 Claude automatically loads the workspace, project and topic memory (see [Memory](memory)).
+
+**Choose how it works** with the cards under **One agent** (Claude Code, Codex, or an agent engine added by an
+extension) and **Several agents** (Claude swarm, Debate, Mixed team). Each card says in one line what it does; the
+**What will happen** panel beside them (under them on a phone or a narrow column) details the chosen mode: its steps,
+what it never does, the subscriptions it uses, and what it cannot take. The settings of the chosen mode (model, number
+of subagents, debate limits and roles, plan mode) follow the cards; an extension engine's optional model is passed to
+that engine as is. A mode that takes written messages only (Mixed team,
+an engine without file support) turns the paperclip off and says why; voice is then dictated into the text.
 
 **Its title** is short: the start of the message shows at once, then a shortened title replaces it (greetings and
 "can you…" removed, cut on a word): "Tu vas me créer une session d'automatisation de E-ink" becomes *Créer une
