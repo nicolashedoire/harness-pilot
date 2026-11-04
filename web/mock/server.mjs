@@ -2613,7 +2613,8 @@ function ibState() {
   if (S.instanceBackup) return S.instanceBackup
   const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
   S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
-    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+    schedule: null, runs: {}, keyStored: false, copyFolder: '', // schedule: {frequency, hour, keep, since} or off; runs: {last_success, last_id, error}
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024, scheduled: false, copy: null }] : [] }
   return S.instanceBackup
 }
 const ibRoots = () => {
@@ -2629,27 +2630,99 @@ const ibDescription = () => {
 }
 const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
 const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+// Scheduled archives (instance_backup.schedule_status): the next run is the first `hour`:00 in the configured timezone
+// after the last success plus the period (less 12 h), or after the schedule was enabled; none while paused.
+const IB_PERIOD = { daily: 1, weekly: 7 }
+function ibSchedule() {
+  const st = ibState(), cur = st.schedule, runs = st.runs, paused = st.restore_hold || st.integrations_paused
+  const earliest = cur && (runs.last_success ? runs.last_success + IB_PERIOD[cur.frequency] * DAY - 12 * HOUR : cur.since)
+  return { enabled: !!cur, frequency: cur ? cur.frequency : 'off', hour: cur ? cur.hour : 3, keep: cur ? cur.keep : 7,
+    next_run: cur && !paused ? cronNext(`0 ${cur.hour} * * *`, 1, earliest * 1000)[0] ?? null : null, paused,
+    last_success: runs.last_success ?? null, last_id: runs.last_id ?? null, error: cur ? runs.error ?? null : null }
+}
+// Copy folder (instance_backup.copy_status): `last` = the copy record of the newest export that has one.
+const ibCopy = () => ({ folder: ibState().copyFolder || null, last: ibState().exports.find((e) => e.copy)?.copy ?? null })
+// Copy one export to the folder (instance_backup.copy_export); a folder whose path contains "full" fails, to see the
+// failure. The record is kept with the export, as in its metadata file.
+function ibCopyExport(e) {
+  const folder = ibState().copyFolder, d = new Date(e.created * 1000 + zoneOffset(e.created * 1000, S.settings.timezone) * 60000)
+  const stamp = d.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
+  e.copy = /(^|\/)[^/]*full[^/]*(\/|$)/i.test(folder)
+    ? { ok: false, at: now(), code: 'copy_no_space', error: `Not enough free space in ${folder} for this archive.` }
+    : { ok: true, at: now(), path: `${folder}/pilot-${stamp}-${e.id.slice(0, 12)}.pilotbackup`, bytes: e.archive_bytes, sha256: e.sha256 }
+  return e.copy
+}
 R('GET', '/api/backup/instance', () => {
   const st = ibState()
   return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
-    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [], schedule: ibSchedule(), copy: ibCopy() }
 })
 R('POST', '/api/backup/instance/export', async ({ body }) => {
   ibHeld(); ibPassphrase(body.passphrase)
   if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
   await sleep(2500)
-  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription(), scheduled: false, copy: null }
   ibState().exports.unshift(e)
+  if (ibState().copyFolder) ibCopyExport(e)
   bus('backup')
-  return e
+  return { ...e, copy: ibState().copyFolder ? e.copy : null }
 })
-R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes, scheduled, copy }) => ({ id, created, archive_bytes, sha256, version, files, bytes, scheduled: !!scheduled, copy: copy || null })))
 R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
   ibHeld()
   const st = ibState()
   if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
   st.exports = st.exports.filter((e) => e.id !== params.id)
   return { ok: true, id: params.id }
+})
+R('POST', '/api/backup/instance/exports/:id/copy', ({ params }) => {
+  ibHeld()
+  if (!ibState().copyFolder) fail(409, 'copy_off', 'No copy folder is set.')
+  const e = /^[a-f0-9]{32}$/.test(params.id) && ibState().exports.find((x) => x.id === params.id)
+  if (!e) fail(404, 'not_found', 'Backup not found.')
+  return ibCopyExport(e)
+})
+// The passphrase is never kept, by the server or here: only whether a key derived from it is stored.
+R('PUT', '/api/backup/instance/schedule', ({ body }) => {
+  ibHeld()
+  const { frequency, hour, keep, passphrase, store_key } = body
+  if (passphrase != null && (typeof passphrase !== 'string' || passphrase.length < 12 || passphrase.length > 1024)) fail(422, 'invalid', 'passphrase: 12 to 1024 characters')
+  if (!(frequency in IB_PERIOD) || !Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(keep) || keep < 1 || keep > 30)
+    fail(400, 'schedule', 'Choose daily or weekly, an hour from 0 to 23 and 1 to 30 archives to keep.')
+  const st = ibState()
+  if (passphrase) {
+    if (store_key !== true) fail(400, 'consent_required', 'Agree to keep a key derived from the passphrase on this server.')
+    st.keyStored = true
+  } else if (!st.schedule) fail(400, 'passphrase_required', 'Enter the backup passphrase to enable scheduled archives.')
+  st.schedule = { frequency, hour, keep, since: st.schedule ? st.schedule.since : now() }
+  return ibSchedule()
+})
+R('DELETE', '/api/backup/instance/schedule', () => {
+  ibHeld()
+  Object.assign(ibState(), { schedule: null, keyStored: false })
+  return ibSchedule()
+})
+// The folder is checked like the server's: absolute, existing, writable, outside the archived data. Nothing exists here:
+// a path with a "missing" folder does not exist, one with "readonly" cannot be written.
+R('PUT', '/api/backup/instance/copy', ({ body }) => {
+  ibHeld()
+  if (typeof body.folder !== 'string' || body.folder.length > 4096) fail(422, 'invalid', 'folder: a string of 4096 characters at most')
+  const raw = body.folder.trim(), bad = (message) => fail(400, 'copy_folder', message)
+  if (!raw || raw.includes('\0')) bad('Choose a folder for the copies.')
+  const folder = (raw === '~' || raw.startsWith('~/') ? '/root' + raw.slice(1) : raw).replace(/\/+/g, '/').replace(/(.)\/$/, '$1')
+  if (!folder.startsWith('/')) bad('Use the full path of the folder (it starts with /).')
+  if (folder.split('/').includes('missing')) bad('This folder does not exist. Connect the drive or create the folder first.')
+  const sources = ['/var/lib/claude-maxxing', ...Object.values(ibRoots()).filter((r) => r.archive).map((r) => r.source)]
+  if (sources.some((src) => folder === src || folder.startsWith(src.replace(/\/$/, '') + '/') || src === '/'))
+    bad('Choose a folder outside the data the archive contains, ideally on another drive or in a synced folder.')
+  if (folder.split('/').includes('readonly')) bad('The application cannot write in this folder.')
+  ibState().copyFolder = folder
+  return ibCopy()
+})
+R('DELETE', '/api/backup/instance/copy', () => {
+  ibHeld()
+  ibState().copyFolder = ''
+  return ibCopy()
 })
 R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
   if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')

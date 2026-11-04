@@ -401,7 +401,9 @@ Team routes (`/api/team-peer/*`) and the extension frames `/ext/<id>/widget-fram
 `/ext/ui-kit.css` (extension pages and block frames are served). Work that needs the real system is canned: agent turns,
 transcription (always the same sentence), Git histories (generated from a seed), GitHub, Cloudflare and Hostinger
 (`mock/infra-resources.json` is the real builder's output on the `tests/test_infra.py` fixture), downloads of the PC
-agent. A route it does not implement answers `404 {"error":"not_found","message":"No route for …"}`. A new server
+agent, the instance archive copy folder (any absolute path outside the archived data exists; a path with a `missing`
+folder does not, one with `readonly` cannot be written, and copies to a folder named with `full` run out of space) and
+scheduled instance archives (the schedule is kept and its next run computed, but no archive is ever made by it). A route it does not implement answers `404 {"error":"not_found","message":"No route for …"}`. A new server
 route gets its mock in the feature's block, its state created on first use (`S.<feature> ||= …`, so `buildState`
 stays untouched), and a seed for the `ready` scenario when the page would be empty. Run it with
 `MOCK_PORT=8809 MOCK_SCENARIO=ready|onboarding|login|setup|maxxing node mock/server.mjs`
