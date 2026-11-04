@@ -188,5 +188,8 @@ get the same kit. Inputs of the kit are 16 px on phones (no zoom on iPhone).
   print(json.dumps(api.handle(ctx, 'GET', 'notes', {}, None), indent=2))"
   ```
 - **Settings -> Extensions -> Reload**, then open the page from the sidebar (Extensions, or its own entry once pinned). Errors appear on the
-  extension's row.
+  extension's row: the ones of loading, and the ones while the page runs - a module that does not load, `mount`
+  throwing, an error of the page's code or a `ctx.api()` call it did not handle, an exception of `handle()` - with
+  the lines of code they went through, since the page's files last changed (see
+  [Dashboard widgets](dashboard-widgets#5-test-then-load)).
 
