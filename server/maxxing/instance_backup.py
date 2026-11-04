@@ -473,7 +473,7 @@ def restore(ident: str, fingerprint: str) -> dict:
                     if isinstance(entry.get('mtime_ns'), int):
                         os.utime(path, ns=(entry['mtime_ns'], entry['mtime_ns']), follow_symlinks=False)
             result = {'destination': str(destination), 'state': str(destination / manifest['roots']['state']['archive']),
-                      'background_services_paused': True, **preview}
+                      'background_services_paused': True, 'integrations_paused': True, **preview}
             # Its own crontab file: a review copy never writes the system crontab nor the current instance's jobs.
             result['launch_command'] = (f"MAXXING_STATE={shlex.quote(result['state'])} "
                 f"MAXXING_CRONTAB_FILE={shlex.quote(str(destination / 'crontab'))} uv run --directory "
@@ -518,7 +518,7 @@ def _retarget(destination: Path, manifest: dict):
                 changed.update(workspace=str(destination / roots['workspace']['archive']),
                                files_root=str(destination / roots['files']['archive']),
                                restored_path_aliases=[{'source': a, 'target': b} for a, b in replacements],
-                               restore_hold=True, bind='127.0.0.1', public_url='')
+                               restore_hold=True, integrations_paused=True, bind='127.0.0.1', public_url='')
             if changed != original:
                 config.write_json(path, changed, mode=0o600)
         except (OSError, ValueError, UnicodeError):
@@ -545,4 +545,17 @@ def status() -> dict:
     except SnapshotError as problem:
         roots, error = {}, str(problem)
     return {'max_bytes': _limit(), 'restore_hold': bool(config.load_config().get('restore_hold')),
+            'integrations_paused': config.integrations_paused(),
             'roots': roots, 'export_error': error, 'requires_idle_sessions': True}
+
+
+def resume_integrations() -> dict:
+    """The owner stopped the original instance: scheduled jobs go back into this copy's crontab and the GitHub
+    memory backup may push again. The caller restarts the Telegram poller (an async service)."""
+    if config.load_config().get('restore_hold'):
+        raise SnapshotError('restore_hold', 'Enable this instance’s services before resuming its integrations.', 409)
+    config.update_config(integrations_paused=False)
+    from . import bus, crons
+    crons.sync_crontab()
+    bus.invalidate('crons', 'backup', 'telegram')
+    return {'ok': True, 'scheduled_jobs': len(crons.managed_lines(crons._load_raw()))}

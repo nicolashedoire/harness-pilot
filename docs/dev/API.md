@@ -296,7 +296,7 @@ On completion, a proposal is posted to the existing notifications feed with a li
 | GET | `/api/backup` | – | `{configured, repo, private:bool\|null, schedule, include:[glob], always:[glob], last:{at, ok, commit, files, error}\|null}` (`always` = CLAUDE.md/memory.md globs, always included) |
 | POST | `/api/backup/config` | `{repo:"owner/name", token, create?:bool}` | verifies access/private/push (creates the private repo if asked; token may be omitted to keep the stored one) → `{ok, private, created?, warning?, error?}`; on success creates/updates the "Memory backup" cron job; `ok:false` while a backup or restore runs |
 | PUT | `/api/backup/settings` | `{schedule?, include?}` | `{ok}` |
-| POST | `/api/backup/run` | – | `{ok, commit, files, changed?, error?, code?, leaks?:[{file, kinds}]}` (`code`: `secret_found`, `public_repo`, `not_configured`, `file_too_large`, `read_failed`, `git_failed`…; `409 busy`). Selected files that cannot be read or are too large, and failed MCP exports, abort the snapshot before push. |
+| POST | `/api/backup/run` | – | `{ok, commit, files, changed?, error?, code?, leaks?:[{file, kinds}]}` (`code`: `secret_found`, `public_repo`, `not_configured`, `file_too_large`, `read_failed`, `git_failed`…; `409 busy`; `409 paused` while the integrations of a restored instance copy are paused, see Complete instance backup). Selected files that cannot be read or are too large, and failed MCP exports, abort the snapshot before push. |
 | GET | `/api/backup/history?limit=100` | – | `[{at, ok, commit, files, changed, error, code?, duration_s}]` newest first |
 | POST | `/api/backup/preview` | `{ref?}` | Read a backup revision without changing workspace files. Returns the resolved commit SHA, counts and a bounded list of workspace files to create, replace, leave unchanged, hold aside, or skip, plus flags for saved settings, jobs and MCP. Preview is advisory: local files can change before restore. Restore the returned SHA to pin the reviewed revision. |
 | POST | `/api/backup/restore` | `{ref?}` | restores whitelisted files (current files saved to trash first) + cron jobs + server-independent settings → `{ok, files, restored:[path], unchanged, skipped:[path], skipped_count, crons:bool, mcp:int, held:{crons, extensions, hooks, mcp, review, outside?}, warnings:["crons"\|"mcp"\|"settings"], trash}` (`skipped` is capped at 200 paths; `skipped_count` is the full count; local MCP servers and new jobs/extension code are held, see Backup docs) · `409 not_configured\|empty\|busy` |
@@ -873,16 +873,24 @@ All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persis
 
 | Method/path | Request | Result |
 | --- | --- | --- |
-| GET base | — | Data roots, size limit, `restore_hold`, export availability |
+| GET base | — | Data roots, size limit, `restore_hold`, `integrations_paused`, export availability |
 | POST `/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
 | GET `/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
 | POST `/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
-| POST `/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command |
+| POST `/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command; `integrations_paused: true` |
 | POST `/activate` | `{}` | Start deferred background services and exit recovered read-only mode |
+| POST `/resume-integrations` | `{}` | `{ok, scheduled_jobs, telegram}`: resume Telegram, scheduled jobs and the GitHub memory backup of an activated copy · `409 restore_hold` before activation |
 
 A full snapshot pauses pausable services and rejects concurrent HTTP mutations/WebSocket activity.
 Changed sources or active/queued sessions abort export. Restored instances defer service startup,
-allow authentication and reads, and reject mutations until explicit activation. Preview hashes are
+allow authentication and reads, and reject mutations until explicit activation. A restored copy's
+config also carries `integrations_paused: true`, which survives activation: the Telegram poller does not start
+and automatic Telegram notifications are dropped, the managed crontab block stays empty, the local scheduler
+and scheduled `pilot cron run` invocations skip, and `POST /api/backup/run` returns `409 paused`, so two live
+copies never share one bot, run a job twice or push to the same repository. Manual "Run now", Telegram
+sign-in challenges and the explicit Telegram test still work. `/resume-integrations` clears the flag, rewrites
+the crontab block and starts the Telegram poller; resident missions keep their own moved-state pause
+(`reason: restored`) and are never restarted by it. Preview hashes are
 rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
 and recovery limits are documented in [the backup guide](../user/10-backup.md).
 

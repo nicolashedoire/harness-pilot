@@ -427,6 +427,13 @@ def set_secrets(values: dict[str, Any]) -> None:
             _forget_secrets()
 
 
+def integrations_paused() -> bool:
+    """A restored instance copy keeps Telegram, scheduled jobs and the GitHub memory backup paused, even once its
+    services are enabled, until its owner resumes them (Settings → Backup): while the original instance still runs,
+    two live copies would share one bot, run every job twice and push to the same repository."""
+    return bool(load_config().get("integrations_paused"))
+
+
 # ---- derived paths -------------------------------------------------------------------------
 def workspace() -> Path:
     return Path(_setting("workspace") or DEFAULT_CONFIG["workspace"])

@@ -15,6 +15,8 @@ _lock = config.ProcessLock('local-cron')
 
 
 def tick(now: float | None = None) -> list[str]:
+    if config.integrations_paused():                    # a restored copy: nothing runs until its owner resumes it
+        return []
     now = time.time() if now is None else now
     minute = int(now // 60)
     due = []
