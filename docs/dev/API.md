@@ -99,7 +99,8 @@ Session = {
   error: string|null,
   plan_mode: bool,                    // turns run read-only (`--permission-mode plan`) and end with a plan
   permission_mode: string,            // set by its cron ("" = the topic's, else the global mode)
-  plan_ready: bool                    // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  plan_ready: bool,                   // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  discussion_elapsed: int             // discussions (provider "discussion"|"debate"): seconds run so far, paused time excluded; 0 otherwise
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |

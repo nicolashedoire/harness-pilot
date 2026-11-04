@@ -418,6 +418,17 @@ def test_queue_preview_keeps_the_last_twenty():
     assert service.public({"id": "s1", "state": "running", "pid": 1, "queue": q})["queue"] == 30
 
 
+def test_discussion_elapsed_counts_the_running_span():
+    """The header of a discussion shows how long it has run: banked seconds plus the span since it (re)started."""
+    import time
+    from maxxing.sessions import service
+    assert service.public({"id": "s1", "provider": "claude"})["discussion_elapsed"] == 0
+    paused = service.public({"id": "s1", "provider": "discussion", "discussion_elapsed": 120.7})
+    assert paused["discussion_elapsed"] == 120
+    running = service.public({"id": "s1", "provider": "discussion", "discussion_elapsed": 60, "discussion_started": time.time() - 30})
+    assert 89 <= running["discussion_elapsed"] <= 92
+
+
 def test_message_held_by_an_idle_summary_is_not_counted_as_waiting():
     """The message held at the head during an idle compaction is already shown as sent: not in the queue stack too."""
     from maxxing.sessions import service

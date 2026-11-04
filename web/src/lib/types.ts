@@ -103,6 +103,8 @@ export type Session = {
   discussion_turns?: number
   discussion_turn_limit?: number | null
   discussion_duration_seconds?: number | null
+  /** Seconds the discussion has run so far (paused time excluded). */
+  discussion_elapsed?: number | null
   title: string
   path: string
   state: SessionState
