@@ -1222,7 +1222,7 @@ R('POST', '/api/auth/setup', ({ body, res }) => {
   return { ok: true }
 }, { public: true })
 
-R('POST', '/api/auth/login', async ({ body, res }) => {
+R('POST', '/api/auth/login', async ({ req, body, res }) => {
   if (S.setup_required) fail(409, 'setup_required', 'Run the setup first')
   const t = now()
   if (S.lockUntil > t) fail(429, 'throttled', `Too many attempts, retry in ${Math.ceil(S.lockUntil - t)} s`)
@@ -1235,6 +1235,7 @@ R('POST', '/api/auth/login', async ({ body, res }) => {
     fail(401, 'bad_password', 'Wrong password')
   }
   S.failStreak = 0
+  if (S.telegram.settings.two_factor && !tfTrusted(req)) return { ok: false, two_factor: tfChallenge('login') }
   setCookie(res, newToken())
   return { ok: true }
 }, { public: true })
@@ -1249,6 +1250,52 @@ R('POST', '/api/auth/password', ({ body }) => {
   if (body.current !== S.password) fail(400, 'bad_password', 'Current password is wrong')
   if (!body.new || String(body.new).length < 8) fail(422, 'invalid', 'Password must be at least 8 characters')
   S.password = body.new
+  return { ok: true }
+})
+
+/* ---- two-step sign-in (server/maxxing/twofactor.py): with Telegram setting `two_factor` on, a password sign-in from an
+   untrusted browser waits for Allow in Telegram or the code it shows. Mock: Allow is "pressed" 4 s after the challenge
+   is created, and the code is 246810 (5 wrong codes expire the challenge). */
+const TF_CODE = '246810'
+const tfState = () => (S.twoFactor ||= { deviceKey: crypto.randomBytes(12).toString('hex'), challenges: {} })
+function tfChallenge(kind) { // kind: login | enable
+  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending' }
+  tfState().challenges[c.id] = c
+  const g = GEN
+  setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
+  return { challenge: c.id, expires_in: 300 }
+}
+const tfTrusted = (req) => (req.headers.cookie || '').split(/;\s*/).includes(`mx_device=${tfState().deviceKey}`)
+const tfDeviceCookie = () => `mx_device=${tfState().deviceKey}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=2592000`
+R('POST', '/api/auth/two-factor', ({ req, res, body, authed }) => {
+  const c = tfState().challenges[body.challenge]
+  if (!c || c.status === 'expired' || now() - c.at > 360) fail(410, 'expired', 'This sign-in request expired: sign in again')
+  if (c.kind === 'enable' && !authed) fail(401, 'auth_required', 'Please log in')
+  if (body.code !== undefined && body.code !== null && c.status === 'pending') {
+    if (body.code !== TF_CODE) {
+      c.tries += 1
+      if (c.tries >= 5) { c.status = 'expired'; fail(410, 'expired', 'Too many wrong codes: sign in again') }
+      sendJson(res, 400, { error: 'bad_code', message: 'Wrong code', tries_left: 5 - c.tries })
+      return RAW
+    }
+    c.status = 'approved'
+  }
+  if (c.status === 'pending') return { ok: false, status: 'pending', expires_in: Math.max(0, Math.round(300 - (now() - c.at))) }
+  delete tfState().challenges[c.id] // once only
+  const trust = body.trust !== false || c.kind === 'enable'
+  if (c.kind === 'enable') { S.telegram.settings.two_factor = true; bus('telegram') }
+  res.setHeader('Set-Cookie', [...(c.kind === 'login' ? [`mx_session=${newToken()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`] : []), ...(trust ? [tfDeviceCookie()] : [])])
+  return { ok: true, status: 'approved' }
+}, { public: true })
+R('PUT', '/api/auth/two-factor', ({ body }) => {
+  if (!body.enabled) { S.telegram.settings.two_factor = false; tfState().deviceKey = crypto.randomBytes(12).toString('hex'); bus('telegram'); return { ok: true, enabled: false } }
+  if (!S.telegram.chat) fail(409, 'not_linked', 'Link a Telegram chat first')
+  if (S.telegram.settings.two_factor) return { ok: true, enabled: true }
+  return { ok: false, two_factor: tfChallenge('enable') }
+})
+R('POST', '/api/auth/two-factor/forget-browsers', ({ res }) => {
+  tfState().deviceKey = crypto.randomBytes(12).toString('hex')
+  res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
   return { ok: true }
 })
 
@@ -2365,6 +2412,71 @@ R('POST', '/api/backup/instance/resume-integrations', () => {
   if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
   st.integrations_paused = false; bus('crons', 'backup', 'telegram')
   return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
+/* ---- Git page (server/maxxing/gitview.py): clones under the files root and the repositories of the GitHub tokens.
+   Histories are generated from a seed per repository (stable across reads): a main line, a merged feature branch,
+   a branch still open, a tag. */
+const GIT_LOCAL = [
+  { path: `${ROOT}/projects/acme/topics/website/app`, name: 'app', branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, changed: 3, untracked: 1, remote: 'git@github.com:acme/website.git', github: 'acme/website', error: null, worktrees: 1 },
+  { path: `${ROOT}/projects/ops/topics/server/scripts`, name: 'scripts', branch: 'main', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, remote: null, github: null, error: null, worktrees: 0 },
+]
+const GIT_HUB = [
+  ['acme/website', 'Marketing site and shop front', 'TypeScript', false, 'admin', 12, 4],
+  ['acme/platform', 'Back office and APIs', 'Python', true, 'push', 3, 9],
+  ['acme/blog', 'Articles and newsletter archive', 'MDX', false, 'maintain', 41, 1],
+]
+const GIT_SUBJECTS = ['Fix the hero image on small screens', 'Add the pricing page', 'Bump dependencies', 'Write the FAQ', 'Speed up the build', 'Refactor the checkout steps',
+  'Add tests for the cart', 'Update the footer links', 'Translate the about page', 'Clean up unused styles', 'Log failed payments', 'Tidy the README']
+function gitHistory(id) {
+  const r = rng([...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)), t = now()
+  const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(r() * 16)]).join('')
+  const who = () => ['Alex Martin', 'Sam Lee', 'Codex'][Math.floor(r() * 3)]
+  const main = [], out = []
+  for (let i = 0; i < 40; i++) main.push({ sha: hex(), parents: [], refs: [], author: who(), date: t - (40 - i) * 9 * HOUR - Math.floor(r() * HOUR), subject: GIT_SUBJECTS[Math.floor(r() * GIT_SUBJECTS.length)] })
+  for (let i = 1; i < main.length; i++) main[i].parents = [main[i - 1].sha]
+  const feat = [] // merged into main at 30, branched at 24
+  for (let i = 0; i < 4; i++) feat.push({ sha: hex(), parents: [i ? feat[i - 1].sha : main[24].sha], refs: [], author: 'Codex', date: main[24].date + (i + 1) * 2 * HOUR, subject: ['Checkout: one page', 'Checkout: keep Apple Pay on top', 'Checkout: tests', 'Checkout: review fixes'][i] })
+  main[30].parents.push(feat[3].sha); main[30].subject = 'Merge branch feat/one-page-checkout'
+  const open = [{ sha: hex(), parents: [main[37].sha], refs: [{ name: 'feat/dark-mode', kind: 'branch' }], author: 'Sam Lee', date: main[37].date + HOUR, subject: 'Dark mode: first pass' }]
+  main[39].refs = [{ name: 'HEAD', kind: 'head' }, { name: 'main', kind: 'branch', current: true }, { name: 'origin/main', kind: 'remote' }]
+  main[20].refs = [{ name: 'v1.2.0', kind: 'tag' }]
+  out.push(...main, ...feat, ...open)
+  return out.sort((a, b) => b.date - a.date)
+}
+function gitRepo(id) {
+  if (id.startsWith('github:')) {
+    const g = GIT_HUB.find(([full]) => `github:${full}` === id) || fail(404, 'not_found', 'Repository not found')
+    return { kind: 'github', id, name: g[0].split('/')[1], branch: 'main', github: g[0], url: `https://github.com/${g[0]}`, private: g[3], permission: g[4], description: g[1], branches: 13, branches_shown: 13 }
+  }
+  const l = GIT_LOCAL.find((x) => x.path === id) || fail(404, 'not_found', 'Not a repository')
+  return { kind: 'local', id, ...l }
+}
+R('GET', '/api/git/repos', () => ({ root: S.settings.files_root || ROOT,
+  local: GIT_LOCAL.map((l) => { const h = gitHistory(l.path)[0]; return { ...l, last_commit: h.date, last_subject: h.subject } }),
+  github: { connected: true, login: 'acme-dev', error: null, errors: [], accounts: [{ login: 'acme-dev', name: 'Acme', avatar: null, keys: ['GITHUB_TOKEN'], repos: GIT_HUB.length }],
+    repos: GIT_HUB.map(([full, description, language, priv, permission, stars, issues]) => ({ full_name: full, owner: full.split('/')[0], name: full.split('/')[1], description, private: priv, fork: false,
+      archived: false, permission, default_branch: 'main', pushed_at: new Date((now() - stars * HOUR) * 1000).toISOString(), url: `https://github.com/${full}`, language, stars, open_issues: issues,
+      keys: ['GITHUB_TOKEN'], accounts: ['acme-dev'], local_paths: GIT_LOCAL.filter((l) => l.github === full).map((l) => l.path) })) } }))
+R('GET', '/api/git/graph', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), limit = Math.min(1000, Math.max(1, Number(q.get('limit')) || 200))
+  const all = gitHistory(repo.id)
+  return { repo, commits: all.slice(0, limit), truncated: all.length > limit }
+})
+R('GET', '/api/git/commit', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), c = gitHistory(repo.id).find((x) => x.sha === q.get('sha')) || fail(404, 'no_commit', 'No such commit')
+  const r = rng(parseInt(c.sha.slice(0, 8), 16)), pool = ['src/pages/checkout.tsx', 'src/styles/hero.css', 'README.md', 'tests/cart.test.ts', 'package.json', 'src/i18n/en.ts', 'src/components/Footer.tsx']
+  const files = pool.filter(() => r() < 0.45).map((p) => ({ path: p, additions: Math.floor(r() * 60) + 1, deletions: Math.floor(r() * 25) }))
+  if (!files.length) files.push({ path: pool[0], additions: 4, deletions: 1 })
+  return { sha: c.sha, parents: c.parents, author: c.author, email: `${c.author.split(' ')[0].toLowerCase()}@example.com`, date: c.date,
+    message: `${c.subject}\n\nKeeps the change small; tested on a phone and a desktop browser.`, files, files_total: files.length, ...(repo.github ? { url: `https://github.com/${repo.github}/commit/${c.sha}` } : {}) }
+})
+R('GET', '/api/git/pulls', ({ q }) => {
+  const id = q.get('repo') || ''
+  if (!id.startsWith('github:')) fail(400, 'not_github', 'Pull requests come from GitHub repositories')
+  const repo = gitRepo(id)
+  return [[18, 'Dark mode: first pass', 'sam-lee', 'feat/dark-mode', false], [17, 'Translate the about page', 'acme-dev', 'i18n/about', true]].map(([number, title, author, head, draft], i) => ({
+    number, title, author, head, base: 'main', draft, url: `https://github.com/${repo.github}/pull/${number}`, updated: now() - (i + 1) * 5 * HOUR }))
 })
 
 /* ---- settings & secrets */
