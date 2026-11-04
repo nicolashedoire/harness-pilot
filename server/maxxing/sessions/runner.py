@@ -310,6 +310,9 @@ class Runner:
             role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
+
+        if is_debate and item.get("plan_approved"):    # the discussion's plan, not this agent's own, is implemented
+            item = {**item, "plan_approved": False, "text": DEBATE_PLAN_APPROVED_PREFACE + str(item.get("text") or "")}
         swarm_count = meta.get('swarm_agents')
         if actor == 'claude' and kind == 'user' and type(swarm_count) is int and 2 <= swarm_count <= 6:
             team = (f'[Agent team requested by the user]\nAct as the coordinator. When the task can be split into '
@@ -341,7 +344,7 @@ class Runner:
         base += pcbridge.mcp_config_args() + mcp_plan.args
         env = spawn.claude_env(meta.get("env") or {}, mode)
         env["MAXXING_SESSION"] = self.sid               # `pilot mcp load` run by the turn finds its session
-        text = (PLAN_PREFACE if plan else "") + build_prompt(item)
+        text = ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)
         prompt, json_in = stdin_payload(text, item, Path(cfg.get("workspace") or "/").resolve())
         if json_in:
             base += ["--input-format", "stream-json"]
@@ -451,7 +454,7 @@ class Runner:
         args = codex.command(thread, mode, str(codex_model or ''), images, mcp_args)
         context = codex.workspace_context(root, Path(cwd))
         context_prefix = ("[Shared workspace and topic instructions/memory]\n" + context + "\n\n") if context else ""
-        prompt = context_prefix + (PLAN_PREFACE if plan else "") + build_prompt(item)
+        prompt = context_prefix + ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)
         a = self.attempt(args, prompt, cwd, env, meta.get("timeout_s"), hold=False, protocol="codex")
         a.fresh = not bool(thread)
         if a.stopped:
@@ -511,6 +514,10 @@ class Runner:
             if m.get("debate_active") and ((turns_limit and m["discussion_turns"] >= turns_limit)
                                            or (seconds_limit and elapsed >= seconds_limit)):
                 m.update(debate_active=False, debate_paused=True, discussion_pause_reason="limit",
+                         discussion_elapsed=elapsed, discussion_started=None, discussion_paused_at=time.time())
+            if m.get("debate_active") and (self.current or {}).get("plan_approved"):
+                # the validated plan was implemented by one agent: the other one reviews it when the owner resumes
+                m.update(debate_active=False, debate_paused=True, discussion_pause_reason="user",
                          discussion_elapsed=elapsed, discussion_started=None, discussion_paused_at=time.time())
             if m.get("debate_paused"):
                 m["debate_pending"] = {"text": prompt, "attachments": [], "source": "debate", "kind": "debate", "at": time.time()}
@@ -1106,6 +1113,17 @@ PLAN_PREFACE = ("[Plan mode is on: you must not create, edit or delete files nor
                 "concerned, risks and open questions. Your final answer must contain the whole plan: the user "
                 "reads it there and either validates it or asks for changes (then send the updated plan in full). "
                 "Implement nothing before it is validated.]\n\n")
+DEBATE_PLAN_PREFACE = ("[Plan mode is on: you must not create, edit or delete files nor run commands that change "
+                       "anything - the tools refuse it. Work out a plan for the user's objective with the other agent: "
+                       "explore what you need (read files, search, read-only commands), weigh their proposal, then answer "
+                       "with the complete plan as it stands now in Markdown, in the user's language: goal, steps, files "
+                       "concerned, risks and open questions, and what you changed in the other agent's version. Your answer "
+                       "must contain the whole plan: the user validates the latest one before anything is changed. "
+                       "Implement nothing.]\n\n")
+DEBATE_PLAN_APPROVED_PREFACE = ("[The user validated the plan of this discussion: plan mode is off, you can now edit files "
+                                "and run commands. Implement the latest version of the plan (the latest contribution "
+                                "above holds it), then report what you did. The other agent reviews your work when the "
+                                "user resumes the discussion.]\n\n")
 PLAN_APPROVED_PREFACE = ("[The user validated your plan: plan mode is off, you can now edit files and run "
                          "commands. Implement the latest version of the plan you proposed, then report what you "
                          "did.]\n\n")
