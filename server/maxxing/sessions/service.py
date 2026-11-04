@@ -376,9 +376,6 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         raise SessionError(400, 'unsupported', 'This agent adapter does not support attachments.')
     if provider in ("discussion", "debate") and plan_mode:
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
-    partner = _check_partner(discussion_partner, plan_mode, bool(attachments)) if discussion_partner else None
-    if discussion_partner and provider not in ('discussion', 'debate'):
-        raise SessionError(400, 'unsupported', 'Only a discussion or a debate has a second agent to choose.')
     if swarm_agents is not None and (provider != 'claude' or type(swarm_agents) is not int or not 2 <= swarm_agents <= 6):
         raise SessionError(400, 'bad_swarm', 'Agent teams require Claude and a requested count between 2 and 6.')
     files = _check_attachments(attachments)
@@ -386,6 +383,9 @@ def create_session(path: str, message: str | None = None, title: str | None = No
     given = (title or "").strip()[:120]
     model = _check_model(model)
     codex_model = _check_model(codex_model)
+    if discussion_partner and provider not in ('discussion', 'debate'):
+        raise SessionError(400, 'unsupported', 'Only a discussion or a debate has a second agent to choose.')
+    partner = _check_partner(discussion_partner, plan_mode, bool(files)) if discussion_partner else None
     meta = store.new_meta(p, given or _default_title(p, message), model=model or "",
                           source=source, notify=notify, cron=cron, env=env, timeout_s=timeout_s, plan_mode=plan_mode,
                           permission_mode=permission_mode, provider=provider)

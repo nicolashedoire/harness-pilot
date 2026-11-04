@@ -304,7 +304,7 @@ class Runner:
             if summary and fresh:                      # the first reply of an agent after a compaction
                 item = {**item, 'preface': '\n\n'.join(filter(None, [SEED_DEBATE.format(summary=summary),
                                                                       item.get('preface')]))}
-            role = str(meta.get('claude_role' if actor == 'claude' else 'codex_role') or '').strip()   # partner seat
+            role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
         swarm_count = meta.get('swarm_agents')
@@ -383,8 +383,11 @@ class Runner:
     def _plugin_turn(self, actor: str, item: dict, meta: dict, cfg: dict, cwd: str, kind: str,
                      is_debate: bool = False) -> str | None:
         """An agent plugin's turn (pilot-jsonl-v1). In a discussion it holds the partner seat: the partner model
-        (`codex_model`) and a history whose other speakers are named (`_debate_history`)."""
+        (`codex_model`), role (`codex_role`) and a history whose other speakers are named (`_debate_history`)."""
         adapter = agent_providers.get(actor)
+        role = str(meta.get('codex_role') or '').strip() if is_debate else ''    # the partner seat's role
+        if role:
+            item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
         plan = bool(meta.get('plan_mode')) and kind not in ('compact', 'handoff')
         if meta.get('plan_ready'):                     # a new turn replaces the plan waiting for validation
             store.update(self.sid, plan_ready=False)
