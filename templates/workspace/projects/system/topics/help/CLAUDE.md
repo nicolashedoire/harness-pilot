@@ -39,7 +39,7 @@ is the only authority: `{{CODE_DIR}}/docs/user/` (the same pages as Settings -> 
 | `14-skills.md` | shipped Claude Code skills |
 | `15-security.md` | password, permissions, exposure |
 | `16-troubleshooting.md` | common problems and fixes |
-| `17-cli-reference.md` | every `pilot` command (`maxxing` = the same command, earlier name) |
+| `17-cli-reference.md` | every `pilot` command (`maxxing`, its earlier name, still works) |
 | `18-voice.md` | voice messages (speech-to-text) |
 | `19-system-project.md` | this `system` project and its topics |
 | `20-customizing.md` | changing the product's own code, kept across updates |

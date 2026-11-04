@@ -35,6 +35,10 @@ You may also review and edit the summary before saving it to the topic's `memory
 
 ## What works with Codex
 
+Codex must be installed and signed in where harness-pilot runs: sign it in from **Settings → Codex** with your ChatGPT
+account (a one-time code you enter on OpenAI's page, from any device) or an OpenAI API key, or with `codex login` in a
+terminal there ([Codex sign-in](settings-and-keys#codex-sign-in)).
+
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
 are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact**,
 **Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions, shows the **context gauge** in its

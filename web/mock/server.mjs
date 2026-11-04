@@ -11,6 +11,8 @@
 // Serves the built SPA from ../dist (web/dist). Scenarios: setup | login | onboarding | ready | maxxing.
 // maxxing: 30 more sessions that keep finishing at random (Maxxing mode); MOCK_PASSWORD=... asks for that password.
 // MOCK_LOCAL=mac|mac-terminal|mac-none|linux: a local installation (Settings -> System: background service, Git update).
+// MOCK_MEDIA=none|no-webp|no-pdf: ffmpeg and pdftoppm missing, ffmpeg without WebP, pdftoppm missing (Settings -> System).
+// MOCK_CODEX=signed-in|signed-out|missing|device-fails: Codex's sign-in (Settings -> Codex, the wizard's Codex step).
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -34,6 +36,8 @@ const MOCK_PASSWORD = process.env.MOCK_PASSWORD || ''
 // services or logs; on a Mac, the background service runs the app / is installed but the app runs in a terminal / is
 // not installed (Settings -> System)
 const LOCAL = ['mac', 'mac-terminal', 'mac-none', 'linux'].includes(process.env.MOCK_LOCAL) ? process.env.MOCK_LOCAL : ''
+// MOCK_MEDIA=none | no-webp | no-pdf: the thumbnail tools missing (default: all found)
+const MEDIA = ['none', 'no-webp', 'no-pdf'].includes(process.env.MOCK_MEDIA) ? process.env.MOCK_MEDIA : ''
 
 /* =================================================================== helpers */
 const now = () => Date.now() / 1000
@@ -2610,7 +2614,8 @@ function ibState() {
   if (S.instanceBackup) return S.instanceBackup
   const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
   S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
-    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+    schedule: null, runs: {}, keyStored: false, copyFolder: '', // schedule: {frequency, hour, keep, since} or off; runs: {last_success, last_id, error}
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024, scheduled: false, copy: null }] : [] }
   return S.instanceBackup
 }
 const ibRoots = () => {
@@ -2626,27 +2631,99 @@ const ibDescription = () => {
 }
 const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
 const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+// Scheduled archives (instance_backup.schedule_status): the next run is the first `hour`:00 in the configured timezone
+// after the last success plus the period (less 12 h), or after the schedule was enabled; none while paused.
+const IB_PERIOD = { daily: 1, weekly: 7 }
+function ibSchedule() {
+  const st = ibState(), cur = st.schedule, runs = st.runs, paused = st.restore_hold || st.integrations_paused
+  const earliest = cur && (runs.last_success ? runs.last_success + IB_PERIOD[cur.frequency] * DAY - 12 * HOUR : cur.since)
+  return { enabled: !!cur, frequency: cur ? cur.frequency : 'off', hour: cur ? cur.hour : 3, keep: cur ? cur.keep : 7,
+    next_run: cur && !paused ? cronNext(`0 ${cur.hour} * * *`, 1, earliest * 1000)[0] ?? null : null, paused,
+    last_success: runs.last_success ?? null, last_id: runs.last_id ?? null, error: cur ? runs.error ?? null : null }
+}
+// Copy folder (instance_backup.copy_status): `last` = the copy record of the newest export that has one.
+const ibCopy = () => ({ folder: ibState().copyFolder || null, last: ibState().exports.find((e) => e.copy)?.copy ?? null })
+// Copy one export to the folder (instance_backup.copy_export); a folder whose path contains "full" fails, to see the
+// failure. The record is kept with the export, as in its metadata file.
+function ibCopyExport(e) {
+  const folder = ibState().copyFolder, d = new Date(e.created * 1000 + zoneOffset(e.created * 1000, S.settings.timezone) * 60000)
+  const stamp = d.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
+  e.copy = /(^|\/)[^/]*full[^/]*(\/|$)/i.test(folder)
+    ? { ok: false, at: now(), code: 'copy_no_space', error: `Not enough free space in ${folder} for this archive.` }
+    : { ok: true, at: now(), path: `${folder}/pilot-${stamp}-${e.id.slice(0, 12)}.pilotbackup`, bytes: e.archive_bytes, sha256: e.sha256 }
+  return e.copy
+}
 R('GET', '/api/backup/instance', () => {
   const st = ibState()
   return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
-    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [], schedule: ibSchedule(), copy: ibCopy() }
 })
 R('POST', '/api/backup/instance/export', async ({ body }) => {
   ibHeld(); ibPassphrase(body.passphrase)
   if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
   await sleep(2500)
-  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription(), scheduled: false, copy: null }
   ibState().exports.unshift(e)
+  if (ibState().copyFolder) ibCopyExport(e)
   bus('backup')
-  return e
+  return { ...e, copy: ibState().copyFolder ? e.copy : null }
 })
-R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes, scheduled, copy }) => ({ id, created, archive_bytes, sha256, version, files, bytes, scheduled: !!scheduled, copy: copy || null })))
 R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
   ibHeld()
   const st = ibState()
   if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
   st.exports = st.exports.filter((e) => e.id !== params.id)
   return { ok: true, id: params.id }
+})
+R('POST', '/api/backup/instance/exports/:id/copy', ({ params }) => {
+  ibHeld()
+  if (!ibState().copyFolder) fail(409, 'copy_off', 'No copy folder is set.')
+  const e = /^[a-f0-9]{32}$/.test(params.id) && ibState().exports.find((x) => x.id === params.id)
+  if (!e) fail(404, 'not_found', 'Backup not found.')
+  return ibCopyExport(e)
+})
+// The passphrase is never kept, by the server or here: only whether a key derived from it is stored.
+R('PUT', '/api/backup/instance/schedule', ({ body }) => {
+  ibHeld()
+  const { frequency, hour, keep, passphrase, store_key } = body
+  if (passphrase != null && (typeof passphrase !== 'string' || passphrase.length < 12 || passphrase.length > 1024)) fail(422, 'invalid', 'passphrase: 12 to 1024 characters')
+  if (!(frequency in IB_PERIOD) || !Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(keep) || keep < 1 || keep > 30)
+    fail(400, 'schedule', 'Choose daily or weekly, an hour from 0 to 23 and 1 to 30 archives to keep.')
+  const st = ibState()
+  if (passphrase) {
+    if (store_key !== true) fail(400, 'consent_required', 'Agree to keep a key derived from the passphrase on this server.')
+    st.keyStored = true
+  } else if (!st.schedule) fail(400, 'passphrase_required', 'Enter the backup passphrase to enable scheduled archives.')
+  st.schedule = { frequency, hour, keep, since: st.schedule ? st.schedule.since : now() }
+  return ibSchedule()
+})
+R('DELETE', '/api/backup/instance/schedule', () => {
+  ibHeld()
+  Object.assign(ibState(), { schedule: null, keyStored: false })
+  return ibSchedule()
+})
+// The folder is checked like the server's: absolute, existing, writable, outside the archived data. Nothing exists here:
+// a path with a "missing" folder does not exist, one with "readonly" cannot be written.
+R('PUT', '/api/backup/instance/copy', ({ body }) => {
+  ibHeld()
+  if (typeof body.folder !== 'string' || body.folder.length > 4096) fail(422, 'invalid', 'folder: a string of 4096 characters at most')
+  const raw = body.folder.trim(), bad = (message) => fail(400, 'copy_folder', message)
+  if (!raw || raw.includes('\0')) bad('Choose a folder for the copies.')
+  const folder = (raw === '~' || raw.startsWith('~/') ? '/root' + raw.slice(1) : raw).replace(/\/+/g, '/').replace(/(.)\/$/, '$1')
+  if (!folder.startsWith('/')) bad('Use the full path of the folder (it starts with /).')
+  if (folder.split('/').includes('missing')) bad('This folder does not exist. Connect the drive or create the folder first.')
+  const sources = ['/var/lib/claude-maxxing', ...Object.values(ibRoots()).filter((r) => r.archive).map((r) => r.source)]
+  if (sources.some((src) => folder === src || folder.startsWith(src.replace(/\/$/, '') + '/') || src === '/'))
+    bad('Choose a folder outside the data the archive contains, ideally on another drive or in a synced folder.')
+  if (folder.split('/').includes('readonly')) bad('The application cannot write in this folder.')
+  ibState().copyFolder = folder
+  return ibCopy()
+})
+R('DELETE', '/api/backup/instance/copy', () => {
+  ibHeld()
+  ibState().copyFolder = ''
+  return ibCopy()
 })
 R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
   if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
@@ -3373,6 +3450,17 @@ R('GET', '/api/system/logs', ({ q }) => {
 R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3, local_mode: !!LOCAL,
   auto_update: { enabled: !!S.autoUpdate, tried: null, last_check: null }, report: S.updateReport ? { at: S.updateReport.at, version: S.updateReport.version, ok: S.updateReport.ok, problems: S.updateReport.problems } : null }))
 R('POST', '/api/system/update', () => (LOCAL ? fail(409, 'local_update_unsupported', 'Updates from the application are unavailable in local mode.') : { ok: true }))
+// the tools of thumbnails and previews (server/maxxing/mediatools.py `status`): Homebrew commands on a Mac, apt elsewhere
+R('GET', '/api/system/media-tools', () => {
+  const mac = LOCAL.startsWith('mac'), bin = mac ? '/opt/homebrew/bin' : '/usr/bin'
+  const ffmpeg = MEDIA === 'none' ? null : `${bin}/ffmpeg`, webp = !!ffmpeg && MEDIA !== 'no-webp'
+  const pdftoppm = MEDIA === 'none' || MEDIA === 'no-pdf' ? null : `${bin}/pdftoppm`
+  const missing = [...(!ffmpeg ? ['ffmpeg'] : webp ? [] : ['ffmpeg_webp']), ...(pdftoppm ? [] : ['pdftoppm'])]
+  const needFfmpeg = missing.some((m) => m.startsWith('ffmpeg')), needPdf = missing.includes('pdftoppm')
+  const pkgs = [...(needFfmpeg ? [mac ? 'ffmpeg-full' : 'ffmpeg'] : []), ...(needPdf ? [mac ? 'poppler' : 'poppler-utils'] : [])]
+  const install = !pkgs.length ? [] : mac ? pkgs.map((p) => `brew install ${p}`) : [`sudo apt-get install -y ${pkgs.join(' ')}`]
+  return { ok: !missing.length, ffmpeg: { path: ffmpeg, webp }, pdftoppm: { path: pdftoppm }, missing, install }
+})
 // the optional launchd agent of a local installation on macOS (server/maxxing/local_service.py), read-only
 const MAC_REPO = '/Users/me/harness-pilot'
 const macCmd = (a) => `bash ${MAC_REPO}/scripts/dev-local.sh service ${a}`
@@ -3594,7 +3682,65 @@ R('POST', '/api/system/health/seen', ({ body }) => {
   bus('health')
   return healthObj()
 })
-R('GET', '/api/system/codex', () => (S.scenario === 'ready' || S.scenario === 'maxxing' ? { installed: true, authenticated: true, reason: null } : { installed: true, authenticated: false, reason: 'not_authenticated' }))
+/* ---- codex sign-in (Settings -> Codex, the wizard's Codex step). MOCK_CODEX=signed-in | signed-out | missing |
+ * device-fails (default: signed in with ChatGPT in ready / maxxing, signed out otherwise). The device code is accepted
+ * 12 s after it is shown; an API key starting with "sk-bad" is refused. */
+const codexState = () => (S.codex ||= (() => {
+  const mode = process.env.MOCK_CODEX || (S.scenario === 'ready' || S.scenario === 'maxxing' ? 'signed-in' : 'signed-out')
+  return { installed: mode !== 'missing', method: mode === 'signed-in' ? 'chatgpt' : null, fails: mode === 'device-fails', login: { state: 'none' } }
+})())
+const codexStatus = () => {
+  const c = codexState()
+  if (!c.installed) return { installed: false, authenticated: false, reason: 'not_installed', method: null }
+  return { installed: true, authenticated: !!c.method, reason: c.method ? null : 'not_authenticated', method: c.method }
+}
+const codexLogin = () => {
+  const c = codexState(), l = c.login
+  if (l.state === 'waiting' && now() - l.started_at > 12) {
+    if (c.fails) Object.assign(l, { state: 'failed', error: 'Error: failed to complete device code sign-in: the request was denied', code: null })
+    else { Object.assign(l, { state: 'succeeded', code: null }); c.method = 'chatgpt'; bus('health') }
+  }
+  const waiting = l.state === 'waiting'
+  return { state: l.state, url: waiting ? 'https://auth.openai.com/codex/device' : null, code: waiting ? l.code : null,
+    expires_at: waiting ? l.started_at + 900 : null, started_at: l.started_at ?? null, error: l.error ?? null }
+}
+const codexNeeded = () => { if (!codexState().installed) fail(409, 'not_installed', 'The Codex command was not found by this server') }
+R('GET', '/api/system/codex', () => { codexLogin(); return codexStatus() })
+R('GET', '/api/system/codex/login', () => codexLogin())
+R('POST', '/api/system/codex/login', async () => {
+  codexNeeded()
+  const c = codexState()
+  if (c.login.state !== 'waiting') {
+    await sleep(900)
+    c.login = { state: 'waiting', started_at: now(), code: 'WXYZ-12345', error: null }   // a made-up code
+  }
+  return codexLogin()
+})
+R('DELETE', '/api/system/codex/login', () => {
+  const l = codexState().login
+  if (l.state === 'waiting') Object.assign(l, { state: 'cancelled', code: null })
+  return codexLogin()
+})
+R('POST', '/api/system/codex/auth', async ({ body }) => {
+  codexNeeded()
+  const v = String(body.value || '').trim()
+  if (v.length < 20 || /\s/.test(v)) fail(400, 'invalid', 'This does not look like an API key')
+  await sleep(800)
+  if (v.startsWith('sk-bad')) fail(502, 'login_failed', 'Error: the API key was refused')
+  const c = codexState()
+  if (c.login.state === 'waiting') Object.assign(c.login, { state: 'cancelled', code: null })
+  c.method = 'api_key'
+  bus('health')
+  return { ok: true, ...codexStatus() }
+})
+R('DELETE', '/api/system/codex/auth', () => {
+  codexNeeded()
+  const c = codexState()
+  if (c.login.state === 'waiting') Object.assign(c.login, { state: 'cancelled', code: null })
+  c.method = null
+  bus('health')
+  return { ok: true, ...codexStatus() }
+})
 R('PUT', '/api/system/auto-update', ({ body }) => { S.autoUpdate = !!body.enabled; return { ok: true, enabled: S.autoUpdate } })
 R('GET', '/api/system/update/preflight', async ({ q }) => {
   if (q.get('refresh')) await sleep(1500)

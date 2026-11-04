@@ -24,18 +24,34 @@ def privacy_args() -> list[str]:
     return args
 
 
+def binary() -> str | None:
+    """The Codex CLI sessions use: `MAXXING_CODEX_BIN`, else `codex` on the PATH; None when there is none."""
+    return os.environ.get('MAXXING_CODEX_BIN') or shutil.which('codex')
+
+
+def _login_method(text: str) -> str | None:
+    """How `codex login status` says it is signed in (codex-cli 0.150.1, on stderr): "Logged in using ChatGPT" or
+    "Logged in using an API key - sk-…***…" (masked). Only this word leaves the function, never the text."""
+    if 'ChatGPT' in text:
+        return 'chatgpt'
+    if 'API key' in text:
+        return 'api_key'
+    return None
+
+
 def status() -> dict:
     """Check the same CLI and account used by sessions without exposing its output."""
-    binary = os.environ.get('MAXXING_CODEX_BIN') or shutil.which('codex')
-    if not binary:
-        return {'installed': False, 'authenticated': False, 'reason': 'not_installed'}
+    path = binary()
+    if not path:
+        return {'installed': False, 'authenticated': False, 'reason': 'not_installed', 'method': None}
     try:
-        result = subprocess.run([binary, *privacy_args(), 'login', 'status'], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
-        return {'installed': True, 'authenticated': result.returncode == 0,
-                'reason': None if result.returncode == 0 else 'not_authenticated'}
+        result = subprocess.run([path, *privacy_args(), 'login', 'status'], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, errors='replace', timeout=8)
+        ok = result.returncode == 0
+        return {'installed': True, 'authenticated': ok, 'reason': None if ok else 'not_authenticated',
+                'method': _login_method(f'{result.stdout}\n{result.stderr}') if ok else None}
     except (OSError, subprocess.TimeoutExpired):
-        return {'installed': True, 'authenticated': None, 'reason': 'status_unavailable'}
+        return {'installed': True, 'authenticated': None, 'reason': 'status_unavailable', 'method': None}
 
 
 def workspace_context(root: Path, cwd: Path) -> str:

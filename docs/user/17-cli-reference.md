@@ -28,6 +28,12 @@ missing, and a default project or topic you deleted is never re-created. Default
 once each (Memory compaction, Check for updates, Morning tasks and Renewal reminder disabled).
 Skills renamed by a version (the product skills were called `maxxing-…` before `pilot-…`) are installed under their new name and the old copies removed; the old names are also replaced in the lines of your workspace files that are still the product's own text and in the prompts of default jobs you never edited - text you wrote is never changed (see [Skills](skills)).
 
+The product's own instructions kept from earlier versions (the lines of the workspace `CLAUDE.md` files that are still
+the product's text) get the `pilot` command once: at the first init (so update) or start of the local app where
+`pilot` is harness-pilot. Where another program is called `pilot`, they keep `maxxing`, the same command. Lines you
+wrote or edit, also later, and existing conversation history are kept. The `maxxing` alias still works for existing
+scripts.
+
 | Option | Effect |
 |---|---|
 | `--workspace PATH` | workspace folder (default `/root/maxxing`) |
