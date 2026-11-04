@@ -122,6 +122,31 @@ def test_checks_and_verify(code, capsys):
     assert "2 problem(s)" in out and "nothing_here" in smartupdate.fix_prompt(rep)
 
 
+def test_verify_reports_a_widget_that_returns_an_error(code, capsys):
+    ws = code["ws"]
+
+    def widget(eid, card):
+        d = ws / "extensions" / eid
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text(json.dumps({"id": eid, "name": eid, "type": "widget", "api": 1}))
+        (d / "api.py").write_text(f"def card(ctx):\n    return {card!r}\n")
+
+    widget("shop", {"title": "Shop", "status": "error", "error": "SHOP_TOKEN is missing", "blocks": []})
+    widget("quota", {"error": {"code": "quota", "message": "quota exceeded"}, "blocks": []})
+    widget("disk", {"title": "Disk", "status": "error",                  # a data alarm, not a broken widget
+                    "blocks": [{"type": "stat", "label": "Used", "value": "97%"}]})
+    widget("fine", {"title": "ok", "error": None, "blocks": []})
+    assert run_cli("update", "--verify") == 1
+    rep = smartupdate.last_report()
+    got = {x["id"]: (x["ok"], x["error"]) for x in rep["extensions"]}
+    assert got == {"shop": (False, "SHOP_TOKEN is missing"), "quota": (False, "quota exceeded"),
+                   "disk": (True, ""), "fine": (True, "")}
+    assert rep["problems"] == 2 and "SHOP_TOKEN is missing" in capsys.readouterr().out
+    # the dashboard card itself is unchanged: "error" is not part of the Card
+    shop = next(e for e in extensions.scan() if e.id == "shop")
+    assert "error" not in extensions.widget_card(shop, force=True)
+
+
 def test_extension_api_version(code):
     ws = code["ws"]
     d = ws / "extensions" / "future"

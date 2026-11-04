@@ -446,6 +446,26 @@ def clean_card(card: Any) -> dict:
     return out
 
 
+def card_error(card: Any) -> str:
+    """The error a card() reported instead of raising: a non-empty "error" ({"error": "SHOP_TOKEN is missing"},
+    {"status": "error", "error": {"message": ...}}). It is not part of the Card (clean_card drops it, the dashboard
+    shows the remaining blocks): `pilot update --verify` reports it (smartupdate._check_extension)."""
+    err = card.get("error") if isinstance(card, dict) else None
+    if isinstance(err, dict):
+        err = err.get("message") or err.get("error") or json.dumps(err, default=str)
+    return str(err).strip()[:300] if err else ""
+
+
+def compute_card(ext: Extension) -> tuple[dict, str]:
+    """card(ctx) now, without the cache: (the validated Card, card_error of what card() returned). Blocking."""
+    if ext.module is None:
+        raise RuntimeError("extension is disabled")
+    raw = ext.module.card(make_ctx(ext))
+    card = clean_card(raw)
+    card.setdefault("updated", time.time())
+    return card, card_error(raw)
+
+
 def widget_card(ext: Extension, force: bool = False) -> dict:
     """card(ctx) through the TTL cache. Blocking; raises on extension errors.
     HTML widgets return a card pointing at their widget.html (drawn by the UI in a sandboxed frame); its
@@ -464,8 +484,7 @@ def widget_card(ext: Extension, force: bool = False) -> dict:
         hit = _cards.get(ext.id)
     if hit and not force and time.time() - hit[0] < ext.ttl:
         return hit[1]
-    card = clean_card(ext.module.card(make_ctx(ext)))
-    card.setdefault("updated", time.time())
+    card, _ = compute_card(ext)
     with _lock:
         _cards[ext.id] = (time.time(), card)
     return card

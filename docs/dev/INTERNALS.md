@@ -909,8 +909,11 @@ URLs without query / fragment / userinfo. A channel with more than 64 MB waiting
   with `git diff base..target` = review). Never touches the install; cached in `update/preflight.json` keyed by
   [HEAD, target, dirty files]. Extensions vs the target's `EXT_API_MIN..EXT_API` (read with `git show`); upgrade
   notes of the target that ask something (first paragraph not "Nothing to do").
-- `verify() -> report` (`update/report.json`): `extensions.scan()`, `widget_card(force)`, `node --check page.js` when
-  node exists, each customization's `check` (shell, cwd workspace, `MAXXING_CODE`, 60 s).
+- `verify() -> report` (`update/report.json`): `extensions.scan()`, `extensions.compute_card` for each Card widget
+  (no cache; fails on an exception, an invalid card, or a non-empty `error` card() returned instead of raising -
+  `card_error`, read from the raw card because `clean_card` drops that key; `status: "error"` alone is a data alarm,
+  not a failure), `node --check page.js` when node exists, each customization's `check` (shell, cwd workspace,
+  `MAXXING_CODE`, 60 s).
 - `mark_updated(from, to, smart)` (end of `pilot update`) -> `update/after.json`; `after_update()` runs once at
   server start (api/system.startup, after `MAXXING_AFTER_UPDATE_DELAY` s): verify, feed alert if broken, and for
   `smart` the upgrade-notes session (config `update_auto_notes`, default true).
