@@ -209,15 +209,23 @@ export function DeviceCard() {
       actions={
         <>
           <PermissionBadge perm={perm} onAsk={() => void allow()} busy={allowBusy} disabled={push.busy} />
-          {allowBusy && <Button variant="outline" size="sm" onClick={() => allowPending.current?.abort()}>{t('common.cancel')}</Button>}
+          {allowBusy && (
+            <Button variant="outline" size="sm" onClick={() => allowPending.current?.abort()}>
+              {t('common.cancel')}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => void sendTest()} loading={test.isPending}>
             <BellRing /> {t('nset.test')}
           </Button>
         </>
       }
     >
+      {(allowBusy || push.waiting) && (
+        <Callout tone="info" className="mb-4" title={t('nset.browserRequestWaiting')}>
+          {t('nset.browserRequestHint')}
+        </Callout>
+      )}
       <div className="divide-y">
-        {(allowBusy || push.waiting) && <Callout tone="info" className="mb-4" title={t('nset.browserRequestWaiting')}>{t('nset.browserRequestHint')}</Callout>}
         <SettingRow
           label={t('nset.push')}
           description={
@@ -228,7 +236,19 @@ export function DeviceCard() {
           }
           htmlFor="mx-push"
         >
-          <div className="flex flex-wrap items-center gap-2">{push.waiting && <Button variant="outline" size="sm" onClick={push.cancel}>{t('common.cancel')}</Button>}<Switch id="mx-push" checked={push.on} disabled={!!push.reason || push.busy || allowBusy || !push.info || push.ready === null} onCheckedChange={(v) => void push.toggle(v)} /></div>
+          <span className="flex flex-wrap items-center gap-2">
+            {push.waiting && (
+              <Button variant="outline" size="sm" onClick={push.cancel}>
+                {t('common.cancel')}
+              </Button>
+            )}
+            <Switch
+              id="mx-push"
+              checked={push.on}
+              disabled={!!push.reason || push.busy || allowBusy || !push.info || push.ready === null}
+              onCheckedChange={(v) => void push.toggle(v)}
+            />
+          </span>
         </SettingRow>
         <SettingRow label={t('nset.sound')} description={t('nset.soundHint')} htmlFor="mx-sound-set" className="items-start">
           <SoundControls />
