@@ -13,8 +13,8 @@
  * nothing when a window of the app is focused (the app shows its own notice). `notificationclick` runs an action
  * (a link, or one of the allowed POSTs) or opens the event's page in the running app.
  */
-const VERSION = "64796eadea56"
-const PRECACHE = ["/assets/index-CZOrj2qE.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-D_uCihts.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-CC3RfkQp.js","/assets/vendor-query-CthOliPc.js","/assets/files-Dg_jAESA.js","/assets/queries-BkKKCZgR.js","/assets/sessions-DNGS2XXL.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-BvcipjOB.js","/assets/button-Gs43mM-R.js","/assets/sensitive-Cx7ciHWQ.js","/assets/viewerStore-Dk-vKwGs.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/util-DMAmko-P.js","/assets/index-ChKJ1Wuf.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
+const VERSION = "eca220d52576"
+const PRECACHE = ["/assets/index-QUVXbtUy.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-DdTxeagn.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-DXfifgBM.js","/assets/vendor-query-CthOliPc.js","/assets/files-BZyAwKpO.js","/assets/queries-Db5OzDNr.js","/assets/sessions-Cay6kAzx.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-Bi_xhajv.js","/assets/button-YuVtpiGx.js","/assets/sensitive-C7Ah6wNh.js","/assets/viewerStore-B0U2Dn7i.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/util-Dj4MEbwV.js","/assets/index-ChKJ1Wuf.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
 const SHELL = `mx-shell-${VERSION}`
 const ASSETS = `mx-assets-${VERSION}`
 const OFFLINE = '/offline.html'
@@ -25,7 +25,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const shell = await caches.open(SHELL)
-      await shell.addAll([OFFLINE, '/manifest.webmanifest', '/icons/harness-pilot.png', '/icons/harness-pilot-192.png'])
+      await shell.addAll([OFFLINE, '/manifest.webmanifest', '/icons/pilot-companion-v2.png', '/icons/pilot-companion-v2-192.png'])
       const assets = await caches.open(ASSETS)
       await assets.addAll(PRECACHE)
       // First install: take over immediately. Updates wait for the page to ask (SKIP_WAITING).
@@ -160,7 +160,7 @@ self.addEventListener('push', (event) => {
       const actions = (Array.isArray(d.actions) ? d.actions : [])
         .filter((a) => (a.type === 'post' ? POST_ALLOWED.some((r) => r.test(a.url)) : appPath(a.url) || /^https:\/\//.test(a.url)))
         .slice(0, 2)
-      const icon = (p && p.icon) || '/icons/harness-pilot-192.png'
+      const icon = (p && p.icon) || '/icons/pilot-companion-v2-192.png'
       await self.registration.showNotification(title, {
         body,
         tag: d.tag || (d.id ? `feed-${d.id}` : undefined),
