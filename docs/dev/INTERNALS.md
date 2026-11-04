@@ -219,6 +219,15 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
 - Uses from sessions.service: `create_session`, `get_session`, `list_sessions`, `send_message`, `stop`,
   `update_session(sid, model=…)` (/model), `read_events` / `end_offset` (progress mode), `last_assistant_text`, `models()`.
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
+- `telegram.reviews` (companion decisions): `buttons(ev)` gives a built-in `companion.ready` event (source `system`,
+  params `session_id` + 64-hex `fingerprint`; the companion kinds are reserved against external producers) Review and
+  Discuss buttons, `c:<feed id>:<v|a|r|d>`. `handle()` runs after `_on_callback`'s linked-owner check (linked private
+  chat and owner user id), re-reads `companions.review` and refuses a running or changed proposal (fingerprint other
+  than the event's), an already decided one, and a binary one or one whose complete text (Git patch + new files as
+  `+` lines) exceeds `MAX_REVIEW` (12000). Review sends that text as `<pre>` blocks, then Approve / Reject only when
+  every part was delivered. A decision is `companions.decide(sid, value, <event fingerprint>)`: recorded, never
+  applied, published or merged (a mission step's dependents may start, as after a web approval). Discuss reopens the
+  session's thread (`reopen_thread`) without a model request; messages there follow the normal session path.
 
 ## maxxing.feed / maxxing.feedhooks  (owner: organisation)
 - `feed.post(title, body="", level="info", source="custom", url="", dedupe=None, group=None, notify=True, *,
