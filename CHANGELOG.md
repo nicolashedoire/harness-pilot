@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.
 - Local setup: `bash scripts/dev-local.sh cli <command>` runs the `pilot` command with the settings of your local app, for example `bash scripts/dev-local.sh cli doctor`. The guides no longer suggest `uv run pilot` in `server/`, which looked at the folder of a server installation instead of your local one.
 - The Sessions guide and Settings → Codex now say what works with Codex and which features are still for Claude Code only (side questions, MCP servers, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota).
 - Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.
