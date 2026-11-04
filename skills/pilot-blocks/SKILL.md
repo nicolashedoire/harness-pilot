@@ -157,7 +157,9 @@ extension** in `{{WORKSPACE}}/extensions/<id>/` (slug id, not the name of a buil
   `maxxing.resize(px)` (automatic otherwise), `maxxing.send(text)` (asks the user first), `maxxing.error(msg)`.
   Build the DOM with `textContent`, never `innerHTML` with the data.
 - `permissions.network`: host names (`tiles.example.com`, max 8) the frame may reach over HTTPS - only after the
-  user allows it; without consent the frame has no network at all.
+  user allows it; without consent the frame has no network at all. Always write it (`[]` when the block needs no
+  network): it is what the user sees before turning the block on. A block plugin has no server code, so `secrets`
+  and `read` (the other permissions of widgets and pages) do not apply to it.
 - `hint`: the one line given to the agents (it appears in the CLAUDE.md section once the block is enabled).
 
 The plugin appears in Settings -> Conversation blocks (and Settings -> Extensions); once enabled, its type joins
