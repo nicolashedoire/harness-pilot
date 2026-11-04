@@ -455,7 +455,12 @@ group of the user menu, the palette and Settings › General. The closing card l
 - `useGlobalBus` batches server invalidations (250 ms) and `AppShell` prefetches the page chunks and the
   sessions list when idle (skipped on Save-Data / 2G).
 - Settings: `SectionStack` wraps each card in `.mx-rise` (28 ms apart, cards after the 5th together, section heading first); the desktop sub-nav
-  highlight is one absolute element moved with `transform` (items are `h-9` + `gap-0.5` = 2.375rem apart).
+  highlight is one absolute element moved with `transform` (items are `h-9` + `gap-0.5` = 2.375rem apart; each group heading,
+  `h-7` + `gap-0.5`, adds 1.875rem).
+- Settings menu: the sections are grouped under headings (`SETTINGS_GROUPS` in `pages/settings/sections.ts`: You, Agents, Data,
+  Integrations, Platform; every section has a `group`, the list is in menu order), Support last without a heading. On a
+  computer a search above the menu filters it (name, description, keywords; case and accents ignored; Enter opens the first
+  match, Escape clears); only the menu scrolls, with its edge fade. The phone tabs keep one row, a thin divider between groups.
 - Lists that change under the user (session rows, columns): `lib/presence.ts`. `usePresence` keeps a removed
   item rendered while it leaves; `animateOut` takes it out of the flow (absolute, parent `relative`) and fades
   it; `useFlip` slides the others from their previous place; `animateIn` fades + slides new ones. Transform and

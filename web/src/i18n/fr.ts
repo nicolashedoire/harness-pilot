@@ -1050,6 +1050,13 @@ export const fr: Record<keyof typeof en, string> = {
   'updates.installed': "Installée",
   'settings.docs': 'Docs',
   'settings.docs.desc': 'Documentation.',
+  'setnav.you': 'Vous',
+  'setnav.agents': 'Agents',
+  'setnav.data': 'Données',
+  'setnav.integrations': 'Intégrations',
+  'setnav.platform': 'Plateforme',
+  'setnav.search': 'Chercher un réglage',
+  'setnav.none': 'Aucun réglage ne correspond.',
 
   'settings.appearance': 'Apparence',
   'settings.accent': 'Couleur d’accent',
