@@ -109,12 +109,14 @@ export function ModelPicker({
   )
 }
 
-export function ContextGauge({ tokens, window: reported, model, realModel, ring, percent }: { tokens: number | null; window?: number | null; model?: string | null; realModel?: string | null; ring?: boolean; /** Session header: a neutral bar and the share used ("32 %"). */ percent?: boolean }) {
+export function ContextGauge({ tokens, window: reported, model, realModel, ring, percent, agent = 'claude' }: { tokens: number | null; window?: number | null; model?: string | null; realModel?: string | null; ring?: boolean; /** Session header: a neutral bar and the share used ("32 %"). */ percent?: boolean; /** Whose context: Codex measures against the window it recorded, never Claude's models. */ agent?: 'claude' | 'codex' }) {
   const t = useT()
   const { data: claude } = useClaudeStatus()
   if (!tokens) return null
   const windows = Object.fromEntries((claude?.models || []).map((m) => [m.id, m.context_window]))
-  const max = contextWindow(tokens, reported, { chosen: model || claude?.default_model || null, real: realModel, windows })
+  const max = agent === 'codex'
+    ? contextWindow(tokens, reported, { agent })
+    : contextWindow(tokens, reported, { chosen: model || claude?.default_model || null, real: realModel, windows })
   const pct = Math.min(1, tokens / max)
   const tone = pct > 0.85 ? 'bg-destructive' : pct > 0.6 ? 'bg-warning' : 'bg-primary'
   const label = t('sessions.context', { used: fmtTokens(tokens), max: fmtTokens(max), pct: Math.round(pct * 100) })

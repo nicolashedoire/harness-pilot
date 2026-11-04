@@ -3,7 +3,7 @@ section: Using harness-pilot
 ---
 # MCP servers
 
-This page describes the inherited **Claude Code** integration; Codex sessions get the same servers with the limits listed in [Codex](#codex). The computer-browser bridge is for Claude only. No computer agent binary is currently listed for download; its inherited release URL points to the original project. The agent still needs to be built and verified for this repository.
+This page describes the inherited **Claude Code** integration; Codex sessions get the same servers with the limits listed in [Codex](#codex). The computer-browser bridge is for Claude only. harness-pilot PC, the small program it needs on your computer, is not published for download yet (see [Browser of my PC](#browser-of-my-pc)).
 
 An MCP server gives Claude the tools of a service: read your ads account, search a Notion workspace, query a
 database... **Settings -> MCP** lists every MCP server Claude Code uses in your workspace, where each one applies,
@@ -89,8 +89,8 @@ When a message needs a **claude.ai connector** (Google Drive, Gmail...), that me
 **Settings -> MCP -> Browser of my PC** lets Claude use a browser on **your own computer** (Windows, Mac or Linux):
 open a site you are signed in to, fill a form, read a page, take a screenshot... It uses a **separate profile** of
 your browser (Brave, Chrome, Edge, Vivaldi, Opera or Chromium): your usual tabs, passwords and history are never
-touched. Sign in to the sites Claude needs once, in the window it opens. (The card appears once harness-pilot PC can be
-downloaded from your server.)
+touched. Sign in to the sites Claude needs once, in the window it opens. Until harness-pilot PC is published for
+download, the card only says **Not available yet** and no computer can be connected.
 
 1. Choose your computer and your browser (harness-pilot guesses them from the browser you are using), then **Get harness-pilot PC**.
 2. Download **harness-pilot PC** (already linked to this server, valid 15 minutes) and open it - or paste the command shown
@@ -117,6 +117,12 @@ even a hijacked server could not use it to reach your files: only web pages (htt
 192.168.x.x, your router, a NAS) -, downloads cannot be sent to another folder, no file of the PC can be given
 to a page, and no permission or app can be installed. Claude cannot upload files from the PC or record its screen.
 The list of recent actions keeps addresses without their query part (sign-in codes are not kept).
+
+**What was tested.** harness-pilot PC was tested end to end on a Mac (Apple chip and Intel) and on Linux with a test
+server: the download, the confirmation, Claude's browser actions and refusals, **Stop now**, **Erase the profile** and
+**Disconnect** work. Windows, **Start with the computer** and a download through the browser have not been tried yet.
+On a Mac, prefer the terminal command shown by the card. A file downloaded by the browser cannot be run as it is: it
+is not marked as a program, and macOS may block it because harness-pilot PC is not notarized by Apple yet.
 
 ## Backup and new server
 

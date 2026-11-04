@@ -17,8 +17,15 @@ every step also exists in Settings.
    A real one-line test call confirms it works.
    Claude can be skipped if you want to use Codex alone.
 4. **Codex** (optional) – the wizard detects whether the Codex command is installed where harness-pilot runs and
-   signed in. Otherwise install it (for example `npm install -g @openai/codex`), run `codex login` in a terminal,
-   then **Check again**; or skip the step. The same status is in **Settings → Codex**.
+   signed in. If it is not installed, install it there (for example `npm install -g @openai/codex`), then
+   **Check again**. To sign it in, without a terminal:
+   - **ChatGPT account**: **Get a sign-in code** shows a page of OpenAI and a one-time code (valid 15 minutes).
+     Open the page on any device, sign in to ChatGPT, enter the code: the wizard notices it by itself. Enter the code
+     only on that page, and only for a sign-in you started.
+   - **API key**: paste an OpenAI API key. It goes straight to Codex, which keeps it in its own folder;
+     harness-pilot keeps no copy and never shows it again. Codex checks it on the first message.
+   `codex login` in a terminal where harness-pilot runs still works. Or skip the step. The same is in
+   **Settings → Codex**.
 5. **Import** (optional) – coming from another agent (Hermes, Claude Code, OpenClaw…)? Copy the
    prompt into it, drop the zip it makes: your projects, topics, memory and skills arrive, and
    Claude finishes the job (tasks, scheduled jobs, keys to add). See [Import](import).

@@ -56,6 +56,7 @@ def _never_the_real_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(cmd_core, "PILOT_LINK", fake / "usr-local-bin" / "pilot")
     monkeypatch.setenv("MAXXING_CODEX_SKILLS_DIR", str(fake / "agents-skills"))   # never the real ~/.agents/skills
     monkeypatch.setenv("MAXXING_LAUNCH_AGENTS_DIR", str(fake / "LaunchAgents"))   # never the real ~/Library/LaunchAgents
+    monkeypatch.setenv("CODEX_HOME", str(fake / "codex-home"))   # Codex turns never read the real ~/.codex session files
 
 
 @pytest.fixture(autouse=True)

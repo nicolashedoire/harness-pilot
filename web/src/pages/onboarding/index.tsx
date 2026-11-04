@@ -16,7 +16,8 @@ import { useDocumentTitle } from '@/components/shell/Page'
 import { RegionFields } from '@/features/general/RegionFields'
 import { ClaudeConnect } from '@/features/claude/ClaudeConnect'
 import { ClaudeDefaults } from '@/features/claude/ClaudeDefaults'
-import { CodexStatus, useCodexStatus } from '@/features/codex/CodexStatus'
+import { CodexConnect } from '@/features/codex/CodexConnect'
+import { useCodexStatus } from '@/features/codex/CodexStatus'
 import { CreateProjectTopic } from '@/features/workspace/CreateProjectTopic'
 import { TelegramSetup } from '@/features/telegram/TelegramSetup'
 import { BackupSetup, BackupWhy } from '@/features/backup/BackupSetup'
@@ -284,23 +285,7 @@ function CodexStep({ onNext, onBack }: { onNext: () => void; onBack: () => void 
     <>
       <StepHeader step="codex" title={t('onb.codex.title')} description={t('onb.codex.desc')} />
       <div className="grid max-w-2xl gap-5" data-testid="onb-codex">
-        <div className="grid gap-3 rounded-xl border p-4">
-          <CodexStatus />
-          <Button variant="outline" size="sm" className="w-fit" onClick={() => void q.refetch()} loading={q.isFetching}>
-            {t('onb.codex.check')}
-          </Button>
-        </div>
-        {!ok && (
-          <ol className="grid list-decimal gap-2 pl-5 text-sm text-muted-foreground">
-            <li>
-              {t('onb.codex.install')} <code>npm install -g @openai/codex</code>
-            </li>
-            <li>
-              {t('onb.codex.login')} <code>codex login</code>
-            </li>
-            <li>{t('onb.codex.recheck')}</li>
-          </ol>
-        )}
+        <CodexConnect />
       </div>
       <StepFooter onBack={onBack} onNext={ok ? onNext : undefined} onSkip={ok ? undefined : onNext} />
     </>

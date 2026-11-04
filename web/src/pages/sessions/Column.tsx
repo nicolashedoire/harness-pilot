@@ -1014,9 +1014,10 @@ function ColumnHeader({
   const t = useT()
   const maxxing = useMaxxingEnabled()
   const { data: claude } = useClaudeStatus()
-  const claudeTurns = !session?.provider || session.provider === 'claude'
+  // the context gauge: Claude Code reports its context, Codex records it in its session file (read by the server)
+  const gaugeAgent = !session?.provider || session.provider === 'claude' ? 'claude' : session.provider === 'codex' ? 'codex' : null
   const duo = session?.provider === 'discussion' || session?.provider === 'debate'
-  const gauge = session && claudeTurns && <ContextGauge percent={!slim} ring={slim} tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />
+  const gauge = session && gaugeAgent && <ContextGauge agent={gaugeAgent} percent={!slim} ring={slim} tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />
   if (variant === 'mobile') {
     // phone / tablet: one bar - sessions (☰), the title over where it lives and the model, the menu, the app (⊞)
     const model = session ? ((session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? session.model || session.provider_name || 'Codex' : duo ? `Claude Code · ${session.discussion_partner?.startsWith('plugin:') ? session.provider_name || session.discussion_partner.slice(7) : 'Codex'}` : modelLabel(session.real_model || session.model || claude?.default_model || '', claude?.models)) : ''
@@ -1035,7 +1036,7 @@ function ColumnHeader({
                 <>
                   <MoveSessionPicker session={session} rootLabel={rootLabel} plain />
                   {model && <span className="min-w-0 shrink truncate">· {model}</span>}
-                  {gauge && <span className="ml-auto flex shrink-0">{<ContextGauge ring tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />}</span>}
+                  {gauge && gaugeAgent && <span className="ml-auto flex shrink-0">{<ContextGauge agent={gaugeAgent} ring tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />}</span>}
                 </>
               ) : (
                 <Skeleton className="h-3 w-32" />

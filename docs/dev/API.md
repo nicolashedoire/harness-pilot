@@ -102,8 +102,10 @@ Session = {
   created, updated, turns, cost_usd,
   model: string,                      // chosen ("" = default)
   real_model: string|null,            // model that actually answered last turn (from the log)
-  context_tokens: int|null,           // last turn input+cache tokens
-  context_window: int|null,           // context window of the model of the last turn (Claude Code `modelUsage[..].contextWindow`, e.g. 1000000); null = unknown
+  context_tokens: int|null,           // last turn input+cache tokens (Codex: the input of the last model call of its
+                                      // thread, read from Codex's session file - INTERNALS.md `maxxing.sessions.codex`)
+  context_window: int|null,           // context window of the model of the last turn (Claude Code `modelUsage[..].contextWindow`, e.g. 1000000;
+                                      // Codex: the `model_context_window` it records, the usable 95 % of the model's, e.g. 258400); null = unknown
   archived: bool, favorite: bool, notify: bool,
   source: "web"|"telegram"|"cron",
   cron: bool,                         // started by a scheduled job (not mirrored on Telegram)
@@ -387,8 +389,8 @@ McpServer = {id:"<scope>|<folder>|<name>", name, scope:"user"|"local"|"project",
 PcStatus = {available, device:{id,name,os,arch,browser,browsers,version,created,last_seen}|null, online,
   browser_running, mcp_running, last_use|null, mcp_registered, pairing:{expires_at,browser,os}|null,
   candidate, settings:{idle_min}, browsers:[…], targets:[…], actions:[{at,tool,ok,ms,args:{url?,…}}]}   (newest first, 20)
-available = a Harness PC can be downloaded (MAXXING_PC_BIN_DIR, or files listed in pc_agent.json); the UI hides the
-  card while it is false and no PC is paired
+available = a Harness PC can be downloaded (MAXXING_PC_BIN_DIR, or files listed in pc_agent.json); while it is false
+  and no PC is paired, the card only says that harness-pilot PC is not published for download yet (no setup, no poll)
 candidate = {id,name,os,arch,version,created,ip}|null in PcStatus: a PC that paired with a code and waits for the user
 PcPairing = {code, expires_at, expires_in, server, downloads:{<target>:url}, commands:{windows,darwin,linux}}
 target = windows-amd64|windows-arm64|darwin-arm64|darwin-amd64|linux-amd64|linux-arm64
@@ -405,7 +407,7 @@ target = windows-amd64|windows-arm64|darwin-arm64|darwin-amd64|linux-amd64|linux
 | POST | `/api/pc/mcp/register` | – | `{ok}` · `409 not_paired` |
 | DELETE | `/api/pc` | – | `{ok}` - unpairs (the agent removes its autostart and exits), MCP removed |
 | POST | `/api/pc/pair` | `{code, name, os, arch, version, browsers}` | `{device_id, token}` - the PC is a `candidate` until `/confirm` · public, `403 bad_code\|expired` |
-| GET | `/api/pc/download/{target}?code=` | – | the agent binary + config trailer, streamed from the cached agent (`Content-Length` set) · public, `403`, `404` |
+| GET | `/api/pc/download/{target}?code=` | – | the agent binary + config trailer, streamed from the cached agent (`Content-Length` set) · public, `403 bad_code\|expired`, `404 no_agent` (no agent for this target: not in `pc_agent.json` nor in `MAXXING_PC_BIN_DIR`), `502 download_failed` (the release file could not be fetched: HTTP error, network) \| `checksum` (it does not match `pc_agent.json`) |
 | GET | `/api/pc/install.{ps1\|sh}?code=&target=` | – | install script (downloads, starts) · public |
 | WS | `/api/pc/ws` | `Authorization: Bearer <device token>` | agent control + DevTools frames (PROTOCOL.md) · close `4401` |
 | WS | `/api/pc/cdp` | `X-PC-Secret` | loopback only: DevTools relay for chrome-devtools-mcp · close `4403` |
@@ -433,7 +435,12 @@ Telegram: voice notes and video notes in a session thread (not audio files: atta
 ## System
 | GET | `/api/system/health` | – | `{ok, issues:[{level, code, text}], cpu_pct, load, mem:{total,avail}, disk:{total,free,pct}, uptime_s, claude_auth, claude_auth_error, claude_checked_at, backup_age_h, failed_logins_1h, at}` (each issue also has `id` and `seen`; issue `claude_auth`: "Claude is not connected" or "Claude sign-in expired…") (cached 30 s, `?force=1`) |
 | POST | `/api/system/health/seen` | `{id, seen=true}` | the health above, fresh - marks a current issue as seen (or not): it stops counting in the sidebar dot until its text changes (numbers left out of the `id`) or for 24 h; marks in `<state>/health-seen.json` · `404 not_found` |
-| GET | `/api/system/codex` | – | `{installed, authenticated:bool\|null, reason:null\|"not_installed"\|"not_authenticated"\|"status_unavailable"}`: `codex login status` of the CLI sessions use (`MAXXING_CODEX_BIN`, else `codex` on the PATH; 8 s), its output is never returned |
+| GET | `/api/system/codex` | – | `{installed, authenticated:bool\|null, reason:null\|"not_installed"\|"not_authenticated"\|"status_unavailable", method:"chatgpt"\|"api_key"\|null}`: `codex login status` of the CLI sessions use (`MAXXING_CODEX_BIN`, else `codex` on the PATH; 8 s), its output is never returned (`method` is read from it: "Logged in using ChatGPT" / "…an API key…"; null when signed out or worded otherwise) |
+| GET | `/api/system/codex/login` | – | `CodexLogin` = `{state:"none"\|"starting"\|"waiting"\|"succeeded"\|"failed"\|"cancelled"\|"expired", url:string\|null, code:string\|null, expires_at:float\|null, started_at:float\|null, error:string\|null}`: the device-code sign-in of this server process (`maxxing/codex_login.py`, one at a time, lost on restart). `url` (https only), `code` and `expires_at` only while `waiting`; `error` (failed): the CLI's last line, codes and keys masked, ≤ 300 characters |
+| POST | `/api/system/codex/login` | – | `CodexLogin`: starts `codex login --device-auth` (or joins the running flow) and waits up to 20 s for its page and code (`waiting`; else `starting`, poll GET). No code within 30 s → `failed`; still waiting 30 s after `expires_at` (the CLI says "expires in 15 minutes"; 15 min when it does not) → `expired`; both stop the CLI. Exit 0 → `succeeded` (Codex wrote its own credentials) · `409 not_installed` · `502 codex_failed` (could not start it) |
+| DELETE | `/api/system/codex/login` | – | `CodexLogin` (`cancelled`): stops the running flow; nothing running → the last state unchanged |
+| POST | `/api/system/codex/auth` | `{value}` (an OpenAI API key) | `{ok:true, ...GET /api/system/codex}`: stops a running device flow, then `codex login --with-api-key` with the key on stdin (never in argv); Codex stores it in its folder (`CODEX_HOME`, default `~/.codex/auth.json`, 0600), the server keeps no copy, never logs nor returns it. Codex does not check the key here: a wrong one fails on the first turn · `400 invalid` (not 20-4096 printable ASCII characters without spaces; the message never repeats the value) · `409 not_installed` · `502 login_failed` (the CLI's error, the key masked) |
+| DELETE | `/api/system/codex/auth` | – | `{ok:true, ...GET /api/system/codex}`: stops a running device flow, then `codex logout` (already signed out = ok) · `409 not_installed` · `502 logout_failed` |
 | GET | `/api/system/services` | – | `[{name, label, active:bool, enabled:bool, since:float\|null, state}]` (claude-maxxing, caddy, tailscaled, cron + config `services_extra`; units not installed are omitted; one `systemctl show` call, cached 10 s, dropped by a service action) |
 | POST | `/api/system/services/{name}/{start\|stop\|restart}` | – | `{ok}` (self restart deferred 2 s) |
 | GET | `/api/system/logs?unit=&lines=200` | – | `{lines:[str]}` |
