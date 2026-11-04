@@ -163,6 +163,9 @@ with TestClient(create_app()) as c:
     assert c.post('/api/auth/login',json={'password':'correct horse battery'}).status_code==200
     assert c.get('/api/sessions/'+sys.argv[1]).json()['title']=='A saved conversation'
     assert c.get('/api/files/raw',params={'path':sys.argv[2]}).content==b'\\x00\\xffattachment data'
+    roots = c.get('/api/settings').json()['restored_file_roots']
+    assert str(__import__('pathlib').Path(sys.argv[2]).parent) in roots
+    assert str(config.STATE) not in roots
     assert c.post('/api/sessions',json={}).status_code==409
     assert c.get('/api/backup/instance').json()['restore_hold'] is True
     assert c.post('/api/backup/instance/activate').status_code==200

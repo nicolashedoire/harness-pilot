@@ -4,6 +4,7 @@ import { Download, FolderCheck, LockKeyhole, Upload } from 'lucide-react'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { useT } from '@/i18n'
 import { Button, FormField, Input, Sensitive, Skeleton } from '@/components/ui'
+import { CopyButton } from '@/components/ui/code-block'
 
 type Status = { max_bytes: number; restore_hold: boolean; roots: Record<string, { source: string }>; export_error?: string; service_resume_errors?: string[] }
 type Snapshot = { id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string }
@@ -122,7 +123,10 @@ export function InstanceBackupPanel() {
       {restored && <div className="grid gap-3 rounded-lg border border-success/30 p-4 text-sm" role="status">
         <strong>{t('instanceBackup.restored')}</strong>
         <p>{t('instanceBackup.restoredBody')}</p>
-        <code className="overflow-x-auto rounded bg-muted p-3"><Sensitive>{restored.launch_command}</Sensitive></code>
+        <div className="flex min-w-0 items-start gap-2 rounded bg-muted p-3">
+          <code className="min-w-0 flex-1 whitespace-pre-wrap break-all"><Sensitive>{restored.launch_command}</Sensitive></code>
+          <CopyButton text={restored.launch_command} />
+        </div>
         <p>{t('instanceBackup.review')}</p>
       </div>}
     </>}

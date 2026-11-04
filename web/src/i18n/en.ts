@@ -863,7 +863,7 @@ export const en = {
   'settings.telegram': 'Telegram',
   'settings.telegram.desc': 'Your bot, linked chat, threads and notifications.',
   'settings.backup': 'Backup',
-  'settings.backup.desc': 'Memory backup to a private GitHub repository.',
+  'settings.backup.desc': 'Encrypted instance archives and selected-file GitHub memory backups.',
   'settings.keys': 'Keys',
   'settings.keys.desc': 'Secret vault: API keys and tokens, optionally available to harness-pilot sessions.',
   'settings.extensions': 'Extensions',

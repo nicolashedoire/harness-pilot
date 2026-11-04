@@ -855,7 +855,7 @@ export const fr: Record<keyof typeof en, string> = {
   'settings.telegram': 'Telegram',
   'settings.telegram.desc': 'Votre bot, la conversation liée, les fils et les notifications.',
   'settings.backup': 'Sauvegarde',
-  'settings.backup.desc': 'Sauvegarde de la mémoire vers un dépôt GitHub privé.',
+  'settings.backup.desc': 'Archives chiffrées de l’instance et sauvegardes mémoire sélectives sur GitHub.',
   'settings.keys': 'Clés',
   'settings.keys.desc': 'Coffre de secrets : clés d’API et jetons, éventuellement fournis aux sessions harness-pilot.',
   'settings.extensions': 'Extensions',
