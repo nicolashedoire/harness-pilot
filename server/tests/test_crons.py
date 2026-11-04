@@ -102,6 +102,42 @@ def test_humanize(expr, text):
     assert crons.humanize(expr) == text
 
 
+@pytest.mark.parametrize("expr,text", [
+    ("* * * * *", "toutes les minutes"),
+    ("*/5 * * * *", "toutes les 5 minutes"),
+    ("0 * * * *", "toutes les heures"),
+    ("15 * * * *", "toutes les heures à la minute 15"),
+    ("15,45 * * * *", "toutes les heures aux minutes 15 et 45"),
+    ("0 */6 * * *", "toutes les 6 heures pile"),
+    ("30 */6 * * *", "toutes les 6 heures à la minute 30"),
+    ("40 4 * * *", "tous les jours à 04:40"),
+    ("30 7 * * 1-5", "à 07:30 en semaine"),
+    ("0 10 * * 0,6", "à 10:00 le week-end"),
+    ("0 9 * * 1,3,5", "à 09:00 le lundi, le mercredi et le vendredi"),
+    ("0 9 * * 2-4", "à 09:00 du mardi au jeudi"),
+    ("0 0 1 * *", "à 00:00 le 1er du mois"),
+    ("0 0 1,15 * *", "à 00:00 les 1er et 15 du mois"),
+    ("0 8 * 1 *", "à 08:00 en janvier"),
+    ("0 8 * 1,3-5 *", "à 08:00 en janvier et de mars à mai"),
+    ("0 0 1 * 1", "à 00:00 le 1er du mois ou le lundi"),
+    ("* 4,5 * * *", "toutes les minutes pendant les heures 04 et 05"),
+    ("@reboot", "au démarrage"),
+    ("@weekly", "tous les dimanches à 00:00"),
+    ("0 6,18 * * *", "tous les jours à 06:00 et 18:00"),
+    ("not valid", "not valid"),
+])
+def test_humanize_french(expr, text):
+    assert crons.humanize(expr, "fr") == text
+
+
+def test_humanize_follows_the_ui_language(org):  # noqa: F811
+    assert crons.humanize("0 5 * * *") == "every day at 05:00"     # default language: English
+    config.update_config(language="fr")
+    assert crons.humanize("0 5 * * *") == "tous les jours à 05:00"
+    assert crons.humanize("0 5 * * *", "en") == "every day at 05:00"
+    assert crons.humanize("0 5 * * *", "xx") == "every day at 05:00"   # unknown language: English
+
+
 # ---- crontab bridge -------------------------------------------------------------------------
 EXTERNAL = "MAILTO=\"\"\n# my own jobs\n0 3 * * * /usr/bin/backup.sh --all\n@reboot /opt/start.sh\n"
 
@@ -130,6 +166,8 @@ def test_crontab_block_preserves_external_lines(org, monkeypatch):
     ext = crons.external_jobs()
     assert ext == [{"schedule": "0 3 * * *", "command": "/usr/bin/backup.sh --all", "human": "every day at 03:00"},
                    {"schedule": "@reboot", "command": "/opt/start.sh", "human": "at boot"}]
+    config.update_config(language="fr")
+    assert [e["human"] for e in crons.external_jobs()] == ["tous les jours à 03:00", "au démarrage"]
 
 
 def test_kept_server_clock_guards_lines(org, monkeypatch):
@@ -381,6 +419,8 @@ def test_api_preview(client):
     assert r["next"] == sorted(r["next"]) and r["next"][1] - r["next"][0] == 600
     r = client.get("/api/crons/preview", params={"schedule": "nope"}).json()
     assert r["valid"] is False and r["next"] == [] and r["error"]
+    config.update_config(language="fr")
+    assert client.get("/api/crons/preview", params={"schedule": "*/10 * * * *"}).json()["human"] == "toutes les 10 minutes"
 
 
 def test_preview_uses_config_timezone(org):

@@ -28,6 +28,10 @@ export function useSaveSettings() {
         const c = ctx as { prev?: Settings } | undefined
         if (c?.prev) qc.setQueryData(qk.settings, c.prev)
       },
+      // the server writes schedule descriptions (crons, dashboard widgets) in the UI language
+      onSuccess: (_d, patch) => {
+        if (patch.language !== undefined) for (const key of [qk.crons.all, qk.dashboard.all]) void qc.invalidateQueries({ queryKey: key })
+      },
       invalidate: [qk.settings, qk.authState],
     },
   )
