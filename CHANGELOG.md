@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Make a task repeat every day, every week on chosen days, or every month: when you mark it done, the next one is added to *To do* with its due date and reminder.
+- The Security help page now describes the local installation: who can reach the interface, where secrets are kept and how, what agents, companions and extensions can do on your computer, telemetry, and good practice.
 - The registration, feedback and license settings inherited from the original project are no longer reachable on this server: they belonged to a service this project does not run, and they now answer "not found" instead of trying to contact it.
 - On an arm64 Linux server, the headless browser used for web pages, PDFs and videos is now found once installed; `pilot deps update` reported it as failed before.
 - Troubleshooting now has a section for the local setup on macOS: where the logs are, how to restart, a port already in use, folder permissions, the missing `ffmpeg` and `pdftoppm` tools (with their `brew install` commands) and what Settings → System shows locally.

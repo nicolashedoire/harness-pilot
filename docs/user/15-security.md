@@ -5,7 +5,7 @@ section: Reference
 
 harness-pilot gives its web interface access to the connected agent tools and, when configured, to Telegram. The verified local setup runs under the operating-system user who starts it, on `127.0.0.1:8787`. A newly initialized local workspace uses Claude's `default` permission mode; an existing configuration retains its own settings. Codex sessions use the CLI sandbox: read-only in default and plan modes, workspace-write for the other modes. Shell jobs run with the permissions of the application user.
 
-The rest of this page describes the inherited Linux server installation. That deployment and its hardening have **not** been validated for this repository and should not be assumed to apply to the local Mac setup. See [Local installation](installation) and check the actual permissions configured for your installation.
+**Local installation** below describes the verified local setup, checked against the code. The sections after it describe the inherited Linux server installation: that deployment and its hardening have **not** been validated for this repository and should not be assumed to apply to the local Mac setup (Sign-in and Files apply to both). See [Local installation](installation) and check the actual permissions configured for your installation.
 
 ## Privacy defaults
 
@@ -26,6 +26,72 @@ Using a cloud agent still sends its working prompt/context to that agent's servi
 integrations such as Telegram still contact their service. Disabling product telemetry does not
 turn a cloud model into an offline model. Codex's exporter options are documented in the
 [official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
+## Local installation
+
+This is the setup started with `scripts/dev-local.sh`. It protects the interface from other people and from other
+websites; it does **not** protect your computer from the agents you start: they run as your user account.
+
+### Who can reach the interface
+
+- The server listens on `127.0.0.1:8787` only (`pilot serve --host 127.0.0.1`, config `bind`): other devices on
+  your network cannot connect. `pilot init --bind` refuses a public address such as `0.0.0.0`, and `pilot doctor`
+  fails when the port listens on one.
+- Every program and every account of this computer can open that address, so the interface still has a password
+  (see **Sign-in** below). The first one is set through a one-time link (`pilot setup-link`, valid one hour). Wrong
+  passwords are throttled, and every change request needs the `X-Maxxing: 1` header, which another website open in
+  your browser cannot send.
+- Two-step sign-in is optional and needs a linked Telegram chat (Settings -> Security).
+
+### Where secrets are kept
+
+- The local state lives in `.harness-pilot-local/state` inside the checkout (folder mode 700: other accounts of
+  the computer cannot open it; `secrets.json` itself is mode 600).
+  `secrets.json` holds the password hash, the cookie key, the Claude token or API key, the Telegram and GitHub
+  tokens and your **Keys**. It is protected by file permissions, **not encrypted**: anything that runs as your
+  user, an agent included, can read it. FileVault protects it while the computer is off.
+- The API never returns a stored secret, except a Key you reveal on purpose. A Key marked **Expose** becomes an
+  environment variable of every Claude turn and shell job: the agent and every command it runs can read it.
+- **Protect the secrets** (Settings -> Claude, on by default) makes Claude's file tools refuse `secrets.json` and
+  `~/.ssh`. It is a speed bump: a command written to open the file still can.
+- Encrypted instance archives (Settings -> Backup) contain the secrets; the GitHub memory backup never does.
+
+### What agents can do
+
+Every agent process runs as your user, with your files, your network and the tools you are signed in to. There is
+no operating-system isolation between harness-pilot and the agents it starts. What limits them:
+
+- **Claude Code**: the permission mode of the session, topic or job. A new local workspace starts in `default`
+  (Claude asks before edits and commands); `bypass` runs any command without asking.
+- **Codex**: its own sandbox, chosen from the same mode: read-only in `default` and `plan`, workspace-write
+  (writes limited to the working folder and temporary folders) otherwise. harness-pilot never starts Codex with
+  unrestricted access.
+- **Resident companions and missions**: each experiment works in a disposable copy of the committed source
+  (`<state>/companions/runs/<id>/repo`, mode 700), with Claude's `acceptEdits` mode or Codex's workspace-write
+  sandbox; an architect's plan runs read-only. The copy keeps ordinary edits away from the running app, but it is
+  **not a sandbox**: what the agent may run is decided by its engine's permissions, not by the copy. A proposal is
+  applied, published or merged only after your review.
+- **External agent adapters** (agent extensions) are programs you install and trust. They run with your
+  privileges and must enforce their own engine's permissions; harness-pilot cannot check that they do.
+- **Shell jobs** run with your privileges, like a command typed in your terminal.
+
+### Telemetry
+
+Off by default (see **Privacy defaults** above): no request telemetry or OpenTelemetry export from the server, no
+analytics from the Codex runs it starts, Claude Code started with its nonessential traffic off, and nothing sent to
+the original project's services. Cloud agents still receive the prompts and files you give them, and the
+integrations you configure (Telegram, GitHub) contact their own services.
+
+### Good practice
+
+- Keep the server on `127.0.0.1`. To reach it from another device, prefer an SSH tunnel (`ssh -L 8787:127.0.0.1:8787`)
+  over opening the port, and keep the password strong.
+- Turn on FileVault and lock your session when you leave the computer.
+- Use `default` or `plan` for sessions that read untrusted content (web pages, e-mails, documents, issues); keep
+  `bypass` for work you follow closely.
+- Expose a Key only when an agent needs it, and prefer tokens with narrow rights and an expiry date.
+- Install only adapters, extensions and skills you trust, and review a companion's proposal before approving it.
+- Keep Claude Code, Codex and harness-pilot up to date.
 
 ## Legacy Linux installation: Claude permissions
 
