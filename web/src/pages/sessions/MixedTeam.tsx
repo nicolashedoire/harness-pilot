@@ -1,9 +1,9 @@
 import * as React from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, Check, ChevronDown, Square } from 'lucide-react'
 import { useT, type TKey } from '@/i18n'
 import { api, errorMessage, seg } from '@/lib/api'
-import { Badge, Button, Sensitive, toast } from '@/components/ui'
+import { Badge, Button, Sensitive, Tooltip, toast } from '@/components/ui'
 import { AGENT_NAME, AgentIcon } from '@/features/agents/AgentIcon'
 import { cn } from '@/lib/utils'
 import { useSessionsUI } from './store'
@@ -13,6 +13,8 @@ type Agent = { id: string; provider: string; role: string; custom_role?: boolean
 type Team = { phase: string; created?: number; coordinator?: 'claude' | 'codex'; agents: Agent[] }
 
 const ACTIVE = ['launching', 'working', 'synthesizing']
+/** The team of this coordinator session is at work (its composer waits, "Stop team" shows). */
+export const teamActive = (phase?: string | null) => !!phase && ACTIVE.includes(phase)
 const STEPS = ['launching', 'working', 'synthesizing', 'completed'] as const
 /** The verb before what a tool call worked on ("Read", "A lu"); `say` and `other` show the text alone. */
 const VERB: Partial<Record<Act['kind'], TKey>> = { read: 'teamx.act.read', search: 'teamx.act.search', run: 'teamx.act.run', edit: 'teamx.act.edit', web: 'teamx.act.web' }
@@ -22,6 +24,37 @@ const clock = (s: number) => {
   const v = Math.max(0, Math.floor(s))
   const h = Math.floor(v / 3600), m = Math.floor((v % 3600) / 60), r = String(v % 60).padStart(2, '0')
   return h ? `${h}:${String(m).padStart(2, '0')}:${r}` : `${m}:${r}`
+}
+
+/** Stops the whole team (workers and coordinator). The panel, the session header and the locked composer share it:
+ *  one request at a time, every "Stop team" button shows it running. */
+export function useStopTeam(sid: string) {
+  const qc = useQueryClient()
+  const mutationKey = ['team-stop', sid]
+  const m = useMutation({
+    mutationKey,
+    mutationFn: () => api.post(`/api/teams/${seg(sid)}/stop`, {}),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ['mixed-team', sid] }), qc.invalidateQueries({ queryKey: ['sessions'] })]),
+    onError: (error) => toast.error(errorMessage(error)),
+  })
+  const pending = useIsMutating({ mutationKey }) > 0
+  // (the cache, not `pending`: a second click before the next render sends nothing either)
+  return { stop: () => { if (!qc.isMutating({ mutationKey })) m.mutate() }, pending }
+}
+
+/** "Stop team" of the session header (`compact`: red, its label hides in a narrow header - the tooltip and the
+ *  accessible name keep it) and of the locked composer. */
+export function StopTeamButton({ sid, compact }: { sid: string; compact?: boolean }) {
+  const t = useT()
+  const { stop, pending } = useStopTeam(sid)
+  const label = t('mixedTeam.stopAll')
+  const button = (
+    <Button size="sm" variant="outline" aria-label={label} loading={pending} onClick={stop} className={cn('shrink-0', compact && 'border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive @max-[34rem]:px-2')} data-testid="team-stop">
+      <Square className="size-3.5!" />
+      <span className={cn(compact && '@max-[34rem]:sr-only')}>{label}</span>
+    </Button>
+  )
+  return compact ? <Tooltip content={label}>{button}</Tooltip> : button
 }
 
 /** The mixed team of a coordinator session: its steps, each worker at work (elapsed time, last actions, the start of
@@ -46,11 +79,11 @@ export function MixedTeam({ sid }: { sid: string }) {
     const id = setInterval(() => setNow(Date.now() / 1000), 1000)
     return () => clearInterval(id)
   }, [running])
-  const action = async (agent?: string) => {
-    setBusy(agent || 'all')
+  const team = useStopTeam(sid)
+  const stopAgent = async (agent: string) => {
+    setBusy(agent)
     try {
-      const endpoint = agent ? `/api/teams/${seg(sid)}/agents/${seg(agent)}/stop` : `/api/teams/${seg(sid)}/stop`
-      await api.post(endpoint, {})
+      await api.post(`/api/teams/${seg(sid)}/agents/${seg(agent)}/stop`, {})
       await qc.invalidateQueries({ queryKey: ['mixed-team', sid] })
       await qc.invalidateQueries({ queryKey: ['sessions'] })
     } catch (error) { toast.error(errorMessage(error)) } finally { setBusy('') }
@@ -89,7 +122,7 @@ export function MixedTeam({ sid }: { sid: string }) {
             })}
           </ol>}
           {active && (
-            <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void action()}>
+            <Button size="sm" variant="outline" disabled={!!busy} loading={team.pending} onClick={team.stop}>
               <Square />
               {t('mixedTeam.stopAll')}
             </Button>
@@ -99,7 +132,7 @@ export function MixedTeam({ sid }: { sid: string }) {
           <>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-px bg-border">
               {data.agents.map((agent) => (
-                <AgentCard key={agent.id} agent={agent} now={now} canStop={data.phase === 'working' && agent.state === 'running'} busy={!!busy} onStop={() => void action(agent.id)} onOpen={() => openSession(agent.id)} />
+                <AgentCard key={agent.id} agent={agent} now={now} canStop={data.phase === 'working' && agent.state === 'running'} busy={!!busy || team.pending} onStop={() => void stopAgent(agent.id)} onOpen={() => openSession(agent.id)} />
               ))}
             </div>
             <div className="flex items-center gap-2 border-t px-3 py-2.5 text-[13px] text-muted-foreground">

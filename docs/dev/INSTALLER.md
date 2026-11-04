@@ -77,16 +77,26 @@ In `install.sh` (all changed in step 2):
 | Product name in the logo, prompts, banner and generated comments | "Harness Maxxing" | "harness-pilot", `pilot <command>` hints, a PILOT logo |
 | `CACHE_DIR` default | `/var/cache/harness-maxxing` | `/var/cache/harness-pilot` (emptied after each successful install, nothing to migrate) |
 
-In the server, reachable from a server install but outside the installer:
+Outside the installer, now pointing to this repository: the `pilot update` hint for a clone without `origin`
+(`cmd_core.check_update`), `pilot license status` (no Enterprise link), the "Move to a new server" step of the
+`pilot-backup` skill (this repository's `install.sh`, no pipe into a shell), `SECURITY.md`, `CODE_OF_CONDUCT.md` and
+`.github/` (this repository's private vulnerability reporting; the funding, Enterprise and X links are gone). Two
+unused interface texts that named the original project's API were removed.
 
-- `license.py` (`GIT_URL`, used only to move an install from before 2.0.0a87 off signed archives), the hint of
-  `cmd_core.check_update` when the clone has no `origin`, and the Enterprise text of `cmd_license.py` name the
-  original project.
-- `pc_agent.json` downloads the computer agent from the original project's releases (see `docs/AUDIT.md`).
-- `register.py` (anonymous counter, off by default) and the license ping (`MAXXING_LICENSE_PING=1` only) contact the
-  original project's API only when turned on.
+What still names the original project (none of it is contacted by default):
 
-These are left to their own changes.
+- `server/maxxing/pc_agent.json`: the computer agent's release URL points to the original project's releases. Its
+  `files` list is empty, so nothing is downloaded and the PC page says no agent is available (see `docs/AUDIT.md`).
+- `server/maxxing/license.py`: `API` (`https://api.harness-maxxing.com`, also used by `register.py` for the
+  anonymous counter and by `feedback.py`) and `GIT_URL` / `GIT_BRANCH` (`stable`, used only to move an install from
+  before 2.0.0a87 off signed archives). Every call is refused unless `MAXXING_LICENSE_PING=1`
+  (`register._offline`), and the register, feedback and license routes answer 404 (`api/settings._legacy_cloud`).
+- The docstrings of `feedback.py`, `register.py` and `api/settings.post_feedback`, which name that service.
+- Internal names with no network effect: the PC agent's Go module `harnessmaxxing/pcagent` and its launchd label
+  `com.harnessmaxxing.pc` (renaming the label needs a migration of the paired computers).
+- Kept on purpose: `LICENSE.original` (the previous notices), the inherited entries of `CHANGELOG.md` and
+  `docs/dev/CHANGES.md`, the `MAXXING_LICENSE_API` row of `docs/dev/INTERNALS.md`, and `docs/upgrade/2.0.0a85.md`
+  (marked as inherited).
 
 ## Third-party sources (kept)
 

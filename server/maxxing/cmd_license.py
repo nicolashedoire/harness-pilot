@@ -21,9 +21,7 @@ def _show(st: dict) -> None:
                  + (f" - {st['email']}" if st.get("email") else "")
                  + (f" · ends {_date(st['expires_at'])}" if st.get("expires_at") else ""))
         else:
-            line(INFO, "no Enterprise key (none is needed for yourself or one organisation's own needs)",
-                 "for affiliates, clients or a paid offer: https://harness-maxxing.com/#enterprise, then "
-                 "pilot license activate")
+            line(INFO, "no Enterprise key (none is needed: harness-pilot is distributed under the MIT license)")
         line(INFO, "updates come from the git repository" + (f" (since {_date(st['moved_to_git'])})" if st.get("moved_to_git") else ""))
         return
     # an install from before 2.0.0a87, still on the code of a signed archive

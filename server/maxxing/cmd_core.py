@@ -1735,7 +1735,7 @@ def check_update(branch: str | None = None) -> dict:
     if update_source() is None:
         return {"ok": True, "available": False, "git": False, "current": __version__, "latest": None,
                 "behind": None, "changelog": [], "message": "no git remote",
-                "hint": "git -C <code dir> remote add origin https://github.com/makushingu/harness-maxxing.git"}
+                "hint": "git -C <code dir> remote add origin https://github.com/nicolashedoire/harness-pilot.git"}
     branch = branch or _current_branch()
     ok, err = _fetch(branch)
     if not ok:
