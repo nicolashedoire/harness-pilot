@@ -41,6 +41,11 @@ websites; it does **not** protect your computer from the agents you start: they 
   (see **Sign-in** below). The first one is set through a one-time link (`pilot setup-link`, valid one hour). Wrong
   passwords are throttled, and every change request needs the `X-Maxxing: 1` header, which another website open in
   your browser cannot send.
+- A website cannot reach the server under its own name either (DNS rebinding): requests whose address is not
+  `127.0.0.1`, `localhost`, another IP address of the computer or the configured public URL are answered "421" and
+  go no further. If you reach harness-pilot through another name (a reverse proxy, a tunnel), add it with
+  `pilot init --public-url https://<name>`, or list it in `allowed_hosts` in `config.json` or in the
+  `MAXXING_ALLOWED_HOSTS` environment variable.
 - Two-step sign-in is optional and needs a linked Telegram chat (Settings -> Security).
 
 ### Where secrets are kept
@@ -133,6 +138,9 @@ file still can.
   `nosniff` and a strict referrer policy (the server sends the same headers itself, whatever the mode).
 - **Tailscale mode**: only devices of your tailnet can connect.
 - **Local mode**: only through an SSH tunnel.
+- The server only answers requests addressed to one of its names (an IP address, `localhost`, the domain of the
+  public URL, or a name of `allowed_hosts` / `MAXXING_ALLOWED_HOSTS`): a website that points its own domain at the
+  server cannot use it (DNS rebinding).
 
 ## The server itself
 

@@ -14,6 +14,7 @@ import pytest
 # before importing maxxing: never the real state dir (each test then gets its own, see `mx`)
 os.environ.setdefault("MAXXING_STATE", os.path.join(tempfile.gettempdir(), "mx-test-boot-state"))
 os.environ["MAXXING_SPAWN"] = "direct"
+os.environ.setdefault("MAXXING_ALLOWED_HOSTS", "testserver,t")   # the test clients' Host names; the check stays on
 os.environ["MAXXING_SYSTEM_TZ"] = "0"                # never switch the real system clock
 os.environ.setdefault("MAXXING_AUTH_CHECK", "0")     # no background `claude -p` check (tests opt in)
 os.environ["MAXXING_CLAUDE_UPDATE"] = "0"          # no background `claude update` (tests call tick())

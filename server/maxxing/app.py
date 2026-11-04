@@ -24,7 +24,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from . import __version__, bodylimit, bus, config, streamcap, uploads
+from . import __version__, bodylimit, bus, config, hostcheck, streamcap, uploads
 from .api import ROUTERS
 from .security import require_auth
 
@@ -262,6 +262,7 @@ def create_app() -> FastAPI:
     app.add_middleware(JsonGzip)
     app.add_middleware(uploads.UploadGuard)        # multipart: auth + size/disk checks before the body is read
     app.add_middleware(bodylimit.BodyLimit)        # every other body: auth / CSRF + size cap before it is read
+    app.add_middleware(hostcheck.HostCheck)        # DNS rebinding: an unexpected Host is refused before anything
     # Added last = outermost: security headers see the final (possibly gzipped) response.
     app.add_middleware(_SecurityHeaders)
     return app
