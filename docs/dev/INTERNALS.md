@@ -419,7 +419,17 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
   `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
   `crons.managed_lines()`, `localcron.tick()`, `api/tasks.check_reminders()`, scheduled `pilot cron run` (detached or
-  `--if-due`) and `backup.run()` (code `paused`, not recorded in the history) do nothing.
+  `--if-due`), `backup.run()` (code `paused`, not recorded in the history) and scheduled instance archives
+  (`instance_backup.schedule_delay()` is None) do nothing.
+- Scheduled instance archives: config `instance_backup_schedule` `{frequency, hour, keep, since}` + secret
+  `instance_backup_schedule_key` `{salt, kdf, key}` (hex; a key derived from the passphrase, never the passphrase).
+  `instance_backup.set_schedule()` / `disable_schedule()` / `schedule_status()`; `schedule_delay()` -> seconds until
+  due (None: off or paused); `export_scheduled()` = `export(None, sealed=(salt, kdf, key), keep=keep)` (marks the
+  export `scheduled`, prunes the older scheduled ones under the operation lock); `record_scheduled(result | code,
+  message)` keeps `<state>/instance-backups/schedule.json` (last success, error, `retry_at`, `notified`) and posts
+  or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
+  of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
+  scheduled=True)`): pausing services for the snapshot never cancels it.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
@@ -453,8 +463,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
   unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
   when the process is gone or `ps` fails.
-- Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
-  timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
+- Claude and Codex jobs (`_run_agent`) call `sessions.service.create_session(..., provider=<kind>, source="cron", cron=True,
+  env={MAXXING_CRON_ID, MAXXING_CRON_NAME}, timeout_s)` (or `send_message` when `reuse_session`; a remembered session of
+  the other agent - the job's kind changed - is not reused), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
   starts `python -m maxxing cron run <id>` in `systemd-run --collect --unit maxxing-cron-<id> --slice=maxxing-jobs.slice`
   + `memory_properties()` + `RuntimeMaxSec=<timeout_s + KILL_GRACE_S + 120>` (backstop if the run itself dies). The

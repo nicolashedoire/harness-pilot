@@ -309,6 +309,67 @@ def test_run_claude_job(org, monkeypatch):
     assert not r["ok"] and r["output_tail"] == "boom"
 
 
+def test_run_codex_job_and_a_change_of_agent(org, monkeypatch):
+    """A codex job runs its prompt as a Codex session turn; a remembered session of the other agent is not reused."""
+    (org.ws / "projects" / "acme" / "topics" / "blog").mkdir(parents=True)
+    calls, sessions = [], {}
+    svc = types.ModuleType("maxxing.sessions.service")
+
+    def create_session(path, **kw):
+        sid = f"s-{len(sessions) + 1}"
+        sessions[sid] = {"id": sid, "provider": kw.get("provider") or "claude"}
+        calls.append(("create", path, kw))
+        return {"id": sid}
+    svc.create_session = create_session
+    svc.get_session = lambda sid: sessions.get(sid)
+    svc.send_message = lambda sid, text, **kw: calls.append(("send", sid, text, kw)) or {"queued": False}
+    svc.wait_turn = lambda sid, timeout: {"id": sid, "state": "idle", "error": None}
+    svc.last_assistant_text = lambda sid: "Codex done."
+    monkeypatch.setitem(sys.modules, "maxxing.sessions.service", svc)
+    import maxxing.sessions as pkg
+    monkeypatch.setattr(pkg, "service", svc, raising=False)
+    monkeypatch.setattr(crons, "store_mode", lambda sid, mode: None)
+    j = crons.create_job({"name": "Review", "kind": "codex", "topic_path": "projects/acme/topics/blog",
+                          "prompt": "Review the diff", "reuse_session": True, "model": "gpt-5.5", "permission_mode": "default"})
+    assert j["kind"] == "codex"
+    r = crons.run_job(j["id"])
+    assert r["ok"] and r["output_tail"] == "Codex done." and r["session_id"] == "s-1"
+    _, path, kw = calls[0]
+    assert kw["provider"] == "codex" and kw["model"] == "gpt-5.5" and kw["permission_mode"] == "default"
+    crons.run_job(j["id"])                                          # same agent: the session is reused
+    assert calls[-1][:3] == ("send", "s-1", "Review the diff")
+    crons.update_job(j["id"], {"kind": "claude", "model": ""})
+    r = crons.run_job(j["id"])                                      # agent changed: a new Claude session
+    assert calls[-1][0] == "create" and calls[-1][2]["provider"] == "claude" and r["session_id"] == "s-2"
+
+
+def test_codex_job_end_to_end(mx, monkeypatch, tmp_path):
+    """Real sessions service + a fake codex binary: the run is a Codex session turn."""
+    monkeypatch.setenv("MAXXING_CRONTAB_FILE", str(tmp_path / "crontab"))
+    fake = tmp_path / "codex"
+    fake.write_text('''#!/usr/bin/env python3
+import json, sys
+prompt = sys.stdin.read()
+print(json.dumps({"type": "thread.started", "thread_id": "cron-thread"}), flush=True)
+print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Codex: " + prompt.splitlines()[-1]}}), flush=True)
+print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 2}}), flush=True)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv("MAXXING_CODEX_BIN", str(fake))
+    from maxxing import bus, workspace
+    monkeypatch.setattr(bus, "_loop", None)
+    workspace.create_project("acme")
+    workspace.create_topic("acme", "blog")
+    j = crons.create_job({"name": "Review", "kind": "codex", "topic_path": "projects/acme/topics/blog",
+                          "prompt": "check the build", "timeout_s": 60})
+    r = crons.run_job(j["id"])
+    assert r["ok"], r
+    assert r["output_tail"] == "Codex: check the build"
+    from maxxing.sessions import service
+    s = service.get_session(r["session_id"])
+    assert s["provider"] == "codex" and s["source"] == "cron"
+
+
 def test_claude_job_validation(org):
     with pytest.raises(crons.CronError) as e:
         crons.create_job({"name": "x", "kind": "claude", "topic_path": "nope", "prompt": "hi"})
@@ -322,6 +383,12 @@ def test_claude_job_validation(org):
     with pytest.raises(crons.CronError) as e:
         crons.create_job({"name": "x", "command": "true", "permission_mode": "yolo"})
     assert e.value.code == "invalid_permission_mode"
+    with pytest.raises(crons.CronError) as e:
+        crons.create_job({"name": "x", "kind": "codex", "topic_path": "", "prompt": ""})
+    assert e.value.code == "invalid_prompt"
+    with pytest.raises(crons.CronError) as e:
+        crons.create_job({"name": "x", "kind": "gemini", "topic_path": "", "prompt": "hi"})
+    assert e.value.code == "invalid_kind"
 
 
 def test_runs_trimmed(org, monkeypatch):
@@ -682,3 +749,12 @@ def test_killed_run_is_recorded_as_interrupted_on_the_next_run(org, monkeypatch)
     finally:
         if orphan.poll() is None:
             orphan.kill()
+
+
+def test_the_api_takes_codex_jobs(client, org):
+    (org.ws / "projects" / "acme" / "topics" / "blog").mkdir(parents=True)
+    topic = "projects/acme/topics/blog"
+    r = client.post("/api/crons", json={"name": "Codex review", "kind": "codex", "topic_path": topic, "prompt": "Review"})
+    assert r.status_code == 200, r.text
+    assert r.json()["kind"] == "codex" and r.json()["topic_path"] == topic
+    assert client.post("/api/crons", json={"name": "x", "kind": "gemini", "prompt": "hi"}).status_code == 422
