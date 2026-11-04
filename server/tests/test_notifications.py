@@ -167,6 +167,26 @@ def test_the_watcher_value_changes_on_folds_and_resolutions(mx):
     assert feed.watch_id() not in (first, second)
 
 
+def test_the_watcher_sees_a_commit_the_files_do_not_show(mx):
+    """feed.db and its WAL can look unchanged after a commit: SQLite writes (and syncs) the WAL frames before it
+    publishes the commit, and once a checkpoint restarted the WAL a new commit rewrites frames in place (same size),
+    in the same clock tick as the previous one. The watcher must still see the new event (Web Push sends it)."""
+    feed.post("one", source="custom")
+    feed.post("two", source="custom")
+    first = feed.watch_id()                                         # keeps its connection open: the WAL stays
+    other = sqlite3.connect(feed.db_path())
+    assert other.execute("PRAGMA wal_checkpoint(RESTART)").fetchone()[0] == 0    # the next writer restarts the WAL
+    other.close()
+    assert feed.watch_id() == first
+    wal = f"{feed.db_path()}-wal"
+    db_before, wal_before = os.stat(feed.db_path()), os.stat(wal)
+    feed.post("three", source="custom")
+    os.utime(wal, ns=(wal_before.st_atime_ns, wal_before.st_mtime_ns))              # written in the same tick
+    for before, now in ((db_before, os.stat(feed.db_path())), (wal_before, os.stat(wal))):
+        assert (now.st_size, now.st_mtime_ns, now.st_ino) == (before.st_size, before.st_mtime_ns, before.st_ino)
+    assert feed.watch_id() == feed.last_id() != first
+
+
 # ---- Telegram rules per kind ---------------------------------------------------------------------------------------
 def test_kind_rules_take_precedence_over_source_rules(client, mx, monkeypatch):
     sent = []

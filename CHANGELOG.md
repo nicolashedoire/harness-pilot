@@ -6,6 +6,9 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Agents use the current `pilot` command in the workspace instructions retained from older installations, including `pilot doctor`. Startup refreshes recognized product instructions while preserving your custom text; existing conversation messages stay in the history.
+- Fixed on Linux servers: now and then, a notification for your phone or browser was only sent with the next notification, sometimes hours later, and one posted by a scheduled job or a script took up to 5 minutes to appear in the open app.
+
 - Agents use the current `pilot` command in the workspace instructions kept from older installations, including `pilot doctor`. `pilot init` (so `pilot update`) and the start of the local app refresh the product's own instructions once per workspace, and only when `pilot` is harness-pilot: where another program has that name, they keep `maxxing`, the same command. Your own text, and a line you change back later, stays as you wrote it; existing conversation messages stay in the history.
 - On Telegram, a message sent while the previous answer was still arriving could leave the status message of its own turn stuck on "Working…" after the final summary, with "typing…" shown after the answer. Its turn now has a single status, which ends on the summary.
 - Codex sessions no longer count their tokens several times. Codex reports the running total of its conversation after each answer, and every answer added that whole total again: the tokens under each Codex answer and on the Stats page now show what that answer used. Totals recorded before this update stay as they were.
