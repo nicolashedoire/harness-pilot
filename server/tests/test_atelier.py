@@ -510,3 +510,35 @@ def test_read_only_kinds_are_listed(client, mx, monkeypatch):
     assert counts["review"] == 1 and counts["disabled"] >= 1
     assert client.post(f"/api/atelier/cron/{jid}/rollback", json={"version": 1}).json()["error"] == "not_versioned"
     assert client.get("/api/atelier/skill/nope").status_code == 404
+
+def test_a_link_never_brings_a_file_from_outside(client, mx, topic, capsys, monkeypatch):
+    secret = mx["tmp"] / "secret.txt"
+    secret.write_text("TOPSECRET")
+    folder = _write(mx["ws"] / topic / ".atelier" / "leak", "leak")
+    (folder / "notes.txt").symlink_to(secret)
+    code, out, _ = _cli(capsys, monkeypatch, "propose", "leak", "--dir", str(folder))
+    assert code == 1 and "symbolic links cannot be proposed" in out
+    # a link swapped in after the walk: refused when copied (server-side registration of a Codex request)
+    (folder / "notes.txt").unlink()
+    (folder / "notes.txt").write_text("fine")
+    real_walk = atelier.walk
+
+    def racing_walk(d):
+        files, links = real_walk(d)
+        if Path(d) == folder:
+            (folder / "notes.txt").unlink()
+            (folder / "notes.txt").symlink_to(secret)
+        return files, links
+    atelier.write_request(folder, "leak", None, None, "codex")
+    monkeypatch.setattr(atelier, "walk", racing_walk)
+    with pytest.raises(OSError):
+        atelier.register(folder)
+    monkeypatch.setattr(atelier, "walk", real_walk)
+    assert not any("TOPSECRET" in p.read_text(errors="ignore") for p in (mx["state"] / "atelier").rglob("*")
+                   if p.is_file())
+    # a draft folder that is a link is never scanned
+    (folder / atelier.REQUEST).unlink(missing_ok=True)
+    elsewhere = _write(mx["tmp"] / "elsewhere" / "other", "other")
+    atelier.write_request(elsewhere, "other", None, None, "codex")
+    (mx["ws"] / topic / ".atelier" / "other").symlink_to(elsewhere)
+    assert atelier.ingest_session({"id": "x", "path": topic}) == []
