@@ -224,7 +224,7 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   (its text names the agent; the pending entry of `state/telegram/new.json` keeps `provider`, default `claude`, and a
   later `/new` / `/codex` / `/discuss` before the answer changes it); threads off, the topic's new Telegram session.
   `/codex` and `/discuss` first run `sessions.codex.status()` in a worker thread: `authenticated: false` -> the chat
-  is told (not installed / not signed in, with `codex login`) and nothing is created or asked; `null` (status
+  is told (not installed / not signed in: Settings → Codex, or `codex login`) and nothing is created or asked; `null` (status
   unavailable) does not block. `/model` in a session whose provider is `codex` or `plugin:<id>` shows its model and
   changes nothing (`_set_model` refuses too: a Claude id would break its turns); `/status` adds the agent (and the
   replies of the current period for a discussion). A discussion answered on Telegram (`debate_telegram`) that pauses
@@ -795,6 +795,30 @@ meta `context_tokens`, `base_tokens` (a thread this turn started) and `context_w
 own count, not an estimate, measured against the window Codex itself uses; it depends on a file format internal to
 Codex: when the file is missing or its format changes, the session keeps its last values (none at first) and the gauge
 stays hidden rather than guessing. No setting overrides the window: Codex records the one it applies.
+
+## maxxing.codex_login - signing Codex in from the web app
+Settings → Codex and the wizard's Codex step sign the CLI of `sessions.codex.binary()` in, with the server's own
+environment (the same `CODEX_HOME` as `codex.status()` and the turns). Codex keeps the credentials in its folder
+(`auth.json`, 0600) as `codex login` in a terminal does; harness-pilot stores nothing. What codex-cli 0.150.1 offers
+(checked with a throw-away `CODEX_HOME`): `login --device-auth` (ChatGPT account), `login --with-api-key` and
+`--with-access-token` (read on stdin), `login status` (exit 0/1, one line on stderr), `logout`. Not used:
+`--with-access-token`, and the browser flow of plain `codex login`, which signs in through a browser on the machine
+that runs Codex (not tried: it would open one).
+- Device code: `start()` runs `codex <privacy_args> login --device-auth` (stdin closed, stdout+stderr piped,
+  `NO_COLOR=1`, own process group) once per server process; a second start joins it. A reader thread strips ANSI
+  and takes the first `https://` link (a later one with `/device` or `auth.` replaces a notice's link), then the first
+  code shaped `XXXX-XXXXX` after it, and "expires in N minutes": both seen → `waiting`. Exit 0 → `succeeded`
+  (`bus.invalidate("health")`), else `failed` with the CLI's last line (codes and `sk-…` masked). A watcher thread
+  stops the CLI (SIGTERM then SIGKILL on the group, then reaps it) with no code after `SHOW_TIMEOUT_S` (30 s) or
+  `GRACE_S` (30 s) after the expiry → `failed` / `expired`. `cancel()` → `cancelled`; the first final state wins.
+  Nothing of the output is logged; the code lives in memory until the flow ends.
+- API key: `with_api_key()` stops a device flow, then `codex login --with-api-key` with the key on stdin (30 s);
+  the error is the CLI's last line with the key and `sk-…` masked. The route checks the key itself (`valid_key`:
+  20-4096 printable ASCII characters, no spaces) so that no validation error repeats it. Codex does not verify a key
+  when it stores it. `logout()` = `codex logout` ("Not logged in" counts as done).
+- `codex.status()` now captures the status line (stderr) to tell `method` (`chatgpt` / `api_key`); the line itself
+  (a masked key) never leaves the function.
+- Tests: `tests/test_codex_login.py` (a fake `codex` with each subcommand, its state in the test folder).
 
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),

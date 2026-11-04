@@ -98,17 +98,22 @@ def test_codex_status_reports_login_without_exposing_cli_output(client, monkeypa
     from types import SimpleNamespace
     monkeypatch.setenv('MAXXING_CODEX_BIN', '/fake/codex')
     calls = []
+    said = ['Logged in using an API key - sk-proj-ab***wxyz']          # what codex-cli 0.150.1 prints, on stderr
     def run(args, **kwargs):
         calls.append((args, kwargs))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout='', stderr=said[0])
     monkeypatch.setattr(codex.subprocess, 'run', run)
-    result = client.get('/api/system/codex').json()
-    assert result == {'installed': True, 'authenticated': True, 'reason': None}
+    response = client.get('/api/system/codex')
+    # only how it is signed in leaves the server, never the CLI's words (the masked key)
+    assert response.json() == {'installed': True, 'authenticated': True, 'reason': None, 'method': 'api_key'}
+    assert 'sk-' not in response.text and 'wxyz' not in response.text
     # subprocess.run is patched process-wide: the app's background tasks may record their own calls too.
     mine = [call for call in calls if call[0] and call[0][0] == '/fake/codex']
     assert mine and all(call[0][-2:] == ['login', 'status'] for call in mine)
     assert 'analytics.enabled=false' in mine[0][0] and 'otel.exporter="none"' in mine[0][0]
-    assert mine[0][1]['stdout'] == codex.subprocess.DEVNULL and mine[0][1]['stderr'] == codex.subprocess.DEVNULL
+    assert mine[0][1]['capture_output'] is True and mine[0][1]['stdin'] == codex.subprocess.DEVNULL
+    said[0] = 'Logged in using ChatGPT'
+    assert client.get('/api/system/codex').json()['method'] == 'chatgpt'
 
 
 def test_workspace_context_does_not_follow_files_outside_workspace(tmp_path):

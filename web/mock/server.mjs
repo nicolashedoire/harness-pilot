@@ -12,6 +12,7 @@
 // maxxing: 30 more sessions that keep finishing at random (Maxxing mode); MOCK_PASSWORD=... asks for that password.
 // MOCK_LOCAL=mac|mac-terminal|mac-none|linux: a local installation (Settings -> System: background service, Git update).
 // MOCK_MEDIA=none|no-webp|no-pdf: ffmpeg and pdftoppm missing, ffmpeg without WebP, pdftoppm missing (Settings -> System).
+// MOCK_CODEX=signed-in|signed-out|missing|device-fails: Codex's sign-in (Settings -> Codex, the wizard's Codex step).
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -3681,7 +3682,65 @@ R('POST', '/api/system/health/seen', ({ body }) => {
   bus('health')
   return healthObj()
 })
-R('GET', '/api/system/codex', () => (S.scenario === 'ready' || S.scenario === 'maxxing' ? { installed: true, authenticated: true, reason: null } : { installed: true, authenticated: false, reason: 'not_authenticated' }))
+/* ---- codex sign-in (Settings -> Codex, the wizard's Codex step). MOCK_CODEX=signed-in | signed-out | missing |
+ * device-fails (default: signed in with ChatGPT in ready / maxxing, signed out otherwise). The device code is accepted
+ * 12 s after it is shown; an API key starting with "sk-bad" is refused. */
+const codexState = () => (S.codex ||= (() => {
+  const mode = process.env.MOCK_CODEX || (S.scenario === 'ready' || S.scenario === 'maxxing' ? 'signed-in' : 'signed-out')
+  return { installed: mode !== 'missing', method: mode === 'signed-in' ? 'chatgpt' : null, fails: mode === 'device-fails', login: { state: 'none' } }
+})())
+const codexStatus = () => {
+  const c = codexState()
+  if (!c.installed) return { installed: false, authenticated: false, reason: 'not_installed', method: null }
+  return { installed: true, authenticated: !!c.method, reason: c.method ? null : 'not_authenticated', method: c.method }
+}
+const codexLogin = () => {
+  const c = codexState(), l = c.login
+  if (l.state === 'waiting' && now() - l.started_at > 12) {
+    if (c.fails) Object.assign(l, { state: 'failed', error: 'Error: failed to complete device code sign-in: the request was denied', code: null })
+    else { Object.assign(l, { state: 'succeeded', code: null }); c.method = 'chatgpt'; bus('health') }
+  }
+  const waiting = l.state === 'waiting'
+  return { state: l.state, url: waiting ? 'https://auth.openai.com/codex/device' : null, code: waiting ? l.code : null,
+    expires_at: waiting ? l.started_at + 900 : null, started_at: l.started_at ?? null, error: l.error ?? null }
+}
+const codexNeeded = () => { if (!codexState().installed) fail(409, 'not_installed', 'The Codex command was not found by this server') }
+R('GET', '/api/system/codex', () => { codexLogin(); return codexStatus() })
+R('GET', '/api/system/codex/login', () => codexLogin())
+R('POST', '/api/system/codex/login', async () => {
+  codexNeeded()
+  const c = codexState()
+  if (c.login.state !== 'waiting') {
+    await sleep(900)
+    c.login = { state: 'waiting', started_at: now(), code: 'WXYZ-12345', error: null }   // a made-up code
+  }
+  return codexLogin()
+})
+R('DELETE', '/api/system/codex/login', () => {
+  const l = codexState().login
+  if (l.state === 'waiting') Object.assign(l, { state: 'cancelled', code: null })
+  return codexLogin()
+})
+R('POST', '/api/system/codex/auth', async ({ body }) => {
+  codexNeeded()
+  const v = String(body.value || '').trim()
+  if (v.length < 20 || /\s/.test(v)) fail(400, 'invalid', 'This does not look like an API key')
+  await sleep(800)
+  if (v.startsWith('sk-bad')) fail(502, 'login_failed', 'Error: the API key was refused')
+  const c = codexState()
+  if (c.login.state === 'waiting') Object.assign(c.login, { state: 'cancelled', code: null })
+  c.method = 'api_key'
+  bus('health')
+  return { ok: true, ...codexStatus() }
+})
+R('DELETE', '/api/system/codex/auth', () => {
+  codexNeeded()
+  const c = codexState()
+  if (c.login.state === 'waiting') Object.assign(c.login, { state: 'cancelled', code: null })
+  c.method = null
+  bus('health')
+  return { ok: true, ...codexStatus() }
+})
 R('PUT', '/api/system/auto-update', ({ body }) => { S.autoUpdate = !!body.enabled; return { ok: true, enabled: S.autoUpdate } })
 R('GET', '/api/system/update/preflight', async ({ q }) => {
   if (q.get('refresh')) await sleep(1500)
