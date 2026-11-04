@@ -38,6 +38,7 @@ class PlanIn(_Text):
 
 class ActionIn(_Text):
     action: Literal['start', 'pause', 'stop', 'plan']
+    fingerprint: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
 
 
 @router.get('')
@@ -63,7 +64,7 @@ async def plan(ident: str, body: PlanIn):
 
 @router.post('/{ident}/control')
 async def control(ident: str, body: ActionIn):
-    return await _call(missions.control, ident, body.action)
+    return await _call(missions.control, ident, body.action, body.fingerprint)
 
 
 @router.post('/{ident}/steps/{step}/skip')

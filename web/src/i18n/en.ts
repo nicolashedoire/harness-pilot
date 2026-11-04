@@ -1,6 +1,8 @@
 // English dictionary — the reference. Every key must also exist in fr.ts (TypeScript enforces it).
 // Variables: {name}. Plurals: add `key#one` next to `key`; it is used when vars.count is 1 (fr: 0 or 1).
 export const en = {
+  "feed.action.review": "Review",
+  "resident.error.changed": "The plan or limits changed. Review the current assignments before starting.",
   "resident.reason.source_unchanged": "The source commit has not changed since the approved proposal. Waiting to avoid proposing the same patch again.",
   "resident.section": "Resident missions",
   "resident.section.desc": "Plan bounded work, assign persistent roles and review each result.",

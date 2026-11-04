@@ -10,7 +10,7 @@ Open **Settings → Resident missions** to give persistent companions bounded wo
 1. Create a draft with a goal and conversation topic. Choose a maximum number of runs and active minutes. Creating a draft does not call a model.
 2. Either write the steps yourself or ask the architect for a read-only plan. Planning consumes one run and uses the architect role's configured engine. The architect uses the internal source map; the user sees assignments and results, not that map.
 3. Review the proposed assignments. Each step chooses an existing persistent role and may wait for earlier steps. Edit instructions, test expectations and dependencies. You can create or adapt roles in **Settings → Companions** and return to the plan.
-4. **Save the plan** preserves a draft. **Validate the plan and start** saves the current visible edits and authorizes execution. Up to two resident agents run across the installation, with a maximum of one or two per mission.
+4. **Save the plan** preserves a draft. **Validate the plan and start** saves the current visible edits and authorizes that exact plan and its limits. A stale plan from another tab is refused. Up to two resident agents run across the installation, with a maximum of one or two per mission.
 5. Follow a step's conversation, inspect its tests and open its code proposal. The normal companion review requires your approval or rejection of the current diff. A pending or rejected proposal never silently becomes accepted.
 
 A generated plan is advisory. Invalid JSON, unknown roles, duplicate step IDs and future or cyclic dependencies are refused. No role, plugin, dependency update, pull request or merge is installed or published merely by accepting a plan.
@@ -27,7 +27,9 @@ Approval here accepts a proposal for review/publishing; it does not apply code t
 
 Set a non-zero interval and a finite maximum cycle count to repeat the reviewed assignments, for example a security and architecture watch. These are checks while the server runs, not unbounded background model activity. The run, time and token budgets still apply, including planning and waiting between cycles.
 
-A proposal awaiting a decision holds that cycle. If a cycle produced an approved patch, recurrence waits for the source commit to change before proposing it again. An unchanged source eventually reaches the time budget; approval alone does not deploy the patch. A security role can inspect available local evidence, prepare changes and tests, and report missing advisory/network access; a role definition alone does not provision an advisory service or prove that packages are up to date.
+A proposal awaiting a decision holds that cycle. If a cycle produced an approved patch, recurrence waits for the source commit to change before proposing it again. An unchanged source eventually reaches the time budget; approval alone does not deploy the patch. Terminal completed, stopped and budget states retain their reason when an invalid repeated stop is refused.
+
+A security role can inspect available local evidence, prepare changes and tests, and report missing advisory/network access; a role definition alone does not provision an advisory service or prove that packages are up to date.
 
 ## Limits, interruptions and recovery
 

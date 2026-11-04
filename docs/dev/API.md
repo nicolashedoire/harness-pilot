@@ -845,7 +845,7 @@ Authenticated owner routes, with mutations under the usual CSRF guard:
 | POST `/api/missions` | Create draft `{title, path, goal, steps?, max_runs?, max_minutes?, max_tokens?, concurrent?, interval_minutes?, max_cycles?}`; no model call |
 | GET `/api/missions/{id}` | Mission detail |
 | PUT `/api/missions/{id}/plan` | Replace an unexecuted plan with `{steps}` |
-| POST `/api/missions/{id}/control` | `{action: "plan" | "start" | "pause" | "stop"}`; plan requests read-only architect work, start explicitly authorizes the current plan |
+| POST `/api/missions/{id}/control` | `{action: "plan" | "start" | "pause" | "stop", fingerprint?: plan_fingerprint}`; plan requests read-only architect work, start requires the current plan fingerprint and explicitly authorizes those assignments and limits |
 | POST `/api/missions/{id}/steps/{step}/skip` | Explicit owner skip of an interrupted, failed or rejected step |
 
 Each step has `{id, title, role, instruction, after: earlierStepIds[]}`. IDs are unique, roles must already exist, one to eight steps, instructions up to 2000 characters. Goals are at most 2000 characters. Mission state lives under private `<state>/resident-missions/`; edits use per-mission flock and atomic writes. A worker leader processes every two seconds, launching at most two resident sessions installation-wide. Automatic processing can be disabled with `MAXXING_MISSIONS_WORKER=0` for isolated tests.

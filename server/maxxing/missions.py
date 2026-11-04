@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import copy
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -36,7 +37,15 @@ def get(ident):
     value = config.read_json(_path(ident))
     if not isinstance(value, dict):
         raise service.SessionError(404, 'not_found', 'Mission not found.')
+    value['plan_fingerprint'] = _fingerprint(value)
     return value
+
+
+def _fingerprint(data):
+    fields = ('title', 'path', 'goal', 'max_runs', 'max_seconds', 'max_tokens', 'concurrent', 'interval_seconds', 'max_cycles')
+    plan = {k: data[k] for k in fields}
+    plan['steps'] = [{k: step[k] for k in ('id', 'title', 'role', 'instruction', 'after')} for step in data['steps']]
+    return hashlib.sha256(json.dumps(plan, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def listing():
@@ -105,7 +114,7 @@ def create(title, path, goal, steps, max_runs=8, max_minutes=60, max_tokens=1000
                 'launches': [], 'tokens': 0, 'planner': None}
         config.write_json(_path(data['id']), data, mode=0o600)
     bus.invalidate('missions')
-    return data
+    return get(data['id'])
 
 
 def _elapsed(data):
@@ -128,7 +137,7 @@ def save_plan(ident, steps):
     return get(ident)
 
 
-def control(ident, action):
+def control(ident, action, fingerprint=None):
     if action not in ('start', 'pause', 'stop', 'plan'):
         raise service.SessionError(400, 'bad_action', 'Unknown mission action.')
     stops = []
@@ -138,12 +147,16 @@ def control(ident, action):
                 raise service.SessionError(409, 'busy', 'This mission already has a planner run.')
             data.update(phase='planning', active_since=time.time(), reason='')
         elif action == 'start':
+            if fingerprint != _fingerprint(data):
+                raise service.SessionError(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
             if data['phase'] not in ('draft', 'plan_review', 'paused') or not data['steps']:
                 raise service.SessionError(409, 'busy', 'Review a plan before starting this mission.')
             if len(data['launches']) >= data['max_runs'] or _elapsed(data) >= data['max_seconds'] or data['tokens'] >= data['max_tokens']:
                 raise service.SessionError(409, 'budget', 'The authorized mission budget is exhausted.')
-            data.update(phase='active', active_since=time.time(), reason='')
+            data.update(phase='active', active_since=time.time(), reason='', approved_plan=fingerprint)
         else:
+            if action == 'stop' and data['phase'] in ('completed', 'stopped', 'budget'):
+                raise service.SessionError(409, 'busy', 'A terminal mission cannot be stopped again.')
             if action == 'pause' and data['phase'] not in ('active', 'planning'):
                 raise service.SessionError(409, 'busy', 'Only an active mission can be paused.')
             _bank(data)

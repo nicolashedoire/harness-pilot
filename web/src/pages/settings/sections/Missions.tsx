@@ -3,15 +3,16 @@ import { Link, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Check, Pause, Play, Plus, Square, TriangleAlert } from 'lucide-react'
-import { useT, tDyn } from '@/i18n'
+import { useT, useLang, tDyn } from '@/i18n'
 import { api, errorMessage, isApiError } from '@/lib/api'
+import { fmtNumber } from '@/lib/format'
 import { useWorkspace } from '@/lib/queries'
 import { Button, Checkbox, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 
 type Role = { id: string; name: string }
 type Step = { id: string; title: string; role: string; instruction: string; after: string[]; state?: string; session?: string; error?: string }
-type Mission = { id: string; title: string; path: string; goal: string; phase: string; reason: string; steps: Step[]; max_runs: number; max_seconds: number; max_tokens: number; tokens: number; spent_seconds: number; active_since: number | null; launches: { session?: string }[]; cycle: number; max_cycles: number; next_cycle: number | null; planner: Step | null }
+type Mission = { id: string; title: string; path: string; goal: string; phase: string; plan_fingerprint: string; reason: string; steps: Step[]; max_runs: number; max_seconds: number; max_tokens: number; tokens: number; spent_seconds: number; active_since: number | null; launches: { session?: string }[]; cycle: number; max_cycles: number; next_cycle: number | null; planner: Step | null }
 const initialStep = (): Step => ({ id: 'step-1', title: '', role: 'observer', instruction: '', after: [] })
 
 function PlanEditor({ mission, roles, onSave, pending }: { mission: Mission; roles: Role[]; onSave: (steps: Step[], start: boolean) => void; pending: boolean }) {
@@ -32,7 +33,7 @@ function PlanEditor({ mission, roles, onSave, pending }: { mission: Mission; rol
 }
 
 export function MissionsSection() {
-  const t = useT(), qc = useQueryClient()
+  const t = useT(), lang = useLang(), qc = useQueryClient()
   const [params, setParams] = useSearchParams()
   const ident = params.get('mission') || ''
   const [title, setTitle] = React.useState(''), [path, setPath] = React.useState(''), [goal, setGoal] = React.useState('')
@@ -47,8 +48,8 @@ export function MissionsSection() {
   const message = (e: unknown) => isApiError(e) ? tDyn(t, `resident.error.${e.code}`, errorMessage(e)) : errorMessage(e)
   const failure = (e: unknown) => { toast.error(message(e)); refresh() }
   const create = useMutation({ mutationFn: () => api.post<Mission>('/api/missions', { title, path, goal, max_runs: runs, max_minutes: minutes, max_tokens: tokens, concurrent: Number(concurrent), interval_minutes: interval, max_cycles: cycles }), onSuccess: (m) => { setParams({ mission: m.id }); setTitle(''); setGoal(''); refresh() }, onError: failure })
-  const control = useMutation({ mutationFn: ({ id, action }: { id: string; action: 'start' | 'pause' | 'stop' | 'plan' }) => api.post(`/api/missions/${id}/control`, { action }), onSuccess: refresh, onError: failure })
-  const save = useMutation({ mutationFn: async ({ steps, start }: { steps: Step[]; start: boolean }) => { await api.put(`/api/missions/${ident}/plan`, { steps }); if (start) await api.post(`/api/missions/${ident}/control`, { action: 'start' }) }, onSuccess: refresh, onError: failure })
+  const control = useMutation({ mutationFn: ({ id, action, fingerprint }: { id: string; action: 'start' | 'pause' | 'stop' | 'plan'; fingerprint?: string }) => api.post(`/api/missions/${id}/control`, { action, fingerprint }), onSuccess: refresh, onError: failure })
+  const save = useMutation({ mutationFn: async ({ steps, start }: { steps: Step[]; start: boolean }) => { const saved = await api.put<Mission>(`/api/missions/${ident}/plan`, { steps }); if (start) await api.post(`/api/missions/${ident}/control`, { action: 'start', fingerprint: saved.plan_fingerprint }) }, onSuccess: refresh, onError: failure })
   const skip = useMutation({ mutationFn: (step: string) => api.post(`/api/missions/${ident}/steps/${step}/skip`), onSuccess: refresh, onError: failure })
   const editable = !!data && ['draft', 'plan_review', 'paused'].includes(data.phase) && !data.steps.some((s) => s.session)
   const stateText = (state: string) => tDyn(t, `resident.state.${state}`, state)
@@ -76,10 +77,10 @@ export function MissionsSection() {
       <div className="grid gap-4 text-sm">
         <div className="flex flex-wrap items-center gap-3"><span className="rounded-full border px-3 py-1">{stateText(data.phase)}</span><span className="text-xs text-muted-foreground">{t('resident.progress', { runs: data.launches.length, max: data.max_runs, cycle: data.cycle, cycles: data.max_cycles })}</span></div>
         {!!data.reason && <p role="status" className="text-muted-foreground">{tDyn(t, `resident.reason.${data.reason}`, data.reason)}</p>}
-        <p className="text-xs text-muted-foreground">{t('resident.usage', { count: data.tokens, max: data.max_tokens, minutes: Math.round(data.max_seconds / 60), elapsed: Math.floor((data.spent_seconds + (data.active_since ? Math.max(0, Date.now() / 1000 - data.active_since) : 0)) / 60) })}</p>
+        <p className="text-xs text-muted-foreground">{t('resident.usage', { count: fmtNumber(data.tokens, lang), max: fmtNumber(data.max_tokens, lang), minutes: Math.round(data.max_seconds / 60), elapsed: Math.floor((data.spent_seconds + (data.active_since ? Math.max(0, Date.now() / 1000 - data.active_since) : 0)) / 60) })}</p>
         <div className="flex flex-wrap gap-2">
           {editable && !data.planner && <Button variant="outline" loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'plan' })}>{t('resident.askArchitect')}</Button>}
-          {!editable && ['draft', 'plan_review', 'paused'].includes(data.phase) && !!data.steps.length && <Button loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'start' })}><Play className="size-4" />{t('resident.start')}</Button>}
+          {!editable && ['draft', 'plan_review', 'paused'].includes(data.phase) && !!data.steps.length && <Button loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'start', fingerprint: data.plan_fingerprint })}><Play className="size-4" />{t('resident.start')}</Button>}
           {['active', 'planning'].includes(data.phase) && <Button variant="outline" loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'pause' })}><Pause className="size-4" />{t('resident.pause')}</Button>}
           {!['completed', 'stopped', 'budget'].includes(data.phase) && <Button variant="outline" disabled={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'stop' })}><Square className="size-4" />{t('resident.stop')}</Button>}
         </div>
@@ -90,7 +91,7 @@ export function MissionsSection() {
         </>}
         {!editable && data.steps.map((s, i) => <div key={s.id} className="grid gap-2 rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-medium">{i + 1}. {s.title}</h4><span className="text-xs text-muted-foreground">{s.state === 'complete' && <Check className="mr-1 inline size-3 text-success" />}{stateText(s.state || 'pending')}</span></div>
-          <p className="text-xs text-muted-foreground">{profiles.data?.companions.find((r) => r.id === s.role)?.name || s.role}</p><p className="whitespace-pre-wrap break-words text-muted-foreground">{s.instruction}</p>
+          <p className="text-xs text-muted-foreground">{profiles.data?.companions.find((r) => r.id === s.role)?.name || s.role}</p><details className="text-muted-foreground"><summary className="cursor-pointer text-xs">{t('resident.instruction')}</summary><p className="mt-2 whitespace-pre-wrap break-words">{s.instruction}</p></details>
           {!!s.after.length && <p className="text-xs text-muted-foreground">{t('resident.after', { names: s.after.map((id) => data.steps.find((d) => d.id === id)?.title || id).join(', ') })}</p>}
           <div className="flex flex-wrap gap-3">{s.session && <><Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(s.session)}`}>{t('resident.session')}</Link><Link className="text-primary underline" to={`/settings/companions?run=${encodeURIComponent(s.session)}`}>{t('resident.review')}</Link></>}
             {['failed', 'interrupted', 'rejected'].includes(s.state || '') && <Button variant="outline" size="sm" loading={skip.isPending} onClick={() => skip.mutate(s.id)}>{t('resident.skip')}</Button>}

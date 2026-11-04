@@ -2,6 +2,8 @@ import type { en } from './en'
 
 // Dictionnaire français — doit contenir toutes les clés de en.ts (vérifié par TypeScript).
 export const fr: Record<keyof typeof en, string> = {
+  "feed.action.review": "Examiner",
+  "resident.error.changed": "Le plan ou les limites ont changé. Relisez les consignes actuelles avant le démarrage.",
   "resident.reason.source_unchanged": "Le commit source n’a pas changé depuis la proposition validée. La mission attend pour éviter de proposer à nouveau la même modification.",
   "resident.section": "Missions des compagnons",
   "resident.section.desc": "Planifier un travail limité, attribuer des rôles persistants et relire chaque résultat.",

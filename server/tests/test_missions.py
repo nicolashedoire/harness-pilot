@@ -45,6 +45,10 @@ def create(client,topic,steps=None,**extra):
     return response.json()['id']
 
 
+def start(ident):
+    return missions.control(ident,'start',missions.get(ident)['plan_fingerprint'])
+
+
 def finish(agents,index=0,text='Verified result'):
     sessions,calls,_,reports,_,_=agents
     sid=calls[index]['sid']
@@ -56,7 +60,7 @@ def finish(agents,index=0,text='Verified result'):
 def test_draft_never_launches_and_dependencies_run_once_after_completion(client,topic,agents):
     ident=create(client,topic,[step(1),step(2,['step-1'])])
     missions.tick();assert not agents[1]
-    missions.control(ident,'start');missions.tick();missions.tick()
+    start(ident);missions.tick();missions.tick()
     assert len(agents[1])==1
     finish(agents);missions.tick()
     assert len(agents[1])==2
@@ -67,7 +71,7 @@ def test_draft_never_launches_and_dependencies_run_once_after_completion(client,
 
 def test_proposal_decision_gates_dependent_work_and_rejection_is_explicit(client,topic,agents):
     ident=create(client,topic,[step(1),step(2,['step-1'])])
-    missions.control(ident,'start');missions.tick();sid=finish(agents)
+    start(ident);missions.tick();sid=finish(agents)
     agents[4][sid]={'has_changes':True,'fingerprint':'a'*64,'decision':None}
     missions.tick();missions.tick()
     assert missions.get(ident)['steps'][0]['state']=='review' and len(agents[1])==1
@@ -75,7 +79,7 @@ def test_proposal_decision_gates_dependent_work_and_rejection_is_explicit(client
     missions.tick();assert len(agents[1])==1
     agents[4][sid]['decision']={'value':'rejected','fingerprint':'a'*64}
     missions.tick();assert missions.get(ident)['phase']=='paused'
-    missions.acknowledge(ident,'step-1');missions.control(ident,'start');missions.tick()
+    missions.acknowledge(ident,'step-1');start(ident);missions.tick()
     assert len(agents[1])==2 and missions.get(ident)['steps'][0]['state']=='skipped'
 
 
@@ -86,7 +90,7 @@ def test_generated_plan_is_not_executed_until_owner_starts_it(client,topic,agent
     finish(agents,text='```json\n'+json.dumps({'steps':[step(1)]})+'\n```')
     missions.tick();missions.tick()
     assert missions.get(ident)['phase']=='plan_review' and len(agents[1])==1
-    missions.control(ident,'start');missions.tick()
+    start(ident);missions.tick()
     assert len(agents[1])==2 and agents[1][1]['purpose']=='experiment'
 
 
@@ -97,14 +101,14 @@ def test_invalid_agent_plan_is_held_and_can_be_replaced_manually(client,topic,ag
     assert missions.get(ident)['reason']=='invalid_plan' and len(agents[1])==1
     result=client.put('/api/missions/'+ident+'/plan',json={'steps':[step(1)]})
     assert result.status_code==200,result.text
-    missions.control(ident,'start');missions.tick()
+    start(ident);missions.tick()
     assert len(agents[1])==2
 
 
 @pytest.mark.parametrize('limit',['tokens','time','runs'])
 def test_budgets_stop_owned_sessions_or_refuse_additional_launches(client,topic,agents,limit):
     ident=create(client,topic,[step(1),step(2,['step-1'])],max_runs=1,max_tokens=100)
-    missions.control(ident,'start');missions.tick()
+    start(ident);missions.tick()
     if limit=='tokens':agents[0][agents[1][0]['sid']]['tokens']={'input':101}
     if limit=='time':
         with missions._edit(ident) as data:data['active_since']-=data['max_seconds']+1
@@ -117,11 +121,11 @@ def test_budgets_stop_owned_sessions_or_refuse_additional_launches(client,topic,
 
 def test_parallelism_and_finite_recurring_cycles(client,topic,agents):
     ident=create(client,topic,[step(1),step(2)],concurrent=2)
-    missions.control(ident,'start');missions.tick();missions.tick();missions.tick()
+    start(ident);missions.tick();missions.tick();missions.tick()
     assert len(agents[1])==2
     missions.control(ident,'stop')
     repeat=create(client,topic,[step(1)],max_runs=2,interval_minutes=1,max_cycles=2)
-    missions.control(repeat,'start');missions.tick();finish(agents,2);missions.tick()
+    start(repeat);missions.tick();finish(agents,2);missions.tick()
     assert missions.get(repeat)['next_cycle'] is not None
     with missions._edit(repeat) as data:data['next_cycle']=0.1
     missions.tick();assert len(agents[1])==4 and missions.get(repeat)['cycle']==2
@@ -130,7 +134,7 @@ def test_parallelism_and_finite_recurring_cycles(client,topic,agents):
 
 
 def test_owner_pause_during_clone_prevents_a_later_model_launch(client,topic,agents,monkeypatch):
-    ident=create(client,topic,[step(1)]);missions.control(ident,'start')
+    ident=create(client,topic,[step(1)]);start(ident)
     def pause_first(*args,**kwargs):
         missions.control(ident,'pause')
         return agents[5](*args,**kwargs)
@@ -140,7 +144,7 @@ def test_owner_pause_during_clone_prevents_a_later_model_launch(client,topic,age
 
 
 def test_process_crash_after_session_creation_reconciles_without_duplicate(client,topic,agents,monkeypatch):
-    ident=create(client,topic,[step(1)]);missions.control(ident,'start')
+    ident=create(client,topic,[step(1)]);start(ident)
     def crash(*args,**kwargs):
         agents[5](*args,**kwargs)
         raise SystemExit('simulated process death')
@@ -154,7 +158,7 @@ def test_process_crash_after_session_creation_reconciles_without_duplicate(clien
 def test_restore_and_auth_validation(client,topic,agents):
     for steps in ([step(1,['step-1'])],[step(1),step(1)],[{**step(1),'role':'invented-without-owner'}]):
         assert client.post('/api/missions',json={'title':'Test','path':topic,'goal':'Observe','steps':steps}).status_code==400
-    ident=create(client,topic,[step(1)]);missions.control(ident,'start')
+    ident=create(client,topic,[step(1)]);start(ident)
     with missions._edit(ident) as data:data['origin_state']='/old/state'
     missions.tick()
     assert missions.get(ident)['phase']=='paused' and missions.get(ident)['reason']=='restored' and not agents[1]
@@ -199,7 +203,7 @@ print(json.dumps({'type':'turn.completed','usage':{}}),flush=True)
 
 def test_installation_wide_concurrency_is_bounded_across_missions(client,topic,agents):
     ids=[create(client,topic,[step(1)]) for _ in range(3)]
-    for ident in ids:missions.control(ident,'start')
+    for ident in ids:start(ident)
     missions.tick();missions.tick()
     assert len(agents[1])==2
     running=next(i for i in ids if missions.get(i)['steps'][0]['session'])
@@ -209,7 +213,7 @@ def test_installation_wide_concurrency_is_bounded_across_missions(client,topic,a
 
 def test_recurring_proposal_waits_for_new_source_before_repeating(client,topic,agents,monkeypatch):
     ident=create(client,topic,[step(1)],interval_minutes=1,max_cycles=2)
-    missions.control(ident,'start');missions.tick();sid=finish(agents)
+    start(ident);missions.tick();sid=finish(agents)
     agents[4][sid]={'has_changes':True,'fingerprint':'a'*64,'decision':{'value':'approved','fingerprint':'a'*64}}
     with missions._edit(ident) as data:data['cycle_source']='a'*40
     missions.tick()
@@ -220,3 +224,55 @@ def test_recurring_proposal_waits_for_new_source_before_repeating(client,topic,a
     monkeypatch.setattr(companions,'_git',lambda *args,**kwargs:('b'*40).encode())
     missions.tick()
     assert len(agents[1])==2 and missions.get(ident)['cycle']==2
+
+
+def test_start_is_bound_to_the_reviewed_plan_and_limits(client,topic,agents):
+    ident=create(client,topic,[step(1)])
+    reviewed=missions.get(ident)['plan_fingerprint']
+    assert client.post('/api/missions/'+ident+'/control',json={'action':'start'}).status_code==409
+    missions.save_plan(ident,[{**step(1),'instruction':'A different assignment.'}])
+    assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':reviewed}).status_code==409
+    assert not agents[1] and missions.get(ident)['phase']=='plan_review'
+    current=missions.get(ident)['plan_fingerprint']
+    assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':current}).status_code==200
+
+
+def test_completed_mission_keeps_its_terminal_state_against_stop(client,topic,agents):
+    ident=create(client,topic,[step(1)])
+    start(ident);missions.tick();finish(agents);missions.tick();missions.tick()
+    assert missions.get(ident)['phase']=='completed' and missions.get(ident)['reason']=='completed'
+    # Owner path: stopping a finished mission must be refused like any other invalid transition (409 busy),
+    # not silently regress 'completed' back to 'stopped'.
+    refused=client.post('/api/missions/'+ident+'/control',json={'action':'stop'})
+    assert refused.status_code==409,refused.text
+    assert refused.json()['error']=='busy'
+    after=missions.get(ident)
+    assert after['phase']=='completed' and after['reason']=='completed'
+
+
+def test_owner_can_still_stop_an_active_mission(client,topic,agents):
+    ident=create(client,topic,[step(1)])
+    start(ident);missions.tick()
+    sid=agents[1][0]['sid']
+    result=client.post('/api/missions/'+ident+'/control',json={'action':'stop'})
+    assert result.status_code==200,result.text
+    assert missions.get(ident)['phase']=='stopped' and missions.get(ident)['reason']=='owner'
+    assert agents[2]==[sid]
+    assert missions.get(ident)['steps'][0]['state']=='interrupted'
+
+
+
+
+@pytest.mark.parametrize('terminal',['budget','stopped'])
+def test_repeated_stop_preserves_the_terminal_reason(client,topic,agents,terminal):
+    ident=create(client,topic,[step(1)],max_tokens=10)
+    start(ident);missions.tick()
+    if terminal=='budget':
+        agents[0][agents[1][0]['sid']]['tokens']={'input':11}
+        missions.tick()
+    else:missions.control(ident,'stop')
+    before=missions.get(ident)
+    assert before['phase']==terminal
+    response=client.post('/api/missions/'+ident+'/control',json={'action':'stop'})
+    assert response.status_code==409
+    assert missions.get(ident)['phase']==terminal and missions.get(ident)['reason']==before['reason']
