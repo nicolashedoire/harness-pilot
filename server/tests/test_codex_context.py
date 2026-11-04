@@ -78,8 +78,8 @@ def test_session_file_lookup(tmp_path):
 
 
 # A fake `codex` that writes its session file like 0.150.1 (into $CODEX_HOME, under today's folder, a UUIDv7 thread
-# id) - the k-th turn of a thread makes two calls of k x STEP and k x STEP + 1000 input tokens (STEP: FAKE_CODEX_STEP,
-# 50 000 by default) - and prints the JSON stream. Each call is listed in $CODEX_HOME/argv.jsonl.
+# id) - the k-th turn of a thread makes two calls of k x STEP and k x STEP + GROWTH input tokens (FAKE_CODEX_STEP,
+# 50 000 by default; FAKE_CODEX_GROWTH, 1000) - and prints the JSON stream. Each call is listed in $CODEX_HOME/argv.jsonl.
 FAKE = '''#!/usr/bin/env python3
 import json, os, sys, time
 prompt = sys.stdin.read()
@@ -106,11 +106,12 @@ def count(k):
 with open(os.path.join(home, "argv.jsonl"), "a") as f:
     f.write(json.dumps({"argv": sys.argv[1:], "prompt": prompt}) + "\\n")
 step = int(os.environ.get("FAKE_CODEX_STEP") or 50000)
+growth = int(os.environ.get("FAKE_CODEX_GROWTH") or 1000)
 k = 1 + (sum(1 for l in open(path) if '"task_started"' in l) if os.path.exists(path) else 0)
 if not os.environ.get("FAKE_CODEX_NO_FILE"):
     with open(path, "a") as f:
         f.write(line("event_msg", {"type": "task_started", "model_context_window": 258400}))
-        f.write(count(step * k) + count(step * k + 1000))
+        f.write(count(step * k) + count(step * k + growth))
 print(json.dumps({"type": "thread.started", "thread_id": thread}), flush=True)
 print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": f"answer {n}"}}), flush=True)
 print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 100 * n, "output_tokens": 10}}), flush=True)
@@ -226,3 +227,64 @@ def test_a_thread_already_too_big_at_its_first_call_is_not_compacted_again_and_a
     client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'})
     assert wait_idle(client, sid)['context_tokens'] == 421000 and len(_calls(home)) == 2
     assert not any('automatic compaction' in n for n in _notes(client, sid))
+
+
+def _away(sid: str, seconds: float) -> None:
+    with store.edit(sid) as m:
+        m['finished_at'] = time.time() - seconds
+
+
+def test_back_to_a_long_codex_session_after_a_pause_the_summary_is_written_for_the_message(client, topic, mx, monkeypatch):
+    """Smart resume (100k by default): the summary turn resumes Codex's thread with the waiting message, which then runs
+    in a new thread seeded with it."""
+    home = _fake_codex(mx, monkeypatch)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '20000')
+    monkeypatch.setenv('FAKE_CODEX_GROWTH', '150000')                  # the first call 20k (fixed part), then 170k
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    s = wait_idle(client, sid)
+    assert (s['context_tokens'], store.read(sid)['base_tokens']) == (170000, 20000)
+    thread = store.read(sid)['codex_thread_id']
+    _away(sid, 2 * 3600)
+    assert client.post(f'/api/sessions/{sid}/messages', json={'text': 'and the tests?'}).status_code == 200
+    wait_idle(client, sid)
+    calls = _calls(home)
+    assert len(calls) == 3
+    summary, message = calls[1], calls[2]
+    assert summary['argv'][summary['argv'].index('resume') + 1] == thread
+    assert 'The user is back after a pause' in summary['prompt'] and 'and the tests?' in summary['prompt']
+    assert 'resume' not in message['argv'] and 'Context of this session before compaction' in message['prompt']
+    assert message['prompt'].rstrip().endswith('and the tests?')
+    assert any(n.startswith('Back after 2 h: harness-pilot summarized the session (170k tokens) for your message')
+               for n in _notes(client, sid))
+    assert store.read(sid)['codex_thread_id'] != thread
+
+
+def test_codex_idle_compaction_and_its_limits(client, topic, mx, monkeypatch):
+    home = _fake_codex(mx, monkeypatch)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '20000')
+    monkeypatch.setenv('FAKE_CODEX_GROWTH', '150000')
+    config.update_config(smart_resume_tokens=0, idle_compact_tokens=100000)   # the plain rule alone
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    wait_idle(client, sid)
+    _away(sid, 30 * 60)                                                  # the cache may still be warm: go on
+    client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'})
+    wait_idle(client, sid)
+    assert len(_calls(home)) == 2 and 'resume' in _calls(home)[1]['argv']
+    _away(sid, 2 * 3600)                                                 # expired: summary first, plain prompt
+    client.post(f'/api/sessions/{sid}/messages', json={'text': 'three'})
+    wait_idle(client, sid)
+    calls = _calls(home)
+    assert len(calls) == 4 and calls[2]['prompt'].endswith(runner.SUMMARY_PROMPT)
+    assert 'resume' not in calls[3]['argv'] and calls[3]['prompt'].rstrip().endswith('three')
+    assert any(n.startswith('Back after 2 h: the cache had expired') for n in _notes(client, sid))
+    # nor a session whose context is mostly its fixed part (the first call): a summary would save nothing
+    config.update_config(idle_compact_tokens=0, smart_resume_tokens=100000, auto_compact_tokens=0)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '150000')
+    monkeypatch.setenv('FAKE_CODEX_GROWTH', '1000')
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    wait_idle(client, sid)
+    _away(sid, 2 * 3600)
+    before = len(_calls(home))
+    client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'})
+    wait_idle(client, sid)
+    assert len(_calls(home)) == before + 1 and 'resume' in _calls(home)[-1]['argv']

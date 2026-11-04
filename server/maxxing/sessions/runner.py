@@ -1205,7 +1205,7 @@ def _idle_compact(m: dict, item: dict, cfg: dict, now: float) -> tuple[str, int]
     if (item.get("kind") or "user") != "user" or item.get("source") in ("system", "cron") or item.get("steer") \
             or item.get("plan_approved"):
         return None
-    if m.get("fresh", True) or m.get("cron") or m.get("plan_ready"):
+    if not resume.thread_open(m) or m.get("cron") or m.get("plan_ready"):
         return None
     away = now - last
     hours = f"{away / 3600:.0f} h" if away >= 5400 else f"{away / 60:.0f} min"
