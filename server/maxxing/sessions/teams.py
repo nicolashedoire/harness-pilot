@@ -14,8 +14,13 @@ from . import store
 
 log = logging.getLogger('maxxing.teams')
 
+# The default assignment of each worker; `create(roles=...)` replaces one for a team.
+ROLES = {'claude': 'Develop a practical approach and identify the main steps.',
+         'codex': 'Independently examine risks, alternatives and how to verify the result.'}
 
-def create(path: str, message: str, title: str | None = None, attachments: list[str] | None = None) -> dict:
+
+def create(path: str, message: str, title: str | None = None, attachments: list[str] | None = None,
+           roles: dict[str, str] | None = None) -> dict:
     from . import service
 
     goal = (message or '').strip()
@@ -28,8 +33,8 @@ def create(path: str, message: str, title: str | None = None, attachments: list[
     sid = parent['id']
     agents = []
     try:
-        for provider, role in [('claude', 'Develop a practical approach and identify the main steps.'),
-                               ('codex', 'Independently examine risks, alternatives and how to verify the result.')]:
+        for provider, default in ROLES.items():
+            role = ((roles or {}).get(provider) or '').strip() or default
             child = service.create_session(path, title=f'Team: {provider.title()}', provider=provider,
                                            permission_mode='plan')
             agents.append({'id': child['id'], 'provider': provider, 'role': role, 'stopped': False})
@@ -82,6 +87,7 @@ def get(sid: str) -> dict:
         meta = store.read_cached(agent['id']) or {}
         ended = None if running or not session else (meta.get('finished_at') or meta.get('updated'))
         agents.append({**agent, 'state': state, 'session': session, 'started_at': team.get('created'),
+                       'custom_role': agent.get('role') != ROLES.get(agent.get('provider')),
                        'finished_at': ended, **(_live_view(agent['id'], running) if session else
                                                 {'activity': [], 'report': None})})
     return {'id': sid, 'phase': team.get('phase'), 'created': team.get('created'), 'agents': agents}
