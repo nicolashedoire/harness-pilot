@@ -3,8 +3,7 @@ section: Using harness-pilot
 ---
 # Memory
 
-Claude has no memory between conversations – except what is written in files. harness-pilot
-organises that memory in plain markdown files that Claude Code loads automatically.
+Conversations can share durable context through plain Markdown files in the workspace. Claude Code and Codex use these files differently, as described below.
 
 ## Three levels
 
@@ -17,14 +16,12 @@ organises that memory in plain markdown files that Claude Code loads automatical
       CLAUDE.md  memory.md                     topic acme / blog
 ```
 
-Claude Code loads every `CLAUDE.md` from the session folder up to the workspace root, and each
-`CLAUDE.md` contains the line `@memory.md`, which imports its memory file. A session in
-`projects/acme/topics/blog/` therefore reads all six files.
+With the default templates, Claude Code loads `CLAUDE.md` from the workspace, project and topic when starting a thread; each imports its neighboring `memory.md` using `@memory.md`. Codex receives the existing `CLAUDE.md` and `memory.md` files from those levels as context on every turn. Codex reads at most the first 32 KiB of each file. Custom instructions can change what Claude loads.
 
 | File | Contains | Who writes it |
 |---|---|---|
 | `CLAUDE.md` | stable instructions: what the project/topic is, how to work on it. The first paragraph under the title is the description shown in the UI. | you (or Claude when you ask) |
-| `memory.md` | what was learned: decisions, preferences, state of the work, useful paths and URLs | Claude, through the `memory` skill |
+| `memory.md` | what was learned: decisions, preferences, state of the work, useful paths and URLs | you or an agent you ask; a reviewed session summary can also be appended explicitly |
 
 ## What goes where
 
@@ -57,8 +54,7 @@ Settings -> Keys and mention only the key name).
 
 ## Editing memory yourself
 
-Memory files are ordinary files: open them in **Files**, edit, save. Changes apply to the next
-turn of every session in that scope.
+Memory files are ordinary files: open them in **Files**, edit and save. Codex receives updated content on its next turn. For Claude, start a new thread to ensure it loads the changes. From **Summary and actions** in a session, you can also review and edit the proposed text, then explicitly append it to the topic memory. No summary is saved automatically.
 
 ## Backup
 

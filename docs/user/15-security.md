@@ -3,10 +3,11 @@ section: Reference
 ---
 # Security
 
-harness-pilot gives a browser (and a Telegram chat) control over Claude Code on your server.
-Read this page once.
+harness-pilot gives its web interface access to the connected agent tools and, when configured, to Telegram. The verified local setup runs under the operating-system user who starts it, on `127.0.0.1:8787`. A newly initialized local workspace uses Claude's `default` permission mode; an existing configuration retains its own settings. Codex sessions use the CLI sandbox: read-only in default and plan modes, workspace-write for the other modes. Shell jobs run with the permissions of the application user.
 
-## Claude runs with full permissions (bypass mode)
+The rest of this page describes the inherited Linux server installation. That deployment and its hardening have **not** been validated for this repository and should not be assumed to apply to the local Mac setup. See [Local installation](installation) and check the actual permissions configured for your installation.
+
+## Legacy Linux installation: Claude permissions
 
 **Sessions, Claude jobs and shell jobs run as root, with full rights on the server.** By default `claude` runs
 with `--dangerously-skip-permissions`: Claude can read and change any file (your secrets, SSH keys, other sites'

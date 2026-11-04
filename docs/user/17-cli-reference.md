@@ -3,7 +3,7 @@ section: Reference
 ---
 # Command line reference
 
-`maxxing` is installed in `/usr/local/bin`. Run `maxxing <command> --help` for every option.
+This reference describes inherited server commands. The Linux installer, service commands and update flow have not been validated for this repository. In the verified local setup, use the repository's `scripts/dev-local.sh`; the command is run from the project's Python environment rather than assumed to exist in `/usr/local/bin`. See [Local installation](installation).
 
 ## Server and setup
 

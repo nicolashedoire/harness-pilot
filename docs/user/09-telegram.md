@@ -6,6 +6,8 @@ section: Connectivity
 Talk to your sessions from your phone. harness-pilot includes its own Telegram gateway: no extra
 program to install.
 
+The setup and commands below describe the inherited Claude integration. Mirroring and control of Codex and two-agent discussions have not yet been validated; use the web interface to follow and stop those conversations until tested. Telegram is optional and requires a bot and a linked chat.
+
 - One bot, linked to **your** private chat only.
 - **One thread per open session** - the Telegram chat mirrors the Sessions page - plus *Crons*
   (job reports), *Alerts* (sign-in alerts, and problems of the server itself: an update that failed or was

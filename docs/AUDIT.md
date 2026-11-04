@@ -29,6 +29,7 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [ ] **Reprise après interruption sur macOS** : si un processus de tâche devient orphelin, son identité ne peut pas encore être vérifiée avec la méthode Linux ; il n'est donc pas arrêté automatiquement pour éviter de tuer un autre processus.
 - [ ] **Chemins internes hérités** : certains liens utilisent encore le sujet système historique. Une migration doit préserver les projets, les sessions et les extensions existants.
 - [ ] Reprendre les pages de documentation embarquées, les textes et liens hérités, ainsi que les notifications produites par le serveur, en conservant les attributions et licences applicables.
+- [x] **Documentation critique** : les pages mémoire, sécurité, Telegram et commandes distinguent les comportements vérifiés en local des fonctions héritées non encore validées.
 - [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
 - [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions.
 - [ ] Ajouter des tests ciblés pour les corrections, puis valider les parcours dans l'interface locale.
