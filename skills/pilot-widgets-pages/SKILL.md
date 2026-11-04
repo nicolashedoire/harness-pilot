@@ -230,9 +230,14 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    print(json.dumps(api.card(ctx), indent=2))"     # page: api.handle(ctx, 'GET', 'notes', {}, None)
    ```
    Check `page.js` syntax (and each module it imports) with `node --check page.js` if node is available.
-4. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
+4. Check it the way the server loads it: `pilot update --verify` (changes nothing; `--json` for details). It
+   loads every extension (manifest, `api.py` import in under 10 s), computes every Card widget with the server's
+   Card rules and checks `page.js` syntax: exit code 1 and the error on the extension's line when one fails. It
+   also runs the customizations' checks: a failure there is not yours to fix now, mention it.
+5. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there.
-5. Record the extension's purpose and data source in the topic memory (`memory` skill).
+6. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
-The HTTP API needs a signed-in browser session, so do not try to test it with curl; use the
-Python test above and the UI.
+Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in
+browser session (401 without it), and never ask for the password or a session cookie. The Python test,
+`pilot update --verify` and the UI cover it.

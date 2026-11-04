@@ -179,6 +179,8 @@ get the same kit. Inputs of the kit are 16 px on phones (no zoom on iPhone).
 - Python side: call `handle()` directly (see the test snippet in
   [Dashboard widgets](dashboard-widgets), with `api.handle(ctx, "GET", "notes", {}, None)`).
 - JavaScript syntax: `node --check page.js` (and each module it imports) if Node is installed.
+- `pilot update --verify`: the server loads every extension (manifest, `api.py`, `page.js` syntax) and exits with
+  code 1 and the error when one fails. `curl` cannot test the page or its API: both need your signed-in browser.
 - **Settings -> Extensions -> Reload**, then open the page from the sidebar (Extensions, or its own entry once pinned). Errors appear on the
   extension's row.
 

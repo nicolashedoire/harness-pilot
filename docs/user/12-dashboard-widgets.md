@@ -169,6 +169,9 @@ ctx = {'id': 'disk-usage', 'workspace': '/root/maxxing', 'state_dir': tempfile.m
 print(json.dumps(api.card(ctx), indent=2))"
 ```
 
+`pilot update --verify` then checks it the way the server loads it (every extension and every widget, plus the
+customizations' checks; it changes nothing) and exits with code 1 and the error when one fails.
+
 Then **Settings -> Extensions -> Reload**. The widget appears on the dashboard. If something is
 wrong (invalid manifest, import error, exception in `card`), the error is shown on the extension's
 row and on the card; the rest of the dashboard keeps working.
