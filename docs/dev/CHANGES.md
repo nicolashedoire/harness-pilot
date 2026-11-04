@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Mock (`web/mock/server.mjs`): the five `/api/voice` routes. `VoiceStatus` (`ready`/`reason` from the engine, the installed models and the `GROQ_API_KEY` / `OPENAI_API_KEY` secrets), settings validation (`422`, `400 invalid_language`), a 6 s install job (`deps` then `model`, `409 busy`), model deletion, and a transcription that returns a fixed sentence (`409 voice_off`, `503 not_installed|no_key`, `422 bad_audio|empty_audio`, the recording kept under `<topic>/attachments/voice/` with `path`). The ready scenarios use the local engine with `small` installed.
 - Mock (`web/mock/server.mjs`): `GET /api/trash`, `POST /api/trash/{id}/restore`, `DELETE /api/trash/{id}`, `DELETE /api/trash`. The ready scenarios seed a file, a session, a topic and backup previous versions (`409 not_restorable`); restoring puts the file, session or topic back into the mock state (a free name when taken). The mock's delete routes still remove at once.
 - Mock (`web/mock/server.mjs`): `GET/PUT /api/space-labels` (absolute path inside the workspace or files root that exists in the mock file tree: `400 bad_path`, `403 forbidden`, `404 not_found`; `unclassified` removes the label); the ready scenarios label two projects.
 - Mock (`web/mock/server.mjs`): `GET/POST /api/discussion-presets`, `DELETE /api/discussion-presets/{id}` (validation `422 invalid`, `400 bad_request` past 100, `404 not_found`); the ready scenarios seed two presets.
