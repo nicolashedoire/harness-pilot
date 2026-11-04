@@ -15,12 +15,24 @@ keeps a token in its config file and reconnects forever (backoff 1 s to 60 s). T
 ## Build
 
 ```sh
-./build.sh                # VERSION=0.1.0 by default; needs Go >= 1.26
+VERSION=0.1.0 ./build.sh  # go vet (macOS, Linux, Windows) and go test first; SKIP_CHECKS=1 skips them
 ```
 
-Produces `dist/HarnessPC-windows-{amd64,arm64}.exe`, `dist/harness-pc-{darwin,linux}-{amd64,arm64}` and
-`dist/SHA256SUMS` (CGO off, `-trimpath`, empty build id: rebuilding gives the same hashes). Windows binaries are GUI
-apps (`-H windowsgui`): no console window; messages are shown in message boxes.
+Needs Go 1.21 or later: the build switches to exactly the `toolchain` of `go.mod` (downloaded and checked by `go`
+when missing) and fetches `go-winres` v0.3.3 for the Windows icon and version information. Output in `dist/`
+(gitignored), one agent per download target of the server (`pcbridge.TARGETS`):
+
+| File | Content |
+|---|---|
+| `HarnessPC-windows-{amd64,arm64}.exe`, `harness-pc-{darwin,linux}-{amd64,arm64}` | the agents |
+| `SHA256SUMS` | their SHA-256 (`sha256sum -c SHA256SUMS`) |
+| `files.json` | version, release tag, Go toolchain, and per file: name, target, os, arch, size, sha256 |
+| `pc_agent.json` | the server manifest for this version: `version`, the download `url` template of `server/maxxing/pc_agent.json`, `files` (name -> sha256) |
+
+Reproducible: pinned Go, CGO off, `-trimpath`, no VCS stamp, empty build id. The same commit and `VERSION` give the
+same SHA-256 in another folder or on another machine. Windows binaries are GUI apps (`-H windowsgui`): no console
+window; messages are shown in message boxes. macOS binaries carry only the Go linker's ad-hoc signature (no
+Developer ID, not notarized).
 
 ## Tests
 
