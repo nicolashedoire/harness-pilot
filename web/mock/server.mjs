@@ -1987,6 +1987,102 @@ R('DELETE', '/api/backup', () => {
   return { ok: true }
 })
 
+/* ---- complete instance backup (server/maxxing/instance_backup.py): encrypted exports kept on the server, a verified
+   preview of an uploaded archive, restore into a separate copy whose services and integrations start paused */
+const IB_DESCRIPTION = { version: VERSION, files: 1834, bytes: 412 * 1024 * 1024, external_links: ['workspace/projects/acme/topics/website/node_modules'],
+  includes: ['settings_and_credentials', 'sessions', 'attachments', 'workspace', 'files', 'space_labels'],
+  excludes: ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets'], excluded_roots: {} }
+const ibId = () => crypto.randomBytes(16).toString('hex')
+function ibState() {
+  if (S.instanceBackup) return S.instanceBackup
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+  return S.instanceBackup
+}
+const ibRoots = () => {
+  const files = S.settings.files_root || ROOT
+  const broad = files === '/' || files === '/root' || /^\/home\/[^/]+\/?$/.test(files) // the filesystem root or a home folder
+  return { state: { source: '/var/lib/claude-maxxing', archive: 'state' }, workspace: { source: ROOT, archive: 'workspace' },
+    files: broad ? { source: files, archive: null, excluded: 'broad_root' } : { source: files, archive: 'files' } }
+}
+const ibDescription = () => {
+  const roots = ibRoots(), left = Object.entries(roots).filter(([, r]) => !r.archive)
+  return { ...clone(IB_DESCRIPTION), includes: IB_DESCRIPTION.includes.filter((x) => x !== 'files' || roots.files.archive),
+    excluded_roots: Object.fromEntries(left.map(([name, r]) => [name, { source: r.source, reason: r.excluded }])) }
+}
+const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
+const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+R('GET', '/api/backup/instance', () => {
+  const st = ibState()
+  return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+})
+R('POST', '/api/backup/instance/export', async ({ body }) => {
+  ibHeld(); ibPassphrase(body.passphrase)
+  if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
+  await sleep(2500)
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  ibState().exports.unshift(e)
+  bus('backup')
+  return e
+})
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
+  ibHeld()
+  const st = ibState()
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  st.exports = st.exports.filter((e) => e.id !== params.id)
+  return { ok: true, id: params.id }
+})
+R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  // A short stand-in for the real file: the format-2 header (magic, version, scrypt 2^15/8/1, salt, nonce) and random bytes.
+  const header = Buffer.concat([Buffer.from('PILOTBK\n'), Buffer.from([2, 1, 15, 0, 8, 0, 1]), crypto.randomBytes(28)])
+  const data = Buffer.concat([header, crypto.randomBytes(4096)])
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': data.length, 'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="pilot-${params.id.slice(0, 12)}.pilotbackup"` })
+  res.end(data)
+  return RAW
+})
+R('POST', '/api/backup/instance/preview', async ({ req, rawBody }) => {
+  ibHeld()
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  const m = rawBody.toString('latin1').match(/name="passphrase"\r\n\r\n([^\r]*)\r\n/)
+  if (!file) fail(422, 'invalid', 'file is required')
+  ibPassphrase(m ? Buffer.from(m[1], 'latin1').toString('utf8') : null)
+  if (!file.data.subarray(0, 8).equals(Buffer.from('PILOTBK\n'))) fail(400, 'format', 'This is not a supported encrypted instance backup.')
+  await sleep(1500)
+  if (/wrong/i.test(m[1])) fail(400, 'decrypt_failed', 'The passphrase is incorrect or the backup has been modified.') // try it with a passphrase containing "wrong"
+  const p = { id: ibId(), sha256: crypto.randomBytes(32).toString('hex'), created: now() - 2 * DAY, ...ibDescription() }
+  ibState().previews[p.id] = { at: now(), ...p }
+  return p
+})
+R('POST', '/api/backup/instance/restore', async ({ body }) => {
+  ibHeld()
+  const p = ibState().previews[body.id]
+  if (!/^[a-f0-9]{32}$/.test(body.id || '') || !/^[a-f0-9]{64}$/.test(body.sha256 || '')) fail(400, 'preview_required', 'Inspect the archive before restoring it.')
+  if (!p || p.sha256 !== body.sha256 || now() - p.at > HOUR) fail(409, 'changed', 'The archive changed or its preview expired. Inspect it again.')
+  await sleep(2000)
+  delete S.instanceBackup.previews[body.id]
+  const destination = `/var/lib/pilot-restored-${crypto.randomBytes(6).toString('hex')}`, { at, ...preview } = p
+  return { destination, state: `${destination}/state`, background_services_paused: true, integrations_paused: true, ...preview,
+    launch_command: `MAXXING_STATE=${destination}/state MAXXING_CRONTAB_FILE=${destination}/crontab uv run --directory /opt/harness-pilot/server python -m uvicorn maxxing.app:create_app --factory --host 127.0.0.1 --port 8790` }
+})
+// A restored copy starts held (read-only) and with its integrations paused: the scenario has none, these only answer.
+R('POST', '/api/backup/instance/activate', () => {
+  const st = ibState()
+  if (!st.restore_hold) return { ok: true, already_active: true }
+  st.restore_hold = false; bus('backup', 'health')
+  return { ok: true }
+})
+R('POST', '/api/backup/instance/resume-integrations', () => {
+  const st = ibState()
+  if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
+  st.integrations_paused = false; bus('crons', 'backup', 'telegram')
+  return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
