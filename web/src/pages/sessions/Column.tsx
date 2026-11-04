@@ -118,6 +118,8 @@ import { ItemContext } from './Items'
 import { agentName, sessionAgents } from '@/features/agents/AgentIcon'
 import { AgentChip, ContextGauge, ModelPicker, StateBadge } from './Widgets'
 import { ModePanel, ModePicker } from './NewSessionModes'
+import { transcribe } from '@/features/voice/api'
+import { micErrorText } from '@/features/voice/VoiceButton'
 import { absTopicDir, fileQuote, modelLabel, topicLabel } from './util'
 import { CONTENT_MIME, contentDragLeave, contentDragOver, contentDrop, useContentDrag, type Dropped } from './contentDrag'
 
@@ -1468,6 +1470,22 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSendVoice = async (file: File) => {
     try {
+      if (provider === 'team') {
+        // a team's mission is text: the recording is transcribed (same engine as any voice message), then its text is
+        // sent as the mission. Nothing heard: nothing sent; a failure keeps the recording in the box (false).
+        let heard = ''
+        try {
+          heard = (await transcribe(file)).text.trim()
+        } catch (e) {
+          toast.error(t('voice.failed'), micErrorText(t, e))
+          return false
+        }
+        if (!heard) {
+          toast.info(t('voice.noSpeech'))
+          return true
+        }
+        return onSend(heard, [])
+      }
       const up = await uploadAttachment(col.path, file)
       const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' || plugin ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
@@ -1607,8 +1625,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
           disabledReason={!valid ? t('sessions.new.pickTopic') : provider === 'both' && !validLimits ? t('sessions.discussionLimitsInvalid') : plugin && !adapter ? t('agentProviders.unavailable') : !plugin && provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null}
           attachDisabledReason={noAttach}
           onSend={onSend}
-          // a mixed team takes a written mission: voice is dictated into it
-          onSendVoice={noAttach || provider === 'team' ? undefined : onSendVoice}
+          onSendVoice={noAttach ? undefined : onSendVoice}
           autoFocus={variant !== 'mobile'}
           placeholder={planMode ? t('plan.placeholder') : t('sessions.new.placeholder')}
         />
