@@ -59,9 +59,11 @@ thumbnails with `ffmpeg` and PDF thumbnails with `pdftoppm`, and the local setup
 | `ffmpeg` with WebP | thumbnails and previews of images and videos, lighter copies of videos, voice messages | `brew install ffmpeg-full` |
 | `pdftoppm` | the first page of a PDF as its thumbnail | `brew install poppler` |
 
-Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one but is
-not put on the PATH by Homebrew: start the local app with
-`PATH="$(brew --prefix ffmpeg-full)/bin:$PATH" bash scripts/dev-local.sh`. To check a `ffmpeg`:
+Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one, and
+Homebrew does not put it on the PATH, but `scripts/dev-local.sh` uses it first as soon as it is installed: restart
+the local app after `brew install ffmpeg-full`. While a tool is missing, Settings → System shows a **Thumbnails and
+previews** card with the command to run, `bash scripts/dev-local.sh cli doctor` warns (`media_tools`), and the
+server says so in its terminal at start. Nothing is installed for you. To check a `ffmpeg` by hand:
 `ffmpeg -hide_banner -encoders | grep libwebp` must print a line.
 
 **What Settings → System shows locally.** The version card shows the version and commit of your clone, and
