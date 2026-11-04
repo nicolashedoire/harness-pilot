@@ -547,7 +547,6 @@ export type BackupRestoreResult = {
 /* ---------------------------------------------------------------- Profile (pseudo) */
 export type ProfileColor = 'clay' | 'blue' | 'violet' | 'green' | 'amber' | 'rose' | 'teal' | 'zinc'
 export type Profile = { name: string; color: ProfileColor | ''; emoji: string }
-export type LicenseState = { has_key: boolean; key_hint: string; kind?: string | null; email?: string | null; max_servers?: number | null; expires_at?: number | null; activated_at?: number | null; enabled: boolean; moved_to_git?: number | null }
 
 /* ---------------------------------------------------------------- Settings & secrets */
 export type Settings = {

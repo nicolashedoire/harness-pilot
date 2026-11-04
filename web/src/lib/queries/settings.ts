@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { LicenseState, Ok, Profile, Settings } from '../types'
+import type { Ok, Profile, Settings } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -60,28 +60,4 @@ export function useSaveProfile() {
       qc.setQueryData(qk.profile, p)
     },
   })
-}
-
-/** Saying hello to the authors (Settings -> Profile, onboarding step Profile). */
-export type FeedbackType = 'bug' | 'idea' | 'other'
-/** Feedback button: the email it prefills and the version sent along (docs/user/23-license.md). */
-export function useFeedbackDefaults(enabled: boolean) {
-  return useQuery({ queryKey: qk.feedback, queryFn: () => api.get<{ email: string; version: string }>('/api/settings/feedback'), enabled })
-}
-export function useSendFeedback() {
-  return useMut((b: { email: string; type: FeedbackType; message: string }) => api.post<{ ok: boolean }>('/api/settings/feedback', b), {
-    invalidate: [qk.feedback],
-    errorToast: false,
-  })
-}
-
-// optional Enterprise key (Settings -> License, onboarding step "About you")
-export function useLicense() {
-  return useQuery({ queryKey: qk.license, queryFn: () => api.get<LicenseState>('/api/settings/license') })
-}
-export function useSaveLicense() {
-  return useMut((key: string) => api.put<LicenseState>('/api/settings/license', { key }), { invalidate: [qk.license, ['system']], errorToast: false })
-}
-export function useRemoveLicense() {
-  return useMut(() => api.del<LicenseState>('/api/settings/license'), { invalidate: [qk.license, ['system']] })
 }
