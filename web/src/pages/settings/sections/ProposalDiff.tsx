@@ -56,10 +56,10 @@ export function ProposalDiff({ patch, untracked }: { patch: string; untracked: {
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2.5 text-sm">
         <FileCode2 className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 break-all font-mono text-xs font-medium">{file.title}</span>
         {file.executable && <span className="text-xs text-muted-foreground">{t('companions.executable')}</span>}
-        <span className="font-mono text-xs font-semibold text-green-600 dark:text-green-400">+{file.added}</span><span className="font-mono text-xs font-semibold text-red-600 dark:text-red-400">−{file.removed}</span>
+        <span className="font-mono text-xs font-semibold text-success">+{file.added}</span><span className="font-mono text-xs font-semibold text-destructive">−{file.removed}</span>
       </summary>
       <div className="max-h-[32rem] overflow-auto"><table className="w-full min-w-max border-collapse font-mono text-xs leading-5"><tbody>
-        {file.lines.map((line, i) => <tr key={i} className={line.kind === 'add' ? 'bg-green-500/15' : line.kind === 'remove' ? 'bg-red-500/15' : line.kind === 'hunk' ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300' : line.kind === 'meta' ? 'bg-muted/25 text-muted-foreground' : ''}>
+        {file.lines.map((line, i) => <tr key={i} className={line.kind === 'add' ? 'bg-success/10' : line.kind === 'remove' ? 'bg-destructive/10' : line.kind === 'hunk' ? 'bg-primary/10 text-primary' : line.kind === 'meta' ? 'bg-muted/25 text-muted-foreground' : ''}>
           <td aria-hidden="true" className="w-10 border-r border-border/50 px-2 text-right text-muted-foreground/70 select-none">{line.old ?? ''}</td>
           <td aria-hidden="true" className="w-10 border-r border-border/50 px-2 text-right text-muted-foreground/70 select-none">{line.next ?? ''}</td>
           <td className="w-full whitespace-pre px-3">{line.text || ' '}</td>

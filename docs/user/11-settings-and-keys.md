@@ -16,6 +16,7 @@ Settings provide the main application controls. Some inherited server-only funct
 | **Security** | change the password, two-step sign-in with Telegram (see [Telegram](telegram#two-step-sign-in)), sign out |
 | **Claude** | authentication (status, token or API key, live test), default model, automatic compaction threshold, compaction when you come back to an idle session, smart resume (a summary written for the message you come back with), short session titles (and whether Claude writes them), automatic Claude Code updates, permission mode |
 | **Codex** | checks whether the Codex CLI used by sessions is installed and signed in; explains current capabilities and limitations |
+| **Companions** | experimental resident companions: built-in roles (observer, security, architect, reverse engineering) or your own, a manual **Start experiment** on a topic, the list of experiments and the review of a proposal - see [Resident companions](#resident-companions) below |
 | **Stats** | Claude plan usage when available; token counts per project, topic and session, plus a per-agent breakdown for newly recorded turns. Historical turns without an agent attribution are shown separately. Older Codex totals may overcount cached tokens. The Claude quota is experimental and may be unavailable even when Claude is signed in on macOS. |
 | **Memory** | second brain cleaner: line limit per `memory.md`, **Clean now**, size of every memory file - see [Memory](memory) |
 | **Telegram** | bot wizard, linking, threads, notification options – see [Telegram](telegram) |
@@ -30,6 +31,22 @@ Settings provide the main application controls. Some inherited server-only funct
 Changing the **time zone** here does not change the server clock: run
 `timedatectl set-timezone <Zone> && systemctl restart cron` too, so scheduled jobs follow (see
 [Crons](crons)).
+
+## Resident companions
+
+Settings -> **Companions** (experimental) runs a Codex companion that reviews the platform's own source.
+
+- Pick a built-in role (observer, security and dependencies, architect, reverse engineering) or write your own, then
+  **Start experiment** on a topic, with an optional mission. The companion works on a copy of the committed source,
+  as a regular session you can follow or stop.
+- When it finishes, a notification links to its proposal, shown as file diffs. Sound follows your notification
+  settings.
+- **Approve** or **Reject** records your decision only: nothing is applied or published. After approving, you can
+  create a **draft GitHub pull request** for that exact proposal (a GitHub origin and a signed-in GitHub CLI are
+  needed); nothing is merged automatically.
+- The reverse-engineering role can use an optional external REA installation; it is neither bundled nor installed.
+- Runs start manually and need a Git checkout and the Codex CLI. The source copy is meant for reviewable experiments,
+  not as a security boundary for untrusted code.
 
 ## Install the app
 

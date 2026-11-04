@@ -63,7 +63,3 @@ You can support development through [PayPal](https://paypal.me/nicolashedoire). 
 ## License
 
 This repository is distributed under the [MIT License](LICENSE), with the original rights holders' permission. Copyright and historical license notices are preserved in [LICENSE.original](LICENSE.original). Third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-### Resident companion experiments
-
-In **Settings → Companions**, choose a built-in observer, security, architect or reverse-engineering role (or define your own) and launch a Codex companion to inspect a copy of the platform's committed source. Follow or stop its session while you work. An internal source-import map helps companions navigate the platform. When it finishes, the existing notification feed links to the proposed diff; notification sounds follow your settings. You can approve or reject a reviewed proposal. Approval records your decision without publishing or applying changes. You can then explicitly create a draft GitHub pull request for the approved snapshot; nothing is merged automatically. Runs are started manually and currently require a Git checkout and Codex CLI. The source copy and workspace sandbox are intended for reviewable experiments, not as a security boundary for untrusted code.
