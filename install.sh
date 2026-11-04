@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# The inherited Linux installer still targets upstream services and has not been validated for this project.
+# Refuse execution before it can download code or change the host; keep library mode for its regression tests.
+if [ "${MAXXING_INSTALL_LIB:-}" != 1 ]; then
+  printf '%s\n' 'The legacy Linux installer is disabled for this project: it is not yet validated.' \
+    'For the verified local setup, see README.md and run: bash scripts/dev-local.sh' >&2
+  exit 1
+fi
 # =============================================================================================
 #  Harness Maxxing - one-line installer (Ubuntu / Debian with systemd, x86_64 or arm64, as root)
 #

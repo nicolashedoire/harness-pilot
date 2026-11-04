@@ -5,7 +5,7 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 ## Priorité 1 — informations ou destinations trompeuses
 
 - [x] **Licence et accueil** : la page Licence présente la licence MIT et l'accueil ne demande plus de clé entreprise. Les avis historiques sont conservés.
-- [ ] **Installation et mise à jour** : l'ancienne documentation et `install.sh` désignent encore le dépôt et le service d'installation d'origine. L'installation locale documentée dans le README utilise `scripts/dev-local.sh` ; les autres parcours n'ont pas encore été validés pour ce projet.
+- [ ] **Installation et mise à jour** : `install.sh` est désactivé tant que son parcours Linux et ses destinations héritées ne sont pas adaptés et validés. L'installation locale documentée dans le README utilise `scripts/dev-local.sh` ; les autres parcours n'ont pas encore été validés pour ce projet.
 - [x] **Profil et feedback** : le formulaire d'enregistrement hérité a été retiré, le retour utilisateur ouvre les issues de ce dépôt, et le service d'enregistrement d'origine est désactivé par défaut, y compris pour une ancienne configuration.
 - [x] **Dons** : le bouton ouvre le lien PayPal configuré par le propriétaire. Le bénéficiaire a été vérifié sur PayPal ; le lien peut être changé ou retiré dans Réglages → Soutenir.
 

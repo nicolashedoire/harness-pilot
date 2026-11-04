@@ -18,6 +18,14 @@ from maxxing import backup, cli, config, security
 INSTALL = Path(__file__).resolve().parents[2] / "install.sh"
 
 
+def test_legacy_installer_refuses_execution_before_host_changes():
+    result = subprocess.run(['bash', str(INSTALL), '--check'], capture_output=True, text=True,
+                            timeout=10, env={'PATH': '/usr/bin:/bin'})
+    assert result.returncode == 1
+    assert 'legacy Linux installer is disabled' in result.stderr
+    assert 'scripts/dev-local.sh' in result.stderr
+
+
 def sh(snippet: str, **env: str) -> subprocess.CompletedProcess:
     """Run bash with install.sh's functions loaded (nothing of main runs)."""
     return subprocess.run(["bash", "-c", f'MAXXING_INSTALL_LIB=1 source "{INSTALL}"; set +e; {snippet}'],
