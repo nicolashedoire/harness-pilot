@@ -221,15 +221,16 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
 ## Steps
 1. Ask what to show, where the data comes from, refresh rate, which secrets are needed.
 2. Create the folder and files; for API calls use `urllib.request` with `timeout=10`.
-3. Test the Python side directly, without the server:
+3. Test it the way the server runs it, and fix until it passes:
    ```bash
-   cd <workspace>/extensions/<id> && python3 -c "
-   import json, api, tempfile
-   ctx = {'id': '<id>', 'workspace': '<workspace>', 'state_dir': tempfile.mkdtemp(),
-          'secret': lambda n: None, 'config': {'timezone': 'UTC', 'language': 'en', 'public_url': ''}}
-   print(json.dumps(api.card(ctx), indent=2))"     # page: api.handle(ctx, 'GET', 'notes', {}, None)
+   pilot ext check <id>            # --json: steps, the first error, the card it computes, the files involved
    ```
-   Check `page.js` syntax (and each module it imports) with `node --check page.js` if node is available.
+   It loads the manifest and `api.py` (10 s limit), runs `card(ctx)` with the dashboard's 20 s limit through the
+   same cleaning (dropped blocks of an unknown type are reported), checks an HTML widget's frame and every inline
+   script (`node --check`, lines of widget.html), and a page's `page.js` and the modules it imports (served, parse,
+   `mount` exported). Exit `0` = works (warnings allowed), `1` = broken: read `error` / the `trace` lines of your
+   `api.py`, fix, run it again. Do not tell the user it is done while it exits `1`. To try one route of a page's API,
+   call `api.handle(ctx, 'GET', 'notes', {}, None)` from `python3 -c` in the folder.
 4. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there.
 5. Record the extension's purpose and data source in the topic memory (`memory` skill).
