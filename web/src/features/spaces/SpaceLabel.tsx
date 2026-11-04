@@ -14,9 +14,9 @@ const options = [
 ] as const
 const query = () => ({ queryKey: ['space-labels'], queryFn: () => api.get<Record<string, Label>>('/api/space-labels'), staleTime: 3000 })
 
-// Only these labels show a badge: an unclassified item (the default) shows none, so a workspace nobody has classified
-// carries no badge on every row. The menu still sets and ticks every label.
-const BADGED: ReadonlySet<Label> = new Set(['personal', 'agents'])
+// Every explicit label shows a badge; an unclassified item (the default) shows none, so a workspace nobody has
+// classified carries no badge on every row. The menu still sets and ticks every label.
+const BADGED: ReadonlySet<Label> = new Set(['personal', 'agents', 'shared'])
 
 export function SpaceBadge({ path }: { path: string | null }) {
   const t = useT()
