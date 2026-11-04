@@ -1023,7 +1023,7 @@ def remove(name: str, force: bool = False) -> list[str]:
     """Delete what the manifest lists for a component -> the paths removed."""
     c = get(name)
     if name in ESSENTIAL and not force:
-        raise DepError(f"{name} is needed by Harness Maxxing itself (only `pilot uninstall --purge` removes it)")
+        raise DepError(f"{name} is needed by harness-pilot itself (only `pilot uninstall --purge` removes it)")
     if name == "caddy" and not force:
         raise DepError("Caddy serves the domain: remove it with apt (`apt-get purge caddy`) after `pilot uninstall`")
     gone = []
@@ -1189,7 +1189,7 @@ def notify_vulnerable(result: dict) -> bool:
     lines = [f"{v['where']}: {v['name']} {v['version']} ({', '.join(x for x in v['ids'] if x)})" for v in vul]
     key = hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()[:16]
     body = ("\n".join(lines[:20]) + ("\n..." if len(lines) > 20 else "")
-            + "\n\nA newer Harness Maxxing release may already fix it: pilot update --check")
+            + "\n\nA newer harness-pilot release may already fix it: pilot update --check")
     try:
         ev = feed.post(f"{len(lines)} dependency(ies) with a known vulnerability", body, "warning", "system",
                        "/settings", dedupe=f"deps-check:{key}", kind="deps.vulnerable", params={"count": len(lines)},
@@ -1200,7 +1200,7 @@ def notify_vulnerable(result: dict) -> bool:
         return False                                   # already reported (same advisories)
     try:
         from .telegram import gateway
-        gateway.system_alert(f"Known vulnerability in {len(lines)} dependency(ies) of Harness Maxxing:\n" + "\n".join(lines[:10]))
+        gateway.system_alert(f"Known vulnerability in {len(lines)} dependency(ies) of harness-pilot:\n" + "\n".join(lines[:10]))
     except Exception:  # noqa: BLE001 - Telegram is optional
         pass
     return True

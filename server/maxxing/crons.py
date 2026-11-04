@@ -370,7 +370,7 @@ def _load_for_write() -> list[dict]:
 def _save_raw(jobs: list[dict], reason: str = "removed") -> None:
     old = _read_raw()
     if old is not None:
-        _remember(old, "vanished (jobs.json edited outside Harness Maxxing)")
+        _remember(old, "vanished (jobs.json edited outside harness-pilot)")
     config.write_json(jobs_path(), {"version": 1, "jobs": jobs})
     _remember(jobs, reason)
 
@@ -859,7 +859,7 @@ def sync_crontab(jobs: list[dict] | None = None) -> str:
             if jobs is None:
                 log.warning("jobs.json cannot be read: crontab left as it is")
                 return read_crontab()
-            _remember(jobs, "vanished (jobs.json edited outside Harness Maxxing)")
+            _remember(jobs, "vanished (jobs.json edited outside harness-pilot)")
         outside, _ = split_crontab(read_crontab())
         while outside and not outside[-1].strip():
             outside.pop()
@@ -1322,7 +1322,7 @@ def spawn_run(cid: str) -> None:
     env_args = [f"--setenv={k}={v}" for k, v in os.environ.items()
                 if k.startswith("MAXXING_") and k != DETACH_ENV]          # the unit runs it inline, not again detached
     r = subprocess.run(["systemd-run", "--collect", "--quiet", "--unit", unit_name(cid),
-                        "--description", f"Harness Maxxing job {cid}", *unit_properties(_raw_job(cid)),
+                        "--description", f"harness-pilot job {cid}", *unit_properties(_raw_job(cid)),
                         *env_args, "--", *cmd],
                        capture_output=True, text=True, timeout=15)
     if r.returncode != 0:

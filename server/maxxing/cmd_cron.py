@@ -101,7 +101,7 @@ def _handler(a) -> int:
         print(f"{j['id']}  {state}  {j['schedule']:<15} {j['name']}  [{j['kind']}]  {j['human']}  - {last_txt}")
     ext = crons.external_jobs()
     if ext:
-        print(f"\n{len(ext)} other crontab line(s) not managed by Harness Maxxing")
+        print(f"\n{len(ext)} other crontab line(s) not managed by harness-pilot")
     return 0
 
 
