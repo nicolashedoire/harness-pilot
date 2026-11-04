@@ -2,7 +2,7 @@
 Whisper models, Garage): what is installed against what this release pins in deps.toml, verification (checksums and
 owners), side-by-side updates with a check before the switch, removal and cleanup, and the weekly OSV check.
 
-`maxxing deps list|verify|update|remove|clean|check` (cmd_deps.py) and the doctor read this module; install.sh reads
+`pilot deps list|verify|update|remove|clean|check` (cmd_deps.py) and the doctor read this module; install.sh reads
 the same deps.toml. Every download goes into a private work folder under <state>/tmp (0700, removed afterwards), is
 checked against its pinned sha256 before anything is extracted or run, and nothing is left in /tmp.
 Standard library only (the CLI stays fast); the network is used by `update` and `check` only.
@@ -53,7 +53,7 @@ def load() -> dict[str, dict]:
 
 
 def _garage_pins() -> dict:
-    """Garage is downloaded by `maxxing infra bucket install`: its pins stay there (one source of truth)."""
+    """Garage is downloaded by `pilot infra bucket install`: its pins stay there (one source of truth)."""
     try:
         from .infra import actions
     except Exception:  # noqa: BLE001
@@ -411,7 +411,7 @@ def installed(name: str) -> dict:
             if n:
                 code, txt = _run([str(n), "--version"], timeout=20)
                 out.update(version=_version_from(txt) if code == 0 else None, where=str(n), managed=False,
-                           detail="not in the managed folder yet (`maxxing deps update node`)")
+                           detail="not in the managed folder yet (`pilot deps update node`)")
     elif name == "claude":
         b = next((str(p) for p in (expand(c["path"]), LINK_DIR / "claude") if p.exists()), None) or shutil.which("claude")
         if b:
@@ -429,7 +429,7 @@ def installed(name: str) -> dict:
             out.update(version=txt.strip() if code == 0 else None, where=str(py.parent.parent.resolve()))
             out["managed"] = py.is_relative_to(scrapling_dir())
             if not out["managed"]:
-                out["detail"] = "installed by an older installer without hash pinning (`maxxing deps update scrapling`)"
+                out["detail"] = "installed by an older installer without hash pinning (`pilot deps update scrapling`)"
     elif name == "chromium":
         b = chromium_bin()
         if b:
@@ -573,7 +573,7 @@ def owned_paths(name: str) -> list[Path]:
 def verify(names: list[str] | None = None, versions: dict[str, str | None] | None = None, fresh: bool = False) -> list[dict]:
     """-> [{"name", "level": "ok"|"warn"|"fail", "text"}]: checksums and owners of what is installed. `versions`:
     the installed versions when the caller already has them (status() rows: no second round of `--version` runs).
-    `fresh`: every file hashed again (`maxxing deps verify`: asked for, it trusts no cache)."""
+    `fresh`: every file hashed again (`pilot deps verify`: asked for, it trusts no cache)."""
     out: list[dict] = []
     rec = read_record()
     comps = load()
@@ -584,7 +584,7 @@ def verify(names: list[str] | None = None, versions: dict[str, str | None] | Non
         version = versions[name] if versions is not None and name in versions else installed(name)["version"]
         if version is None:
             if wanted(name):
-                out.append({"name": name, "level": "warn", "text": "not installed (`maxxing deps update`)"})
+                out.append({"name": name, "level": "warn", "text": "not installed (`pilot deps update`)"})
             continue
         problems: list[str] = []
         bad = [f for p in owned_paths(name) for f in foreign_owned(p, c.get("owner", "root"))]
@@ -609,7 +609,7 @@ def verify(names: list[str] | None = None, versions: dict[str, str | None] | Non
         if name == "remotion":
             mf = expand(c["path"]) / "node_modules" / ".package-lock.json"
             if (rec.get(name) or {}).get("lock") not in (None, lock_hash(c)):
-                problems.append("installed from another lockfile (`maxxing deps update remotion`)")
+                problems.append("installed from another lockfile (`pilot deps update remotion`)")
             elif not mf.exists():
                 problems.append("node_modules incomplete")
         if problems:
@@ -665,7 +665,7 @@ def _up_uv(c: dict, explicit: bool = False) -> tuple[str, str]:
     if inst["version"] == c["version"] and inst["managed"]:
         return "ok", c["version"]
     if not explicit and (LINK_DIR / "uv").exists() and not _uv_is_ours():
-        return "skipped", f"{inst['version'] or '?'} in {LINK_DIR} is not ours: kept (`maxxing deps update uv` replaces it)"
+        return "skipped", f"{inst['version'] or '?'} in {LINK_DIR} is not ours: kept (`pilot deps update uv` replaces it)"
     with work_dir() as w:
         tb = fetch_verified(url_of(c), sha_of(c), w / "uv.tar.gz")
         code, out = _run(["tar", "-xzf", str(tb), "-C", str(w), "--strip-components=1", "--no-same-owner"], timeout=120)
@@ -698,11 +698,11 @@ def _up_python(c: dict, explicit: bool = False) -> tuple[str, str]:
     if (not explicit and not inst["managed"] and inst["version"] and vtuple(inst["version"]) >= PYTHON_FLOOR
             and (config.CODE / "server" / "pyproject.toml").exists()):
         # a working venv on another Python stays: rebuilding it in place while the service and the crons use it
-        # breaks them for minutes (`maxxing update` runs this with --auto)
-        return "ok", f"{inst['version']} kept ({inst['where']}) - `maxxing deps update python` moves the venv"
+        # breaks them for minutes (`pilot update` runs this with --auto)
+        return "ok", f"{inst['version']} kept ({inst['where']}) - `pilot deps update python` moves the venv"
     uv = uv_bin()
     if not uv:
-        raise DepError("uv is missing (`maxxing deps update uv`)")
+        raise DepError("uv is missing (`pilot deps update uv`)")
     env = uv_env()
     code, out = _run([uv, "python", "install", c["version"]], timeout=900, env=env)
     if code != 0:
@@ -859,7 +859,7 @@ def _scrapling_wrappers(venv: Path) -> None:
     }
     for name, (what, target) in texts.items():
         dest = LINK_DIR / name
-        body = (f"#!/bin/bash\n# Harness Maxxing wrapper: {what} (written by `maxxing deps update`)\n"
+        body = (f"#!/bin/bash\n# Harness Maxxing wrapper: {what} (written by `pilot deps update`)\n"
                 f"export PLAYWRIGHT_BROWSERS_PATH={browsers_dir()}\nexec {target} \"$@\"\n")
         tmp = dest.with_name(f".{name}.new")
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -948,7 +948,7 @@ def _up_remotion(c: dict, explicit: bool = False) -> tuple[str, str]:
         return "ok", c["version"]
     n = node_bin()
     if not n:
-        raise DepError("Node.js is missing (`maxxing deps update node`)")
+        raise DepError("Node.js is missing (`pilot deps update node`)")
     new = dest.with_name(dest.name + ".new")
     old = dest.with_name(dest.name + ".old")
     shutil.rmtree(new, ignore_errors=True)
@@ -994,11 +994,11 @@ def _up_whisper(c: dict, explicit: bool = False) -> tuple[str, str]:
 def _up_garage(c: dict, explicit: bool = False) -> tuple[str, str]:
     p = expand(c["path"])
     if not p.exists():
-        return "skipped", "not installed (maxxing infra bucket install)"
+        return "skipped", "not installed (pilot infra bucket install)"
     if file_sha(p) == sha_of(c):
         return "ok", c["version"]
     if not explicit:
-        return "skipped", "another build is installed (`maxxing deps update garage` replaces it)"
+        return "skipped", "another build is installed (`pilot deps update garage` replaces it)"
     with work_dir() as w:
         b = fetch_verified(url_of(c), sha_of(c), w / "garage")
         _replace_file(b, p)
@@ -1023,9 +1023,9 @@ def remove(name: str, force: bool = False) -> list[str]:
     """Delete what the manifest lists for a component -> the paths removed."""
     c = get(name)
     if name in ESSENTIAL and not force:
-        raise DepError(f"{name} is needed by Harness Maxxing itself (only `maxxing uninstall --purge` removes it)")
+        raise DepError(f"{name} is needed by Harness Maxxing itself (only `pilot uninstall --purge` removes it)")
     if name == "caddy" and not force:
-        raise DepError("Caddy serves the domain: remove it with apt (`apt-get purge caddy`) after `maxxing uninstall`")
+        raise DepError("Caddy serves the domain: remove it with apt (`apt-get purge caddy`) after `pilot uninstall`")
     gone = []
     for p in [expand(x) for x in c.get("remove", [])]:
         if name == "claude" and p.parent == LINK_DIR and p.is_symlink() and not os.readlink(p).startswith(str(root_home())):
@@ -1189,7 +1189,7 @@ def notify_vulnerable(result: dict) -> bool:
     lines = [f"{v['where']}: {v['name']} {v['version']} ({', '.join(x for x in v['ids'] if x)})" for v in vul]
     key = hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()[:16]
     body = ("\n".join(lines[:20]) + ("\n..." if len(lines) > 20 else "")
-            + "\n\nA newer Harness Maxxing release may already fix it: maxxing update --check")
+            + "\n\nA newer Harness Maxxing release may already fix it: pilot update --check")
     try:
         ev = feed.post(f"{len(lines)} dependency(ies) with a known vulnerability", body, "warning", "system",
                        "/settings", dedupe=f"deps-check:{key}", kind="deps.vulnerable", params={"count": len(lines)},
@@ -1208,7 +1208,7 @@ def notify_vulnerable(result: dict) -> bool:
 
 # ---- default jobs ----------------------------------------------------------------------------------------------
 def default_jobs(mx: str) -> list[tuple[str, dict]]:
-    """Weekly cleanup and vulnerability check (created once by `maxxing init`, like the other default jobs)."""
+    """Weekly cleanup and vulnerability check (created once by `pilot init`, like the other default jobs)."""
     return [
         ("deps-clean", {"name": "Clean caches and old versions", "schedule": "30 4 * * 0", "kind": "shell",
                         "command": f"{mx} deps clean --quiet", "enabled": True, "notify": "failure",

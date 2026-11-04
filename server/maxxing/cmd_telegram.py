@@ -1,4 +1,4 @@
-"""`maxxing telegram status|test` - inspect and test the Telegram bridge from a shell."""
+"""`pilot telegram status|test` - inspect and test the Telegram bridge from a shell."""
 from __future__ import annotations
 
 import json

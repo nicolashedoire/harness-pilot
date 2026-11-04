@@ -1,4 +1,4 @@
-"""`maxxing memory [--json]` - memory.md files, their size and the line limit (used by the memory-compaction skill)."""
+"""`pilot memory [--json]` - memory.md files, their size and the line limit (used by the memory-compaction skill)."""
 from __future__ import annotations
 
 import json

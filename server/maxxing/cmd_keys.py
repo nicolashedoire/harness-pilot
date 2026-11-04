@@ -1,9 +1,9 @@
-"""`maxxing keys` - the Keys vault (Settings -> Keys) from scripts and sessions.
+"""`pilot keys` - the Keys vault (Settings -> Keys) from scripts and sessions.
 
-    maxxing keys list                     names, notes, exposed or not (never the values)
-    maxxing keys get NAME                 print the value (exit 1 if missing)
-    printf %s "$V" | maxxing keys set NAME [--note TEXT] [--no-expose]
-    maxxing keys delete NAME
+    pilot keys list                     names, notes, exposed or not (never the values)
+    pilot keys get NAME                 print the value (exit 1 if missing)
+    printf %s "$V" | pilot keys set NAME [--note TEXT] [--no-expose]
+    pilot keys delete NAME
 
 `set` reads the value from stdin (never from the command line, which `ps` shows). A new key is exposed
 by default: every later Claude turn and shell job gets it as an environment variable.
@@ -49,7 +49,7 @@ def _handler(a) -> int:
     if a.action == "set":
         value = sys.stdin.read().strip()
         if not value:
-            print("the value is read from stdin: printf %s \"$VALUE\" | maxxing keys set NAME", file=sys.stderr)
+            print("the value is read from stdin: printf %s \"$VALUE\" | pilot keys set NAME", file=sys.stderr)
             return 2
         existed = vault.get(a.name) is not None
         try:

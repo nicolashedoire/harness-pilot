@@ -546,7 +546,7 @@ def snapshot() -> dict[str, bytes]:
         raise BackupError("Cannot export MCP settings; no backup was published.", "read_failed") from e
     files[f"{META_DIR}/README.md"] = (b"# harness-pilot memory backup\n\nPrivate backup of the workspace memory "
                           b"(CLAUDE.md, memory.md, tasks, extensions, skills) made by harness-pilot.\n"
-                          b"Restore: Settings > Backup > Restore, or `maxxing backup restore`.\n")
+                          b"Restore: Settings > Backup > Restore, or `pilot backup restore`.\n")
     return files
 
 
@@ -1202,7 +1202,7 @@ def held_manifest() -> tuple[Path | None, dict | None]:
 
 def release_held() -> dict:
     """Turn on what the last restore kept off: its cron jobs, extensions, Claude Code hooks / commands, local MCP
-    servers and the files outside the backup list (`maxxing backup release`, the installer after the user's yes).
+    servers and the files outside the backup list (`pilot backup release`, the installer after the user's yes).
     -> {ok, crons, extensions, hooks, mcp, files}."""
     path, m = held_manifest()
     if not m or m.get("released"):

@@ -73,7 +73,7 @@ async def _setup(body: SetupIn, request: Request, response: Response):
         raise HTTPException(409, detail={"error": "already_setup", "message": "Already configured - sign in"})
     if not security.check_setup_token(body.token):
         raise HTTPException(403, detail={"error": "bad_token",
-                                         "message": "Invalid or expired setup link - run `maxxing setup-link` "
+                                         "message": "Invalid or expired setup link - run `pilot setup-link` "
                                                     "on the server for a fresh one"})
     _check_strength(body.password)
     await asyncio.to_thread(security.set_password, body.password)

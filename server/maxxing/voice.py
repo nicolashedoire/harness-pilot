@@ -433,7 +433,7 @@ def _marker() -> Path:
 
 
 def sync_extras() -> list[str]:
-    """Extra flags for `uv sync` (maxxing update) so updates keep the voice dependencies: set once they
+    """Extra flags for `uv sync` (pilot update) so updates keep the voice dependencies: set once they
     were installed from the UI / installer (marker file) or while the local engine is selected."""
     return ["--extra", "voice"] if _marker().exists() or settings()["engine"] == "local" else []
 
@@ -515,7 +515,7 @@ def delete_model(name: str) -> None:
 
 # ---- doctor ----------------------------------------------------------------------------------
 def doctor() -> tuple[str, str, str, str]:
-    """-> (level ok|warn|info, title, detail, fix) for `maxxing doctor`."""
+    """-> (level ok|warn|info, title, detail, fix) for `pilot doctor`."""
     s = settings()
     if s["engine"] == "off":
         return "info", "voice messages off", "", "Settings → Voice to enable them"
