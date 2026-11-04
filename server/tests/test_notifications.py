@@ -519,6 +519,19 @@ def test_dispatch_encrypts_signs_filters_and_drops_gone_subscriptions(mx, monkey
     assert json.loads(_decrypt(got[-1].content, phone_priv, phone_auth))["kind"] == "push.test"
 
 
+def test_dispatch_drains_more_than_one_batch(mx, monkeypatch):
+    _, pub, auth = _ua_keys()
+    push.subscribe("https://fcm.example.com/send/phone", {"p256dh": pub, "auth": _b64(auth)}, "Phone")
+    got: list[httpx.Request] = []
+    monkeypatch.setattr(push, "http_transport", httpx.MockTransport(lambda r: got.append(r) or httpx.Response(201)))
+    monkeypatch.setattr(push, "DISPATCH_BATCH", 2)
+    push.prime()
+    for i in range(5):                                                    # more than a batch, one feed change
+        feed.post(f"Failed {i}", level="error", source="mail")
+    assert push.dispatch() == 5 and len(got) == 5                         # the watcher may not call again
+    assert push.dispatch() == 0
+
+
 def test_a_long_event_still_fits_a_push_message(mx):
     ev = feed.post("x" * 200, "y" * 4000, "error", "mail", params={f"p{i}": "z" * 500 for i in range(20)})
     data = push.payload(ev)

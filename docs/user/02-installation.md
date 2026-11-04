@@ -3,21 +3,25 @@ section: Getting started
 ---
 # Local installation
 
-The currently verified setup runs on macOS, on the computer itself. You need Python, [uv](https://docs.astral.sh/uv/), and Claude Code and/or Codex installed and signed in to their respective accounts.
+The currently verified setup runs locally on macOS. You need Git, Python 3.11 or newer, [uv](https://docs.astral.sh/uv/), and Claude Code and/or Codex installed and signed in to their respective accounts. The CLI and account for an agent are required when you use that agent.
 
-From the repository root, start the local server:
+Clone the repository and start the local server:
 
 ```sh
+git clone https://github.com/nicolashedoire/harness-pilot.git
+cd harness-pilot
 bash scripts/dev-local.sh
 ```
 
-Open `http://127.0.0.1:8787`. On first setup, obtain a setup link in a second terminal:
+If you already cloned it, run the last command from the repository root. On first setup, keep the server running and obtain a setup link in a second terminal, also in the repository root:
 
 ```sh
 bash scripts/dev-local.sh link
 ```
 
-Open that link and choose a password. The server listens only on the local computer. Its workspace, application state and isolated test crontab are stored under `.harness-pilot-local/`, which is ignored by Git. Stop the server with `Ctrl+C` in its terminal.
+Open that link and choose a password, then visit `http://127.0.0.1:8787`. The server listens only on the local computer. Its workspace, application state and local scheduler data are stored under `.harness-pilot-local/`, which is ignored by Git. Stop the server with `Ctrl+C` in its terminal.
+
+To use an agent, sign in to its CLI on the computer and check its connection in **Settings → Claude** or **Settings → Codex**. A CLI or provider may have its own account, network and privacy settings.
 
 The local setup disables upstream registration and license communication and starts with restrictive agent permissions. The telemetry counter is off by default. Telegram, voice and backup connections are optional and require separate configuration.
 
