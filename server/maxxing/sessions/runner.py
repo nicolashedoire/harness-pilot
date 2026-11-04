@@ -407,7 +407,7 @@ class Runner:
             request = {'protocol': agent_providers.PROTOCOL, 'session_id': self.sid, 'cwd': cwd,
                        'model': (meta.get('codex_model') if is_debate else meta.get('model')) or '',
                        'permission_mode': 'plan' if plan else effective_mode(meta, cfg),
-                       'prompt': (PLAN_PREFACE if plan else '') + build_prompt(item),
+                       'prompt': ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else '') + build_prompt(item),
                        'history': (_debate_history(store.log_path(self.sid), _agent_label(actor, meta), _agent_names(meta),
                                                    build_prompt(item))
                                    if is_debate else agent_providers.history(store.log_path(self.sid))),
