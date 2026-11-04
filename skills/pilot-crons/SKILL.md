@@ -39,7 +39,8 @@ Server command: `pilot` (`maxxing`, its earlier name, still works).
    `c_3fa91c`), `created`/`updated` (Unix seconds). Keep unknown fields and every other job. Read and write in
    the same step, under the lock the server uses (`flock {{STATE_DIR}}/.crons.lock python3 - <<'EOF' … EOF`),
    never from a copy read earlier; write atomically (write a temp file in the same folder, then rename).
-3. `pilot cron sync` - rewrites the crontab block. `pilot cron list` - check.
+3. `pilot cron sync` - rewrites the crontab block (run from this session, it also records the jobs you just added as
+   yours: the Atelier shows who made each job). `pilot cron list` - check.
 4. `pilot cron run <id>` - test it now (records a run, sends the report per `notify`).
 
 ## Good practice
