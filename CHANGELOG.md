@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Settings -> Companions: when the companions cannot be loaded, the section says so in your language, with the reason and a **Retry** button, instead of a raw server message above a form that could not work. Its lists use the same menus as the rest of the app.
+- A link to a file given relative to the workspace (such as `projects/acme/topics/blog/memory.md`) opens like its full path: whole breadcrumb, file selected in its folder.
 - The Crons page shows every time in your language's format: a schedule *every day at 04:40* reads *4:40 AM* in English, like its next run. On the night clocks go back, a next run in the repeated hour is no longer shown in the past.
 - Preview a memory backup before restoring, restore the latest version without local history, and review skipped or held items afterward. A selected file that cannot be read or exceeds the size limit now stops the backup instead of silently dropping it. [Show me](#show:backup-preview)
 - Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
@@ -33,6 +34,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
 - View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.
 - Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
+- In the local macOS setup, the built-in skills are installed at every start, so **Create with harness-pilot** in Settings -> Appearance works without copying `pilot-theme` by hand. They are kept beside the local workspace: your personal Claude skills are not changed.
 - Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
 - Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
 - After the update, your agent looks for the old skill names (such as `maxxing-cron`) in the notes, instructions and scheduled job prompts you wrote, and offers to rename them; nothing you wrote changes without your yes.

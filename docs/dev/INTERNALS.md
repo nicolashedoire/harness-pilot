@@ -93,6 +93,37 @@ Python modules call each other only through these functions. Keep signatures sta
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
+## maxxing.sessions.teams  (owner: core) - mixed Claude + Codex teams
+API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a Claude
+coordinator (the parent, returned by `create`) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
+- State: coordinator meta `team: {phase, goal, agents: [{id, provider, role, stopped}], created}`, worker meta
+  `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
+  (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
+- `create(path, message, title=None)`: mission of 1-24 000 characters (else 400 `bad_mission`). Creates the
+  coordinator then the workers, logs the mission as the coordinator's `mx_user` line, then, inside the coordinator's
+  `store.edit`, sets `team_parent` on each worker and sends it its role and the mission (`source='team'`; asked not
+  to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
+  failure -> phase `error` (unless stopped) and the workers stopped.
+- `get(sid)` -> `{id, phase, agents: [{..., state, session}]}`; `state` = `stopped` once the user stopped that worker,
+  else the session's state (`missing` when it is gone). A session without a team -> 404 `not_found`.
+- `stop_agent(sid, agent_id)`: only while `working` and that worker runs (else 409 `not_running`), marks it
+  `stopped` and stops it alone. `stop(sid)`: phase `stopped`, running workers marked, every worker and the
+  coordinator stopped. Both call `service.stop(..., _team_internal=True)`.
+- Hooks in `service`: `send_message` refuses (409 `team_running`) a message to a coordinator whose team is launching,
+  working or synthesizing, and to a worker of a launching or working team (`source='team'` = the team itself).
+  `service.stop` on such a coordinator -> `teams.stop`, on a worker of a working team -> `teams.stop_agent`.
+- `advance(sid)` / `advance_all()`: every pass of the session watcher (`service._watch`, in a thread), so a team
+  carries on after a server restart. `launching` for more than 30 s -> `error`, workers stopped. `working` with no
+  worker running -> one synthesis prompt with each report (`service.last_assistant_text`, 20 000 characters, or a
+  placeholder for a stopped, failed or silent worker; reports are framed as untrusted observations) queued on the
+  coordinator (`service._item(prompt, [], 'team')`, state `running`, `_spawn`), phase `synthesizing`; skipped when
+  the phase or the agents changed meanwhile (a concurrent stop: rebuilt on the next pass). `synthesizing` and the
+  coordinator no longer running -> `completed` (idle with turns) or `error`.
+- Notifications: a worker on its assignment (`team_turn`: `team_parent` set and no `last_turn` yet, or one whose
+  `source` is `team`) raises none (`sessionfeed.record`, web `useDoneNotifier`); the coordinator's stop at the end of
+  the synthesis is the team's one notice. A message the user sends a worker later is its own turn and notifies.
+- Worker transcripts stay in their own sessions; the team never deletes them. Fixed roles, text missions only.
+
 ## maxxing.sessions.titles  (owner: core)
 - `schedule(sid, current, message) -> Thread | None` - called by `create_session` when no title was given and the
   message is not empty; nothing when config `short_titles` is false (or env `MAXXING_SHORT_TITLES=0`, set by the
@@ -758,6 +789,11 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
 - `MAXXING_STATE` state dir · `MAXXING_CLAUDE_BIN` claude executable (tests: server/tests/fake_claude.py)
 - `MAXXING_PC_BIN_DIR` folder of Harness PC agent binaries (tests, local builds of `pc-agent/`) instead of the release
 - `MAXXING_SPAWN=direct` run turns as detached subprocesses instead of systemd-run units
+- `MAXXING_SKILLS_DIR` where `init` installs the product skills (`cmd_core.skills_target()`, also read by the doctor,
+  uninstall and `blocks.sync_agent_files`) instead of `<claude dir>/skills`. `scripts/dev-local.sh` sets
+  `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
+  session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
+  personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL
