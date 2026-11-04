@@ -13,8 +13,8 @@
  * nothing when a window of the app is focused (the app shows its own notice). `notificationclick` runs an action
  * (a link, or one of the allowed POSTs) or opens the event's page in the running app.
  */
-const VERSION = "66ce430f387e"
-const PRECACHE = ["/assets/index-D3nBEpPy.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-DNmcY05a.js","/assets/vendor-router-B8kuLWb3.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-au51aJO0.js","/assets/vendor-query-CthOliPc.js","/assets/files-Bkxu6BQj.js","/assets/queries-C-KKwjgL.js","/assets/bot-hzNgFhmR.js","/assets/wrench-98LzEh96.js","/assets/sparkles-Dih1XyRy.js","/assets/util-CENY3JN2.js","/assets/file-text-B6PjYiVY.js","/assets/globe-BS9u_1aa.js","/assets/plug-UuAAbA6Q.js","/assets/sensitive-CeFP7Otp.js","/assets/viewerStore-S--vkvDp.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-CsYFAJ10.js","/assets/button---3_H67L.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/index-CRK7vfZ0.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
+const VERSION = "5707cf47e1ed"
+const PRECACHE = ["/assets/index-DtExnjEy.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-BKag_z-E.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-mMA_mJBk.js","/assets/vendor-query-CthOliPc.js","/assets/files-Dykx1icP.js","/assets/queries-CQaA63PA.js","/assets/sessions-7lexRIGR.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-DXzCbDmz.js","/assets/button-CR5yHYCy.js","/assets/sensitive-CGydiTM1.js","/assets/viewerStore-Ce-zegyd.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/util-Co7XooZK.js","/assets/index-BXNbfG7a.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
 const SHELL = `mx-shell-${VERSION}`
 const ASSETS = `mx-assets-${VERSION}`
 const OFFLINE = '/offline.html'

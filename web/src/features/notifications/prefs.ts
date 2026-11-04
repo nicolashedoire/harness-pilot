@@ -3,7 +3,7 @@
 // those ring (column "Sound"). Stored per browser in the UI store (`notifyPrefs`, `soundPrefs`, keys `<kind>` or
 // `source:<name>`); a missing entry is the default below.
 import { categoryOf, needsAttention } from '@/lib/feed'
-import type { FeedCategory, FeedHookKind, FeedLevel, PushPrefs } from '@/lib/types'
+import type { FeedCategory, FeedHookKind, FeedLevel, FeedSettings, PushPrefs } from '@/lib/types'
 
 export type PrefSubject = { kind?: string; level: FeedLevel; source: string; category?: FeedCategory }
 
@@ -77,15 +77,31 @@ export function rowOn(prefs: Record<string, boolean>, r: PrefRow): boolean {
   return prefs[k] ?? browserDefault(k, r.level)
 }
 
-/** Push preferences of this browser's subscription: the built-in kinds as ticked (shown, with sound); the rest
- *  (webhooks, scripts) by level, ringing when a sound is chosen - the server filters by kind or level only; the
- *  service worker applies the per-source sound itself. */
-export function pushPrefs(prefs: Record<string, boolean>, sounds: Record<string, boolean>, soundSet: string): PushPrefs {
+/** A webhook or script row of the matrix (Settings -> Notifications): its source and, for a webhook, its service. */
+export type PushSource = { source: string; hookKind?: FeedHookKind }
+
+/** The webhooks and scripts the matrix lists (a built-in source of the server, e.g. infra, belongs to the System
+ *  rows). */
+export function pushSources(settings: FeedSettings | undefined): PushSource[] {
+  return (settings?.sources ?? [])
+    .filter((s) => !s.builtin && categoryOf({ source: s.source }) === 'webhooks')
+    .map((s) => ({ source: s.source, hookKind: settings?.hooks.find((h) => h.name === s.source)?.kind }))
+}
+
+/** Push preferences of this browser's subscription, as the matrix shows them: the built-in kinds per row, each
+ *  webhook / script per source (Browser and Sound columns); the rest (a source that appears later) by level. */
+export function pushPrefs(prefs: Record<string, boolean>, sounds: Record<string, boolean>, soundSet: string, external: PushSource[] = []): PushPrefs {
   const kinds: PushPrefs['kinds'] = {}
+  const sources: NonNullable<PushPrefs['sources']> = {}
   const audible = soundSet !== 'none'
   for (const r of PREF_ROWS) {
     const enabled = rowOn(prefs, r)
     for (const k of r.kinds) kinds[k] = { enabled, sound: audible && enabled && rowSound(sounds, r) }
   }
-  return { levels: ['warning', 'error'], sound: audible, kinds }
+  for (const { source, hookKind } of external) {
+    const key = sourceKey(source)
+    const enabled = prefs[key] ?? true
+    sources[source] = { enabled, sound: audible && enabled && (sounds[key] ?? sourceSoundDefault(hookKind)) }
+  }
+  return { levels: ['warning', 'error'], sound: audible, kinds, sources }
 }

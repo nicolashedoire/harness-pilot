@@ -30,6 +30,7 @@ build extra widgets: they sit next to it on the dashboard.
 | numbers, lists, charts, status from some data source | widget with `card(ctx)` |
 | a mini-game, a canvas, an interactive or custom-drawn card | HTML widget |
 | a whole screen (form, board, editor, report) | page |
+| a new kind of block inside answers (a map, a kanban board, a calendar drawn in the conversation) | a **block extension** (`block.json` + `block.html`): skill `pilot-blocks` |
 | to change how the product itself behaves (a server rule, a CLI command…) and no extension can do it | a **core customization**: skill `pilot-customize` - never edit the code directory without it |
 
 Extensions survive every update untouched. Say so to the user: they never need to wait for the

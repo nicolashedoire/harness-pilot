@@ -118,6 +118,13 @@ def _num(v: object) -> float:
         return 0.0
 
 
+def _discussion_elapsed(m: dict) -> int:
+    """Seconds the current period of a discussion has run: the time banked by its pauses plus the running span
+    (0 otherwise). Same value as the banked time while it is paused (pauses pop `discussion_started`)."""
+    started = _num(m.get("discussion_started"))
+    return int(_num(m.get("discussion_elapsed")) + (max(0.0, time.time() - started) if started else 0.0))
+
+
 def public(meta: dict) -> dict:
     """Internal meta -> API.md Session."""
     m = _effective(meta)
@@ -129,10 +136,14 @@ def public(meta: dict) -> dict:
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
             "swarm_agents": m.get("swarm_agents"),
+            "team_phase": (m.get("team") or {}).get("phase"),
+            "team_parent": m.get("team_parent"),
             "debate_telegram": bool(m.get("debate_telegram")),
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
+            "discussion_paused_at": m.get("discussion_paused_at") or None,
             "discussion_turns": int(m.get("discussion_turns") or 0),
+            "discussion_elapsed": _discussion_elapsed(m),
             "discussion_turn_limit": m.get("discussion_turn_limit"),
             "discussion_duration_seconds": m.get("discussion_duration_seconds"),
             "context_tokens": m.get("context_tokens"), "context_window": _context_window(m),
@@ -264,8 +275,9 @@ def _enqueue(sid: str, item: dict, *, reset_cron: bool = False) -> bool:
                 m["queue"] = [x for x in m.get("queue") or [] if x.get("kind") != "debate"]
             m["debate_active"] = True
             m["debate_paused"] = False
+            m.pop("discussion_paused_at", None)
             if not was_active:
-                if not was_paused or m.get("discussion_pause_reason") == "limit":
+                if not was_paused or (m.get("discussion_pause_reason") == "limit" and _limit_reached(m)):
                     m["discussion_turns"], m["discussion_elapsed"] = 0, 0
                 m["discussion_started"] = time.time()
             m.pop("discussion_pause_reason", None)
@@ -411,7 +423,13 @@ def send_message(sid: str, text: str, attachments: list[str] | None = None, sour
                  hud: bool = False, voice_path: str | None = None, ref: str | None = None) -> dict:
     """`ref`: an id the caller (Telegram) finds again in the meta of the turn that ran this message
     (`turn_refs` while it runs, `last_turn.refs` once it ended; see live_refs)."""
-    _require(sid)
+    meta = _require(sid)
+    if source != 'team' and (meta.get('team') or {}).get('phase') in ('launching', 'working', 'synthesizing'):
+        raise SessionError(409, 'team_running', 'Wait for the team to finish or stop it before sending a message.')
+    if source != 'team' and meta.get('team_parent'):
+        parent = store.read(meta['team_parent']) or {}
+        if (parent.get('team') or {}).get('phase') in ('launching', 'working'):
+            raise SessionError(409, 'team_running', 'Wait for the team to finish before messaging a worker.')
     files = _check_attachments(attachments)
     audio = _check_voice(voice_path)
     if not (text or "").strip() and not files and not audio:
@@ -467,10 +485,20 @@ def hide_message(sid: str, at: float, hidden: bool = True) -> None:
     store.append_log(sid, {"type": "mx_hide", "ref": at, "hidden": bool(hidden), "at": time.time()})
 
 
-def stop(sid: str) -> None:
+def stop(sid: str, *, _team_internal: bool = False) -> None:
     """Clear the queue and abort the running turn (blocks up to ~10 s for the runner to settle). A message held
     behind an idle-compaction summary (`held`) stays queued: only the summary is cancelled."""
-    _require(sid)
+    meta = _require(sid)
+    if not _team_internal and (meta.get('team') or {}).get('phase') in ('launching', 'working', 'synthesizing'):
+        from . import teams
+        teams.stop(sid)
+        return
+    if not _team_internal and meta.get('team_parent'):
+        parent = store.read(meta['team_parent']) or {}
+        if (parent.get('team') or {}).get('phase') == 'working':
+            from . import teams
+            teams.stop_agent(meta['team_parent'], sid)
+            return
     was_paused = False
     with store.edit(sid) as m:
         if m.get("provider") in ("discussion", "debate"):
@@ -480,6 +508,7 @@ def stop(sid: str) -> None:
             m.pop("debate_pending", None)
             m.pop("discussion_started", None)
             m.pop("discussion_pause_reason", None)
+            m.pop("discussion_paused_at", None)
         dropped = [x for x in m.get("queue") or [] if not x.get("held")]
         m["queue"] = [x for x in m.get("queue") or [] if x.get("held")]
         turns0, running = int(m.get("turns") or 0), m.get("state") == "running"
@@ -524,6 +553,8 @@ def pause_debate(sid: str) -> dict:
             raise SessionError(400, "unsupported", "Only agent conversations can be paused.")
         if not m.get("debate_active") and not m.get("debate_paused"):
             raise SessionError(409, "not_running", "The conversation is not running.")
+        if not m.get("debate_paused") or not m.get("discussion_paused_at"):
+            m["discussion_paused_at"] = time.time()
         m["debate_active"], m["debate_paused"] = False, True
         started = m.pop("discussion_started", None)
         if started:
@@ -548,9 +579,10 @@ def resume_debate(sid: str) -> dict:
         if not m.get("debate_paused"):
             raise SessionError(409, "not_paused", "The conversation is not paused.")
         m["debate_active"], m["debate_paused"] = True, False
-        if m.get("discussion_pause_reason") == "limit":
-            m["discussion_turns"], m["discussion_elapsed"] = 0, 0
+        if m.get("discussion_pause_reason") == "limit" and _limit_reached(m):
+            m["discussion_turns"], m["discussion_elapsed"] = 0, 0    # a new period
         m.pop("discussion_pause_reason", None)
+        m.pop("discussion_paused_at", None)
         m["discussion_started"] = time.time()
         pending = m.pop("debate_pending", None)
         if pending:
@@ -568,6 +600,39 @@ def resume_debate(sid: str) -> dict:
     if start:
         _spawn(sid)
     _resolve_paused(sid)
+    bus.invalidate("sessions")
+    return get_session(sid) or {}
+
+
+def _limit_reached(m: dict) -> bool:
+    """The current period of a discussion has reached one of its limits (replies or running time)."""
+    turns, limit = _num(m.get("discussion_turns")), _num(m.get("discussion_turn_limit"))
+    elapsed, duration = _num(m.get("discussion_elapsed")), _num(m.get("discussion_duration_seconds"))
+    if m.get("discussion_started"):
+        elapsed += max(0.0, time.time() - _num(m["discussion_started"]))
+    return bool(limit and turns >= limit) or bool(duration and elapsed >= duration)
+
+
+UNSET: Any = object()
+
+
+def update_discussion(sid: str, turn_limit: int | None = UNSET, duration_s: int | None = UNSET) -> dict:
+    """New limits for a discussion / debate (running, paused or stopped): `UNSET` keeps one, None removes it. They apply
+    to the current period: a running exchange that already reached one pauses after the current reply (the runner
+    checks after each reply); one paused on its limit continues the period on Resume once no limit is reached."""
+    _require(sid)
+    for v, low, high, msg in ((turn_limit, 1, 200, "The response limit must be between 1 and 200."),
+                              (duration_s, 60, 86400, "The duration must be between 1 minute and 24 hours.")):
+        if v is not UNSET and v is not None and (type(v) is not int or not low <= v <= high):
+            raise SessionError(400, "bad_limit", msg)
+    with store.edit(sid) as m:
+        if m.get("provider") not in ("discussion", "debate"):
+            raise SessionError(400, "unsupported", "Only agent conversations have limits.")
+        if turn_limit is not UNSET:
+            m["discussion_turn_limit"] = turn_limit
+        if duration_s is not UNSET:
+            m["discussion_duration_seconds"] = duration_s
+        m["updated"] = time.time()
     bus.invalidate("sessions")
     return get_session(sid) or {}
 
@@ -705,7 +770,7 @@ def approve_plan(sid: str, text: str = "") -> dict:
 def delete_session(sid: str) -> None:
     """Moves the session to the trash (Settings -> Trash restores it)."""
     m = _require(sid)
-    if m.get("state") == "running":
+    if m.get("state") == "running" or (m.get('team') or {}).get('phase') in ('launching', 'working', 'synthesizing'):
         stop(sid)
     from .. import trash
     trash.trash_session(sid)
@@ -1411,6 +1476,8 @@ async def _watch(interval: float) -> None:
             t0 = time.time()
             stops: list[dict] = []
             ends, changed, ws = await asyncio.to_thread(_scan, primed, stops)
+            from . import teams
+            await asyncio.to_thread(teams.advance_all)
             primed = True
             dirty = dirty or changed
             if ends or dirty and t0 - stamped >= PASS_STAMP_S:

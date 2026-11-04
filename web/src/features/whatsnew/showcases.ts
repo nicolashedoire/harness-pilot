@@ -17,6 +17,7 @@ const DEMO_DIAGRAM = `flowchart LR
 
 export const SHOWCASES: Record<string, TourStep[]> = {
   'backup-preview': [{ id: 'backup-preview', targets: [], title: 'show.backupPreview.title', body: 'show.backupPreview.body', route: (c) => (c.pathname === '/settings/backup' ? null : '/settings/backup') }],
+  'mixed-team': [{ id: 'mixed-team', targets: [], title: 'show.mixedTeam.title', body: 'show.mixedTeam.body', route: sessionsList }],
   look: [{ id: 'look', targets: ['accent'], title: 'show.look.title', body: 'show.look.body', route: (c) => (c.pathname === '/settings/appearance' ? null : '/settings/appearance') }],
   palettes: [{ id: 'palettes', targets: ['color-palette'], title: 'show.palettes.title', body: 'show.palettes.body', route: (c) => (c.pathname === '/settings/appearance' ? null : '/settings/appearance') }],
   'theme-agent': [{ id: 'theme-agent', targets: ['my-themes'], title: 'themegen.show.title', body: 'themegen.show.body', route: (c) => (c.pathname === '/settings/appearance' && !c.search.has('create') ? null : '/settings/appearance') }],
