@@ -1,78 +1,78 @@
-// The Atelier list: the drafts waiting for the user on top (banner), filter chips by kind with their counts, a text
-// filter, then every creation with its state, where it comes from, its version and the next thing to do with it.
+// The Atelier list (GET /api/atelier): the drafts waiting for the user on top (banner), filter chips by type with
+// their counts, a text filter, then every creation with its state, where it comes from, its version and the next
+// thing to do with it, in the server's order (drafts, broken, to review, changed outside, then the newest changes).
 // Desktop: a table. Touch layout: one card per creation.
 import * as React from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { History, Search, TriangleAlert, WandSparkles, X } from 'lucide-react'
+import { Search, TriangleAlert, WandSparkles, X } from 'lucide-react'
 import { useAtelier } from '@/lib/queries'
 import { errorMessage } from '@/lib/api'
-import type { AtelierItem, AtelierKind } from '@/lib/types'
+import type { AtelierItem, AtelierType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { useT } from '@/i18n'
+import { useT, type TKey } from '@/i18n'
 import { useCompact } from '@/stores/media'
-import { Button, EmptyState, Input, Sensitive, Skeleton, Tooltip } from '@/components/ui'
+import { Badge, Button, EmptyState, Input, Sensitive, Skeleton, Tooltip } from '@/components/ui'
 import { Page } from '@/components/shell/Page'
-import { ATELIER_KINDS, KindTile, Origin, StatePill, VersionTag, kindLabel } from '@/features/atelier/parts'
+import { Origin, StatePill, TypeTile, VersionTag, pillState, typeLabel } from '@/features/atelier/parts'
 import { RowAction } from './RowAction'
-import { createHref, itemHref } from './links'
+import { itemHref, newSessionHref } from './links'
 
-type Filter = 'all' | AtelierKind
-const parseKind = (v: string | null): Filter => (ATELIER_KINDS.includes(v as AtelierKind) ? (v as AtelierKind) : 'all')
+/** The chips: one per group of types. Agents and cron jobs only show when there are some. */
+const FILTERS = {
+  widgets: ['widget', 'html_widget', 'pin'],
+  pages: ['page'],
+  blocks: ['block'],
+  themes: ['theme'],
+  skills: ['skill'],
+  customizations: ['customization'],
+  agents: ['agent'],
+  crons: ['cron'],
+} satisfies Record<string, AtelierType[]>
+type Filter = 'all' | keyof typeof FILTERS
+const OPTIONAL = new Set<Filter>(['agents', 'crons'])
+const parseFilter = (v: string | null): Filter => (v && v in FILTERS ? (v as Filter) : 'all')
+const inFilter = (f: Filter, it: AtelierItem) => f === 'all' || (FILTERS[f] as readonly string[]).includes(it.type)
 
 /** Case and accents ignored. */
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
-/** Drafts first (oldest waiting first), then broken ones, then the rest by name. */
-const RANK: Record<string, number> = { draft: 0, error: 1, review: 2 }
-function byAttention(a: AtelierItem, b: AtelierItem) {
-  const ra = RANK[a.state] ?? 3, rb = RANK[b.state] ?? 3
-  if (ra !== rb) return ra - rb
-  if (ra === 0) return (a.origin?.at ?? 0) - (b.origin?.at ?? 0)
-  return a.name.localeCompare(b.name)
-}
+/** The origin that matters on the row: the waiting draft's while there is one. */
+const rowOrigin = (it: AtelierItem) => it.pending?.origin ?? it.origin
+/** The one-line description: the error when broken, else what the agent said it did. */
+const rowSummary = (it: AtelierItem) => (it.state === 'error' && !it.pending && it.error ? it.error.message : rowOrigin(it)?.summary || '')
 
 export function AtelierList() {
   const t = useT()
   const touch = useCompact()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const kind = parseKind(params.get('kind'))
+  const filter = parseFilter(params.get('show'))
   const q = params.get('q') ?? ''
   const { data, isPending, isError, error, refetch, isFetching } = useAtelier()
 
-  const items = React.useMemo(() => [...(data?.items ?? [])].sort(byAttention), [data])
+  const items = React.useMemo(() => data?.items ?? [], [data])
   const counts = React.useMemo(() => {
-    const c: Partial<Record<Filter, number>> = { all: items.length }
-    for (const it of items) c[it.kind] = (c[it.kind] ?? 0) + 1
+    const c = Object.fromEntries((['all', ...Object.keys(FILTERS)] as Filter[]).map((f) => [f, items.filter((it) => inFilter(f, it)).length])) as Record<Filter, number>
     return c
   }, [items])
-  const drafts = items.filter((it) => it.state === 'draft' || it.draft_id)
+  const waiting = items.filter((it) => it.pending)
   const needle = fold(q.trim())
-  const shown = items.filter(
-    (it) => (kind === 'all' || it.kind === kind) && (!needle || fold(`${it.name} ${it.description} ${it.origin?.session_title ?? ''}`).includes(needle)),
-  )
+  const shown = items.filter((it) => inFilter(filter, it) && (!needle || fold(`${it.name} ${it.id} ${rowSummary(it)} ${rowOrigin(it)?.session_title ?? ''}`).includes(needle)))
 
   const set = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(patch)) v == null || v === '' ? p.delete(k) : p.set(k, v)
     setParams(p, { replace: true })
   }
+  const create = () => navigate(newSessionHref(t('atelier.createPrompt')))
 
   const actions = (
-    <>
-      <Tooltip content={touch ? t('atelier.history') : null}>
-        <Button variant="outline" size={touch ? 'icon' : 'sm'} onClick={() => navigate('/atelier/history')} aria-label={t('atelier.history')}>
-          <History />
-          <span className="max-md:hidden">{t('atelier.history')}</span>
-        </Button>
-      </Tooltip>
-      <Tooltip content={touch ? t('atelier.create') : null}>
-        <Button size={touch ? 'icon' : 'sm'} onClick={() => navigate(createHref(t('atelier.createPrompt')))} aria-label={t('atelier.create')} data-testid="atelier-create">
-          <WandSparkles />
-          <span className="max-md:hidden">{t('atelier.create')}</span>
-        </Button>
-      </Tooltip>
-    </>
+    <Tooltip content={touch ? t('atelier.create') : null}>
+      <Button size={touch ? 'icon' : 'sm'} onClick={create} aria-label={t('atelier.create')}>
+        <WandSparkles />
+        <span className="max-md:hidden">{t('atelier.create')}</span>
+      </Button>
+    </Tooltip>
   )
 
   return (
@@ -99,22 +99,27 @@ export function AtelierList() {
           title={t('atelier.empty')}
           description={t('atelier.emptyDesc')}
           action={
-            <Button onClick={() => navigate(createHref(t('atelier.createPrompt')))}>
+            <Button onClick={create}>
               <WandSparkles /> {t('atelier.create')}
             </Button>
           }
         />
       ) : (
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-          {drafts.length > 0 && <PendingBanner drafts={drafts} />}
+          {waiting.length > 0 && <PendingBanner items={waiting} />}
 
           <div className="flex flex-wrap items-center gap-3">
-            <KindChips value={kind} counts={counts} onChange={(k) => set({ kind: k === 'all' ? null : k })} className="max-md:-mx-3 max-md:w-[calc(100%+1.5rem)] max-md:flex-nowrap max-md:overflow-x-auto max-md:px-3 max-md:pb-1" />
+            <FilterChips value={filter} counts={counts} onChange={(f) => set({ show: f === 'all' ? null : f })} className="max-md:-mx-3 max-md:w-[calc(100%+1.5rem)] max-md:flex-nowrap max-md:overflow-x-auto max-md:px-3 max-md:pb-1" />
             <div className="relative ml-auto w-full sm:w-64">
               <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => set({ q: e.target.value })} placeholder={t('atelier.filter')} aria-label={t('atelier.filter')} className="h-8 pl-8 max-md:h-10" />
               {q && (
-                <button type="button" onClick={() => set({ q: null })} aria-label={t('atelier.clearFilter')} className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                <button
+                  type="button"
+                  onClick={() => set({ q: null })}
+                  aria-label={t('atelier.clearFilter')}
+                  className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground before:absolute before:-inset-2.5 before:content-[''] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
                   <X className="size-3.5" />
                 </button>
               )}
@@ -140,49 +145,47 @@ export function AtelierList() {
   )
 }
 
-/** "2 creations are waiting for your validation", their names, Review (the first one). */
-function PendingBanner({ drafts }: { drafts: AtelierItem[] }) {
+/** "2 creations are waiting for your approval", their names, Review (the first one). */
+function PendingBanner({ items }: { items: AtelierItem[] }) {
   const t = useT()
-  const first = drafts[0]
   return (
     <section aria-label={t('atelier.banner.label')} className="flex flex-wrap items-center gap-3 rounded-xl border border-draft/30 bg-draft/8 px-4 py-3 max-md:px-3" data-testid="atelier-pending">
       <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-draft/15 text-draft">
         <WandSparkles className="size-4.5" />
       </span>
       <div className="grid min-w-0 flex-1 gap-0.5">
-        <p className="text-sm font-semibold">{t('atelier.banner.title', { count: drafts.length })}</p>
+        <p className="text-sm font-semibold">{t('atelier.banner.title', { count: items.length })}</p>
         <p className="truncate text-[13px] text-muted-foreground">
-          <Sensitive length={18}>{drafts.map((d) => d.name).join(' · ')}</Sensitive>
+          <Sensitive length={18}>{items.map((d) => d.name).join(' · ')}</Sensitive>
         </p>
       </div>
       <Button size="sm" variant="outline" asChild className="border-draft/40 text-draft hover:bg-draft/10 hover:text-draft max-md:w-full">
-        <Link to={itemHref(first)}>{t('atelier.review')}</Link>
+        <Link to={itemHref(items[0])}>{t('atelier.review')}</Link>
       </Button>
     </section>
   )
 }
 
-function KindChips({ value, counts, onChange, className }: { value: Filter; counts: Partial<Record<Filter, number>>; onChange: (f: Filter) => void; className?: string }) {
+function FilterChips({ value, counts, onChange, className }: { value: Filter; counts: Record<Filter, number>; onChange: (f: Filter) => void; className?: string }) {
   const t = useT()
-  const chips: { id: Filter; label: string }[] = [{ id: 'all', label: t('atelier.kind.all') }, ...ATELIER_KINDS.map((k) => ({ id: k, label: kindLabel(t, k, true) }))]
+  const ids = (['all', ...Object.keys(FILTERS)] as Filter[]).filter((f) => !OPTIONAL.has(f) || counts[f] > 0 || value === f)
   return (
-    <div role="group" aria-label={t('atelier.kinds')} className={cn('flex flex-wrap gap-1.5', className)}>
-      {chips.map((c) => {
-        const on = value === c.id
-        const n = counts[c.id] ?? 0
+    <div role="group" aria-label={t('atelier.filters')} className={cn('flex flex-wrap gap-1.5', className)}>
+      {ids.map((id) => {
+        const on = value === id
         return (
           <button
-            key={c.id}
+            key={id}
             type="button"
             aria-pressed={on}
-            onClick={() => onChange(c.id)}
+            onClick={() => onChange(id)}
             className={cn(
               'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring max-md:h-10 max-md:px-3.5 max-md:text-[13px] pointer-coarse:h-10',
               on ? 'bg-foreground font-semibold text-background' : 'border text-muted-foreground hover:bg-accent hover:text-foreground',
             )}
           >
-            {c.label}
-            <span className={cn('tabular-nums', on ? 'text-background/70' : 'text-muted-foreground/80')}>{n}</span>
+            {t(`atelier.filter.${id}` as TKey)}
+            <span className={cn('tabular-nums', on ? 'text-background/70' : 'text-muted-foreground/80')}>{counts[id]}</span>
           </button>
         )
       })}
@@ -190,7 +193,31 @@ function KindChips({ value, counts, onChange, className }: { value: Filter; coun
   )
 }
 
-const pendingRow = (it: AtelierItem) => it.state === 'draft' || !!it.draft_id
+/** Name, then what it does (or its error); "changed outside the Studio" when its files moved without a review. */
+function NameCell({ item: it, clamp }: { item: AtelierItem; clamp?: boolean }) {
+  const t = useT()
+  const summary = rowSummary(it)
+  const broken = it.state === 'error' && !it.pending && !!it.error
+  return (
+    <div className="grid min-w-0 gap-0.5">
+      <span className="flex min-w-0 items-center gap-2">
+        <Link to={itemHref(it)} className="truncate font-medium hover:underline focus-visible:underline focus-visible:outline-none">
+          <Sensitive length={14}>{it.name}</Sensitive>
+        </Link>
+        {it.unreviewed && (
+          <Tooltip content={t('atelier.unreviewedHint')}>
+            <Badge variant="warning" className="shrink-0">
+              {t('atelier.unreviewed')}
+            </Badge>
+          </Tooltip>
+        )}
+      </span>
+      <p className={cn('text-[13px]', clamp ? 'line-clamp-2' : 'truncate', broken ? 'font-mono text-xs text-destructive' : 'text-muted-foreground')}>
+        {summary ? <Sensitive length={24}>{summary}</Sensitive> : typeLabel(t, it.type)}
+      </p>
+    </div>
+  )
+}
 
 function CreationTable({ items }: { items: AtelierItem[] }) {
   const t = useT()
@@ -201,13 +228,13 @@ function CreationTable({ items }: { items: AtelierItem[] }) {
         <thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
           <tr>
             <th scope="col" className="w-14 py-2 pl-4 font-medium">
-              <span className="sr-only">{t('atelier.col.kind')}</span>
+              <span className="sr-only">{t('atelier.col.type')}</span>
             </th>
             <th scope="col" className="py-2 pr-4 font-medium">{t('atelier.col.name')}</th>
             <th scope="col" className="w-[13.5rem] py-2 pr-4 font-medium">{t('atelier.col.state')}</th>
             <th scope="col" className="w-56 py-2 pr-4 font-medium max-lg:hidden">{t('atelier.col.origin')}</th>
             <th scope="col" className="w-16 py-2 pr-4 font-medium">{t('atelier.col.version')}</th>
-            <th scope="col" className="w-36 py-2 pr-4 text-right font-medium">
+            <th scope="col" className="w-40 py-2 pr-4 text-right font-medium">
               <span className="sr-only">{t('atelier.col.action')}</span>
             </th>
           </tr>
@@ -217,34 +244,27 @@ function CreationTable({ items }: { items: AtelierItem[] }) {
             <tr
               key={`${it.kind}:${it.id}`}
               onClick={(e) => {
-                // the row opens the creation; its links and buttons keep their own action
+                // the row opens the creation; its links, buttons and menu keep their own action
                 if ((e.target as HTMLElement).closest('a,button,[role=menuitem]')) return
                 navigate(itemHref(it))
               }}
-              className={cn('cursor-pointer transition-colors hover:bg-accent/50', pendingRow(it) && 'bg-draft/5 hover:bg-draft/10')}
-              data-state={it.state}
+              className={cn('cursor-pointer transition-colors hover:bg-accent/50', it.pending && 'bg-draft/5 hover:bg-draft/10')}
+              data-state={pillState(it)}
             >
               <td className="py-3 pl-4 align-middle">
-                <KindTile kind={it.kind} className={cn(pendingRow(it) && 'border-draft/30 bg-draft/10 text-draft')} />
-              </td>
-              <td className="min-w-0 py-3 pr-4 align-middle">
-                <Link to={itemHref(it)} className="block truncate font-medium hover:underline focus-visible:underline focus-visible:outline-none">
-                  <Sensitive length={14}>{it.name}</Sensitive>
-                </Link>
-                {it.description && (
-                  <p className="truncate text-[13px] text-muted-foreground">
-                    <Sensitive length={24}>{it.description}</Sensitive>
-                  </p>
-                )}
+                <TypeTile type={it.type} pending={!!it.pending} />
               </td>
               <td className="py-3 pr-4 align-middle">
-                <StatePill state={it.state} className="max-w-full [&>span:last-child]:truncate" />
+                <NameCell item={it} />
+              </td>
+              <td className="py-3 pr-4 align-middle">
+                <StatePill state={pillState(it)} />
               </td>
               <td className="py-3 pr-4 align-middle max-lg:hidden">
-                <Origin origin={it.origin} />
+                <Origin origin={rowOrigin(it)} />
               </td>
               <td className="py-3 pr-4 align-middle">
-                <VersionTag version={it.version} />
+                <VersionTag version={it.version} label={it.version_label} />
               </td>
               <td className="py-3 pr-4 text-right align-middle">
                 <RowAction item={it} />
@@ -259,30 +279,20 @@ function CreationTable({ items }: { items: AtelierItem[] }) {
 
 function CreationCard({ item: it }: { item: AtelierItem }) {
   return (
-    <li className={cn('grid gap-3 rounded-xl border bg-card p-3.5', pendingRow(it) && 'border-draft/30 bg-draft/5')} data-state={it.state}>
+    <li className={cn('grid gap-3 rounded-xl border bg-card p-3.5', it.pending && 'border-draft/30 bg-draft/5')} data-state={pillState(it)}>
       <div className="flex items-start gap-3">
-        <KindTile kind={it.kind} className={cn(pendingRow(it) && 'border-draft/30 bg-draft/10 text-draft')} />
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          <Link to={itemHref(it)} className="flex min-w-0 items-baseline gap-2 font-medium">
-            <span className="truncate">
-              <Sensitive length={14}>{it.name}</Sensitive>
-            </span>
-            <VersionTag version={it.version} />
-          </Link>
-          {it.description && (
-            <p className="line-clamp-2 text-[13px] text-muted-foreground">
-              <Sensitive length={24}>{it.description}</Sensitive>
-            </p>
-          )}
+        <TypeTile type={it.type} pending={!!it.pending} />
+        <div className="min-w-0 flex-1">
+          <NameCell item={it} clamp />
         </div>
+        {it.version != null && <VersionTag version={it.version} label={it.version_label} className="pt-0.5" />}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <StatePill state={it.state} />
-        <Origin origin={it.origin} className="min-w-0 flex-1" />
+        <StatePill state={pillState(it)} />
+        <Origin origin={rowOrigin(it)} className="min-w-0 flex-1" />
+        {!it.pending && it.state !== 'error' && it.state !== 'review' && <RowAction item={it} />}
       </div>
-      <div className="flex justify-end empty:hidden">
-        <RowAction item={it} wide />
-      </div>
+      {(it.pending || it.state === 'error' || it.state === 'review') && <RowAction item={it} wide />}
     </li>
   )
 }
