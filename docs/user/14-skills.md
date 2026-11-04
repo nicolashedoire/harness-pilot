@@ -59,9 +59,9 @@ The product skills used to start with `maxxing-`. They now start with `pilot-`, 
 The update installs the new names and removes the old copies by itself (an old copy it did not install is
 moved to the trash). It also replaces the old names in the lines of your workspace `CLAUDE.md` files that are
 still the text the product wrote, and in the prompts of the default jobs you never edited. Text you wrote
-yourself - your own notes, jobs or skills that name an old skill - is left as it is: Claude still finds the
-skill most of the time, but ask it to "replace the old skill names in my notes and jobs" to tidy up (it shows
-you each change first).
+yourself - your own notes, jobs or skills that name an old skill - is left as it is: after the update,
+Claude looks for the old names in it and offers each change (nothing changes without your yes). You can also
+ask it any time to "replace the old skill names in my notes and jobs".
 
 ## Adding your own skills
 
