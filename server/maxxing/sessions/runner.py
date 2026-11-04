@@ -192,14 +192,17 @@ class Runner:
 
     def _take(self, m: dict, q: list, cfg: dict, now: float) -> dict:
         """Pop the queue head (under the session lock), with the summary turn first when the return is worth it."""
-        smart = resume.candidate(m, q[0], cfg, now) if m.get('provider', 'claude') == 'claude' else None
+        # Claude and Codex threads can be summarized; debates and agent plugins (adapter-owned threads) cannot.
+        provider = str(m.get("provider") or "claude")
+        summarizable = provider not in ("discussion", "debate") and not provider.startswith("plugin:")
+        smart = resume.candidate(m, q[0], cfg, now) if summarizable else None
         item = q.pop(0)
         item.pop("held", None)
         if smart:                                      # a summary written for this message (smart resume)
             idle = (resume.away_text(smart[0]), smart[1] // 1000)
             prompt = resume.summary_prompt(item.get("text") or "")
         else:                                          # the idle rule: a plain summary
-            idle = _idle_compact(m, item, cfg, now) if m.get('provider', 'claude') == 'claude' else None
+            idle = _idle_compact(m, item, cfg, now) if summarizable else None
             prompt = SUMMARY_PROMPT
         if idle:                                       # the summary runs first, the message waits at the head
             q.insert(0, {**item, "held": True})        # a Stop cancels the summary, never the user's message
@@ -346,6 +349,8 @@ class Runner:
     def _plugin_turn(self, actor: str, item: dict, meta: dict, cfg: dict, cwd: str, kind: str) -> str | None:
         adapter = agent_providers.get(actor)
         plan = bool(meta.get('plan_mode')) and kind not in ('compact', 'handoff')
+        if meta.get('plan_ready'):                     # a new turn replaces the plan waiting for validation
+            store.update(self.sid, plan_ready=False)
         if not adapter:
             attempt = Attempt(rc=1, stderr='The agent plugin is unavailable or disabled.')
         elif plan and 'plan' not in adapter['capabilities']:
@@ -365,6 +370,8 @@ class Runner:
             env['PILOT_AGENT_PROVIDER'] = actor
             attempt = self.attempt(adapter['command'], json.dumps(request) + '\n', cwd, env,
                                    meta.get('timeout_s') or 1800, hold=False, protocol='pilot')
+            if attempt.stopped:
+                self.note("Stopped." if not attempt.timed_out else "Turn stopped (timeout).", "warn")
         store.append_log(self.sid, {'type': 'mx_done', 'code': attempt.rc, 'stderr': attempt.stderr[-STDERR_TAIL:],
                                    'stopped': attempt.stopped and not attempt.timed_out,
                                    'timed_out': attempt.timed_out, 'at': time.time()})
@@ -642,7 +649,7 @@ class Runner:
         a.rc = p.wait()
         if protocol in ('codex', 'pilot') and a.rc == 0 and a.result is None and not self.stop_flag.is_set():
             a.rc = 1
-            err_chunks.append(f"{protocol} exited without a turn result.")
+            err_chunks.append(("Codex" if protocol == "codex" else "The agent plugin") + " exited without a turn result.")
         if a.rc in (-9, 137) and oom_before is not None:
             a.oom = (_oom_kills() or 0) > oom_before
         if timer:

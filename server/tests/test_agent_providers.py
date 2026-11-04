@@ -146,3 +146,14 @@ def test_large_valid_plugin_counters_finish_a_live_turn(client,topic,mx):
     result=wait_idle(client,sid)
     assert result['state']=='idle',result
     assert store.read(sid)['provider_usage']['plugin:local-agent']['input']==10**12
+
+
+def test_idle_summary_still_applies_to_codex_but_never_to_plugins_or_debates(monkeypatch):
+    from maxxing.sessions import runner
+    r = runner.Runner('idle-check')
+    monkeypatch.setattr(r, 'note', lambda *a, **k: None)
+    cfg = {'idle_compact_tokens': 5000, 'idle_compact_after_s': 3600}
+    for provider, summarized in (('claude', True), ('codex', True), ('plugin:local-agent', False), ('debate', False)):
+        m = {'provider': provider, 'context_tokens': 25000, 'finished_at': 1000.0, 'fresh': False}
+        item = r._take(m, [{'kind': 'user', 'source': 'web', 'text': 'Back again'}], cfg, 1000 + 7200)
+        assert (item.get('kind') == 'compact') is summarized, provider
