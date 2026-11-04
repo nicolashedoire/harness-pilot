@@ -1535,6 +1535,111 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
+   sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
+const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
+  ['codex', 'Independently examine risks, alternatives and how to verify the result.']]
+const TEAM_REPORTS = {
+  claude: 'Approach in four steps: list what the change touches, make it behind a flag, migrate the existing data, then remove the old path. The first two steps fit in one afternoon.',
+  codex: 'Main risk: the data migration cannot be undone once the old path is removed. Keep a backup and a dry run that counts the rows to change; verify with the existing tests plus one end-to-end check.',
+}
+const teamsState = () => (S.teams ||= {}) // coordinator id -> { phase, goal, agents: [{ id, provider, role, stopped }] }
+const teamOf = (sid) => { findSession(sid); return teamsState()[sid] || fail(404, 'not_found', 'Team not found') }
+function teamSetPhase(sid, phase) {
+  teamsState()[sid].phase = phase
+  const s = S.sessions.find((x) => x.id === sid)
+  if (s) s.team_phase = phase
+  bus('sessions', 'workspace')
+}
+// One turn with a fixed answer (startTurn's generic answer would ignore the assignment); `done` runs when it ends.
+function teamTurn(s, text, answer, ms, done) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model
+  s.state = 'running'; s.error = null; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'team' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, ms, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: answer.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: answer, at: now() },
+      { type: 'result', ok: true, cost_usd: s.provider === 'codex' ? 0 : 0.06, duration_ms: ms, model, usage: { input: 2400, output: 380, cache_read: 16000, cache_write: 400 }, at: now() })
+    bus('sessions', 'workspace')
+    done()
+  })
+  bus('sessions', 'workspace')
+}
+function teamAdvance(sid) { // like teams.advance: once no worker runs, the coordinator synthesises
+  const team = teamsState()[sid]
+  if (!team || team.phase !== 'working') return
+  const workers = team.agents.map((a) => [a, S.sessions.find((x) => x.id === a.id)])
+  if (workers.some(([, w]) => w && w.state === 'running')) return
+  const reports = workers.map(([a, w]) => `${a.provider.toUpperCase()} — ${a.role}\n${a.stopped ? '[Stopped by the user; no final report.]' : w ? w.last_text || '[No final report.]' : '[Agent failed or its session is missing.]'}`)
+  const coordinator = findSession(sid)
+  teamSetPhase(sid, 'synthesizing')
+  const name = (a) => (a.provider === 'codex' ? 'Codex' : 'Claude Code')
+  const points = { claude: '- **Plan** (Claude Code): flag the change, migrate the data, then remove the old path.', codex: '- **Risks** (Codex): the migration is one-way; keep a backup and a dry run first.' }
+  const stopped = team.agents.filter((a) => a.stopped)
+  const answer = `**Synthesis of the team's analyses**\n\n${team.agents.filter((a) => !a.stopped).map((a) => points[a.provider]).join('\n')}\n\n${stopped.length ? `Note: ${stopped.map(name).join(' and ')} was stopped before reporting, so its part is missing.\n\n` : ''}Recommendation: start with a dry run, then the flagged change.`
+  teamTurn(coordinator, 'The two independent team members have finished. Synthesize their findings for the user.\n\nReports:\n' + reports.join('\n\n---\n\n'), answer, 2600,
+    () => { if (team.phase === 'synthesizing') teamSetPhase(sid, 'completed') })
+}
+const teamSession = (path, title, provider) => {
+  const t = now()
+  const s = { id: uuid(), title, path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null,
+    context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null, provider, team_phase: null, team_parent: null, team_turn: false }
+  S.sessions.push(s); S.events[s.id] = []
+  return s
+}
+const teamOut = (sid) => {
+  const team = teamOf(sid)
+  return { id: sid, phase: team.phase, agents: team.agents.map((a) => {
+    const session = S.sessions.find((x) => x.id === a.id) || null
+    return { ...a, state: a.stopped ? 'stopped' : session ? session.state : 'missing', session }
+  }) }
+}
+R('POST', '/api/teams', ({ body }) => {
+  if (typeof body.path !== 'string') fail(422, 'invalid', 'path is required')
+  const goal = String(body.message || '').trim()
+  if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
+  const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
+  addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
+  const team = { phase: 'launching', goal, agents: [] }
+  teamsState()[parent.id] = team
+  for (const [provider, role] of TEAM_ROLES) {
+    const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
+    Object.assign(child, { team_parent: parent.id, team_turn: true })
+    team.agents.push({ id: child.id, provider, role, stopped: false })
+    teamTurn(child, `You are an independent member of a mixed Claude and Codex team. Analyze the mission from your assigned perspective and report your findings to the coordinator.\n\nYour assignment: ${role}\n\nMission:\n${goal}`,
+      TEAM_REPORTS[provider], provider === 'codex' ? 5200 : 3800, () => teamAdvance(parent.id))
+  }
+  teamSetPhase(parent.id, 'working')
+  return parent
+})
+R('GET', '/api/teams/:sid', ({ params }) => teamOut(params.sid))
+R('POST', '/api/teams/:sid/agents/:agent/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  const agent = team.agents.find((a) => a.id === params.agent) || fail(404, 'not_found', 'Team agent not found')
+  if (team.phase !== 'working') fail(409, 'not_running', 'The team is not working.')
+  const child = S.sessions.find((x) => x.id === agent.id)
+  if (!child || child.state !== 'running') fail(409, 'not_running', 'The agent is not running.')
+  agent.stopped = true
+  clearTimers(child); child.state = 'idle'; child.updated = now()
+  addEvents(child, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  teamAdvance(params.sid) // the other worker may already be done
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+R('POST', '/api/teams/:sid/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  teamSetPhase(params.sid, 'stopped')
+  for (const s of [...team.agents.map((a) => S.sessions.find((x) => x.id === a.id)), S.sessions.find((x) => x.id === params.sid)]) {
+    if (!s || s.state !== 'running') continue
+    const agent = team.agents.find((a) => a.id === s.id)
+    if (agent) agent.stopped = true
+    clearTimers(s); s.state = 'idle'; s.updated = now()
+    addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  }
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
