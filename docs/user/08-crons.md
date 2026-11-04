@@ -17,7 +17,7 @@ Click **New job** and fill in:
 | Name | short label |
 | Schedule | cron expression; the editor shows it in words and lists the next runs |
 | Type | **Shell** (a command run with bash) or **Claude** (a prompt sent to a session in a topic) |
-| Command | shell: e.g. `/root/maxxing/projects/acme/scripts/report.sh` |
+| Command | shell: e.g. `projects/acme/scripts/report.sh`, relative to the workspace |
 | Topic, prompt, model | Claude: where the session runs, what to do, which model |
 | Reuse session | Claude: keep one session across runs (it accumulates context) instead of a new session each time |
 | Notify | Telegram report: never, on failure (default), always |
