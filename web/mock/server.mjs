@@ -1207,7 +1207,7 @@ function R(method, pattern, handler, opts = {}) {
   const keys = []
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }).replace(/\*$/, '(.*)') + '$')
   if (pattern.endsWith('*')) keys.push('rest')
-  routes.push({ method, re, keys, handler, public: !!opts.public })
+  routes.push({ method, re, keys, handler, public: !!opts.public, csrf: opts.csrf !== false })
 }
 
 /* ---- auth */
@@ -1222,7 +1222,7 @@ R('POST', '/api/auth/setup', ({ body, res }) => {
   return { ok: true }
 }, { public: true })
 
-R('POST', '/api/auth/login', async ({ body, res }) => {
+R('POST', '/api/auth/login', async ({ req, body, res }) => {
   if (S.setup_required) fail(409, 'setup_required', 'Run the setup first')
   const t = now()
   if (S.lockUntil > t) fail(429, 'throttled', `Too many attempts, retry in ${Math.ceil(S.lockUntil - t)} s`)
@@ -1235,6 +1235,7 @@ R('POST', '/api/auth/login', async ({ body, res }) => {
     fail(401, 'bad_password', 'Wrong password')
   }
   S.failStreak = 0
+  if (S.telegram.settings.two_factor && !tfTrusted(req)) return { ok: false, two_factor: tfChallenge('login') }
   setCookie(res, newToken())
   return { ok: true }
 }, { public: true })
@@ -1249,6 +1250,52 @@ R('POST', '/api/auth/password', ({ body }) => {
   if (body.current !== S.password) fail(400, 'bad_password', 'Current password is wrong')
   if (!body.new || String(body.new).length < 8) fail(422, 'invalid', 'Password must be at least 8 characters')
   S.password = body.new
+  return { ok: true }
+})
+
+/* ---- two-step sign-in (server/maxxing/twofactor.py): with Telegram setting `two_factor` on, a password sign-in from an
+   untrusted browser waits for Allow in Telegram or the code it shows. Mock: Allow is "pressed" 4 s after the challenge
+   is created, and the code is 246810 (5 wrong codes expire the challenge). */
+const TF_CODE = '246810'
+const tfState = () => (S.twoFactor ||= { deviceKey: crypto.randomBytes(12).toString('hex'), challenges: {} })
+function tfChallenge(kind) { // kind: login | enable
+  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending' }
+  tfState().challenges[c.id] = c
+  const g = GEN
+  setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
+  return { challenge: c.id, expires_in: 300 }
+}
+const tfTrusted = (req) => (req.headers.cookie || '').split(/;\s*/).includes(`mx_device=${tfState().deviceKey}`)
+const tfDeviceCookie = () => `mx_device=${tfState().deviceKey}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=2592000`
+R('POST', '/api/auth/two-factor', ({ req, res, body, authed }) => {
+  const c = tfState().challenges[body.challenge]
+  if (!c || c.status === 'expired' || now() - c.at > 360) fail(410, 'expired', 'This sign-in request expired: sign in again')
+  if (c.kind === 'enable' && !authed) fail(401, 'auth_required', 'Please log in')
+  if (body.code !== undefined && body.code !== null && c.status === 'pending') {
+    if (body.code !== TF_CODE) {
+      c.tries += 1
+      if (c.tries >= 5) { c.status = 'expired'; fail(410, 'expired', 'Too many wrong codes: sign in again') }
+      sendJson(res, 400, { error: 'bad_code', message: 'Wrong code', tries_left: 5 - c.tries })
+      return RAW
+    }
+    c.status = 'approved'
+  }
+  if (c.status === 'pending') return { ok: false, status: 'pending', expires_in: Math.max(0, Math.round(300 - (now() - c.at))) }
+  delete tfState().challenges[c.id] // once only
+  const trust = body.trust !== false || c.kind === 'enable'
+  if (c.kind === 'enable') { S.telegram.settings.two_factor = true; bus('telegram') }
+  res.setHeader('Set-Cookie', [...(c.kind === 'login' ? [`mx_session=${newToken()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`] : []), ...(trust ? [tfDeviceCookie()] : [])])
+  return { ok: true, status: 'approved' }
+}, { public: true })
+R('PUT', '/api/auth/two-factor', ({ body }) => {
+  if (!body.enabled) { S.telegram.settings.two_factor = false; tfState().deviceKey = crypto.randomBytes(12).toString('hex'); bus('telegram'); return { ok: true, enabled: false } }
+  if (!S.telegram.chat) fail(409, 'not_linked', 'Link a Telegram chat first')
+  if (S.telegram.settings.two_factor) return { ok: true, enabled: true }
+  return { ok: false, two_factor: tfChallenge('enable') }
+})
+R('POST', '/api/auth/two-factor/forget-browsers', ({ res }) => {
+  tfState().deviceKey = crypto.randomBytes(12).toString('hex')
+  res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
   return { ok: true }
 })
 
@@ -1535,6 +1582,53 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- side question, hidden messages, summary to memory (api/sessions.py): canned answers, real checks */
+const sideBusy = new Set()
+R('POST', '/api/sessions/:id/ask', async ({ params, body }) => {
+  const s = findSession(params.id), question = String(body.question || '').trim()
+  if (!question) fail(422, 'invalid', 'question is required')
+  if (!s.turns) fail(409, 'no_thread', 'This session has no answer yet')
+  if (sideBusy.has(s.id)) fail(409, 'busy', 'A side question is already running for this session')
+  if (sideBusy.size >= 2) fail(429, 'busy', 'Two side questions are already running')
+  sideBusy.add(s.id)
+  try { await sleep(1500) } finally { sideBusy.delete(s.id) }
+  return { answer: `From this conversation (“${s.title}”): ${s.last_text ? s.last_text.slice(0, 160) : 'nothing has been decided yet.'}\n\nNothing was changed and this answer is not saved in the thread.`, cost_usd: 0.012, duration_ms: 1500 }
+})
+R('POST', '/api/sessions/:id/hide', ({ params, body }) => {
+  const s = findSession(params.id), hidden = body.hidden !== false
+  const evs = S.events[s.id] || []
+  if (!evs.some((e) => e.type === 'user' && e.at === body.at)) fail(404, 'not_found', 'No user message at this time')
+  const last = evs.filter((e) => e.type === 'hide' && e.ref === body.at).at(-1)
+  if ((last ? last.hidden : false) !== hidden) addEvents(s, { type: 'hide', ref: body.at, hidden, at: now() })
+  return { ok: true }
+})
+const summaryBusy = new Set()
+R('POST', '/api/sessions/:id/summary', async ({ params }) => {
+  const s = findSession(params.id)
+  if (!(S.events[s.id] || []).some((e) => e.type === 'assistant' || e.type === 'user')) fail(400, 'empty_session', 'Nothing to summarize yet')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  if (summaryBusy.has(s.id)) fail(409, 'summary_busy', 'A summary is already being written for this session')
+  if (summaryBusy.size >= 2) fail(429, 'summary_limit', 'Two summaries are already being written')
+  summaryBusy.add(s.id)
+  try { await sleep(2200) } finally { summaryBusy.delete(s.id) }
+  return { summary: `The conversation “${s.title}” reviewed the current state and agreed on the next steps.${s.last_text ? ` Latest answer: ${s.last_text.slice(0, 140)}` : ''}`,
+    decisions: ['Keep the current structure and change one thing at a time.', 'Check the result on a phone before publishing.'],
+    actions: [{ title: `Follow up: ${s.title.slice(0, 60)}`, notes: 'Review the proposed change and confirm it in this topic.' }, { title: 'Add a test for the fixed case', notes: '' }], truncated: false }
+})
+R('POST', '/api/sessions/:id/summary/memory', ({ params, body }) => {
+  const s = findSession(params.id), text = String(body.text || '').trim()
+  if (!text || text.length > 12000) fail(400, 'empty_memory', 'Nothing to add to the memory')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  const file = `${ROOT}/${s.path}/memory.md`, node = S.fs.get(file)
+  if (!node) fail(409, 'memory_unavailable', 'The topic has no memory.md')
+  if (node.type !== 'file') fail(409, 'invalid_memory', 'memory.md is not a regular file')
+  const next = `${String(node.content || '').replace(/\n*$/, '\n')}\n## Discussion — ${new Date().toISOString().slice(0, 10)}\n\n${text}\n`
+  if (Buffer.byteLength(next) > 32768) fail(409, 'memory_full', 'memory.md would pass 32 KiB')
+  fsAdd(S, file, next, now(), 'text/markdown')
+  bus('workspace')
+  return { ok: true }
+})
+
 /* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
    sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
 const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
@@ -1658,12 +1752,48 @@ R('POST', '/api/teams/:sid/stop', ({ params }) => {
   return teamOut(params.sid)
 })
 
+/* ---- discussion presets (server/maxxing/sessions/presets.py): saved roles of Claude Code + Codex conversations */
+const presetsState = () => (S.discussionPresets ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? [
+  { id: uuid(), name: 'Builder and reviewer', claude_role: 'Propose the change and write it step by step.', codex_role: 'Review each step: risks, missing tests, simpler options.' },
+  { id: uuid(), name: 'Two copywriters', claude_role: 'Write the first draft in a warm, plain tone.', codex_role: 'Tighten the draft: shorter sentences, no jargon, keep the facts.' },
+] : [])
+R('GET', '/api/discussion-presets', () => presetsState())
+R('POST', '/api/discussion-presets', ({ body }) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name || body.name.length > 80 || String(body.claude_role || '').length > 2000 || String(body.codex_role || '').length > 2000) fail(422, 'invalid', 'name: 1-80 characters, roles: 2000 at most')
+  if (presetsState().length >= 100) fail(400, 'bad_request', 'A maximum of 100 configurations can be saved.')
+  const preset = { id: uuid(), name, claude_role: String(body.claude_role || '').trim(), codex_role: String(body.codex_role || '').trim() }
+  S.discussionPresets.push(preset)
+  return preset
+})
+R('DELETE', '/api/discussion-presets/:id', ({ params }) => {
+  if (!presetsState().some((p) => p.id === params.id)) fail(404, 'not_found', 'Configuration not found')
+  S.discussionPresets = S.discussionPresets.filter((p) => p.id !== params.id)
+  return { ok: true }
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
   busClients.add(res)
   req.on('close', () => busClients.delete(res))
   return RAW
+})
+
+/* ---- space labels (server/maxxing/api/space_labels.py): the owner's personal / agents / shared marks on folders and
+   files, keyed by absolute path; `unclassified` removes the mark */
+const labelsState = () => (S.spaceLabels ||= S.scenario === 'ready' || S.scenario === 'maxxing'
+  ? { [`${ROOT}/projects/personal`]: 'personal', [`${ROOT}/projects/ops`]: 'agents' } : {})
+R('GET', '/api/space-labels', () => Object.fromEntries(Object.entries(labelsState()).filter(([p]) => S.fs.has(p))))
+R('PUT', '/api/space-labels', ({ body }) => {
+  if (!['personal', 'agents', 'shared', 'unclassified'].includes(body.label)) fail(422, 'invalid', 'label must be personal, agents, shared or unclassified')
+  const p = typeof body.path === 'string' && body.path.startsWith('/') ? path.posix.normalize(body.path).replace(/(.)\/$/, '$1') : fail(400, 'bad_path', 'An absolute path is required.')
+  const files = S.settings.files_root || ROOT
+  if (![ROOT, files].some((r) => p === r || p.startsWith(r + '/'))) fail(403, 'forbidden', 'Path is outside the workspace and files root.')
+  if (!S.fs.has(p)) fail(404, 'not_found', 'Item not found.')
+  if (body.label === 'unclassified') delete labelsState()[p]; else labelsState()[p] = body.label
+  bus('space-labels')
+  return { path: p, label: body.label }
 })
 
 /* ---- files */
@@ -1774,6 +1904,51 @@ R('GET', '/api/files/search', ({ q }) => {
   return out.sort((a, b) => a.path.length - b.path.length).slice(0, 50)
 })
 
+/* ---- trash (server/maxxing/trash.py): deleted files, folders, topics, projects and sessions, kept 30 days. The mock's
+   own delete routes still remove at once; the ready scenarios seed a few items that restore into the mock state. */
+function trashState() {
+  if (S.trash) return S.trash
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  const item = (kind, name, original, ago, size, extra = {}) => ({ id: crypto.randomBytes(8).toString('hex'), kind, name, original, at: t - ago, size, sessions: 0, restorable: true, ...extra })
+  S.trash = ready ? [
+    item('file', 'old-draft.md', 'projects/acme/topics/blog/drafts/old-draft.md', 2 * HOUR, 2140),
+    item('session', 'Try a dark hero image', topicPath('acme', 'website'), 26 * HOUR, 48200),
+    item('topic', 'newsletter', 'projects/acme/topics/newsletter', 3 * DAY, 18400, { sessions: 2 }),
+    item('previous_versions', 'Backup: previous versions', '.backup/previous', 9 * DAY, 3200000, { restorable: false }),
+  ] : []
+  return S.trash
+}
+const trashFind = (id) => trashState().find((x) => x.id === id) || fail(404, 'not_found', 'Not in the trash')
+R('GET', '/api/trash', () => ({ items: [...trashState()].sort((a, b) => b.at - a.at), keep_days: 30 }))
+R('POST', '/api/trash/:id/restore', ({ params }) => {
+  const it = trashFind(params.id)
+  if (!it.restorable) fail(409, 'not_restorable', 'Previous versions are restored from the backup, not from the trash')
+  let to = it.original, sessions = 0
+  if (it.kind === 'file' || it.kind === 'folder') {
+    if (S.fs.has(`${ROOT}/${to}`)) to = to.replace(/(\.[^./]+)?$/, ' (restored)$1')
+    if (it.kind === 'file') fsAdd(S, to, '# Old draft\n\nRestored from the trash.\n', now(), 'text/markdown'); else fsMkdirp(S, `${ROOT}/${to}`)
+  } else if (it.kind === 'topic' || it.kind === 'project') {
+    const [, project, , topic] = to.split('/')
+    const p = S.projects.find((x) => x.name === project)
+    if (it.kind === 'topic' && p) {
+      let name = topic, n = 0
+      while (p.topics.some((x) => x.name === name)) name = `${topic}-restored${++n > 1 ? '-' + n : ''}` // -restored, -restored-2…
+      p.topics.push({ name, description: '' }); to = topicPath(project, name); fsMkdirp(S, `${ROOT}/${to}`)
+      sessions = it.sessions
+    }
+  } else if (it.kind === 'session') {
+    const s = { id: uuid(), title: it.name, path: S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === to)) ? to : '', state: 'idle', queue: 0,
+      created: it.at - HOUR, updated: it.at, turns: 2, cost_usd: 0.18, model: '', real_model: S.claude.default_model, context_tokens: 24000, context_window: 1000000,
+      archived: false, notify: false, source: 'web', unread: false, last_text: 'The dark hero reads well on desktop; on mobile the text needs a stronger shadow.', error: null }
+    S.sessions.push(s); S.events[s.id] = []; to = s.path; sessions = 1
+  }
+  S.trash = S.trash.filter((x) => x !== it)
+  bus('workspace', 'sessions')
+  return { ok: true, kind: it.kind, restored_to: to, sessions }
+})
+R('DELETE', '/api/trash/:id', ({ params }) => { const it = trashFind(params.id); S.trash = S.trash.filter((x) => x !== it); return { ok: true } })
+R('DELETE', '/api/trash', () => { const deleted = trashState().length; S.trash = []; return { ok: true, deleted } })
+
 /* ---- tasks */
 const TASK_FIELDS = ['title', 'notes', 'status', 'priority', 'due', 'project_id', 'topic_path', 'labels', 'order']
 function applyTask(tk, body) {
@@ -1842,6 +2017,73 @@ R('DELETE', '/api/tasks/:id', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- voice (server/maxxing/voice.py): speech-to-text on the server (local faster-whisper or Groq / OpenAI keys). The
+   mock never decodes audio: every recording gives the same sentence. An install takes about 6 s. */
+const VOICE_MODELS = [['tiny', 75], ['base', 142], ['small', 466], ['medium', 1530]]
+function voiceState() {
+  if (S.voice) return S.voice
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.voice = { settings: { engine: ready ? 'local' : 'off', model: 'small', language: 'auto', auto_send: false, direct: true }, installed: ready,
+    present: new Set(ready ? ['small'] : []), install: { state: 'idle', step: null, progress: null, model: null, message: '', error: null, at: null } }
+  return S.voice
+}
+function voiceStatus() {
+  const v = voiceState(), st = v.settings, inst = v.install
+  if (inst.state === 'running') { // a background job: dependencies first (when missing), then the model download
+    const p = Math.min(1, (now() - inst.at) / 6)
+    if (p >= 1) { v.installed = true; v.present.add(inst.model); Object.assign(inst, { state: 'done', step: null, progress: 1, message: `Model ${inst.model} ready` }) }
+    else Object.assign(inst, v.installed || p > 0.4 ? { step: 'model', progress: p, message: `Downloading ${inst.model}…` } : { step: 'deps', progress: null, message: 'Installing faster-whisper…' })
+  }
+  const keys = { groq: S.secrets.some((s) => s.name === 'GROQ_API_KEY'), openai: S.secrets.some((s) => s.name === 'OPENAI_API_KEY') }
+  const reason = st.engine === 'off' ? 'off' : st.engine === 'local' ? (v.installed && v.present.has(st.model) ? null : 'not_installed') : keys[st.engine] ? null : 'no_key'
+  return { settings: { ...st }, ready: !reason, reason, ffmpeg: true,
+    local: { installed: v.installed, loaded: v.installed && reason === null && st.engine === 'local' ? st.model : null, recommended: 'small', ram_gb: 7.8, cpus: 4,
+      models: VOICE_MODELS.map(([id, size_mb]) => ({ id, size_mb, present: v.present.has(id) })) },
+    keys, key_names: { groq: 'GROQ_API_KEY', openai: 'OPENAI_API_KEY' }, install: { ...inst }, max_seconds: 900 }
+}
+const formField = (raw, name) => { const m = raw.toString('latin1').match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`)); return m ? Buffer.from(m[1], 'latin1').toString('utf8') : null }
+R('GET', '/api/voice', () => voiceStatus())
+R('PUT', '/api/voice/settings', ({ body }) => {
+  const st = voiceState().settings
+  if (body.engine !== undefined && !['off', 'local', 'groq', 'openai'].includes(body.engine)) fail(422, 'invalid', 'engine')
+  if (body.model !== undefined && !VOICE_MODELS.some(([id]) => id === body.model)) fail(422, 'invalid', 'model')
+  if (body.language !== undefined && body.language !== 'auto' && !/^[a-z]{2,3}$/.test(body.language)) fail(400, 'invalid_language', 'Use auto or an ISO 639-1 code')
+  for (const k of ['engine', 'model', 'language', 'auto_send', 'direct']) if (body[k] !== undefined) st[k] = body[k]
+  return { ok: true, settings: { ...st } }
+})
+R('POST', '/api/voice/install', ({ body }) => {
+  const v = voiceState()
+  if (v.install.state === 'running') fail(409, 'busy', 'An install is already running')
+  const model = body.model || v.settings.model
+  if (!VOICE_MODELS.some(([id]) => id === model)) fail(422, 'invalid', 'model')
+  v.install = { state: 'running', step: v.installed ? 'model' : 'deps', progress: v.installed ? 0 : null, model, message: '', error: null, at: now() }
+  return voiceStatus().install
+})
+R('DELETE', '/api/voice/models/:model', ({ params }) => {
+  if (!VOICE_MODELS.some(([id]) => id === params.model)) fail(422, 'invalid', 'model')
+  voiceState().present.delete(params.model)
+  return { ok: true }
+})
+R('POST', '/api/voice/transcribe', async ({ req, rawBody }) => {
+  const status = voiceStatus()
+  if (status.reason === 'off') fail(409, 'voice_off', 'Voice messages are turned off in Settings')
+  if (status.reason) fail(503, status.reason, status.reason === 'no_key' ? 'No API key for this engine in Secrets' : 'The local engine is not installed')
+  const [audio] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!audio) fail(422, 'bad_audio', 'No audio file in the request')
+  if (audio.data.length < 200) fail(422, 'empty_audio', 'Nothing was heard in this recording')
+  if (audio.data.length > 100 * 1024 * 1024) fail(413, 'too_large', 'Recordings are limited to 100 MB')
+  await sleep(900)
+  const topic = formField(rawBody, 'path'), lang = formField(rawBody, 'language') || status.settings.language
+  let audio_path = null
+  if (topic) {
+    const d = new Date(), ext = path.extname(audio.name) || '.webm'
+    audio_path = `${ROOT}/${topic}/attachments/voice/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}/voice-${Math.floor(now())}${ext}`
+    fsAdd(S, audio_path, audio.data, now(), audio.mime)
+  }
+  return { text: 'Draft a short reply thanking the client for the feedback, and propose a call next Tuesday.', language: lang === 'auto' ? 'en' : lang,
+    duration_s: Math.max(1, Math.round(audio.data.length / 4000)), engine: status.settings.engine, model: status.settings.engine === 'local' ? status.settings.model : status.settings.engine === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-4o-transcribe', ms: 900, audio_path }
+})
+
 /* ---- crons */
 const CRON_FIELDS = ['name', 'schedule', 'kind', 'command', 'topic_path', 'prompt', 'model', 'reuse_session', 'enabled', 'notify', 'timeout_s']
 function applyCron(c, body) {
@@ -1905,6 +2147,73 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- MCP servers (server/maxxing/mcp.py): Claude Code's servers per folder, checked with `claude mcp list` in the
+   background (here: 1.5 s), and the OAuth login of a server that needs one (here: any redirect with ?code= works). */
+const mcpWhere = (rel) => {
+  if (!rel) return { rel: null, project: null, topic: null, exists: true, path: null }
+  const [, project, , topic] = rel.split('/')
+  return { rel, project: project || null, topic: topic || null, exists: S.fs.has(`${ROOT}/${rel}`), path: `${ROOT}/${rel}` }
+}
+function mcpState() {
+  if (S.mcp) return S.mcp
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing', t = now()
+  const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
+    literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
+  S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
+    server('user', null, 'github', { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
+    server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
+    server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
+  ] : [] }
+  return S.mcp
+}
+function mcpCheck() {
+  const st = mcpState()
+  if (st.checking) return
+  st.checking = true
+  const g = GEN
+  setTimeout(() => { if (g !== GEN) return; st.checking = false; st.checked_at = now(); for (const x of st.servers) { x.checked_at = now(); if (x.state === 'pending') x.state = 'connected' } bus('mcp') }, 1500)
+}
+R('GET', '/api/mcp', () => { const st = mcpState(); if (st.checked_at === null) mcpCheck(); return { servers: st.servers, checking: st.checking, checked_at: st.checked_at, config_file: '/root/.claude.json', auto: st.auto } })
+R('PUT', '/api/mcp/auto', ({ body }) => { const st = mcpState(); st.auto = !!body.enabled; if (st.auto) mcpCheck(); return { ok: true, enabled: st.auto } })
+R('POST', '/api/mcp/check', () => { mcpCheck(); return { checking: true } })
+R('POST', '/api/mcp', ({ body }) => {
+  const st = mcpState(), name = String(body.name || ''), where = String(body.where || '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) fail(400, 'bad_name', 'Letters, digits, dot, dash and underscore')
+  if (!['http', 'sse', 'stdio'].includes(body.type)) fail(400, 'bad_type', 'type: http, sse or stdio')
+  if (where && !where.startsWith('projects/')) fail(400, 'bad_where', 'where: empty (all folders) or a projects/… folder')
+  if (where && !S.fs.has(`${ROOT}/${where}`)) fail(404, 'folder_missing', 'This folder does not exist')
+  if (body.type === 'stdio' ? !String(body.command || '').trim() : !/^https?:\/\/\S+$/.test(String(body.url || ''))) fail(400, body.type === 'stdio' ? 'bad_command' : 'bad_url', body.type === 'stdio' ? 'A command is required' : 'An http(s) URL is required')
+  if (JSON.stringify(body).length > 32768) fail(400, 'too_long', 'A value is too long')
+  const scope = where ? 'local' : 'user', id = `${scope}|${where}|${name}`
+  if (st.servers.some((x) => x.id === id)) fail(409, 'exists', 'A server with this name already exists here')
+  const def = { type: body.type, ...(body.type === 'stdio' ? { command: body.command.trim(), args: body.args || [] } : { url: body.url }), ...(body.headers ? { headers: body.headers } : {}), ...(body.env ? { env: body.env } : {}) }
+  const keys = [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1])
+  st.servers.push({ id, name, scope, where: mcpWhere(where || null), ...def, literal_secret: false, keys, state: 'pending', detail: '', checked_at: null })
+  mcpCheck(); bus('mcp')
+  return { id, exposed: keys.filter((k) => S.secrets.some((s) => s.name === k && !s.expose)) }
+})
+R('DELETE', '/api/mcp', ({ q }) => { const st = mcpState(); st.servers = st.servers.filter((x) => x.id !== q.get('id')); bus('mcp'); return { ok: true } })
+R('POST', '/api/mcp/login', ({ body }) => {
+  const x = mcpState().servers.find((s) => s.id === body.id) || fail(404, 'folder_missing', 'Server not found')
+  if (x.type === 'stdio') fail(400, 'no_login_url', 'This server does not offer a login')
+  const login = crypto.randomBytes(8).toString('hex')
+  S.mcp.logins[login] = { id: x.id, at: now() }
+  return { login, url: `https://mcp.example.com/oauth/authorize?client_id=claude-code&state=${login}&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback` }
+})
+R('POST', '/api/mcp/login/:login', async ({ params, body }) => {
+  const l = mcpState().logins[params.login] || fail(404, 'login_expired', 'This login expired: start it again')
+  if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(body.redirect || ''))) fail(400, 'bad_redirect', 'Paste the whole address of the page that failed to open (http://localhost:…/callback?code=…)')
+  await sleep(800)
+  if (!/[?&]code=/.test(body.redirect)) fail(400, 'login_failed', 'The address has no authorization code')
+  delete S.mcp.logins[params.login]
+  const x = S.mcp.servers.find((s) => s.id === l.id)
+  if (x) Object.assign(x, { state: 'connected', detail: '', checked_at: now() })
+  bus('mcp')
+  return { ok: true, message: `${x ? x.name : 'Server'}: authenticated` }
+})
+R('DELETE', '/api/mcp/login/:login', ({ params }) => { delete mcpState().logins[params.login]; return { ok: true } })
+
 /* ---- telegram */
 function tgStatus() {
   const tg = S.telegram
@@ -1962,6 +2271,57 @@ R('DELETE', '/api/telegram', () => {
   Object.assign(S.telegram, { token: null, bot: null, chat: null, topics_enabled: false, threads: [], last_error: null, link: null })
   bus('telegram', 'workspace')
   return { ok: true }
+})
+
+/* ---- starter packs (server/maxxing/packs.py): read from the repository's templates/packs/<id>/pack.json, so the mock
+   offers the real catalog. Installing adds the project (a free name when taken), its topics and its jobs, disabled. */
+const PACKS_DIR = path.resolve(__dirname, '../../templates/packs')
+function packList() {
+  const lang = S.settings.language === 'fr' ? 'fr' : 'en', txt = (v) => (typeof v === 'object' && v ? v[lang] || v.en : v || '')
+  let ids = []
+  try { ids = fs.readdirSync(PACKS_DIR).filter((d) => fs.existsSync(path.join(PACKS_DIR, d, 'pack.json'))).sort() } catch {}
+  const packs = ids.map((id) => {
+    const d = JSON.parse(fs.readFileSync(path.join(PACKS_DIR, id, 'pack.json'), 'utf8'))
+    const copies = S.projects.filter((p) => p.name === d.project || p.name.startsWith(d.project + '-'))
+    return { id: d.id, project: d.project, emoji: d.emoji || '', icon: d.icon || 'package', title: txt(d.title), description: txt(d.description),
+      topics: d.topics || [], crons: (d.crons || []).map((c) => c.name), installed: copies.length > 0, partial: false, project_exists: S.projects.some((p) => p.name === d.project), basics: false, def: d }
+  })
+  const missing = ['general', 'system'].filter((n) => !S.projects.some((p) => p.name === n))
+  packs.unshift({ id: 'basics', project: 'general, system', emoji: '', icon: 'house', title: lang === 'fr' ? 'Projets de base' : 'Default projects',
+    description: lang === 'fr' ? 'general/inbox et system (tutoriel, aide, Harness) : remet ceux que vous avez supprimés, sans rien écraser.' : 'general/inbox and system (tutorial, help, Harness): puts back the ones you deleted, never overwrites.',
+    topics: ['general/inbox', 'system/help', 'system/harness', 'system/tutorial'], crons: [], installed: missing.length === 0, partial: missing.length === 1, project_exists: missing.length < 2, basics: true })
+  return packs
+}
+const packOut = ({ def, ...p }) => p
+R('GET', '/api/packs', () => ({ packs: packList().map(packOut) }))
+R('POST', '/api/packs/:id/install', async ({ params }) => {
+  const pack = packList().find((p) => p.id === params.id) || fail(404, 'unknown_pack', 'Unknown pack')
+  await sleep(700)
+  let project = '', created = 0
+  const jobs = []
+  if (pack.basics) {
+    for (const [name, topics] of [['general', ['inbox']], ['system', ['help', 'harness', 'tutorial']]]) {
+      let p = S.projects.find((x) => x.name === name)
+      if (!p) { p = { name, description: '', topics: [] }; S.projects.push(p); fsAdd(S, `${projPath(name)}/CLAUDE.md`, `# Project ${name}\n\n@memory.md\n`, now()); created += 1 }
+      for (const t of topics) if (!p.topics.some((x) => x.name === t)) { p.topics.push({ name: t, description: '' }); fsAdd(S, `${topicPath(name, t)}/CLAUDE.md`, `# Topic ${t}\n`, now()); created += 1 }
+    }
+  } else {
+    project = pack.project
+    for (let n = 2; S.projects.some((p) => p.name === project); n++) project = `${pack.project}-${n}`
+    S.projects.push({ name: project, description: pack.description, topics: pack.topics.map((name) => ({ name, description: '' })) })
+    fsAdd(S, `${projPath(project)}/CLAUDE.md`, `# Project ${project}\n\n> ${pack.description}\n\n@memory.md\n`, now())
+    fsAdd(S, `${projPath(project)}/memory.md`, `# ${project} — memory\n`, now())
+    for (const t of pack.topics) fsAdd(S, `${topicPath(project, t)}/CLAUDE.md`, `# Topic ${t}\n`, now())
+    created = 2 + pack.topics.length
+    for (const c of pack.def.crons || []) {
+      const name = project === pack.project ? c.name : `${c.name} (${project})`
+      S.crons.push({ id: rid('c'), name, schedule: c.schedule, kind: 'claude', command: '', topic_path: topicPath(project, c.topic), prompt: c.prompt, model: '',
+        reuse_session: false, enabled: false, notify: c.notify || 'failure', timeout_s: 600, last_run: null })
+      jobs.push(name)
+    }
+  }
+  bus('workspace', 'crons')
+  return { ok: true, pack: packOut(packList().find((p) => p.id === pack.id)), project, created_files: created, jobs }
 })
 
 /* ---- backup */
@@ -2101,6 +2461,71 @@ R('POST', '/api/backup/instance/resume-integrations', () => {
   return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
 })
 
+/* ---- Git page (server/maxxing/gitview.py): clones under the files root and the repositories of the GitHub tokens.
+   Histories are generated from a seed per repository (stable across reads): a main line, a merged feature branch,
+   a branch still open, a tag. */
+const GIT_LOCAL = [
+  { path: `${ROOT}/projects/acme/topics/website/app`, name: 'app', branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, changed: 3, untracked: 1, remote: 'git@github.com:acme/website.git', github: 'acme/website', error: null, worktrees: 1 },
+  { path: `${ROOT}/projects/ops/topics/server/scripts`, name: 'scripts', branch: 'main', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, remote: null, github: null, error: null, worktrees: 0 },
+]
+const GIT_HUB = [
+  ['acme/website', 'Marketing site and shop front', 'TypeScript', false, 'admin', 12, 4],
+  ['acme/platform', 'Back office and APIs', 'Python', true, 'push', 3, 9],
+  ['acme/blog', 'Articles and newsletter archive', 'MDX', false, 'maintain', 41, 1],
+]
+const GIT_SUBJECTS = ['Fix the hero image on small screens', 'Add the pricing page', 'Bump dependencies', 'Write the FAQ', 'Speed up the build', 'Refactor the checkout steps',
+  'Add tests for the cart', 'Update the footer links', 'Translate the about page', 'Clean up unused styles', 'Log failed payments', 'Tidy the README']
+function gitHistory(id) {
+  const r = rng([...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)), t = now()
+  const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(r() * 16)]).join('')
+  const who = () => ['Alex Martin', 'Sam Lee', 'Codex'][Math.floor(r() * 3)]
+  const main = [], out = []
+  for (let i = 0; i < 40; i++) main.push({ sha: hex(), parents: [], refs: [], author: who(), date: t - (40 - i) * 9 * HOUR - Math.floor(r() * HOUR), subject: GIT_SUBJECTS[Math.floor(r() * GIT_SUBJECTS.length)] })
+  for (let i = 1; i < main.length; i++) main[i].parents = [main[i - 1].sha]
+  const feat = [] // merged into main at 30, branched at 24
+  for (let i = 0; i < 4; i++) feat.push({ sha: hex(), parents: [i ? feat[i - 1].sha : main[24].sha], refs: [], author: 'Codex', date: main[24].date + (i + 1) * 2 * HOUR, subject: ['Checkout: one page', 'Checkout: keep Apple Pay on top', 'Checkout: tests', 'Checkout: review fixes'][i] })
+  main[30].parents.push(feat[3].sha); main[30].subject = 'Merge branch feat/one-page-checkout'
+  const open = [{ sha: hex(), parents: [main[37].sha], refs: [{ name: 'feat/dark-mode', kind: 'branch' }], author: 'Sam Lee', date: main[37].date + HOUR, subject: 'Dark mode: first pass' }]
+  main[39].refs = [{ name: 'HEAD', kind: 'head' }, { name: 'main', kind: 'branch', current: true }, { name: 'origin/main', kind: 'remote' }]
+  main[20].refs = [{ name: 'v1.2.0', kind: 'tag' }]
+  out.push(...main, ...feat, ...open)
+  return out.sort((a, b) => b.date - a.date)
+}
+function gitRepo(id) {
+  if (id.startsWith('github:')) {
+    const g = GIT_HUB.find(([full]) => `github:${full}` === id) || fail(404, 'not_found', 'Repository not found')
+    return { kind: 'github', id, name: g[0].split('/')[1], branch: 'main', github: g[0], url: `https://github.com/${g[0]}`, private: g[3], permission: g[4], description: g[1], branches: 13, branches_shown: 13 }
+  }
+  const l = GIT_LOCAL.find((x) => x.path === id) || fail(404, 'not_found', 'Not a repository')
+  return { kind: 'local', id, ...l }
+}
+R('GET', '/api/git/repos', () => ({ root: S.settings.files_root || ROOT,
+  local: GIT_LOCAL.map((l) => { const h = gitHistory(l.path)[0]; return { ...l, last_commit: h.date, last_subject: h.subject } }),
+  github: { connected: true, login: 'acme-dev', error: null, errors: [], accounts: [{ login: 'acme-dev', name: 'Acme', avatar: null, keys: ['GITHUB_TOKEN'], repos: GIT_HUB.length }],
+    repos: GIT_HUB.map(([full, description, language, priv, permission, stars, issues]) => ({ full_name: full, owner: full.split('/')[0], name: full.split('/')[1], description, private: priv, fork: false,
+      archived: false, permission, default_branch: 'main', pushed_at: new Date((now() - stars * HOUR) * 1000).toISOString(), url: `https://github.com/${full}`, language, stars, open_issues: issues,
+      keys: ['GITHUB_TOKEN'], accounts: ['acme-dev'], local_paths: GIT_LOCAL.filter((l) => l.github === full).map((l) => l.path) })) } }))
+R('GET', '/api/git/graph', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), limit = Math.min(1000, Math.max(1, Number(q.get('limit')) || 200))
+  const all = gitHistory(repo.id)
+  return { repo, commits: all.slice(0, limit), truncated: all.length > limit }
+})
+R('GET', '/api/git/commit', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), c = gitHistory(repo.id).find((x) => x.sha === q.get('sha')) || fail(404, 'no_commit', 'No such commit')
+  const r = rng(parseInt(c.sha.slice(0, 8), 16)), pool = ['src/pages/checkout.tsx', 'src/styles/hero.css', 'README.md', 'tests/cart.test.ts', 'package.json', 'src/i18n/en.ts', 'src/components/Footer.tsx']
+  const files = pool.filter(() => r() < 0.45).map((p) => ({ path: p, additions: Math.floor(r() * 60) + 1, deletions: Math.floor(r() * 25) }))
+  if (!files.length) files.push({ path: pool[0], additions: 4, deletions: 1 })
+  return { sha: c.sha, parents: c.parents, author: c.author, email: `${c.author.split(' ')[0].toLowerCase()}@example.com`, date: c.date,
+    message: `${c.subject}\n\nKeeps the change small; tested on a phone and a desktop browser.`, files, files_total: files.length, ...(repo.github ? { url: `https://github.com/${repo.github}/commit/${c.sha}` } : {}) }
+})
+R('GET', '/api/git/pulls', ({ q }) => {
+  const id = q.get('repo') || ''
+  if (!id.startsWith('github:')) fail(400, 'not_github', 'Pull requests come from GitHub repositories')
+  const repo = gitRepo(id)
+  return [[18, 'Dark mode: first pass', 'sam-lee', 'feat/dark-mode', false], [17, 'Translate the about page', 'acme-dev', 'i18n/about', true]].map(([number, title, author, head, draft], i) => ({
+    number, title, author, head, base: 'main', draft, url: `https://github.com/${repo.github}/pull/${number}`, updated: now() - (i + 1) * 5 * HOUR }))
+})
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
@@ -2109,6 +2534,24 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+/* ---- profile (api/settings.py): the pseudo shown on the user's messages and in notifications. The legacy hello /
+   feedback / license routes talk to the original project's cloud: like the server by default (no MAXXING_LICENSE_PING),
+   they answer 404 not_found after sign-in, whatever the method. */
+const PROFILE_COLORS = ['clay', 'blue', 'violet', 'green', 'amber', 'rose', 'teal', 'zinc']
+const profileState = () => (S.profile ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? { name: 'Alex', color: 'blue', emoji: '' } : { name: '', color: '', emoji: '' })
+R('GET', '/api/settings/profile', () => ({ ...profileState() }))
+R('PUT', '/api/settings/profile', ({ body }) => {
+  const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').split(/\s+/).filter(Boolean).join(' ').slice(0, 32)
+  const color = String(body.color || ''), emoji = String(body.emoji || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (color && !PROFILE_COLORS.includes(color)) fail(400, 'invalid_color', `color: ${PROFILE_COLORS.join(', ')} or empty`)
+  if ([...emoji].length > 8 || /\s/.test(emoji)) fail(400, 'invalid_emoji', 'emoji: one emoji or initials (8 characters at most) or empty')
+  const next = { name, color, emoji }
+  if (JSON.stringify(next) !== JSON.stringify(profileState())) { S.profile = next; bus('profile') }
+  return { ...S.profile }
+})
+for (const what of ['register', 'feedback', 'license']) for (const method of ['GET', 'PUT', 'POST', 'DELETE'])
+  R(method, `/api/settings/${what}`, () => fail(404, 'not_found', 'Not available in this project'))
+
 // The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
 R('PUT', '/api/settings/look', ({ body }) => {
   if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
@@ -2372,6 +2815,98 @@ R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => 
   return { url: run.pull_request.url, target: 'acme/platform' }
 })
 
+/* ---- Infra page (server/maxxing/infra): servers, sites, databases, buckets, workers and domains of this server, a
+   registered one and Cloudflare / Hostinger. infra-resources.json is the output of the real builder (infra/build.py)
+   on the fixture of server/tests/test_infra.py; the owner's annotations, servers and domains live in the mock state. */
+const INFRA_RESOURCES = JSON.parse(fs.readFileSync(path.join(__dirname, 'infra-resources.json'), 'utf8'))
+function infraState() {
+  if (S.infra) return S.infra
+  S.infra = { refreshing: false, generated_at: now() - 7 * MIN, registry: {}, domains: [], servers: [{ name: 'far', label: 'Far VPS', host: '198.51.100.9', user: 'root', port: 22, note: '' }] }
+  return S.infra
+}
+function infraView() {
+  const st = infraState(), t = now()
+  const remote = new Set(INFRA_RESOURCES.filter((r) => r.kind === 'server' && r.location !== 'local').map((r) => r.location)) // registered servers of the fixture
+  const resources = INFRA_RESOURCES.filter((r) => !remote.has(r.location) || st.servers.some((s) => s.name === r.location))
+    .concat(st.domains.map((name) => ({ id: `domain:${name}`, kind: 'domain', name, location: 'other', provider: 'rdap', urls: [`https://${name}/`], status: 'ok', status_detail: '',
+      details: { name, registrar: 'Example Registrar', expires: t + 200 * DAY, auto_renew: true, dns: [{ type: 'A', name, content: '203.0.113.5' }], name_servers: ['ns1.example.net', 'ns2.example.net'], sources: ['rdap', 'dns'] },
+      links: [], project: null, note: '', hidden: false, declared: true, missing: false })))
+    .map((r) => {
+      const out = { ...clone(r), ...(st.registry[r.id] || {}) }
+      if (r.id === 'domain:example.org') out.details.expires = t + 20 * DAY // expiring soon: the warn state
+      if (r.kind === 'server' && r.location !== 'local') { const s = st.servers.find((x) => x.name === r.location); if (s) out.name = s.label || s.name }
+      return out
+    })
+  return { enabled: true, refreshing: st.refreshing, error: null, refresh_min: 15, generated_at: st.generated_at, took_ms: 2840, harness_host: 'ui.example.com',
+    sources: { servers: Object.fromEntries([['local', { ok: true, error: null, took_ms: 410 }], ...st.servers.map((s) => [s.name, { ok: true, error: null, took_ms: 1220 }])]),
+      cloudflare: { connected: true, key: 'CLOUDFLARE_API_TOKEN', error: null, sections: { zones: 'ok', workers: 'ok', worker_domains: 'ok', pages: 'ok', r2: 'ok', d1: 'ok', registrar: 'missing_permission', dns: 'ok' } },
+      hostinger: { connected: true, key: 'HOSTINGER_API_TOKEN', sections: { domains: 'ok', vps: 'ok' } },
+      ...Object.fromEntries(['vercel', 'netlify', 'supabase', 'github'].map((p) => [p, { connected: p === 'github', key: p === 'github' ? 'GITHUB_TOKEN' : null, error: null, label: p[0].toUpperCase() + p.slice(1),
+        beta: p !== 'github', token_url: `https://${p}.example.com/account/tokens`, keys: [`${p.toUpperCase()}_TOKEN`], sections: p === 'github' ? { sites: 'ok' } : {} }])) },
+    resources, servers: clone(st.servers) }
+}
+R('GET', '/api/infra', () => infraView())
+R('POST', '/api/infra/refresh', () => {
+  const st = infraState()
+  if (st.refreshing) return { started: false, refreshing: true }
+  st.refreshing = true
+  const g = GEN
+  setTimeout(() => { if (g === GEN) { st.refreshing = false; st.generated_at = now(); bus('infra') } }, 2500).unref()
+  bus('infra')
+  return { started: true, refreshing: true }
+})
+R('POST', '/api/infra/annotate', ({ body }) => {
+  const st = infraState(), cur = { ...(st.registry[body.id] || {}) }
+  if (body.project !== undefined) cur.project = String(body.project || '').trim().replace(/^\/+|\/+$/g, '') || null
+  if (body.note !== undefined) cur.note = String(body.note || '').trim().slice(0, 500)
+  if (body.hidden !== undefined) cur.hidden = !!body.hidden
+  const kept = Object.fromEntries(Object.entries(cur).filter(([, v]) => v !== null && v !== '' && v !== false))
+  if (Object.keys(kept).length) st.registry[body.id] = kept; else delete st.registry[body.id]
+  bus('infra')
+  return kept
+})
+R('GET', '/api/infra/reserved', () => ({ names: ['api', 'ext', 'assets', 'icons', 'sessions', 'files', 'tasks', 'crons', 'settings', 'infra', 'git', 'team', 'x', 'login', 'sw.js', 'manifest', 'index.html', 'favicon'] }))
+R('POST', '/api/infra/servers/connect', async ({ body }) => {
+  const st = infraState()
+  const host = String(body.host || '').trim(), user = String(body.user || 'root'), port = Number(body.port || 22)
+  if (!host && !body.id) fail(422, 'not_found', 'Give a host or a Hostinger server')
+  if (st.servers.some((s) => s.host === host)) fail(409, 'exists', 'This server is already connected')
+  await sleep(1500)
+  if (!/^192\.0\.2\.\d+$/.test(host) && !body.id) // only the documentation range 192.0.2.0/24 "accepts" the key in the mock
+    return { connected: false, message: 'No key of this server works yet: add the Harness public key to the server, then try again.', public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com',
+      command: `mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com' >> ~/.ssh/authorized_keys` }
+  let name = (body.label || host || 'server').toLowerCase().replace(/[^a-z0-9-]+/g, '-').split('.')[0].slice(0, 36) || 'server'
+  for (let n = 2; st.servers.some((s) => s.name === name); n++) name = `${name.replace(/-\d+$/, '')}-${n}`
+  const s = { name, label: String(body.label || '').slice(0, 60), host: host || '203.0.113.40', user, port, note: '' }
+  st.servers.push(s); bus('infra')
+  return { connected: true, name: s.name, label: s.label, host: s.host, user: s.user, port: s.port, via: body.id ? 'added_key' : 'existing_key' }
+})
+R('POST', '/api/infra/servers/rename', ({ body }) => {
+  const s = infraState().servers.find((x) => x.name === body.name) || fail(404, 'not_found', `no server named ${body.name}`)
+  s.label = String(body.label || '').trim().slice(0, 60); bus('infra')
+  return { name: s.name, label: s.label }
+})
+R('POST', '/api/infra/servers/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.servers.some((x) => x.name === body.name)) fail(404, 'not_found', `no server named ${body.name}`)
+  st.servers = st.servers.filter((x) => x.name !== body.name); bus('infra')
+  return { removed: true }
+})
+R('POST', '/api/infra/domains', ({ body }) => {
+  const name = String(body.name || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name)) fail(400, 'invalid_domain', 'not a domain name (example: example.com)')
+  const st = infraState()
+  if (!st.domains.includes(name) && !INFRA_RESOURCES.some((r) => r.id === `domain:${name}`)) st.domains.push(name)
+  bus('infra')
+  return { name }
+})
+R('POST', '/api/infra/domains/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.domains.includes(body.name)) fail(404, 'not_found', 'This domain was not added by hand')
+  st.domains = st.domains.filter((x) => x !== body.name); bus('infra')
+  return { removed: true }
+})
+
 /* ---- system */
 R('GET', '/api/system/health', () => healthObj())
 R('GET', '/api/system/services', () => S.services)
@@ -2576,6 +3111,66 @@ for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected
   })
 }
 
+/* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
+   The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
+const IMPORT_HINTS = {
+  hermes: 'You are Hermes Agent: your memory lives in ~/.hermes/ (MEMORY.md, USER.md, memories/, skills/, sessions, cron jobs). Read all of it.',
+  'claude-code': 'You are Claude Code: read every CLAUDE.md and memory file you use (~/.claude/CLAUDE.md, the project folders, ~/.claude/projects/*/memory/), your skills (~/.claude/skills/, .claude/skills/) and anything the user keeps notes in.',
+  openclaw: 'You are OpenClaw: read your workspace (by default ~/.openclaw/workspace/: AGENTS.md, SOUL.md, USER.md, MEMORY.md, memory/*.md, skills/) and your scheduled jobs.',
+  other: 'Read every place where you keep memory, notes, instructions, skills and scheduled jobs.',
+}
+const importPrompt = (agent) => `I am moving to harness-pilot, a control room for Claude Code. Please export everything you know and keep about me and my work into ONE zip file that it can import. ${IMPORT_HINTS[agent]}
+
+Build a folder \`harness-pilot-export/\` with this layout (Markdown, UTF-8): memory.md, projects/<project>/CLAUDE.md and memory.md, projects/<project>/topics/<topic>/CLAUDE.md, memory.md and useful files, skills/<skill-name>/SKILL.md, tasks.md, crons.md, SECRETS.md (key NAMES only).
+
+NEVER write a secret value anywhere - only their names in SECRETS.md. Then zip it and give me the file.`
+const importsState = () => (S.imports ||= { uploads: {}, applying: false })
+R('GET', '/api/import/prompt', ({ q }) => {
+  const agent = Object.keys(IMPORT_HINTS).includes(q.get('agent')) ? q.get('agent') : 'other'
+  return { agent, agents: Object.keys(IMPORT_HINTS), prompt: importPrompt(agent) }
+})
+R('POST', '/api/import/upload', ({ req, rawBody }) => {
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!file || !file.data.length) fail(400, 'empty', 'The file is empty')
+  if (file.data.length > 600 * 1024 * 1024) fail(413, 'too_big', 'The archive is larger than 600 MB')
+  if (!file.data.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) fail(400, 'bad_zip', 'This is not a ZIP archive')
+  const exists = (p, t) => S.projects.some((x) => x.name === p && (!t || x.topics.some((y) => y.name === t)))
+  const plan = { id: crypto.randomBytes(12).toString('hex'), name: file.name,
+    projects: [{ name: 'freelance', exists: exists('freelance'), topics: [{ name: 'clients', source: 'projects/freelance/topics/clients', files: 6, exists: exists('freelance', 'clients') },
+      { name: 'invoices', source: 'projects/freelance/topics/invoices', files: 3, exists: exists('freelance', 'invoices') }] },
+    { name: 'acme', exists: exists('acme'), topics: [{ name: 'blog', source: 'projects/acme/topics/blog', files: 4, exists: exists('acme', 'blog') }] }],
+    skills: ['weekly-report'], aside: ['tasks.md', 'crons.md', 'SECRETS.md'], root_memory: true, files: 19, size: file.data.length,
+    skipped: [{ file: 'harness-pilot-export/.DS_Store', reason: 'hidden' }], secrets: [{ file: 'projects/freelance/topics/invoices/stripe.md', kinds: ['stripe_key'] }],
+    renamed: [{ from: 'projects/Freelance Work', to: 'projects/freelance' }] }
+  importsState().uploads[plan.id] = { plan, at: now() }
+  return plan
+})
+R('POST', '/api/import/:id/apply', async ({ params }) => {
+  const st = importsState(), up = st.uploads[params.id]
+  if (!up || now() - up.at > DAY) fail(404, 'not_found', 'This upload expired: upload the file again')
+  if (st.applying) fail(409, 'busy', 'Another import is being applied')
+  st.applying = true
+  try { await sleep(1200) } finally { st.applying = false }
+  const merged = [], topics = []
+  for (const p of up.plan.projects) {
+    let proj = S.projects.find((x) => x.name === p.name)
+    if (!proj) { proj = { name: p.name, description: '', topics: [] }; S.projects.push(proj); fsAdd(S, `${projPath(p.name)}/CLAUDE.md`, `# Project ${p.name}\n\n@memory.md\n`, now()) }
+    for (const t of p.topics) {
+      topics.push(`${p.name}/${t.name}`)
+      if (proj.topics.some((x) => x.name === t.name)) merged.push(`${topicPath(p.name, t.name)}/memory.md`)
+      else { proj.topics.push({ name: t.name, description: '' }); fsAdd(S, `${topicPath(p.name, t.name)}/memory.md`, `# ${t.name} — memory\n\n## Imported\n\nImported from the previous agent.\n`, now()) }
+    }
+  }
+  const stamp = new Date().toISOString().slice(0, 10), folder = `imports/${stamp}`, report = `${folder}/REPORT.md`
+  fsAdd(S, report, `# Import ${stamp}\n\n${up.plan.files} files from ${up.plan.name}.\n`, now(), 'text/markdown')
+  delete st.uploads[params.id]
+  bus('workspace')
+  return { ok: true, projects: up.plan.projects.map((p) => p.name), topics, files: up.plan.files - 1, merged, renamed: [{ from: 'skills/weekly-report', to: 'skills/weekly-report-imported' }],
+    skills: ['weekly-report-imported'], aside: up.plan.aside.map((a) => `${folder}/${a}`), secrets: up.plan.secrets, skipped: up.plan.skipped, folder, report,
+    finish_prompt: `An import from my previous agent was just applied. Read ${report} first, then finish it with me: merge duplicates in memory, create the open tasks from tasks.md, propose the jobs of crons.md (ask before creating any), list the keys of SECRETS.md to add in Settings -> Keys.` }
+})
+R('DELETE', '/api/import/:id', ({ params }) => { delete importsState().uploads[params.id]; return { ok: true } })
+
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
 R('GET', '/api/docs/:slug', ({ params }) => {
@@ -2599,7 +3194,7 @@ index 1a2b3c4..5d6e7f8 100644
 +++ b/docs/user/notes.md
 @@ -1,3 +1,4 @@
  # Notes
- 
+
  Short notes about the product.
 +- ${prqRemote(item).title}.
 `
@@ -2690,6 +3285,45 @@ R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
   Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
   return prqOut()
 })
+
+/* ---- small gaps: tree order, one job, backup preview, search index stats, incoming webhooks */
+const orderBy = (items, names) => { // listed names first in that order, the others A-Z (projects/.order.json, .maxxing.json)
+  const at = new Map(names.map((n, i) => [n, i]))
+  return [...items].sort((a, b) => (at.has(a.name) ? at.get(a.name) : 1e6) - (at.has(b.name) ? at.get(b.name) : 1e6) || a.name.localeCompare(b.name))
+}
+R('PUT', '/api/workspace/order', ({ body }) => {
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  S.projects = orderBy(S.projects, body.names.map(String)); bus('workspace')
+  return { projects: S.projects.map((p) => p.name) }
+})
+R('PUT', '/api/workspace/projects/:project/order', ({ params, body }) => {
+  const p = S.projects.find((x) => x.name === params.project) || fail(404, 'not_found', 'Unknown project')
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  p.topics = orderBy(p.topics, body.names.map(String)); bus('workspace')
+  return { topics: p.topics.map((t) => t.name) }
+})
+R('GET', '/api/crons/:id', ({ params }) => cronOut(S.crons.find((x) => x.id === params.id) || fail(404, 'not_found', 'Cron not found')))
+R('POST', '/api/backup/preview', async ({ body }) => {
+  if (!S.backup.configured) fail(409, 'not_configured', 'Configure the backup repository first')
+  await sleep(900)
+  const files = [...S.fs.entries()].filter(([, n]) => n.type === 'file').map(([k]) => k.slice(ROOT.length + 1)).filter((k) => /(^|\/)(CLAUDE|memory)\.md$|^tasks\.json$/.test(k)).sort()
+  const paths = { create: ['projects/acme/topics/newsletter/memory.md'], replace: files.filter((f) => f.endsWith('memory.md')).slice(0, 3), unchanged: files.filter((f) => !f.endsWith('memory.md')),
+    held: ['extensions/shop-sales/api.py'], skip: [] }
+  return { ok: true, commit: (body.ref && /^[0-9a-f]{7,40}$/.test(body.ref) ? body.ref : S.backup.history.filter((h) => h.ok).at(-1)?.commit || sha().slice(0, 7)).padEnd(40, '0'), hold: true,
+    counts: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.length])), paths, settings: true, crons: true, mcp: false }
+})
+R('GET', '/api/search/stats', () => ({ counts: { session: S.sessions.length, file: [...S.fs.values()].filter((n) => n.type === 'file').length,
+  memory: [...S.fs.keys()].filter((k) => k.endsWith('/memory.md')).length, task: S.tasks.tasks.length }, bytes: 3.4e6, refreshed_at: now() - 4 * MIN }))
+// Incoming webhook: the token is the permission. Signatures are not verified in the mock; the rules of a missing secret are.
+R('POST', '/api/hooks/:token', ({ params, body }) => {
+  const h = S.feed.hooks.find((x) => x.token === params.token) || fail(404, 'not_found', 'Unknown hook')
+  if (h.kind !== 'generic' && !h.secret) fail(401, 'secret_required', `A ${h.kind} hook needs its signing secret`)
+  if (typeof body !== 'object' || Array.isArray(body)) fail(400, 'bad_payload', 'Unexpected payload')
+  const title = h.kind === 'generic' ? String(body.title || 'Webhook') : h.kind === 'stripe' ? String(body.type || 'stripe event') : h.kind === 'github' ? 'GitHub event' : 'Shopify event'
+  const e = feedAdd(S, { source: h.name, kind: 'webhook', level: ['info', 'success', 'warning', 'error'].includes(body.level) ? body.level : 'info', title: title.slice(0, 200), body: String(body.body || '').slice(0, 2000) })
+  bus('feed')
+  return { ok: true, duplicate: false, id: e.id }
+}, { public: true, csrf: false }) // called by Stripe, GitHub…: no cookie, no CSRF header
 
 /* ---- dashboard & extensions */
 R('GET', '/api/dashboard', () => dashboard())
@@ -3180,7 +3814,7 @@ async function handleApi(req, res, url) {
   if (!candidates.length) return sendJson(res, 404, { error: 'not_found', message: `No route for ${p}` })
   const route = candidates.find((r) => r.method === req.method)
   if (!route) return sendJson(res, 405, { error: 'method_not_allowed', message: `${req.method} not allowed on ${p}` })
-  if (req.method !== 'GET' && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
+  if (req.method !== 'GET' && route.csrf && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
   const authed = isAuthed(req)
   if (!route.public && !authed) return sendJson(res, 401, { error: 'auth_required', message: 'Please log in' })
   const m = route.re.exec(p)

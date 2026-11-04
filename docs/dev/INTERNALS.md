@@ -90,6 +90,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `base_tokens`) says whether a summary goes first. If so the idle-compaction mechanics run (`held` + `compact` item)
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
+- Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
@@ -218,6 +219,15 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
 - Uses from sessions.service: `create_session`, `get_session`, `list_sessions`, `send_message`, `stop`,
   `update_session(sid, model=…)` (/model), `read_events` / `end_offset` (progress mode), `last_assistant_text`, `models()`.
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
+- `telegram.reviews` (companion decisions): `buttons(ev)` gives a built-in `companion.ready` event (source `system`,
+  params `session_id` + 64-hex `fingerprint`; the companion kinds are reserved against external producers) Review and
+  Discuss buttons, `c:<feed id>:<v|a|r|d>`. `handle()` runs after `_on_callback`'s linked-owner check (linked private
+  chat and owner user id), re-reads `companions.review` and refuses a running or changed proposal (fingerprint other
+  than the event's), an already decided one, and a binary one or one whose complete text (Git patch + new files as
+  `+` lines) exceeds `MAX_REVIEW` (12000). Review sends that text as `<pre>` blocks, then Approve / Reject only when
+  every part was delivered. A decision is `companions.decide(sid, value, <event fingerprint>)`: recorded, never
+  applied, published or merged (a mission step's dependents may start, as after a web approval). Discuss reopens the
+  session's thread (`reopen_thread`) without a model request; messages there follow the normal session path.
 
 ## maxxing.feed / maxxing.feedhooks  (owner: organisation)
 - `feed.post(title, body="", level="info", source="custom", url="", dedupe=None, group=None, notify=True, *,
@@ -650,6 +660,8 @@ The optional Enterprise key: `activate(key)`, `release()`, `remove_key()`, `stat
 the key) talk to `{API}/v1/activate|release` (activation token kept as `license_seat`, only to free the seat;
 machine = sha256("harness-maxxing:" + /etc/machine-id)). Also `API`, `USER_AGENT`, `disk_version()` (used by
 `register.py`, `feedback.py`).
+The HTTP routes `/api/settings/register|feedback|license` depend on `api/settings._legacy_cloud`: `404 not_found`
+while `register._offline()` (`MAXXING_LICENSE_PING` is not `1`); the modules are kept for the update and CLI paths.
 Installs from before 2.0.0a87 (`enabled()` = `license_token` in secrets.json) run the code of a signed archive
 imported by their old code as a commit on `refs/remotes/origin/<branch>`. `move_to_git()` makes them a clone of
 `GIT_URL` on `stable` (the `stable` commit with the same tree, else the same `__version__`; customizations
@@ -658,6 +670,9 @@ rebased; `license_token` -> `license_seat`). Triggers: `api/system._after_update
 failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stops with the reason if the move
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
+Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
+`LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
+against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
