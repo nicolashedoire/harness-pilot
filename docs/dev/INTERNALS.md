@@ -42,6 +42,14 @@ Python modules call each other only through these functions. Keep signatures sta
   passes a list; tests may call `_scan(primed)` as before). Used by `sessionfeed.on_stop` (registered by
   `api/feed.startup`). `resume_debate`, a message to a paused discussion (`_enqueue`), `stop` and `delete_session`
   resolve the session's `discussion.paused` feed event (`_resolve_paused`, never raises).
+- Discussions (provider `discussion` / `debate`): `pause_debate(sid)`, `resume_debate(sid)`,
+  `update_discussion(sid, turn_limit=UNSET, duration_s=UNSET) -> Session` (PATCH /discussion: `UNSET` keeps, `None`
+  removes; `SessionError 400 unsupported|bad_limit`, same ranges as `create_session`). Meta of the current period:
+  `discussion_turns`, `discussion_elapsed` (+ `discussion_started` while it runs), limits `discussion_turn_limit` /
+  `discussion_duration_seconds`; `_limit_reached(m)` compares them. A limit pause (set by the runner's
+  `_debate_followup`) resets the counters on resume / a new message only while `_limit_reached` is still true.
+  `discussion_paused_at` (time.time()) is set by `pause_debate` (when it was running) and by the runner's limit pause,
+  and dropped wherever `debate_paused` turns false (resume, `_enqueue`, `stop`, the runner on an error / empty answer).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any

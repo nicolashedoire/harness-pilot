@@ -99,7 +99,16 @@ Session = {
   error: string|null,
   plan_mode: bool,                    // turns run read-only (`--permission-mode plan`) and end with a plan
   permission_mode: string,            // set by its cron ("" = the topic's, else the global mode)
-  plan_ready: bool                    // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  plan_ready: bool,                   // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  provider: "claude"|"codex"|"discussion"|"debate",
+  // Claude Code + Codex conversations (provider discussion / debate; null / 0 / false for the others), see
+  // "Discussion periods" below the table:
+  debate_paused: bool,                // the automatic exchange is paused (Resume continues it)
+  discussion_pause_reason: "limit"|"user"|null,   // why: a limit reached, or the pause button
+  discussion_paused_at: number|null,  // when it paused (limit or pause button); null while not paused
+  discussion_turns: int,              // replies of the current period
+  discussion_turn_limit: int|null,    // replies per period (1-200), null = no limit
+  discussion_duration_seconds: int|null   // duration of a period (60-86400 s), null = no limit
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
@@ -115,6 +124,9 @@ Session = {
 | POST | `/api/sessions/{id}/hide` | `{at, hidden=true}` | `{ok}` — hides (or shows again) the user message whose `at` is given: appends `{type:"mx_hide", ref, hidden}` to the raw log (nothing is erased; Claude's own thread is untouched), streamed as a `hide` event; 404 when no user message has that `at`, nothing written when it is already in that state. The UI offers it for a message whose turn ended without any answer (stopped) and drops that turn's rows |
 | POST | `/api/sessions/{id}/steer` | – | `{steered:bool, interrupted:bool, session}` — while a turn runs: the queued user messages become ONE message (`steer: true`) at the head of the queue and the runner gets SIGUSR1: it ends the current turn (only that one: meta `steer_turn` = `turn_id`) and runs that message next in the same Claude thread, prefaced so Claude continues the task with it. A compact / handoff turn is not interrupted (`interrupted:false`, the message runs right after it). `steered:false` when idle or nothing is queued |
 | POST | `/api/sessions/{id}/stop` | – | `{ok}` (clears the queue, aborts the running turn; returns once settled, ≤ ~10 s). During an idle-compaction summary only the summary is aborted: the message waiting behind it (queue item `held`) stays and runs |
+| POST | `/api/sessions/{id}/discussion/pause` | – | `Session` — a discussion / debate pauses after the current reply (reason `user`) · `400 unsupported` (not a discussion), `409 not_running` |
+| POST | `/api/sessions/{id}/discussion/resume` | – | `Session` — continues from the saved next prompt (see *Discussion periods*) · `400 unsupported`, `409 not_paused` |
+| PATCH | `/api/sessions/{id}/discussion` | `{turn_limit?: int\|null, duration_minutes?: int\|null}` | `Session` — changes the limits of a discussion / debate (running, paused or stopped): `turn_limit` 1-200 replies, `duration_minutes` 1-1440 (stored as `discussion_duration_seconds`); a field left out keeps its value, `null` removes that limit. They apply to the current period: while it runs, a limit already reached pauses it after the current reply; paused on its limit, Resume continues the period once no limit is reached any more · `400 unsupported` (not a discussion), `422 invalid` (out of range, not an integer) |
 | POST | `/api/sessions/{id}/compact` | – | `{ok}` summary → fresh Claude context, same session · `409 busy` while running · `400 empty_session` |
 | POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails) |
 | POST | `/api/sessions/{id}/seen` | – | `{ok}` |
@@ -124,6 +136,14 @@ Session = {
 | GET | `/api/sessions/{id}/stream?from=0` | – | **SSE**. `event: events` `data: {events, next}` · `event: state` `data: Session` · `event: reset` `data: {}` then end of stream when the log was rewritten or shrank (or `from` is stale): reload with `?tail=` · heartbeat comment every 15 s. New lines and state changes are pushed ~0.05-0.15 s after they are written (inotify on the sessions folder; without it the stream polls every 0.1 s while the session runs) |
 | GET | `/api/sessions/search?q=` | – | `[{id, title, path, snippet, at}]` (served by the full-text index, see Search; max 50) |
 | POST | `/api/uploads?path=<topic path>` | multipart `file` (multi) | `{files:[{path, name, size, mime}]}` saved in `<topic>/attachments/YYYY-MM/` · each file `413 too_large` over `upload_max_mb`, `507 disk_full` when it would leave less than `upload_min_free_mb` free on the destination disk (files saved before it in the same request are kept); the whole request is capped too (see Conventions) |
+
+**Discussion periods.** A Claude Code + Codex conversation counts its replies and its running time per *period*: the
+first message starts one, and the exchange pauses after the reply that reaches a limit (`debate_paused`, reason
+`limit`, feed event `discussion.paused`). Resume (or a new message) after a limit pause starts a new period (counters
+back to 0) when a limit is still reached, and continues the current one when the limits were changed so that none is
+reached any more; after the pause button the period always continues. Stop ends the exchange; the next message
+starts a new period. `discussion_paused_at` is set by both pauses and cleared by Resume, a new message and Stop (the
+thread can show it as a dated separator).
 
 `from`/`next`/`start`/`before` = byte offsets in the raw log (always line boundaries). Backward reads scan at
 most 64 MB per call (then `more_before` with the `start` reached). A `task` whose `task_started` line is before the

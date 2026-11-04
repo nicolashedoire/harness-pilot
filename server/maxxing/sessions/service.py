@@ -132,6 +132,7 @@ def public(meta: dict) -> dict:
             "debate_telegram": bool(m.get("debate_telegram")),
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
+            "discussion_paused_at": m.get("discussion_paused_at") or None,
             "discussion_turns": int(m.get("discussion_turns") or 0),
             "discussion_turn_limit": m.get("discussion_turn_limit"),
             "discussion_duration_seconds": m.get("discussion_duration_seconds"),
@@ -264,8 +265,9 @@ def _enqueue(sid: str, item: dict, *, reset_cron: bool = False) -> bool:
                 m["queue"] = [x for x in m.get("queue") or [] if x.get("kind") != "debate"]
             m["debate_active"] = True
             m["debate_paused"] = False
+            m.pop("discussion_paused_at", None)
             if not was_active:
-                if not was_paused or m.get("discussion_pause_reason") == "limit":
+                if not was_paused or (m.get("discussion_pause_reason") == "limit" and _limit_reached(m)):
                     m["discussion_turns"], m["discussion_elapsed"] = 0, 0
                 m["discussion_started"] = time.time()
             m.pop("discussion_pause_reason", None)
@@ -480,6 +482,7 @@ def stop(sid: str) -> None:
             m.pop("debate_pending", None)
             m.pop("discussion_started", None)
             m.pop("discussion_pause_reason", None)
+            m.pop("discussion_paused_at", None)
         dropped = [x for x in m.get("queue") or [] if not x.get("held")]
         m["queue"] = [x for x in m.get("queue") or [] if x.get("held")]
         turns0, running = int(m.get("turns") or 0), m.get("state") == "running"
@@ -524,6 +527,8 @@ def pause_debate(sid: str) -> dict:
             raise SessionError(400, "unsupported", "Only agent conversations can be paused.")
         if not m.get("debate_active") and not m.get("debate_paused"):
             raise SessionError(409, "not_running", "The conversation is not running.")
+        if not m.get("debate_paused") or not m.get("discussion_paused_at"):
+            m["discussion_paused_at"] = time.time()
         m["debate_active"], m["debate_paused"] = False, True
         started = m.pop("discussion_started", None)
         if started:
@@ -548,9 +553,10 @@ def resume_debate(sid: str) -> dict:
         if not m.get("debate_paused"):
             raise SessionError(409, "not_paused", "The conversation is not paused.")
         m["debate_active"], m["debate_paused"] = True, False
-        if m.get("discussion_pause_reason") == "limit":
-            m["discussion_turns"], m["discussion_elapsed"] = 0, 0
+        if m.get("discussion_pause_reason") == "limit" and _limit_reached(m):
+            m["discussion_turns"], m["discussion_elapsed"] = 0, 0    # a new period
         m.pop("discussion_pause_reason", None)
+        m.pop("discussion_paused_at", None)
         m["discussion_started"] = time.time()
         pending = m.pop("debate_pending", None)
         if pending:
@@ -568,6 +574,39 @@ def resume_debate(sid: str) -> dict:
     if start:
         _spawn(sid)
     _resolve_paused(sid)
+    bus.invalidate("sessions")
+    return get_session(sid) or {}
+
+
+def _limit_reached(m: dict) -> bool:
+    """The current period of a discussion has reached one of its limits (replies or running time)."""
+    turns, limit = _num(m.get("discussion_turns")), _num(m.get("discussion_turn_limit"))
+    elapsed, duration = _num(m.get("discussion_elapsed")), _num(m.get("discussion_duration_seconds"))
+    if m.get("discussion_started"):
+        elapsed += max(0.0, time.time() - _num(m["discussion_started"]))
+    return bool(limit and turns >= limit) or bool(duration and elapsed >= duration)
+
+
+UNSET: Any = object()
+
+
+def update_discussion(sid: str, turn_limit: int | None = UNSET, duration_s: int | None = UNSET) -> dict:
+    """New limits for a discussion / debate (running, paused or stopped): `UNSET` keeps one, None removes it. They apply
+    to the current period: a running exchange that already reached one pauses after the current reply (the runner
+    checks after each reply); one paused on its limit continues the period on Resume once no limit is reached."""
+    _require(sid)
+    for v, low, high, msg in ((turn_limit, 1, 200, "The response limit must be between 1 and 200."),
+                              (duration_s, 60, 86400, "The duration must be between 1 minute and 24 hours.")):
+        if v is not UNSET and v is not None and (type(v) is not int or not low <= v <= high):
+            raise SessionError(400, "bad_limit", msg)
+    with store.edit(sid) as m:
+        if m.get("provider") not in ("discussion", "debate"):
+            raise SessionError(400, "unsupported", "Only agent conversations have limits.")
+        if turn_limit is not UNSET:
+            m["discussion_turn_limit"] = turn_limit
+        if duration_s is not UNSET:
+            m["discussion_duration_seconds"] = duration_s
+        m["updated"] = time.time()
     bus.invalidate("sessions")
     return get_session(sid) or {}
 
