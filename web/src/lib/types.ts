@@ -633,6 +633,21 @@ export type MediaTools = {
   missing: ('ffmpeg' | 'ffmpeg_webp' | 'pdftoppm')[]
   install: string[]
 }
+/** GET /api/system/local-service: the optional macOS background service (launchd agent) of a local installation,
+ *  read-only; `supported` is false elsewhere. `running`: this server was started by it, `since` when. */
+export type LocalService =
+  | { supported: false }
+  | {
+      supported: true
+      installed: boolean
+      label: string
+      plist: string
+      running: boolean
+      since: number | null
+      logs: string
+      url: string
+      commands: { install: string; status: string; restart: string; uninstall: string; update: string }
+    }
 export type VersionInfo = {
   version: string
   local_mode?: boolean

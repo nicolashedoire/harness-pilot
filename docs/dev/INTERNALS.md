@@ -378,6 +378,19 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `log_missing()` - one warning per missing tool plus the commands, called by `api/system.startup()` in local mode only
   (the terminal of dev-local.sh); `cmd_core.check_media_tools` is the doctor check `media_tools` (warn, never fail).
 
+## maxxing.local_service  (owner: organisation)
+- `status() -> dict` - GET /api/system/local-service, read-only: `{supported: false}` unless `HARNESS_PILOT_LOCAL_MODE=1`
+  and `is_mac()`. Looks for `<agents_dir()>/<label>.plist` (labels tried: `XPC_SERVICE_NAME`,
+  `HARNESS_PILOT_SERVICE_LABEL`, `DEFAULT_LABEL` `local.harness-pilot`, only `[A-Za-z0-9._-]`), read with `plistlib`
+  (64 kB at most, a broken file = absent); it is this installation's when `ProgramArguments` holds this checkout's
+  `scripts/dev-local.sh` and its `HARNESS_PILOT_LOCAL_DIR` (if set) is this local dir (`HARNESS_PILOT_LOCAL_DIR`, else
+  `config.STATE.parent`). `running` = `XPC_SERVICE_NAME` is that label (launchd sets it for the jobs it starts; dev-local.sh,
+  uv and the server inherit it), `since` = `STARTED` (module import, with the API routers). `commands(label, port,
+  local)`: `bash <repo>/scripts/dev-local.sh service <action>` prefixed by the settings that are not the defaults,
+  shell-quoted, plus `update` = `git -C <repo> pull`. Never calls `launchctl`, never writes a LaunchAgent.
+- `agents_dir()` = `MAXXING_LAUNCH_AGENTS_DIR` or `~/Library/LaunchAgents`; conftest points every test to a temporary
+  folder.
+
 ## maxxing.hostcheck (DNS rebinding)
 `HostCheck` (ASGI, inside `_SecurityHeaders`, outside every other middleware) refuses an HTTP request with `421
 bad_host` and closes a WebSocket (1008) before it is accepted when `allowed(host)` is false. `allowed`: no Host, an IP
