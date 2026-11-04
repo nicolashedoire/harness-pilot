@@ -14,7 +14,7 @@ import { browserOn, soundOn } from './prefs'
 import { playNotificationSound } from './sound'
 import { notifyToast } from './toast'
 import { useNotificationCenter, useOpenNotifications } from './store'
-import { eventSummary, eventTitle, actionLabel } from './text'
+import { eventSummary, eventTitle, actionLabel, loadEventTexts } from './text'
 import { useNotificationActions } from './useNotificationActions'
 import { visibleActions } from './NotificationActions'
 
@@ -58,21 +58,24 @@ export function useFeedNotifier() {
     // already looking at the notifications: the list shows them
     if (!away && (useNotificationCenter.getState().open || pathname.startsWith('/notifications'))) return
     const shown = fresh.slice(-MAX_NOTICES)
-    for (const ev of shown) {
-      const title = eventTitle(t, ev)
-      const body = eventSummary(t, ev)
-      if (away) {
-        if (showSystemNotification(title, body, () => actions.open(ev), `feed-${ev.id}`, rings)) continue
+    // a notice is worded once: the words of its kind must be there first (t reads the dictionary when called)
+    void loadEventTexts(shown).then(() => {
+      for (const ev of shown) {
+        const title = eventTitle(t, ev)
+        const body = eventSummary(t, ev)
+        if (away) {
+          if (showSystemNotification(title, body, () => actions.open(ev), `feed-${ev.id}`, rings)) continue
+        }
+        notifyToast({
+          level: ev.level,
+          kind: ev.kind,
+          title,
+          body,
+          id: `feed-${ev.id}`,
+          actions: noticeActions(ev, actions, t).concat(fresh.length > MAX_NOTICES && ev === shown[0] ? [{ label: t('feed.open'), onClick: () => openCentre() }] : []).slice(0, 2),
+        })
       }
-      notifyToast({
-        level: ev.level,
-        kind: ev.kind,
-        title,
-        body,
-        id: `feed-${ev.id}`,
-        actions: noticeActions(ev, actions, t).concat(fresh.length > MAX_NOTICES && ev === shown[0] ? [{ label: t('feed.open'), onClick: () => openCentre() }] : []).slice(0, 2),
-      })
-    }
+    })
   }, [data])
 }
 
