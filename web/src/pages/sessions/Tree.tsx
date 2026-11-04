@@ -98,6 +98,7 @@ import { SlugPreview } from '@/features/workspace/CreateProjectTopic'
 import { forgetLog } from './log'
 import { FLAT_SORTS, RECENT_COUNTS, saveDraft, saveQuotes, TREE_MODES, useSessionsUI, type FlatSort, type ListBy, type TreeMode } from './store'
 import { absTopicDir, modelLabel, topicLabel } from './util'
+import { SpaceBadge, SpaceMenuItems } from '@/features/spaces/SpaceLabel'
 
 const SESSIONS_SHOWN = 8
 /** While filtering, topics open by themselves: still cap their rows so a broad match does not mount thousands at once. */
@@ -662,6 +663,8 @@ function DropLine({ pos }: { pos: 'before' | 'after' | null }) {
 
 function ProjectNode({ project, forceOpen, onDialog, stagger, onMove, children }: { project: Project; forceOpen: boolean; onDialog: (d: DialogState) => void; stagger: number; onMove?: (dragged: string, before: boolean) => void; children: React.ReactNode }) {
   const t = useT()
+  const workspace = useWorkspace()
+  const spacePath = absTopicDir(workspace.data, project.path)
   const id = `p:${project.name}`
   const stored = useSessionsUI((s) => s.expanded[id])
   const toggle = useFoldToggle(forceOpen)
@@ -695,6 +698,7 @@ function ProjectNode({ project, forceOpen, onDialog, stagger, onMove, children }
           <span className="truncate">
             <Sensitive length={8}>{project.name}</Sensitive>
           </span>
+          <SpaceBadge path={spacePath} />
           {!open && <Badges running={running} unread={unread} />}
         </button>
         <RowMenu open={menu} onOpenChange={setMenu} label={t('common.more')}>
@@ -809,6 +813,7 @@ function TopicNode({
           <span className="truncate">
             <Sensitive length={8}>{topic.name}</Sensitive>
           </span>
+          <SpaceBadge path={rootDir} />
           {(!open || topic.running > 0 || topic.unread > 0) && <Badges running={topic.running} unread={topic.unread} count={open ? 0 : topic.session_count} />}
         </button>
         <Tooltip content={t('sessions.newIn')}>
@@ -1113,6 +1118,7 @@ function RowMenu({ open, onOpenChange, label, children }: { open: boolean; onOpe
 /* ---------------------------------------------------------------- menus shared by the tree and drill-down */
 function ProjectMenuItems({ project, onDialog }: { project: Project; onDialog: (d: DialogState) => void }) {
   const t = useT()
+  const workspace = useWorkspace()
   return (
     <>
       <DropdownMenuItem onSelect={() => onDialog({ kind: 'topic', project: project.name })}>
@@ -1124,6 +1130,7 @@ function ProjectMenuItems({ project, onDialog }: { project: Project; onDialog: (
       <DropdownMenuItem onSelect={() => onDialog({ kind: 'emoji-project', project })} data-testid="project-emoji">
         <Smile /> {project.emoji ? t('sessions.emoji.change') : t('sessions.emoji.set')}
       </DropdownMenuItem>
+      <SpaceMenuItems path={absTopicDir(workspace.data, project.path)} />
       <DropdownMenuSeparator />
       <DropdownMenuItem destructive onSelect={() => onDialog({ kind: 'delete-project', project })}>
         <Trash2 /> {t('sessions.tree.delete')}
@@ -1149,6 +1156,7 @@ function TopicMenuItems({ topic, rootDir, onNewSession, onDialog }: { topic: Top
       <DropdownMenuItem onSelect={() => onDialog({ kind: 'permission-topic', topic })} data-testid="topic-permission">
         <ShieldHalf /> {t('sessions.permission.menu')}
       </DropdownMenuItem>
+      <SpaceMenuItems path={rootDir} />
       <DropdownMenuSeparator />
       <DropdownMenuItem destructive onSelect={() => onDialog({ kind: 'delete-topic', topic })}>
         <Trash2 /> {t('sessions.tree.delete')}
@@ -1276,6 +1284,7 @@ function DrillView({
             stagger={Math.min(i, 10)}
             icon={p.emoji ? <span className="w-3.5 shrink-0 text-center text-[14px] leading-none" aria-hidden>{p.emoji}</span> : <FolderOpen className="size-3.5 text-muted-foreground" />}
             name={p.name}
+            spacePath={rootDirOf(p.path)}
             bold
             count={p.topics.length}
             running={p.topics.reduce((n, tp) => n + tp.running, 0)}
@@ -1305,6 +1314,7 @@ function DrillView({
             stagger={Math.min(i, 10)}
             icon={<Hash className="size-3.5 text-muted-foreground" />}
             name={tp.name}
+            spacePath={rootDirOf(tp.path)}
             count={tp.session_count}
             running={tp.running}
             unread={tp.unread}
@@ -1392,6 +1402,7 @@ function DrillHeader({ back, onBack, title, hash, onNew, menu }: { back: string;
 function DrillRow({
   icon,
   name,
+  spacePath,
   bold,
   count,
   running,
@@ -1403,6 +1414,7 @@ function DrillRow({
 }: {
   icon: React.ReactNode
   name: string
+  spacePath: string | null
   bold?: boolean
   count: number
   running: number
@@ -1428,6 +1440,7 @@ function DrillRow({
         <span className="truncate">
           <Sensitive length={8}>{name}</Sensitive>
         </span>
+        <SpaceBadge path={spacePath} />
         {running > 0 || unread > 0 ? <Badges running={running} unread={unread} /> : count > 0 && <span className="ml-auto text-[11px] font-normal text-muted-foreground tabular-nums">{count}</span>}
         <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground', !(running > 0 || unread > 0 || count > 0) && 'ml-auto')} />
       </button>

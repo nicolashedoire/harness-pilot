@@ -104,6 +104,8 @@ export const BUS_KEYS: Record<BusTopic, readonly (readonly unknown[])[]> = {
   look: [qk.authState],
   /** the saved themes ("My themes") changed */
   themes: [qk.themes],
+  /** a project, topic or file label changed (Personal, Agents, Shared) */
+  'space-labels': [['space-labels']],
 }
 
 /** Data the bus keeps fresh on its own (file watchers + every write path): no refetch when the tab is shown

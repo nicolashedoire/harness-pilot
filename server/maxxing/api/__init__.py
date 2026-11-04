@@ -10,6 +10,7 @@ ROUTERS = [
     "onboarding",
     "claude",
     "workspace",
+    "space_labels",
     "sessions",
     "companions",
     "trash",
