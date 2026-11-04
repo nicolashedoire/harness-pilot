@@ -3,10 +3,15 @@
 #   bash scripts/dev-local.sh              run the server on http://127.0.0.1:8787
 #   bash scripts/dev-local.sh link         print the one-time setup link
 #   bash scripts/dev-local.sh cli <args>   run `pilot <args>` with the settings of this instance (state, workspace...)
+#   bash scripts/dev-local.sh service install|status|restart|uninstall
+#                                          macOS: run it in the background as a launchd agent (scripts/macos-service.sh)
+# HARNESS_PILOT_LOCAL_DIR (default <repo>/.harness-pilot-local) and HARNESS_PILOT_PORT (default 8787) select the instance.
 set -euo pipefail
 CALLER_DIR="$PWD"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_DIR="${HARNESS_PILOT_LOCAL_DIR:-$ROOT/.harness-pilot-local}"
+PORT="${HARNESS_PILOT_PORT:-8787}"
+case "$PORT" in *[!0-9]*|"") echo "HARNESS_PILOT_PORT must be a number" >&2; exit 1;; esac
 export MAXXING_STATE="$LOCAL_DIR/state"
 export MAXXING_SPAWN=direct
 export HARNESS_PILOT_LOCAL_MODE=1
@@ -24,22 +29,29 @@ export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"
 # The same for Codex: it reads .agents/skills from a session's folder and its parents up to the Git root (the default
 # local dir is inside this checkout), so ~/.agents/skills is never written.
 export MAXXING_CODEX_SKILLS_DIR="$LOCAL_DIR/.agents/skills"
+if [ "${1:-}" = "service" ]; then
+  shift
+  HARNESS_PILOT_LOCAL_DIR="$LOCAL_DIR" HARNESS_PILOT_PORT="$PORT" exec bash "$ROOT/scripts/macos-service.sh" "$@"
+fi
 mkdir -p "$MAXXING_STATE" "$HARNESS_PILOT_WORKSPACE"
 chmod 700 "$LOCAL_DIR" "$MAXXING_STATE"
 cd "$ROOT/server"
 uv sync --locked --quiet
-uv run --locked python - <<'PY'
+HARNESS_PILOT_PORT="$PORT" uv run --locked python - <<'PY'
 import os
 import sys
 from pathlib import Path
 from maxxing import config, cmd_core
 
 ws = Path(os.environ['HARNESS_PILOT_WORKSPACE']).resolve()
+port = int(os.environ['HARNESS_PILOT_PORT'])
 if not config.config_path().exists():
     config.save_config({'workspace': str(ws), 'files_root': str(ws), 'bind': '127.0.0.1',
-                        'port': 8787, 'language': 'fr', 'system_clock': 'keep',
+                        'port': port, 'language': 'fr', 'system_clock': 'keep',
                         'permission_mode': 'default', 'claude_auto_update': False,
                         'auto_update': False})
+elif config.load_config().get('port') != port:  # the setup link, `cli doctor` and `cli status` name the served port
+    config.update_config(port=port)
 cmd_core.copy_templates(ws)
 try:
     cmd_core.install_skills()                   # like `pilot init`, into MAXXING_SKILLS_DIR and MAXXING_CODEX_SKILLS_DIR
@@ -55,4 +67,9 @@ if [ "${1:-}" = "cli" ]; then
   cd "$CALLER_DIR"                              # relative paths given to the command are the caller's
   exec uv run --locked --project "$ROOT/server" pilot "$@"
 fi
-exec uv run --locked pilot serve --host 127.0.0.1 --port 8787   # `maxxing` = the same command
+if command -v lsof >/dev/null && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "port $PORT is already in use by $(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN | awk 'NR == 2 {print $1 " (PID " $2 ")"}')." \
+       "Another terminal, or the background service (bash scripts/dev-local.sh service status)?" >&2
+  exit 1
+fi
+exec uv run --locked pilot serve --host 127.0.0.1 --port "$PORT"   # `maxxing` = the same command

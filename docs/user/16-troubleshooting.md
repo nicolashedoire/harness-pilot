@@ -31,18 +31,23 @@ lines only concern a Linux server and can be ignored locally: systemd and the se
 | Agent turns (their processes' own errors) | `.harness-pilot-local/state/logs/runner.log` |
 | One conversation | `.harness-pilot-local/state/sessions/<id>.log`; the session page shows the same events |
 | Scheduled jobs | **Crons** (last result and output) or `bash scripts/dev-local.sh cli cron list` |
+| The background service ([`service install`](installation)) | `.harness-pilot-local/logs/server.log` and `server.err.log`; `bash scripts/dev-local.sh service status` prints their full paths |
 
 **Restart it.** Press `Ctrl+C` in its terminal, then run `bash scripts/dev-local.sh` again from the repository
 root. After a `git pull`, restart the same way: the script installs the new dependencies before it starts.
-`pilot update` and the Update button do not work in the local setup.
+`pilot update` and the Update button do not work in the local setup. When it runs as the background service:
+`bash scripts/dev-local.sh service restart`.
 
 **When the terminal is closed, the server stops,** and scheduled jobs, backups, resident missions and Telegram stop
 with it. While the Mac sleeps, it is paused. A job whose minute passed while the server was stopped or paused does
-not run late: the local scheduler only looks at the current minute.
+not run late: the local scheduler only looks at the current minute. To keep it running without a terminal, install
+the [background service](installation).
 
 **"Address already in use" at start.** The local app listens on `127.0.0.1:8787`, and something else already
-holds that port, usually the app running in another terminal. `lsof -nP -iTCP:8787 -sTCP:LISTEN` names the process.
-Stop it with `Ctrl+C` in its terminal, or with `kill <PID>`. The address is only reachable from this computer.
+holds that port, usually the app running in another terminal or as the background service (`bash
+scripts/dev-local.sh service status`). The start says which process holds it, and so does
+`lsof -nP -iTCP:8787 -sTCP:LISTEN`. Stop it with `Ctrl+C` in its terminal, with `service uninstall`, or with
+`kill <PID>`; `HARNESS_PILOT_PORT=8790` picks another port. The address is only reachable from this computer.
 
 **"Operation not permitted" on a folder.** macOS asks before a program reads Desktop, Documents, Downloads,
 iCloud Drive or an external disk. The server and the agents run with the permissions of your terminal app
