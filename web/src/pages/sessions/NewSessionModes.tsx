@@ -65,7 +65,10 @@ const MARK: Record<Tone, React.ReactNode> = {
 }
 
 /** "What will happen" with the chosen mode: the steps, what is guaranteed, what is not possible, the accounts used. */
-export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: string; adapter?: AgentProvider; swarmAgents: string; className?: string }) {
+/** A mixed team's choices shown in the panel: who coordinates, with which model (empty = the agent's default). */
+type TeamChoice = { coordinator: 'claude' | 'codex'; claudeModel: string; codexModel: string }
+
+export function ModePanel({ mode, adapter, swarmAgents, teamRoles, team, className }: { mode: string; adapter?: AgentProvider; swarmAgents: string; teamRoles?: { claude: string | null; codex: string | null }; team?: TeamChoice; className?: string }) {
   const t = useT()
   const { data: claude } = useClaudeStatus()
   const plugin = mode.startsWith('plugin:')
@@ -91,10 +94,11 @@ export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: str
   } else if (mode === 'team') {
     title = t('modes.team.name')
     points = [['ok', t('modes.team.p1')], ['ok', t('modes.team.p2')], ['ok', t('modes.team.p3')], ['ok', t('modes.team.attach')], ['info', t('modes.team.p4')]]
-    const def = claude?.default_model
+    const def = team?.claudeModel || claude?.default_model
+    const lead = team?.coordinator === 'codex' ? `${AGENT_NAME.codex}${team.codexModel ? ` · ${team.codexModel}` : ''}` : def ? `${AGENT_NAME.claude} · ${modelLabel(def, claude?.models)}` : AGENT_NAME.claude
     facts = [
       [t('modes.fact.subscriptions'), 'Claude + ChatGPT'],
-      ...(def ? [[t('modes.fact.coordinator'), modelLabel(def, claude?.models)] as [string, string]] : []),
+      [t('modes.fact.coordinator'), lead],
       [t('modes.fact.sessions'), t('modes.fact.teamSessions')],
     ]
   } else {
@@ -107,7 +111,7 @@ export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: str
         <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{t('modes.panel')}</div>
         <h2 className="mt-1 text-[15px] font-semibold">{title}</h2>
       </div>
-      {mode === 'team' && <TeamFlow />}
+      {mode === 'team' && <TeamFlow roles={teamRoles} coordinator={team?.coordinator ?? 'claude'} />}
       <ul className="grid gap-2 text-[13px]">
         {/* keyed by rank: the texts are empty while their dictionary group loads */}
         {points.map(([tone, text], i) => (
@@ -132,8 +136,8 @@ export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: str
   )
 }
 
-/** The mixed team at a glance: the mission, two analyses side by side, the synthesis. */
-function TeamFlow() {
+/** The mixed team at a glance: the mission, two analyses side by side (their role as typed, once changed), the synthesis. */
+function TeamFlow({ roles, coordinator }: { roles?: { claude: string | null; codex: string | null }; coordinator: 'claude' | 'codex' }) {
   const t = useT()
   const joints = (
     <div aria-hidden className="flex h-4 justify-around">
@@ -152,14 +156,14 @@ function TeamFlow() {
               <AgentIcon agent={a} size={14} label={null} />
               {a === 'claude' ? 'Claude' : 'Codex'}
             </div>
-            <div className="mt-1 text-xs leading-snug text-muted-foreground">{t(a === 'claude' ? 'mixedTeam.claudeRole' : 'mixedTeam.codexRole')}</div>
+            <div className="mt-1 line-clamp-3 text-xs leading-snug break-words text-muted-foreground">{roles?.[a]?.trim() || t(a === 'claude' ? 'mixedTeam.claudeRole' : 'mixedTeam.codexRole')}</div>
           </div>
         ))}
       </div>
       {joints}
       <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
-        <AgentIcon agent="claude" size={14} label={null} />
-        {t('modes.team.synthesis')}
+        <AgentIcon agent={coordinator} size={14} label={null} />
+        {t('modes.team.synthesis', { agent: coordinator === 'codex' ? 'Codex' : 'Claude' })}
       </div>
     </div>
   )

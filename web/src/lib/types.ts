@@ -23,13 +23,17 @@ export type AuthState = {
 export type SetupBody = { token: string; password: string }
 export type LoginBody = { password: string }
 /** A sign-in (or turning two-step sign-in on) waiting for an approval in Telegram. */
-export type TwoFactorChallenge = { challenge: string; expires_in: number }
+/** `methods`: how this challenge can be answered (absent from servers before the authenticator app = Telegram). */
+export type TwoFactorChallenge = { challenge: string; expires_in: number; methods?: ('totp' | 'telegram')[] }
+/** Two-step sign-in with an authenticator app (Settings -> Security). */
+export type TotpState = { enabled: boolean; recovery_left: number; pending: boolean; enabled_at: number | null }
+export type TotpSetup = { secret: string; uri: string; expires_in: number }
 export type LoginResult = { ok: boolean; two_factor?: TwoFactorChallenge }
 export type TwoFactorPoll = { ok: boolean; status: 'pending' | 'approved'; expires_in?: number }
 export type ChangePasswordBody = { current: string; new: string }
 
 /* ---------------------------------------------------------------- Onboarding */
-export type OnboardingStepKey = 'password' | 'claude' | 'workspace' | 'telegram' | 'backup' | 'profile'
+export type OnboardingStepKey = 'password' | 'claude' | 'codex' | 'workspace' | 'telegram' | 'backup' | 'profile'
 export type OnboardingState = { completed: boolean; steps: Record<OnboardingStepKey, boolean> }
 
 /* ---------------------------------------------------------------- Claude */
@@ -105,6 +109,8 @@ export type Session = {
   team_parent?: string | null
   /** A mixed-team worker on its team assignment: the team (its coordinator) notifies, not this session */
   team_turn?: boolean
+  /** A discussion's second agent: `codex`, or `plugin:<id>` (its name in `provider_name`); null for other sessions. */
+  discussion_partner?: string | null
   debate_paused?: boolean
   discussion_pause_reason?: string | null
   /** When it paused (limit or pause button), Unix seconds; null while not paused. */
@@ -143,7 +149,7 @@ export type Session = {
   /** A plan-mode turn finished: its plan waits for the user's validation. */
   plan_ready: boolean
 }
-export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: string; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
+export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: string; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; /** `plugin:<id>` instead of Codex. */ discussion_partner?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
 export type PatchSessionBody = { title?: string; model?: string; archived?: boolean; notify?: boolean; plan_mode?: boolean; favorite?: boolean; /** Move to another topic (idle sessions only). */ path?: string }
 export type SendMessageBody = { text: string; attachments?: string[]; hud?: boolean; /** Absolute path of a voice message sent directly: the server transcribes it, then sends it. */ voice?: string }
 export type SendMessageResult = { queued: boolean; session: Session }
@@ -411,6 +417,8 @@ export type Cron = {
   /** '' = the topic's mode, else the global one. */
   permission_mode?: CronPermissionMode
   enabled: boolean
+  /** Local scheduler: one run at startup when runs were missed while the app was stopped (older servers: absent). */
+  catch_up?: boolean
   notify: CronNotify
   timeout_s: number
   last_run: CronLastRun | null
@@ -568,6 +576,8 @@ export type Settings = {
   /** Settings -> Support: hide the donation links of What's new, Feedback and License (every browser). */
   donation_hidden?: boolean
   donation_url?: string
+  /** Settings -> Companions: Claude Code's OS sandbox for companion commands (off by default). */
+  companion_sandbox?: boolean
 }
 export type ResultField = 'model' | 'duration' | 'cost' | 'tokens' | 'cache'
 
@@ -579,6 +589,8 @@ export type TokenStats = {
   totals: TokenCounts
   providers: Record<string, Omit<TokenCounts, 'cost_usd' | 'sessions'> & {name?:string}>
   unattributed_turns: number
+  /** Older Codex turns recalculated because they counted cached input twice, and the tokens removed. */
+  corrected?: { turns: number; tokens: number }
   projects: (TokenCounts & { name: string })[]
   topics: (TokenCounts & { path: string })[]
   sessions: (Omit<TokenCounts, 'sessions'> & { id: string; title: string; path: string; archived: boolean; updated: number })[]

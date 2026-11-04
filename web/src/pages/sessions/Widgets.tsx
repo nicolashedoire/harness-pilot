@@ -182,9 +182,9 @@ export function AgentChip({ session }: { session: Session }) {
   const t = useT()
   const { data } = useClaudeStatus()
   const showCost = !useResultLine().hidden.includes('cost')
-  const agents = sessionAgents(session.provider)
+  const agents = sessionAgents(session.provider, session.discussion_partner)
   const model = (session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? session.model : session.real_model || session.model || data?.default_model || ''
-  const label = agents.length > 1 ? agents.map((a) => agentName(a, t)).join(' · ') : [agentName(agents[0], t, session.provider_name), model ? modelLabel(model, data?.models) : ''].filter(Boolean).join(' · ')
+  const label = agents.length > 1 ? agents.map((a) => agentName(a, t, session.provider_name)).join(' · ') : [agentName(agents[0], t, session.provider_name), model ? modelLabel(model, data?.models) : ''].filter(Boolean).join(' · ')
   const tip = [label, session.cost_usd > 0 && showCost ? `≈ ${fmtCost(session.cost_usd)} · ${costTip(t, session.turns)}` : ''].filter(Boolean).join(' — ')
   return (
     <Tooltip content={<span className="block max-w-72 whitespace-normal">{tip}</span>}>

@@ -50,6 +50,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `_debate_followup`) resets the counters on resume / a new message only while `_limit_reached` is still true.
   `discussion_paused_at` (time.time()) is set by `pause_debate` (when it was running) and by the runner's limit pause,
   and dropped wherever `debate_paused` turns false (resume, `_enqueue`, `stop`, the runner on an error / empty answer).
+  A discussion's second seat (meta `discussion_partner`, default `codex`; `service._check_partner` validates a `plugin:<id>` against its capabilities): `_debate_followup` alternates Claude with it, `_agent_label` writes its note (the plugin's `provider_name`), `codex_role` / `codex_model` apply to it, and `_plugin_turn(..., is_debate)` sends `_debate_history` (from `_debate_turns`, speaker-named, minus what the prompt holds) then calls `_debate_followup` (no overflow retry for a plugin: its state is its own).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
@@ -91,23 +92,27 @@ Python modules call each other only through these functions. Keep signatures sta
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
 - Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
-- Discussion hand-off: `service.handoff` copies `DISCUSSION_CARRIED` (`debate_goal`, roles, `codex_model`, limits) and, when paused, `debate_pending` + `debate_next` (new one paused, reason `user`) to the continuation and queues a `handoff` item (`DEBATE_SUMMARY_PROMPT`, `target`) on the old one; `_pop` also runs a `handoff` head while paused. `_debate_compact` ends with `_debate_handoff(target, summary)`: target meta `discussion_summary` + `discussion_from` (old title: `SEED_DEBATE_HANDOFF` instead of `SEED_DEBATE`, dropped by its next compaction), an `mx_user` `kind: seed` line (`source: system`) with that seed, `_start_target(target, None)`; the old one is archived and unpaused. `resume_debate` does not start a continuation still `_handoff_held`.
+- Discussion hand-off: `service.handoff` copies `DISCUSSION_CARRIED` (`debate_goal`, roles, `codex_model`, limits, and an agent plugin partner: `discussion_partner`, `provider_name`, `provider_capabilities`) and, when paused, `debate_pending` + `debate_next` (new one paused, reason `user`) to the continuation and queues a `handoff` item (`DEBATE_SUMMARY_PROMPT`, `target`) on the old one; `_pop` also runs a `handoff` head while paused. `_debate_compact` ends with `_debate_handoff(target, summary)`: target meta `discussion_summary` + `discussion_from` (old title: `SEED_DEBATE_HANDOFF` instead of `SEED_DEBATE`, dropped by its next compaction), an `mx_user` `kind: seed` line (`source: system`) with that seed, `_start_target(target, None)`; the old one is archived and unpaused. `resume_debate` does not start a continuation still `_handoff_held`.
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
 ## maxxing.sessions.teams  (owner: core) - mixed Claude + Codex teams
-API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a Claude
-coordinator (the parent, returned by `create`) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
+API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a
+coordinator (the parent, returned by `create`; Claude Code or Codex) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
 - State: coordinator meta `team: {phase, goal, attachments, agents: [{id, provider, role, stopped}], created}`, worker meta
   `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
   (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
-- `create(path, message, title=None, attachments=None)`: mission of 1-24 000 characters (else 400 `bad_mission`),
+- `create(path, message, title=None, attachments=None, roles=None, coordinator='claude', models=None)`: mission of
+  1-24 000 characters (else 400 `bad_mission`); `roles` `{claude?, codex?}` replace `ROLES` (the defaults) for that
+  worker when not blank; `coordinator` (`claude` | `codex`, else 400 `bad_provider`) is the provider of the parent
+  session; `models` `{claude?, codex?}` (`service._check_model`, 400 `bad_model`) go to that provider's worker and
+  to the coordinator of that provider;
   attachments checked by `service._check_attachments` (400 `bad_attachment`) before anything is created. Creates the
   coordinator then the workers, logs the mission and its attachments as the coordinator's `mx_user` line, then, inside the coordinator's
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+- `get(sid)` -> `{id, phase, created, coordinator, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
   `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
   session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
   (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
@@ -326,6 +331,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
   by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:
   params, actions, body dropped in that order when too long). Tests set `push.http_transport` (httpx.MockTransport).
+- Web: `features/notifications/push.ts` (`subscribeBrowser`, `usePushSync`) through `enrollment.ts` (`enrollPush`,
+  `activeRegistration`) and `lib/browser-request.ts`: each native step (permission, subscription, key replacement)
+  runs under one 30 s deadline and stops on abort; a late native answer is ignored, never sent to the server.
 
 ## maxxing.backup  (owner: connectivity)
 - `run() -> dict`, `restore(ref=None) -> dict`, `restore_from(repo, token, ref=None)`, `status()`,
@@ -413,7 +421,26 @@ Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=tests
   `TTL` 120 s, `GRACE` 60 s to collect an approval, `NEW_MAX` 5 per client / 15 min, `PENDING_MAX` 10.
 - Trusted browser: cookie `mx_device` = `<issued_at>.<nonce>.<hmac(device_key)>`, path `/api/auth`, 30 days;
   `forget_devices()` = `device_key` -> None (recreated on first use).
-- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer.
+- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer
+  or the phone with the authenticator app is lost (`off` turns both methods off).
+- `required()` = `enabled()` or `totp.is_on()` (what `POST /api/auth/login` checks). A `login` challenge carries
+  `methods`: `"totp"` when the app is on, `"telegram"` when the app is off (as before) or Telegram is on and linked
+  (an `enable` challenge is Telegram only). Telegram is sent only with `"telegram"`; when that send fails and the app is on, the challenge
+  keeps `("totp",)`. A TOTP-only challenge lives `TOTP_TTL` (300 s). `check(id, code)` tries `totp.verify(code)` first
+  (`via` `totp` | `recovery`), then the Telegram code; wrong ones share `CODE_TRIES` and `BAD_MAX`.
+
+## maxxing.totp (two-step sign-in with an authenticator app)
+- RFC 6238: HMAC-SHA1, 6 digits, `STEP` 30 s, `DRIFT` 1 step either way; `hotp()`, `code_at()`, `uri()` (otpauth link,
+  issuer `harness-pilot`). Secret: 20 random bytes, base32.
+- secrets.json (mode 600, no other encryption, like the password hash): `totp_pending` `{secret, created}` (`begin()`,
+  `PENDING_TTL` 600 s) and `totp` `{secret, last_step, enabled_at, recovery:[sha256 hex]}` (`confirm(code)` -> the 10
+  plain recovery codes, 80 bits each, returned once).
+- `verify(code)` under `config._lock`: a 6-digit code must match a step > `last_step` (stored on success: no replay,
+  the enrolment code included); otherwise a recovery code (normalised: case, spaces, dashes, 0/1/8 -> O/I/B) is
+  removed from the list on use. `regenerate(code)` (under the same lock): a verified code -> a new list of
+  `RECOVERY_COUNT` codes replaces the old one (`TotpError` `bad_code` / `not_on`). `disable(code=None)`: with a code only when it verifies (Settings), without at once
+  (`pilot 2fa off`). Throttling is the callers': `twofactor.check` at sign-in, `api/auth._reauth` (password-change
+  throttle) for enable / disable.
 
 ## maxxing.bus
 - `invalidate(*topics)` - thread-safe UI invalidation (see API.md Global bus).
@@ -437,6 +464,11 @@ Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=tests
   or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
   of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
   scheduled=True)`): pausing services for the snapshot never cancels it.
+- Copy folder: config `instance_backup_copy` `{folder}`; `instance_backup.set_copy_folder()` (absolute, existing,
+  writable, outside the included roots) / `disable_copy()` / `copy_status()`; `copy_export(id)` streams, fsyncs,
+  reads back and compares size + SHA-256 before the rename, stores the record in the export's `.json` and posts or
+  resolves the feed group `instance-backup-copy`. The app's `export_instance` calls it after services resume and
+  outside the activation lock, for manual and scheduled exports alike.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
@@ -499,9 +531,15 @@ Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=tests
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
-- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.boot()` once (every
-  enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while `integrations_paused`), then
-  `localcron.tick()` every 15 s (the current minute, claimed in `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.catch_up()`, then
+  `localcron.boot()` once (every enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while
+  `integrations_paused`), then `localcron.tick()` every 15 s (the current minute, claimed in
+  `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local scheduler catch-up (`localcron.catch_up(now)`): heartbeat
+  `<state>/local-cron-alive.json` `{at}` written by `tick()` once per minute (also while `integrations_paused`) and by
+  `catch_up` itself before it starts anything (a crash never repeats it). For each enabled job with `catch_up` (not
+  `@reboot`, not due this minute) and at least one `iter_runs` time after max(heartbeat, job `created`, `updated`) and
+  before the current minute: one `spawn_run` + `feed.system` `cron.caught_up` (info). No heartbeat yet = first start: nothing.
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
@@ -631,6 +669,25 @@ optional auth scheme word) or a `PLAIN_HEADERS` header; URL userinfo and query v
 `.claude.json` / `.mcp.json` goes through `_dict()` (hand-edited files). `.claude.json` rewrites use a unique
 0600 temp file + `os.replace`.
 
+Codex turns get the same servers (`sessions/codex.mcp_config(cwd, env)`, called by `runner._codex_turn`): the
+servers Claude Code would load in the session's folder (`mcp_auto.candidates`: user scope minus the folder's disabled
+ones, local scope, approved `.mcp.json` of the folder and its parents; `harness-pc` excluded), turned into
+`-c mcp_servers.<name>={...}` inline TOML tables (checked with codex-cli 0.150.1, `codex mcp list --json`), next to
+`--ignore-user-config`, so the user's own Codex config is never read nor changed. `${KEY}` / `${KEY:-default}`
+references are expanded from the turn environment plus the vault keys flagged `expose`; no secret is put on the
+command line: a stdio `env` value that is not plain goes in the Codex process environment under its own name and in
+`env_vars`, a non-plain HTTP header in `MAXXING_MCP_H<n>` and `env_http_headers`; plain values stay in `env` /
+`http_headers`. Skipped, with the reason (`-> skipped [(name, reason)]`): names outside `[A-Za-z0-9_-]{1,64}`,
+`sse` / `ws` transports (Codex has streamable HTTP and stdio only), an address or program arguments carrying a key
+(literal, or a reference to a vault key: it would be on the command line), a secret env value whose name is reserved (`PATH`, `HOME`, `CODEX_*`, `OPENAI_*`...) or already set in
+the turn environment with another value (the same value is forwarded as is and not hidden), a reference with no value.
+Every server gets `default_tools_approval_mode = codex.tools_approval(mode)`: `codex exec` never asks and its sandbox
+does not cover MCP tools; checked with codex-cli 0.150.1 against a stub model and MCP server: unset / `auto` /
+`writes` run only `readOnlyHint` tools and refuse the others ("requires approval, but approval policy is never"),
+`prompt` refuses all, `approve` runs all. So `writes` in plan / default / acceptEdits, `approve` in bypass only; the
+runner notes once (meta `codex_mcp_tools`) when the read-only rule applies. Claude's OAuth sign-ins and claude.ai connectors are not shared (Codex keeps its own tokens).
+The runner notes the skipped servers in the conversation when that list changes (meta `codex_mcp_skipped`).
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`
@@ -706,6 +763,12 @@ Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_L
 `LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
 against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
+## maxxing.sessions.spawn - companion sandbox
+`settings_args(cfg, sandbox)` adds `COMPANION_SANDBOX` (`{enabled, failIfUnavailable: true, allowUnsandboxedCommands:
+false, autoAllowBashIfSandboxed: false}`) to the turn's `--settings`; the runner passes `companion_sandbox(cfg, meta)`
+= config `companion_sandbox` and `meta.companion` set (experiments, mission steps, planner). Codex turns and external
+adapters are unchanged. Options and limits: `docs/dev/COMPANION-SANDBOX.md`.
+
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
   `flock` (`<id>.lock`) + atomic `config.write_json`; `create.lock` serializes the 50-mission cap; `worker.lock`
@@ -730,7 +793,7 @@ against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 - `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,
   launch_guard=None)`: an existing session tagged with `launch_key` is returned instead of a new run; `plan` =
   `plan_mode` + `permission_mode='plan'` (the engine must declare the `plan` capability) and a read-only prompt.
-- Plan mode in a discussion (runner): its turns use `DEBATE_PLAN_PREFACE` instead of `PLAN_PREFACE` (Claude and Codex paths); a `plan_approved` item becomes `DEBATE_PLAN_APPROVED_PREFACE` + text in `turn`, and `_debate_followup` pauses the exchange after it (`discussion_pause_reason` `user`, next reply in `debate_pending`).
+- Plan mode in a discussion (runner): its turns use `DEBATE_PLAN_PREFACE` instead of `PLAN_PREFACE` (Claude, agent plugin and Codex paths); a `plan_approved` item becomes `DEBATE_PLAN_APPROVED_PREFACE` + text in `turn`, and `_debate_followup` pauses the exchange after it (`discussion_pause_reason` `user`, next reply in `debate_pending`).
   Manual companion runs keep the defaults. `companions.MAX_MISSION` (6000) bounds the mission text; missions check it
   when a plan is created, saved or started (`_check_lengths`, `TooLong` with `details` {step, title, excess}, kept in the
   error body by `api/missions._call`), trim prerequisite reports at launch, and fit the planner's role catalog.
@@ -890,11 +953,23 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_MCP=0` Codex turns get no MCP server (`codex.mcp_config`; tests: they never read the real
+  `.claude.json`, `test_codex_provider.py` opts back in with a temporary `CLAUDE_CONFIG_DIR`)
 - `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
   also read by the doctor, uninstall and `blocks.sync_agent_files`) instead of `~/.agents/skills`.
   `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and
   its parents up to the Git repository root (the default local dir is inside the checkout), so the personal
   `~/.agents/skills` of the computer is never written. Tests point it to a temporary folder (`conftest.py`).
+- `scripts/dev-local.sh` (local setup): `HARNESS_PILOT_LOCAL_DIR` (default `<repo>/.harness-pilot-local`: state,
+  workspace, skills, local crontab file, `logs/`) and `HARNESS_PILOT_PORT` (default 8787: `serve --port`, written to
+  the config so `link`, `cli doctor` and `cli status` name it; the start refuses a port that already has a
+  listener). `dev-local.sh service install|status|restart|uninstall` runs `scripts/macos-service.sh` (macOS only): a
+  launchd agent `HARNESS_PILOT_SERVICE_LABEL` (default `local.harness-pilot`) in
+  `~/Library/LaunchAgents/<label>.plist` running `/bin/bash <repo>/scripts/dev-local.sh` in `gui/<uid>` with the PATH
+  of the installing terminal, the local dir and the port as EnvironmentVariables, RunAtLoad, KeepAlive
+  `{SuccessfulExit: false}`, ThrottleInterval 10, stdout/stderr to `<local dir>/logs/server.log` / `server.err.log`.
+  `install` refuses a port in use or an existing plist, and removes the agent again when its error log says
+  "Operation not permitted" (TCC: a clone in Desktop, Documents, Downloads, iCloud Drive or on an external disk).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL

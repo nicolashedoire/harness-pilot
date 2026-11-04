@@ -93,7 +93,7 @@ import {
   Tooltip,
   useMask,
 } from '@/components/ui'
-import { AgentIcon, sessionAgents } from '@/features/agents/AgentIcon'
+import { AgentIcon, agentName, sessionAgents } from '@/features/agents/AgentIcon'
 import { SlugPreview } from '@/features/workspace/CreateProjectTopic'
 import { forgetLog } from './log'
 import { FLAT_SORTS, RECENT_COUNTS, saveDraft, saveQuotes, TREE_MODES, useSessionsUI, type FlatSort, type ListBy, type TreeMode } from './store'
@@ -1028,8 +1028,8 @@ const SessionRow = React.memo(function SessionRow({
             {s.provider && s.provider !== 'claude' && (
               // Codex, or a discussion between both agents: their marks (Claude Code alone is the default)
               <span className="flex shrink-0 items-center gap-0.5" data-testid="session-agents">
-                {sessionAgents(s.provider).map((a) => (
-                  <AgentIcon key={a} agent={a} size={12} />
+                {sessionAgents(s.provider, s.discussion_partner).map((a) => (
+                  <AgentIcon key={a} agent={a} size={12} label={agentName(a, t, s.provider_name)} />
                 ))}
               </span>
             )}

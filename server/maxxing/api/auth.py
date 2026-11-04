@@ -7,7 +7,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from .. import __version__, bus, config, security, twofactor
+from .. import __version__, bus, config, security, totp, twofactor
 from . import settings as settings_api
 
 router = APIRouter(prefix="/api/auth", tags=["auth"], dependencies=[Depends(security.csrf_only)])
@@ -35,6 +35,11 @@ class TwoFactorSet(BaseModel):
 class PasswordIn(BaseModel):
     current: str
     new: str
+
+
+class TotpConfirmIn(BaseModel):
+    password: str
+    code: str
 
 
 def _check_strength(pw: str) -> None:
@@ -105,7 +110,7 @@ async def login(body: LoginIn, request: Request, response: Response):
     ok = await _verify(body.password)
     delay = security.end_attempt(key, ok)
     if ok:
-        if twofactor.enabled() and not twofactor.device_trusted(request.cookies.get(twofactor.DEVICE_COOKIE)):
+        if twofactor.required() and not twofactor.device_trusted(request.cookies.get(twofactor.DEVICE_COOKIE)):
             return {"ok": False, "two_factor": await _challenge("login", request)}
         security.set_cookie(response, request)
         _alert(request, "Signed in", loud=False, via="password")
@@ -123,7 +128,7 @@ async def _challenge(purpose: str, request: Request) -> dict:
     except twofactor.Refused as e:
         raise HTTPException(429 if e.error == "throttled" else 503,
                             detail={"error": e.error, "message": e.message}) from None
-    return {"challenge": c.id, "expires_in": twofactor.TTL}
+    return {"challenge": c.id, "expires_in": round(c.expires - c.created), "methods": list(c.methods)}
 
 
 @router.post("/two-factor")
@@ -143,7 +148,9 @@ async def two_factor(body: TwoFactorIn, request: Request, response: Response):
     if status == "codes_paused":
         raise HTTPException(429, detail={"error": "codes_paused",
                                          "message": "Too many wrong codes on this server - use the Allow button in "
-                                                    "Telegram, or try a code again in an hour"})
+                                                    "Telegram, or try a code again in an hour"
+                                                    if "telegram" in c.methods else
+                                                    "Too many wrong codes on this server - try again in an hour"})
     if status == "denied":
         raise HTTPException(403, detail={"error": "denied", "message": "Sign-in denied in Telegram"})
     if status == "expired":
@@ -157,8 +164,9 @@ async def two_factor(body: TwoFactorIn, request: Request, response: Response):
     security.set_cookie(response, request)
     if body.trust:
         twofactor.set_device_cookie(response, request)
-    _alert(request, "Signed in (approved in Telegram)" if c.via == "telegram" else "Signed in (Telegram code)",
-           loud=False, via="telegram" if c.via == "telegram" else "code")
+    what = {"telegram": "Signed in (approved in Telegram)", "totp": "Signed in (authenticator app)",
+            "recovery": "Signed in (recovery code)"}.get(c.via, "Signed in (Telegram code)")
+    _alert(request, what, loud=False, via=c.via if c.via in ("telegram", "totp", "recovery") else "code")
     return {"ok": True, "status": "approved"}
 
 
@@ -182,6 +190,86 @@ async def forget_browsers(request: Request, response: Response):
     await asyncio.to_thread(twofactor.forget_devices)
     if twofactor.enabled():
         twofactor.set_device_cookie(response, request)
+    return {"ok": True}
+
+
+async def _reauth(request: Request, password: str, check):
+    """Password, then `check()` (a code: TotpError when it is wrong) for a signed-in browser, throttled like the
+    password change: a stolen cookie must not be a way to guess the password or a code. -> check()'s result."""
+    key = "pw:" + security.client_key(request)
+    refusal, _ = security.begin_attempt(key)
+    if refusal:
+        raise HTTPException(429, detail={"error": "throttled", "message": "Too many attempts - try again in 15 min"})
+    ok = await _verify(password)
+    err, result = None, None
+    if ok:
+        try:
+            result = await asyncio.to_thread(check)
+        except totp.TotpError as e:
+            err = e
+    delay = security.end_attempt(key, ok and err is None)
+    if not ok:
+        await asyncio.sleep(delay)
+        raise HTTPException(401, detail={"error": "bad_password", "message": "Current password is wrong"})
+    if err is not None:
+        if err.error == "bad_code":
+            await asyncio.sleep(delay)
+        raise HTTPException({"bad_code": 400, "expired": 410}.get(err.error, 409),
+                            detail={"error": err.error, "message": err.message})
+    return result
+
+
+def _totp_event(what: str) -> None:
+    """Turning the authenticator app on or off: Telegram Alerts (when linked) and a security notice."""
+    try:
+        from ..telegram import gateway
+        gateway.alert(f"harness-pilot: {what}", loud=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .. import feed
+        feed.system(what, "", "warning", "security", actions=[feed.link("open", "Open", "/settings/security")])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@router.get("/totp", dependencies=[Depends(security.require_auth)])
+async def totp_state():
+    return await asyncio.to_thread(totp.status)
+
+
+@router.post("/totp/setup", dependencies=[Depends(security.require_auth)])
+async def totp_setup():
+    """A new secret to scan, pending until /totp/enable: nothing changes for the sign-in yet."""
+    try:
+        return await asyncio.to_thread(totp.begin, (config.load_config().get("profile") or {}).get("name") or "")
+    except totp.TotpError as e:
+        raise HTTPException(409, detail={"error": e.error, "message": e.message}) from None
+
+
+@router.post("/totp/enable", dependencies=[Depends(security.require_auth)])
+async def totp_enable(body: TotpConfirmIn, request: Request, response: Response):
+    """Password + a code of the pending secret -> on, with the recovery codes (shown once); this browser trusted."""
+    codes = await _reauth(request, body.password, lambda: totp.confirm(body.code))
+    twofactor.set_device_cookie(response, request)
+    _totp_event("Two-step sign-in with an authenticator app turned on")
+    return {"ok": True, "recovery_codes": codes}
+
+
+@router.post("/totp/recovery-codes", dependencies=[Depends(security.require_auth)])
+async def totp_recovery_codes(body: TotpConfirmIn, request: Request):
+    """Password + a code of the app or a recovery code -> a new set of recovery codes (shown once), the old ones dead."""
+    codes = await _reauth(request, body.password, lambda: totp.regenerate(body.code))
+    _totp_event("New recovery codes for two-step sign-in")
+    return {"ok": True, "recovery_codes": codes}
+
+
+@router.post("/totp/disable", dependencies=[Depends(security.require_auth)])
+async def totp_disable(body: TotpConfirmIn, request: Request):
+    """Password + a code of the app or a recovery code -> off; every trusted browser asks again."""
+    await _reauth(request, body.password, lambda: totp.disable(body.code))
+    await asyncio.to_thread(twofactor.forget_devices)
+    _totp_event("Two-step sign-in with an authenticator app turned off")
     return {"ok": True}
 
 

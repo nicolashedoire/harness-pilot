@@ -36,7 +36,15 @@ print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "outpu
     assert 'Shared workspace and topic instructions/memory' in requests[0]['prompt']
     assert requests[1]['argv'][requests[1]['argv'].index('resume') + 1] == 'codex-thread-123'
     assert [e['text'] for e in all_events(client, sid) if e['type'] == 'assistant'] == ['Codex: premier', 'Codex: deuxième']
-    assert client.post(f'/api/sessions/{sid}/ask', json={'question': 'test'}).status_code == 409
+    # side question: an ephemeral, read-only fork of the thread answers; the session is not changed
+    asked = client.post(f'/api/sessions/{sid}/ask', json={'question': 'où en es-tu ?'})
+    assert asked.status_code == 200, asked.text
+    assert asked.json()['answer'] == 'Codex: où en es-tu ?' and asked.json()['agent'] == 'codex'
+    fork = [json.loads(line) for line in calls.read_text().splitlines()][-1]['argv']
+    assert fork[fork.index('fork') + 1] == 'codex-thread-123' and '--ephemeral' in fork and 'resume' not in fork
+    assert fork[fork.index('--sandbox') + 1] == 'read-only' and fork[-1] == '-'
+    assert [e['text'] for e in all_events(client, sid) if e['type'] == 'assistant'] == ['Codex: premier', 'Codex: deuxième']
+    assert client.get(f'/api/sessions/{sid}').json()['turns'] == 2
 
 
 def test_codex_sandbox_and_events():
@@ -263,3 +271,191 @@ def test_discussion_preset_save_list_delete_and_validation(client):
     assert client.get('/api/discussion-presets').json() == [saved]
     assert client.delete(f"/api/discussion-presets/{saved['id']}").json() == {'ok': True}
     assert client.get('/api/discussion-presets').json() == []
+
+
+def _fake_codex(mx, monkeypatch, text='Codex aside'):
+    fake = mx['tmp'] / 'codex-aside'
+    calls = mx['tmp'] / 'codex-aside-calls.jsonl'
+    fake.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+sys.stdin.read()
+with open({str(calls)!r}, "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
+print(json.dumps({{"type": "item.completed", "item": {{"type": "agent_message", "text": {text!r}}}}}), flush=True)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    return calls
+
+
+def test_a_discussion_side_question_asks_the_agent_that_answered_last(client, topic, mx, monkeypatch):
+    from maxxing.sessions import store
+    calls = _fake_codex(mx, monkeypatch)
+    meta = store.new_meta(topic, 'Debate', provider='debate')
+    meta.update(turn_provider='codex', codex_thread_id='th-9', codex_model='gpt-x')
+    store.create(meta)
+    r = client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'why?'})
+    assert r.status_code == 200, r.text
+    assert r.json()['agent'] == 'codex' and r.json()['answer'] == 'Codex aside'
+    argv = json.loads(calls.read_text().splitlines()[-1])
+    assert argv[argv.index('fork') + 1] == 'th-9' and argv[argv.index('--model') + 1] == 'gpt-x'
+    # Claude spoke last but has no thread yet: Codex answers; once Claude's thread exists, Claude does
+    store.update(meta['id'], turn_provider='claude')
+    assert client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'why?'}).json()['agent'] == 'codex'
+    from maxxing.sessions import aside
+    seen = []
+    monkeypatch.setattr(aside, '_run', lambda m, csid, *a: seen.append(csid) or {'answer': 'Claude aside', 'agent': 'claude',
+                                                                                 'cost_usd': 0.0, 'duration_ms': 1})
+    store.update(meta['id'], csid='claude-thread', fresh=False)
+    assert client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'why?'}).json()['agent'] == 'claude'
+    assert seen == ['claude-thread']
+
+
+def test_side_questions_need_a_thread_and_refuse_agent_plugins(client, topic, mx, monkeypatch):
+    from maxxing.sessions import store
+    _fake_codex(mx, monkeypatch)
+    fresh = store.new_meta(topic, 'Codex', provider='codex')
+    store.create(fresh)
+    r = client.post(f"/api/sessions/{fresh['id']}/ask", json={'question': 'x'})
+    assert r.status_code == 409 and r.json()['error'] == 'no_thread'
+    plugin = store.new_meta(topic, 'Plugin', provider='plugin:demo')
+    store.create(plugin)
+    r = client.post(f"/api/sessions/{plugin['id']}/ask", json={'question': 'x'})
+    assert r.status_code == 409 and r.json()['error'] == 'unsupported'
+
+
+def test_a_failed_codex_side_question_says_why(client, topic, mx, monkeypatch):
+    from maxxing.sessions import store
+    fake = mx['tmp'] / 'codex-fail'
+    fake.write_text('''#!/usr/bin/env python3
+import json, sys
+sys.stdin.read()
+print(json.dumps({"type": "turn.failed", "error": {"message": "usage limit reached"}}))
+sys.exit(1)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    meta = store.new_meta(topic, 'Codex', provider='codex')
+    meta['codex_thread_id'] = 'th-1'
+    store.create(meta)
+    r = client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'x'})
+    assert r.status_code == 502 and 'usage limit reached' in r.json()['message']
+
+
+def _claude_json(tmp_path, monkeypatch, data):
+    own = tmp_path / 'claude-config'
+    own.mkdir(exist_ok=True)
+    (own / '.claude.json').write_text(json.dumps(data))
+    monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(own))       # read like Settings -> MCP and Claude's turns
+    monkeypatch.setenv('MAXXING_CODEX_MCP', '1')            # conftest turns it off everywhere else
+    return own
+
+
+def test_mcp_servers_are_given_to_codex_without_secrets_on_the_command_line(tmp_path, monkeypatch):
+    folder = tmp_path / 'ws' / 'projects' / 'acme' / 'topics' / 'ads'
+    folder.mkdir(parents=True)
+    _claude_json(tmp_path, monkeypatch, {
+        'mcpServers': {
+            'acme': {'command': 'npx', 'args': ['-y', '@acme/mcp', '--region=${REGION:-eu}'],
+                     'env': {'LOG_LEVEL': 'debug', 'ACME_KEY': '${VAULT_ACME}'}},
+            'legacy': {'type': 'sse', 'url': 'https://sse.example.com/sse'},
+            'keyed': {'type': 'http', 'url': 'https://mcp.example.com/mcp?key=a1b2c3d4e5f6g7h8i9j0k1'},
+            'dotted.name': {'command': 'tool'},
+            'pathy': {'command': 'tool', 'env': {'PATH': '${VAULT_ACME}'}},
+            'missing': {'command': 'tool', 'env': {'TOKEN': '${NOT_SET}'}},
+            'argkey': {'command': 'tool', 'args': ['--token', '${VAULT_ACME}']},
+        },
+        'projects': {str(folder): {'mcpServers': {
+            'ads': {'type': 'http', 'url': 'https://ads.example.com/mcp',
+                    'headers': {'Authorization': 'Bearer ${ADS_TOKEN}', 'Content-Type': 'application/json'}}}}},
+    })
+    from maxxing.sessions import spawn
+    monkeypatch.setattr(spawn, '_exposed_vault', lambda s: {'VAULT_ACME': 'acme-secret-123456'})
+    env = {'ADS_TOKEN': 'ads-secret-987654'}
+    args, extra, skipped = codex.mcp_config(str(folder), env)
+    tables = {a.split('=', 1)[0]: a.split('=', 1)[1] for a in args[1::2]}
+    assert set(tables) == {'mcp_servers.acme', 'mcp_servers.ads', 'shell_environment_policy.exclude'}
+    assert tables['mcp_servers.acme'] == ('{command = "npx", args = ["-y", "@acme/mcp", "--region=eu"], '
+                                          'env = {LOG_LEVEL = "debug"}, env_vars = ["ACME_KEY"], '
+                                          'default_tools_approval_mode = "writes"}')
+    assert tables['mcp_servers.ads'] == ('{url = "https://ads.example.com/mcp", env_http_headers = '
+                                         '{Authorization = "MAXXING_MCP_H0"}, http_headers = {Content-Type = "application/json"}, '
+                                         'default_tools_approval_mode = "writes"}')
+    assert extra == {'ACME_KEY': 'acme-secret-123456', 'MAXXING_MCP_H0': 'Bearer ads-secret-987654'}
+    assert not any('secret' in a for a in args)                 # secrets go through the environment only
+    assert tables['shell_environment_policy.exclude'] == '["ACME_KEY", "MAXXING_MCP_H0"]'
+    reasons = dict(skipped)
+    assert set(reasons) == {'legacy', 'keyed', 'dotted.name', 'pathy', 'missing', 'argkey'}
+    assert 'arguments' in reasons['argkey']
+    assert 'sse' in reasons['legacy'] and 'address' in reasons['keyed'] and '${NOT_SET}' in reasons['missing']
+
+
+def test_only_full_access_lets_codex_write_through_mcp_tools(tmp_path, monkeypatch):
+    """codex exec never asks and its sandbox does not cover MCP tools: outside Full access, every server gets
+    default_tools_approval_mode="writes" (codex-cli 0.150.1 then runs only the tools marked readOnlyHint and refuses
+    the others), in Full access "approve"."""
+    folder = tmp_path / 'topic'
+    folder.mkdir()
+    _claude_json(tmp_path, monkeypatch, {'mcpServers': {'slack': {'command': 'slack-mcp'}}})
+    for mode, want in (('plan', 'writes'), ('default', 'writes'), ('acceptEdits', 'writes'), ('bypass', 'approve')):
+        args, _, _ = codex.mcp_config(str(folder), {}, mode)
+        assert args == ['-c', f'mcp_servers.slack={{command = "slack-mcp", args = [], default_tools_approval_mode = "{want}"}}'], mode
+    assert codex.tools_approval('plan') == 'writes' and codex.tools_approval('bypass') == 'approve'
+
+
+def test_a_server_variable_never_replaces_the_sessions_own(tmp_path, monkeypatch):
+    """A forwarded variable already set in the session's environment: the same value is used as is (and stays
+    visible to Codex's shell like before), another value skips the server instead of replacing it."""
+    folder = tmp_path / 'topic'
+    folder.mkdir()
+    _claude_json(tmp_path, monkeypatch, {'mcpServers': {'gh': {'command': 'gh-mcp', 'env': {'GITHUB_TOKEN': '${GH_PAT}'}}}})
+    from maxxing.sessions import spawn
+    monkeypatch.setattr(spawn, '_exposed_vault', lambda s: {'GH_PAT': 'pat-from-vault-1234567890'})
+    args, extra, skipped = codex.mcp_config(str(folder), {'GITHUB_TOKEN': 'the-topics-own-token'})
+    assert args == [] and extra == {}
+    assert skipped == [('gh', "its variable GITHUB_TOKEN has another value in the session's environment")]
+    args, extra, skipped = codex.mcp_config(str(folder), {'GITHUB_TOKEN': 'pat-from-vault-1234567890'})
+    assert skipped == [] and extra == {} and 'env_vars = ["GITHUB_TOKEN"]' in args[1]
+    assert not any('shell_environment_policy' in a for a in args)
+
+
+def test_a_codex_turn_gets_the_mcp_servers_and_says_which_are_left_out(client, topic, mx, monkeypatch):
+    from maxxing import workspace
+    folder = workspace.topic_dir(topic)
+    _claude_json(mx['tmp'], monkeypatch, {
+        'mcpServers': {'acme': {'command': 'npx', 'args': ['-y', '@acme/mcp'], 'env': {'ACME_KEY': '${ACME_SECRET}'}},
+                       'legacy': {'type': 'sse', 'url': 'https://sse.example.com/sse'}},
+        'projects': {str(folder): {'disabledMcpServers': []}},
+    })
+    monkeypatch.setenv('ACME_SECRET', 'turn-secret-42')
+    fake = mx['tmp'] / 'codex-mcp'
+    calls = mx['tmp'] / 'codex-mcp-calls.jsonl'
+    fake.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+sys.stdin.read()
+with open({str(calls)!r}, "a") as f:
+    f.write(json.dumps({{"argv": sys.argv[1:], "acme": os.environ.get("ACME_KEY")}}) + "\\n")
+print(json.dumps({{"type": "thread.started", "thread_id": "t-mcp"}}), flush=True)
+print(json.dumps({{"type": "item.completed", "item": {{"type": "agent_message", "text": "ok"}}}}), flush=True)
+print(json.dumps({{"type": "turn.completed", "usage": {{"input_tokens": 1, "output_tokens": 1}}}}), flush=True)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'go'}).json()['id']
+    wait_idle(client, sid)
+    call = json.loads(calls.read_text().splitlines()[-1])
+    acme = ('mcp_servers.acme={command = "npx", args = ["-y", "@acme/mcp"], env_vars = ["ACME_KEY"], '
+            'default_tools_approval_mode = "approve"}')       # Full access, the default permission mode
+    assert acme in call['argv'] and call['argv'].index('--ignore-user-config') < call['argv'].index(acme)
+    assert call['acme'] == 'turn-secret-42' and not any('turn-secret' in a for a in call['argv'])
+    notes = [e['text'] for e in all_events(client, sid) if e['type'] == 'note']
+    assert any('MCP servers not given to Codex: legacy' in n for n in notes)
+    assert not any('only uses the tools a server marks as read-only' in n for n in notes)
+    # plan mode: only the read-only tools, said once in the conversation
+    plan = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'plan it', 'plan_mode': True})
+    assert plan.status_code == 200, plan.text
+    wait_idle(client, plan.json()['id'])
+    call = json.loads(calls.read_text().splitlines()[-1])
+    assert any(a.startswith('mcp_servers.acme=') and a.endswith('default_tools_approval_mode = "writes"}') for a in call['argv'])
+    notes = [e['text'] for e in all_events(client, plan.json()['id']) if e['type'] == 'note']
+    assert sum('only uses the tools a server marks as read-only' in n for n in notes) == 1

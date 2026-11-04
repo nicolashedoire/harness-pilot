@@ -59,6 +59,7 @@ class CreateIn(_Text):
     discussion_duration_seconds: int | None = Field(default=None, ge=60, le=86400)
     claude_role: str = Field(default='', max_length=2000)
     codex_role: str = Field(default='', max_length=2000)
+    discussion_partner: str | None = Field(default=None, max_length=64)   # plugin:<id> instead of Codex
     attachments: list[str] = Field(default_factory=list)
     plan_mode: bool = False
     voice: str | None = None          # absolute path of a voice message sent directly (transcribed afterwards)
@@ -69,6 +70,11 @@ class TeamIn(_Text):
     message: str = Field(default='', max_length=24000)   # empty -> 400 bad_mission (teams.create says why)
     title: str | None = Field(default=None, max_length=120)
     attachments: list[str] = Field(default_factory=list)
+    claude_role: str = Field(default='', max_length=2000)   # empty = teams.ROLES (the default assignment)
+    codex_role: str = Field(default='', max_length=2000)
+    coordinator: Literal['claude', 'codex'] = 'claude'      # writes the synthesis (the returned session)
+    claude_model: str = Field(default='', max_length=100)   # empty = that agent's default model
+    codex_model: str = Field(default='', max_length=100)
 
 
 class DiscussionPresetIn(_Text):
@@ -152,7 +158,9 @@ async def shutdown() -> None:
 @router.post('/teams')
 async def create_team(body: TeamIn):
     from ..sessions import teams
-    return await _call(teams.create, body.path, body.message, body.title, body.attachments)
+    return await _call(teams.create, body.path, body.message, body.title, body.attachments,
+                       {'claude': body.claude_role, 'codex': body.codex_role}, body.coordinator,
+                       {'claude': body.claude_model, 'codex': body.codex_model})
 
 
 @router.get('/teams/{sid}')
@@ -214,7 +222,8 @@ async def create_session(body: CreateIn):
                        discussion_duration_seconds=body.discussion_duration_seconds,
                        codex_model=body.codex_model,
                        claude_role=body.claude_role, codex_role=body.codex_role,
-                       plan_mode=body.plan_mode, voice_path=body.voice, swarm_agents=body.swarm_agents)
+                       plan_mode=body.plan_mode, voice_path=body.voice, swarm_agents=body.swarm_agents,
+                       discussion_partner=body.discussion_partner)
 
 
 @router.get("/sessions/search")

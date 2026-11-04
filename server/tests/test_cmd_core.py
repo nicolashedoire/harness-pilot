@@ -287,6 +287,29 @@ def test_local_cli_runs_with_the_state_of_the_local_app(tmp_path):
     assert st["state"] == str(local / "state") and st["workspace"] == str((local / "workspace").resolve())
 
 
+
+def test_macos_service_reuses_the_local_setup():
+    """`dev-local.sh service ...` (scripts/macos-service.sh): a launchd agent that runs dev-local.sh itself, with the
+    installing terminal's PATH, restarted after a crash only, logs in <local dir>/logs; it backs out when macOS
+    privacy protection keeps it out of the clone."""
+    script = (config.CODE / "scripts" / "macos-service.sh").read_text()
+    for part in ("<string>/bin/bash</string>", '<string>$(xml "$ROOT/scripts/dev-local.sh")</string>',
+                 '<key>PATH</key><string>$(xml "$PATH")</string>',
+                 "<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>", 'LOG_DIR="$LOCAL_DIR/logs"',
+                 'LABEL="${HARNESS_PILOT_SERVICE_LABEL:-local.harness-pilot}"', "Operation not permitted"):
+        assert part in script, part
+    assert 'exec bash "$ROOT/scripts/macos-service.sh" "$@"' in (config.CODE / "scripts" / "dev-local.sh").read_text()
+
+
+def test_macos_service_without_a_known_command_changes_nothing(tmp_path):
+    local, home = tmp_path / "local", tmp_path / "home"
+    env = {"PATH": os.environ["PATH"], "HOME": str(home), "HARNESS_PILOT_LOCAL_DIR": str(local)}
+    r = subprocess.run(["bash", str(config.CODE / "scripts" / "dev-local.sh"), "service", "nope"], env=env,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 1
+    assert ("usage:" if sys.platform == "darwin" else "macOS only") in r.stderr, r.stderr
+    assert not local.exists() and not home.exists()
+
 def test_init_installs_the_product_skills_for_codex_too(env, monkeypatch):
     """Codex reads personal skills from ~/.agents/skills: init installs the same rendered copies there, with its own
     record, so a same-named skill of the user is moved to the trash, an obsolete one dropped, a stale one reported."""

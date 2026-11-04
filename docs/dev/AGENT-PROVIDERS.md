@@ -29,8 +29,14 @@ resolved through PATH. Remaining arguments are literal (no shell expansion) and 
 paths where needed. The executable must exist and be executable. No `api.py` is imported for agent
 extensions, and discovery does not invoke the program. Settings → Extensions shows manifest errors
 and controls whether the engine is enabled. `GET /api/agent-providers` returns the usable catalog,
-without executable paths. Native discussions/debates and mixed teams currently retain their
-Claude/Codex orchestration; an external engine can run in a single session or a resident experiment.
+without executable paths. Mixed teams keep their Claude/Codex orchestration; an external engine can run in a
+single session, a resident experiment, or as the second agent of a discussion/debate instead of Codex
+(`discussion_partner`). There it answers each reply of Claude Code: `prompt` holds the objective and Claude's
+latest contribution, `model` is the discussion's partner model, and `history` names the other speakers
+(`{"role":"user","text":"Claude Code: ..."}`; its own replies are `assistant`). It must declare `plan` to join
+a discussion in plan mode and `attachments` to receive files; a discussion compaction cannot reset its own
+state, so after a compaction, or in a discussion that continues another one (hand-off), the summary is the
+first `history` entry (`role: user`) instead of a prompt preface.
 
 The process starts in the session topic or the companion's disposable source copy. Stdin receives
 one JSON object followed by a newline:

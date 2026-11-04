@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { AuthState, ChangePasswordBody, LoginBody, LoginResult, Ok, SetupBody, TwoFactorPoll } from '../types'
+import type { AuthState, ChangePasswordBody, LoginBody, LoginResult, Ok, SetupBody, TotpSetup, TotpState, TwoFactorPoll } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -47,6 +47,32 @@ export const pollTwoFactor = (challenge: string, code?: string, trust = true) =>
 export function useSetTwoFactor() {
   return useMut((enabled: boolean) => api.put<LoginResult>('/api/auth/two-factor', { enabled }), {
     invalidate: [qk.telegram.all, qk.authState],
+  })
+}
+
+/** Authenticator app: state, setup (a pending secret), turn on (password + code -> recovery codes), turn off. */
+export function useTotp() {
+  return useQuery({ queryKey: qk.totp, queryFn: () => api.get<TotpState>('/api/auth/totp') })
+}
+export function useTotpSetup() {
+  return useMut(() => api.post<TotpSetup>('/api/auth/totp/setup'), {})
+}
+export function useTotpEnable() {
+  return useMut((b: { password: string; code: string }) => api.post<{ ok: boolean; recovery_codes: string[] }>('/api/auth/totp/enable', b, { noAuthRedirect: true }), {
+    invalidate: [qk.totp],
+    errorToast: false,
+  })
+}
+export function useTotpRecoveryCodes() {
+  return useMut((b: { password: string; code: string }) => api.post<{ ok: boolean; recovery_codes: string[] }>('/api/auth/totp/recovery-codes', b, { noAuthRedirect: true }), {
+    invalidate: [qk.totp],
+    errorToast: false,
+  })
+}
+export function useTotpDisable() {
+  return useMut((b: { password: string; code: string }) => api.post<Ok>('/api/auth/totp/disable', b, { noAuthRedirect: true }), {
+    invalidate: [qk.totp],
+    errorToast: false,
   })
 }
 

@@ -316,10 +316,11 @@ export const Thread = React.forwardRef<ThreadHandle, {
   const onForkItem = React.useCallback((seed: Seed) => forkRef.current?.(seed), [])
   // Items -> blocks (user messages, agent turns); only the blocks that reach into the window are shown.
   const provider = session?.provider
+  const partnerName = session?.discussion_partner?.startsWith('plugin:') ? session.provider_name : null
   const blocks = React.useMemo(() => {
-    const all = buildBlocks(items, provider)
+    const all = buildBlocks(items, provider, partnerName)
     return hideFailureNotes ? withoutFailureNotes(all) : all
-  }, [items, provider, hideFailureNotes])
+  }, [items, provider, partnerName, hideFailureNotes])
   const shown = React.useMemo(() => (from > 0 ? blocks.filter((b) => b.last >= from) : blocks), [blocks, from])
   const lastBlock = blocks[blocks.length - 1]
   // the turn at work: the last one, unless it already has its result (the next one has not shown up yet)
