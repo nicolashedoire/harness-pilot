@@ -50,7 +50,7 @@ function PresetCards({ mode }: { mode: Mode }) {
   return (
     <fieldset className="grid gap-2.5" data-tour="color-palette">
       <legend className="pb-2.5 text-sm font-medium">{t('colors.presets')}</legend>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2.5">
         {items.map(({ id, theme }) => {
           const on = current === id
           return (
@@ -72,7 +72,7 @@ function PresetCards({ mode }: { mode: Mode }) {
               )}
               <span className="flex min-w-0 items-center gap-2">
                 <input type="radio" name="palette" value={id} checked={on} onChange={() => choose(id)} className="size-4 shrink-0" />
-                <span className={cn('truncate text-[13px]', on ? 'font-semibold' : 'font-medium')}>
+                <span className={cn('line-clamp-2 min-w-0 break-words text-[13px] leading-tight', on ? 'font-semibold' : 'font-medium')}>
                   {id === 'custom' ? (theme?.name || t('colors.preset.custom')) : t(`colors.preset.${id}` as TKey)}
                 </span>
               </span>

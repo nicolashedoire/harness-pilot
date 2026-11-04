@@ -59,14 +59,14 @@ function ThemeTile({ tile, mode, active, onApply, onShare, onRename, onDelete }:
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="-mt-1 flex min-h-5 min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="-mt-1 flex min-h-5 min-w-0 items-start gap-1.5 text-xs text-muted-foreground">
         {active ? (
           <Badge variant="success" className="shrink-0 gap-1"><Check className="size-3" /> {t('themegen.mine.active')}</Badge>
         ) : !s ? (
           <Badge variant="muted" className="shrink-0">{t('themegen.mine.preset')}</Badge>
         ) : null}
         {s && (
-          <span className="min-w-0 truncate">
+          <span className="line-clamp-2 min-w-0 leading-snug">
             {t(SOURCE_LABEL[s.source])}
             {s.from && (
               <>
@@ -212,7 +212,7 @@ export function MyThemesCard({ mode, onCreate }: { mode: Mode; onCreate: string 
           }}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2.5">
         {tiles.map((tile) => (
           <ThemeTile
             key={tile.key}
