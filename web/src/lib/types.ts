@@ -501,7 +501,7 @@ export type HealthIssue = { level: 'info' | 'warn' | 'error'; code: string; text
 export type Health = {
   ok: boolean
   issues: HealthIssue[]
-  cpu_pct: number
+  cpu_pct: number | null
   load: number[]
   mem: { total: number; avail: number }
   disk: { total: number; free: number; pct: number }
@@ -518,6 +518,7 @@ export type ServiceAction = 'start' | 'stop' | 'restart'
 export type LogsPayload = { lines: string[] }
 export type VersionInfo = {
   version: string
+  local_mode?: boolean
   commit: string
   latest_commit: string | null
   behind: number | null

@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -84,6 +85,19 @@ def meminfo() -> dict[str, int]:
         pass
     total = out.get("MemTotal", 0)
     avail = out.get("MemAvailable", out.get("MemFree", 0) + out.get("Cached", 0))
+    if not total and sys.platform == 'darwin':
+        # macOS has no /proc. Free, inactive and speculative pages are a conservative
+        # approximation of reclaimable RAM; never invent values when a probe fails.
+        try:
+            total = int(subprocess.run(['sysctl', '-n', 'hw.memsize'], capture_output=True, text=True, timeout=3, check=True).stdout.strip())
+            vm = subprocess.run(['vm_stat'], capture_output=True, text=True, timeout=3, check=True).stdout
+            page = re.search(r'page size of (\d+) bytes', vm)
+            pages = {name: int(value) for name, value in re.findall(r'^Pages (free|inactive|speculative):\s*(\d+)\.', vm, re.M)}
+            if not page or not all(name in pages for name in ('free', 'inactive', 'speculative')):
+                return {'total': 0, 'avail': 0}
+            avail = min(total, sum(pages.values()) * int(page.group(1)))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return {'total': 0, 'avail': 0}
     return {"total": total, "avail": avail}
 
 
@@ -92,7 +106,10 @@ def loadavg() -> list[float]:
         with open("/proc/loadavg") as f:
             return [float(x) for x in f.read().split()[:3]]
     except (OSError, ValueError):
-        return [0.0, 0.0, 0.0]
+        try:
+            return [round(x, 2) for x in os.getloadavg()]
+        except (AttributeError, OSError):
+            return []
 
 
 def uptime_s() -> float:
@@ -100,6 +117,13 @@ def uptime_s() -> float:
         with open("/proc/uptime") as f:
             return float(f.read().split()[0])
     except (OSError, ValueError, IndexError):
+        if sys.platform == 'darwin':
+            try:
+                text = subprocess.run(['sysctl', '-n', 'kern.boottime'], capture_output=True, text=True, timeout=3, check=True).stdout
+                boot = re.search(r'sec\s*=\s*(\d+)', text)
+                return max(0.0, time.time() - int(boot.group(1))) if boot else 0.0
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
         return 0.0
 
 

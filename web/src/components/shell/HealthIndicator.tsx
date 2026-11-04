@@ -66,13 +66,13 @@ export function HealthSummary({ compact }: { compact?: boolean }) {
         </ul>
       )}
       <div className={cn('grid gap-2.5 border-t pt-3', compact && 'text-[13px]')}>
-        <Metric label={t('health.cpu')} value={`${Math.round(h.cpu_pct)}%`} pct={h.cpu_pct} />
-        <Metric label={t('health.memory')} value={`${fmtBytes(memUsed)} / ${fmtBytes(h.mem.total)}`} pct={memPct} />
-        <Metric label={t('health.disk')} value={`${fmtBytes(h.disk.total - h.disk.free)} / ${fmtBytes(h.disk.total)}`} pct={h.disk.pct} />
+        <Metric label={t('health.cpu')} value={h.cpu_pct == null ? t('health.metricUnavailable') : `${Math.round(h.cpu_pct)}%`} pct={h.cpu_pct} />
+        <Metric label={t('health.memory')} value={h.mem.total ? `${fmtBytes(memUsed)} / ${fmtBytes(h.mem.total)}` : t('health.metricUnavailable')} pct={h.mem.total ? memPct : null} />
+        <Metric label={t('health.disk')} value={h.disk.total ? `${fmtBytes(h.disk.total - h.disk.free)} / ${fmtBytes(h.disk.total)}` : t('health.metricUnavailable')} pct={h.disk.total ? h.disk.pct : null} />
         <div className="flex justify-between text-[13px] text-muted-foreground">
           <span>{t('health.uptime')}</span>
           <Sensitive length={4}>
-            <span className="text-foreground tabular-nums">{fmtDuration(h.uptime_s)}</span>
+            <span className="text-foreground tabular-nums">{h.uptime_s > 0 ? fmtDuration(h.uptime_s) : t('health.metricUnavailable')}</span>
           </Sensitive>
         </div>
       </div>
@@ -80,8 +80,8 @@ export function HealthSummary({ compact }: { compact?: boolean }) {
   )
 }
 
-function Metric({ label, value, pct }: { label: string; value: string; pct: number }) {
-  const tone = pct >= 90 ? 'error' : pct >= 75 ? 'warn' : undefined
+function Metric({ label, value, pct }: { label: string; value: string; pct: number | null }) {
+  const tone = pct != null && pct >= 90 ? 'error' : pct != null && pct >= 75 ? 'warn' : undefined
   return (
     <div className="grid gap-1">
       <div className="flex justify-between text-[13px]">
@@ -90,7 +90,7 @@ function Metric({ label, value, pct }: { label: string; value: string; pct: numb
           <span className="tabular-nums">{value}</span>
         </Sensitive>
       </div>
-      <ProgressBar value={pct} tone={tone} label={label} />
+      {pct != null && <ProgressBar value={pct} tone={tone} label={label} />}
     </div>
   )
 }

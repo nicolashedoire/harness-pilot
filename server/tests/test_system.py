@@ -10,6 +10,13 @@ from maxxing import config, crons, health, security
 from maxxing.api import system as system_api
 
 
+def test_local_mode_does_not_offer_unsupported_updates(client, monkeypatch):
+    monkeypatch.setenv('HARNESS_PILOT_LOCAL_MODE', '1')
+    assert client.get('/api/system/version').json()['local_mode'] is True
+    assert client.put('/api/system/auto-update', json={'enabled': True}).status_code == 409
+    assert client.post('/api/system/update').status_code == 409
+
+
 def _svc(states):
     def show(name):
         if name not in states:

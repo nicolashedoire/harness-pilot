@@ -472,7 +472,9 @@ export const en = {
   'sessions.tree.archived': 'Archived ({count})',
 
   // health
-  'health.allGood': 'All systems normal',
+  'health.allGood': 'No issues detected',
+  'health.metricUnavailable': 'Unavailable',
+  'system.localMode': 'Local installation: system service controls and automatic updates are unavailable here. See the repository instructions.',
   'health.checking': 'Checking…',
   'health.cpu': 'CPU',
   'health.details': 'System details',
@@ -482,7 +484,7 @@ export const en = {
   'health.markSeen': 'Seen',
   'health.seenHint': 'Mark as seen: it stops counting here until it changes, or for 24 h',
   'health.unsee': 'Count it again',
-  'health.memory': 'Memory',
+  'health.memory': 'Memory (estimate)',
   'health.unavailable': 'Health data unavailable.',
   'health.uptime': 'Uptime',
 

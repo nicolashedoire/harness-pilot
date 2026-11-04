@@ -219,6 +219,7 @@ def version_info(refresh: bool = False) -> dict:
         lic = license.status()
         lic = {k: lic.get(k) for k in ("enabled", "key_hint", "email", "kind", "updates_until", "expires_at", "channel", "latest", "message", "max_servers", "moved_to_git", "move_error")}
         out = {"version": __version__, "commit": commit, "latest_commit": _ver["latest"], "behind": _ver["behind"], "license": lic,
+               "local_mode": os.environ.get('HARNESS_PILOT_LOCAL_MODE') == '1',
                "checking": _ver["busy"], "checked_at": _ver["at"] or None, "custom": custom, "pending": pend}
     from .. import smartupdate
     rep = smartupdate.last_report()
@@ -238,6 +239,8 @@ async def version(refresh: bool = False):
 def _spawn_update(smart: bool = True) -> None:
     """Start `maxxing update` apart from the server (it restarts it). `smart`: the Update button also opens the
     Harness session that applies the upgrade notes; the automatic update does not (nobody is there)."""
+    if os.environ.get('HARNESS_PILOT_LOCAL_MODE') == '1':
+        raise _err(409, 'local_update_unsupported', 'Updates from the application are unavailable in local mode.')
     from ..crons import maxxing_bin
     extra = ["--smart"] if smart else []
     if os.environ.get("MAXXING_SPAWN") == "direct":
@@ -260,6 +263,8 @@ class AutoUpdateIn(BaseModel):
 @router.put("/system/auto-update")
 async def set_auto_update(body: AutoUpdateIn):
     """Settings -> Updates: update by itself while nobody is on the interface and nothing runs."""
+    if body.enabled and os.environ.get('HARNESS_PILOT_LOCAL_MODE') == '1':
+        raise _err(409, 'local_update_unsupported', 'Automatic updates are unavailable in local mode.')
     config.update_config(auto_update=body.enabled)
     return {"ok": True, "enabled": body.enabled}
 
@@ -404,7 +409,8 @@ async def startup() -> None:
         _ping_task = asyncio.create_task(_ping_loop())
     _after_task = asyncio.create_task(_after_update())
     from .. import auto_update
-    auto_update.start(lambda: _spawn_update(smart=False))
+    if os.environ.get('HARNESS_PILOT_LOCAL_MODE') != '1':
+        auto_update.start(lambda: _spawn_update(smart=False))
 
 
 async def shutdown() -> None:

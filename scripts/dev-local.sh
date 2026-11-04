@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_DIR="${HARNESS_PILOT_LOCAL_DIR:-$ROOT/.harness-pilot-local}"
 export MAXXING_STATE="$LOCAL_DIR/state"
 export MAXXING_SPAWN=direct
+export HARNESS_PILOT_LOCAL_MODE=1
 export MAXXING_CRONTAB_FILE="$LOCAL_DIR/crontab"
 export MAXXING_SYSTEM_TZ=0
 export MAXXING_LICENSE_PING=0

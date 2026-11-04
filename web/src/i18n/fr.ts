@@ -469,7 +469,9 @@ export const fr: Record<keyof typeof en, string> = {
   'sessions.tree.showMore': 'Afficher {count} de plus',
   'sessions.tree.archived': 'Archivées ({count})',
 
-  'health.allGood': 'Tout fonctionne',
+  'health.allGood': 'Aucun problème détecté',
+  'health.metricUnavailable': 'Indisponible',
+  'system.localMode': 'Installation locale : les commandes système et les mises à jour automatiques ne sont pas disponibles ici. Consultez les instructions du dépôt.',
   'health.checking': 'Vérification…',
   'health.cpu': 'CPU',
   'health.details': 'Détails système',
@@ -479,7 +481,7 @@ export const fr: Record<keyof typeof en, string> = {
   'health.markSeen': 'Vu',
   'health.seenHint': 'Marquer comme vu : il ne compte plus ici tant qu’il ne change pas, ou pendant 24 h',
   'health.unsee': 'Le compter à nouveau',
-  'health.memory': 'Mémoire',
+  'health.memory': 'Mémoire (estimation)',
   'health.unavailable': 'Données de santé indisponibles.',
   'health.uptime': 'Démarré depuis',
 

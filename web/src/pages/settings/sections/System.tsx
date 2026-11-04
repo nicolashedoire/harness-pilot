@@ -28,7 +28,7 @@ function HealthCard() {
             <Row label={t('system.claudeAuth')} value={h.claude_auth ? t('common.ok') : t('system.notConnected')} tone={h.claude_auth ? 'ok' : 'error'} />
             <Row label={t('system.backupAge')} value={h.backup_age_h == null ? t('system.never') : t('system.hoursAgo', { n: Math.round(h.backup_age_h) })} tone={h.backup_age_h == null || h.backup_age_h > 48 ? 'warn' : 'ok'} />
             <Row label={t('system.failedLogins')} value={<Sensitive length={2}>{h.failed_logins_1h}</Sensitive>} tone={h.failed_logins_1h >= 8 ? 'warn' : 'ok'} />
-            <Row label={t('system.load')} value={<Sensitive length={8}>{h.load.map((l) => l.toFixed(2)).join(' · ')}</Sensitive>} />
+            <Row label={t('system.load')} value={<Sensitive length={8}>{h.load.length ? h.load.map((l) => l.toFixed(2)).join(' · ') : t('health.metricUnavailable')}</Sensitive>} />
           </dl>
         ) : (
           <Skeleton className="h-32" />
@@ -269,7 +269,7 @@ function VersionCard() {
           </Callout>
         )}
         {phase === 'idle' && <UpdateReportView v={v} />}
-        {phase === 'idle' && !upToDate && v.behind != null && !v.pending && !v.custom?.rebase && (
+        {phase === 'idle' && !v.local_mode && !upToDate && v.behind != null && !v.pending && !v.custom?.rebase && (
           <UpdatePlan
             v={v}
             updating={update.isPending}
@@ -306,21 +306,22 @@ function VersionCard() {
             {t('system.updatedDesc')}
           </Callout>
         )}
-        <SettingRow label={t('system.autoUpdate')} description={t('system.autoUpdateHint')} htmlFor="mx-auto-update" className="py-4 first:pt-4 last:pb-4">
+        {v.local_mode ? <p className="text-sm text-muted-foreground">{t('system.localMode')}</p> : <SettingRow label={t('system.autoUpdate')} description={t('system.autoUpdateHint')} htmlFor="mx-auto-update" className="py-4 first:pt-4 last:pb-4">
           <Switch id="mx-auto-update" checked={v.auto_update?.enabled ?? false} onCheckedChange={(on) => autoUpdate.mutate(on)} />
-        </SettingRow>
+        </SettingRow>}
       </div>
     </SettingsCard>
   )
 }
 
 export function SystemSection() {
+  const { data: v } = useVersion()
   return (
     <SectionStack>
       <VersionCard />
       <HealthCard />
-      <ServicesCard />
-      <LogsCard />
+      {v && !v.local_mode && <ServicesCard />}
+      {v && !v.local_mode && <LogsCard />}
     </SectionStack>
   )
 }
