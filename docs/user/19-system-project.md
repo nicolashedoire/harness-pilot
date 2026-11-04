@@ -10,8 +10,8 @@ in your own words.
 | Topic | Say for example | What Claude does |
 |---|---|---|
 | `tutorial` | "hi", "lesson 3" | four 5-minute hands-on lessons (first steps, files and memory, tasks and crons, Telegram and voice); remembers where you stopped, and at the end offers to delete the topic (it goes to the Trash for 30 days) |
-| `help` | "how do I schedule a job?", "how is the server doing?" | answers from the documentation of the version installed on your server (these pages), then offers to do it for you; looks after the server: health (`maxxing doctor`, `maxxing status`), disk, services, logs, security updates, firewall, and asks before anything destructive or a reboot |
-| `harness` | "update", "make a widget showing my site's visitors", "add the freelance pack" | runs `maxxing update --check`, explains the changes in plain language, updates after your yes, then applies the workspace upgrade notes of the new version and records it; writes dashboard widgets and pages in `<workspace>/extensions/`; adds starter packs (`maxxing packs add <id>`) |
+| `help` | "how do I schedule a job?", "how is the server doing?" | answers from the documentation of the version installed on your server (these pages), then offers to do it for you; looks after the server: health (`pilot doctor`, `pilot status`), disk, services, logs, security updates, firewall, and asks before anything destructive or a reboot |
+| `harness` | "update", "make a widget showing my site's visitors", "add the freelance pack" | runs `pilot update --check`, explains the changes in plain language, updates after your yes, then applies the workspace upgrade notes of the new version and records it; writes dashboard widgets and pages in `<workspace>/extensions/`; adds starter packs (`pilot packs add <id>`) |
 
 Tasks and subscriptions are handled in **`general/inbox`** (or any session): "add a task for
 Friday", "what is due this week?" read and edit the task board (`tasks.json`); "I just subscribed
@@ -29,7 +29,7 @@ Ready-made projects with their topics and instructions: `ecommerce`, `affiliate`
 
 | Job | Default | What it does |
 |---|---|---|
-| Check for updates | on, Mondays 09:00 | `maxxing update --check --notify`: a Telegram message when a new version exists ("open system/harness and say: update"). Never updates by itself |
+| Check for updates | on, Mondays 09:00 | `pilot update --check --notify`: a Telegram message when a new version exists ("open system/harness and say: update"). Never updates by itself |
 | Morning tasks | off | daily 08:00 in `general/inbox`: overdue and today's tasks on Telegram |
 | Renewal reminder | not created | ask in `general/inbox` ("remind me of my renewals"): Claude creates it, Mondays 09:30, renewals in the next 30 days on Telegram |
 

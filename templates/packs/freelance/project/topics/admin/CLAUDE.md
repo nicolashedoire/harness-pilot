@@ -24,7 +24,7 @@ The paperwork side of the business: "what declarations are due next month?", "lo
 ## Playbook
 
 - Deadlines: each line `YYYY-MM-DD - what - amount if known - status`. Add each one to the task board
-  (`maxxing-tasks` skill) 10 days before, after a yes the first time.
+  (`pilot-tasks` skill) 10 days before, after a yes the first time.
 - Expenses: `- YYYY-MM-DD - supplier - category - amount excl. tax - tax - total - paid with -
   receipt path`. Categories come from `memory.md` (accountant's list if they have one).
 - Receipts and bills: photos or PDFs arrive in `attachments/YYYY-MM/`; read the amount, date and
@@ -49,5 +49,5 @@ The paperwork side of the business: "what declarations are due next month?", "lo
 
 ## Automations
 
-- No job is created by this pack. On request (`maxxing-cron` skill): a monthly reminder on the 1st
+- No job is created by this pack. On request (`pilot-crons` skill): a monthly reminder on the 1st
   (deadlines this month, receipts missing for last month), or a quarterly subscription review.

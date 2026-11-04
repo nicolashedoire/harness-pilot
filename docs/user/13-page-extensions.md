@@ -17,7 +17,7 @@ Settings -> Extensions) to give it its own sidebar entry, right below Extensions
   api.py         optional: its HTTP API
 ```
 
-Ask Claude "create a page that ..." and the `maxxing-extension` skill writes it for you, or follow
+Ask Claude "create a page that ..." and the `pilot-widgets-pages` skill writes it for you, or follow
 these steps.
 
 A new install comes with one page, **Your pages** (`extensions/pages/`): what a page extension is, and

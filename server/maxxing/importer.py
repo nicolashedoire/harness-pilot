@@ -467,8 +467,8 @@ FINISH_PROMPT = """An import from my previous agent was just applied. Read {repo
 1. Look through the imported memory: merge duplicates into the right memory.md (topic > project > root), \
 fix anything contradictory, keep it concise. The sections titled "## Imported" were appended to files that \
 already had content.
-2. tasks.md (if present in {folder}): create the open tasks in tasks.json (skill maxxing-tasks).
-3. crons.md (if present): propose each recurring job as a scheduled job (skill maxxing-cron) - ask me before \
+2. tasks.md (if present in {folder}): create the open tasks in tasks.json (skill pilot-tasks).
+3. crons.md (if present): propose each recurring job as a scheduled job (skill pilot-crons) - ask me before \
 creating or enabling any.
 4. SECRETS.md (if present): list the keys I need to add in Settings -> Keys (never ask me to paste them here).
 5. Tell me in a few lines what was imported and what is left for me to do."""

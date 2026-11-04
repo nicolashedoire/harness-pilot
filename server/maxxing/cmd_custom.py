@@ -70,7 +70,7 @@ def _print_status(js: bool) -> int:
         if p.get("conflicts"):
             print(f"  conflicting files: {', '.join(p['conflicts'])}")
         from .cmd_core import update_topic
-        print(f"  -> topic {update_topic()} (skill maxxing-customize)")
+        print(f"  -> topic {update_topic()} (skill pilot-customize)")
     if items:
         print(f"Registry       : {Path(config.load_config()['workspace']) / customs.REGISTRY}")
     return 0

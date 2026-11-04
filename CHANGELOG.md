@@ -18,6 +18,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
 - Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
 - Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
+- Use `pilot` as the server command, for example `pilot doctor` or `pilot feed post`. `maxxing` remains the same command, so existing scripts and scheduled jobs keep working.
+- Find the built-in skills under clearer names starting with `pilot-`, such as `pilot-crons`, `pilot-notifications` and `pilot-widgets-pages`. An update installs the new names, removes the old copies and updates the product's own text in your workspace; your own notes and jobs are not changed.
 - The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
 - Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
 

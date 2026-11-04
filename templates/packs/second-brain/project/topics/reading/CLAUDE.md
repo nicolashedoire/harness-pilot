@@ -46,5 +46,5 @@ to my list", "summarize https://example.com/article", "what were the key ideas o
 
 ## Automations
 
-- No job is created by this pack. On request (`maxxing-cron` skill): a Sunday "what to read next"
+- No job is created by this pack. On request (`pilot-crons` skill): a Sunday "what to read next"
   pick from `## To read`, or a monthly recap of what was finished.

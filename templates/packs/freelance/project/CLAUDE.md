@@ -23,7 +23,7 @@ Example Ltd: 5 days of design", "what taxes are due next month?".
 - Never send an email or message on the user's behalf: write drafts. Sending needs an explicit "yes"
   for each email in the current conversation.
 - Money: always state currency, tax included or not, and dates. Never change an issued invoice.
-- Follow-ups go to the task board (`maxxing-tasks` skill); alerts that matter go to the feed
-  (`maxxing-feed` skill, e.g. `maxxing feed post "Invoice 2026-014 is 15 days late" --level warning`).
+- Follow-ups go to the task board (`pilot-tasks` skill); alerts that matter go to the feed
+  (`pilot-notifications` skill, e.g. `pilot feed post "Invoice 2026-014 is 15 days late" --level warning`).
 
 @memory.md

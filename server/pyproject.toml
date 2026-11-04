@@ -16,7 +16,8 @@ dependencies = [
 voice = ["faster-whisper>=1.0", "av>=11,<19"]   # PyAV 19 dropped av.open(metadata_errors=) used by faster-whisper 1.2
 
 [project.scripts]
-maxxing = "maxxing.cli:main"
+pilot = "maxxing.cli:main"
+maxxing = "maxxing.cli:main"     # permanent alias of `pilot`: crontab lines, scripts and habits keep working
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
