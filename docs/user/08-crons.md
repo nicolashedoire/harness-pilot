@@ -6,7 +6,7 @@ section: Using harness-pilot
 The **Crons** page runs things on a schedule: a **shell command** or a **Claude Code prompt** in a
 topic. Each run is recorded (status, duration, output) and can be reported on Telegram.
 
-In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed; `@reboot` is not supported in local mode. Scheduled prompts currently use Claude Code.
+In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed; a job set to `@reboot` (**At startup** in the schedule list) runs each time the application starts. Scheduled prompts currently use Claude Code.
 
 ## Creating a job
 
@@ -38,8 +38,10 @@ Five fields: `minute hour day-of-month month day-of-week`.
 | `0 9 1 * *` | the 1st of each month at 09:00 |
 | `0 */6 * * *` | every 6 hours |
 | `@daily`, `@hourly`, `@weekly`, `@monthly` | shortcuts |
+| `@reboot` | **At startup**: each time the application starts (local mode), or when the server boots (legacy server) |
 
-`@reboot` is not supported by the local scheduler.
+An `@reboot` job has no next run: the list shows *At the next start*. Disable it to keep it from running at the
+next start; **Run now** still starts it by hand.
 
 ### Time zone
 
