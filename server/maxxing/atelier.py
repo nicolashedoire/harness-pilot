@@ -202,9 +202,32 @@ def stat_sig(d: Path) -> str:
     return h.hexdigest()
 
 
+def _open_file(p: Path):
+    """A regular file opened without following a link in its last part (a link swapped in after the walk is refused,
+    never read: the server's user can read what an agent cannot)."""
+    fd = os.open(p, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        import stat as _stat
+        if not _stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(f"{p} is not a regular file")
+        return os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def copy_file(src: Path, dst: Path, root: Path | None = None) -> None:
+    """Copy a creation's file (no link followed; with `root`, the real path must stay inside it)."""
+    if root is not None and not os.path.realpath(src).startswith(os.path.realpath(root) + os.sep):
+        raise OSError(f"{src} leads outside {root}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with _open_file(src) as f, open(dst, "wb") as out:
+        shutil.copyfileobj(f, out)
+
+
 def sha_file(p: Path) -> str:
     h = hashlib.sha256()
-    with open(p, "rb") as f:
+    with _open_file(p) as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -237,7 +260,7 @@ def _store(p: Path, sha: str) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".tmp-")
     try:
-        with os.fdopen(fd, "wb") as out, open(p, "rb") as src:
+        with os.fdopen(fd, "wb") as out, _open_file(p) as src:
             shutil.copyfileobj(src, out)
         os.chmod(tmp, 0o600)
         os.replace(tmp, dest)
@@ -405,8 +428,7 @@ def check_dir(d: Path, eid: str | None = None) -> dict:
             dst = Path(tmp) / eid
             dst.mkdir()
             for rel, p in walk(d)[0]:
-                (dst / rel).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(p, dst / rel)
+                copy_file(p, dst / rel, d)
             d = dst
         return _check(d, eid, xc)
     finally:
@@ -547,8 +569,7 @@ def make_draft(eid: str, sid: str | None = None, from_draft: str | None = None, 
     dest.mkdir(parents=True)
     if src is not None:
         for rel, p in walk(src)[0]:
-            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dest / rel)
+            copy_file(p, dest / rel, src)
     return {"path": str(dest), "created": True, "from": "draft" if from_draft else "active" if src else "empty"}
 
 
@@ -681,8 +702,7 @@ def _install(eid: str, write: Any) -> None:
 def _copy_tree(src: Path) -> Any:
     def write(dest: Path) -> None:
         for rel, p in walk(src)[0]:
-            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dest / rel)                 # fresh mtimes: the extension's signature changes
+            copy_file(p, dest / rel, src)                  # fresh mtimes: the extension's signature changes
             if os.stat(p).st_mode & 0o111:
                 os.chmod(dest / rel, 0o755)
     return write
@@ -886,6 +906,8 @@ def register(folder: Path, request: dict | None = None, *, scanned_for: dict | N
     `scanned_for`: the session whose folder the server scanned (server-side registration: the origin is that session
     unless the request names another session of the same folder). Idempotent for one draft id."""
     folder = Path(folder)
+    if folder.is_symlink():
+        raise AtelierError(400, "bad_request", f"{folder} is a link: propose the folder itself")
     req = request if request is not None else config.read_json(folder / REQUEST, None)
     if not isinstance(req, dict):
         raise AtelierError(400, "bad_request", f"no proposal request in {folder}")
@@ -916,8 +938,7 @@ def register(folder: Path, request: dict | None = None, *, scanned_for: dict | N
         try:
             files, links = walk(folder)
             for rel, p in files:
-                (tmp / eid / rel).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(p, tmp / eid / rel)
+                copy_file(p, tmp / eid / rel, folder)
             os.rename(tmp, dest)
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -969,11 +990,11 @@ def ingest_session(session: dict) -> list[str]:
         base = workspace.topic_dir(session.get("path") or "") / DRAFT_DIR
     except ValueError:
         return out
-    if not base.is_dir():
+    if base.is_symlink() or not base.is_dir():
         return out
     for req in sorted(base.glob(f"*/{REQUEST}")):
         try:
-            if req.is_symlink() or not req.is_file():
+            if req.is_symlink() or req.parent.is_symlink() or not req.is_file():
                 continue
             rec = register(req.parent, scanned_for=session)
             out.append(rec["id"])

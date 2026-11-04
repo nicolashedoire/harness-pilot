@@ -122,8 +122,14 @@ def _propose(a) -> int:
         with __import__("contextlib").suppress(OSError):
             (folder / atelier.REQUEST).unlink()
         return 3 if e.code == "restore_hold" else 2
-    except OSError:
-        pass                     # <state> is not writable here (Codex's sandbox): the server registers it at turn end
+    except OSError as e:
+        import errno
+        if not isinstance(e, PermissionError) and e.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
+            print(f"{a.id}: the draft could not be read ({e})", file=sys.stderr)
+            with __import__("contextlib").suppress(OSError):
+                (folder / atelier.REQUEST).unlink()
+            return 1
+        # <state> is not writable here (Codex's sandbox): the server registers it when this turn ends
     did = req["draft"]
     perms = chk["permissions"]
     if a.json:
@@ -159,8 +165,7 @@ def _check_dir(a) -> int:
         dest = tmp / "extensions" / a.id
         dest.mkdir(parents=True)
         for rel, p in atelier.walk(src)[0]:
-            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(p, dest / rel)
+            atelier.copy_file(p, dest / rel, src)
         extensions._root_override, extensions._state_override = dest.parent, tmp / "state"   # noqa: SLF001
         extensions.disabled_ids = lambda: set()        # a draft is checked even when the installed one is off
         one = extcheck.check(a.id)
