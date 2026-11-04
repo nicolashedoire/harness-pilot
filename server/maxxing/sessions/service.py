@@ -118,6 +118,13 @@ def _num(v: object) -> float:
         return 0.0
 
 
+def _discussion_elapsed(m: dict) -> int:
+    """Seconds the current period of a discussion has run: the time banked by its pauses plus the running span
+    (0 otherwise). Same value as the banked time while it is paused (pauses pop `discussion_started`)."""
+    started = _num(m.get("discussion_started"))
+    return int(_num(m.get("discussion_elapsed")) + (max(0.0, time.time() - started) if started else 0.0))
+
+
 def public(meta: dict) -> dict:
     """Internal meta -> API.md Session."""
     m = _effective(meta)
@@ -134,7 +141,7 @@ def public(meta: dict) -> dict:
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
             "discussion_paused_at": m.get("discussion_paused_at") or None,
             "discussion_turns": int(m.get("discussion_turns") or 0),
-            "discussion_elapsed": round(_num(m.get("discussion_elapsed"))),
+            "discussion_elapsed": _discussion_elapsed(m),
             "discussion_turn_limit": m.get("discussion_turn_limit"),
             "discussion_duration_seconds": m.get("discussion_duration_seconds"),
             "context_tokens": m.get("context_tokens"), "context_window": _context_window(m),

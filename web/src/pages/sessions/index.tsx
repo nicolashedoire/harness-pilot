@@ -7,7 +7,7 @@
 // (browsers without Document Picture-in-Picture) · /sessions/<id> → redirect.
 import * as React from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Columns2, FolderOpen, Hash, Keyboard, LayoutGrid, MessageSquarePlus, MessagesSquare, PanelLeftOpen } from 'lucide-react'
+import { Columns2, FolderOpen, Hash, Keyboard, LayoutGrid, MessageSquarePlus, MessagesSquare, PanelLeftOpen, Plus } from 'lucide-react'
 import { useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { animateIn, animateOut, EASE_OUT, reducedMotion, usePresence } from '@/lib/presence'
@@ -15,7 +15,7 @@ import { useRegisterCommands } from '@/commands/registry'
 import { useHotkey } from '@/commands/shortcuts'
 import { useSessions, useSessionSeeded, useSettings, useWorkspace } from '@/lib/queries'
 import type { Session } from '@/lib/types'
-import { PageHeader } from '@/components/shell/Page'
+import { PageHeader, useDocumentTitle } from '@/components/shell/Page'
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, Kbd, MOD, Tooltip } from '@/components/ui'
 import { focusComposer, MAX_STACK, prefillDraft, ROW_SPLIT_MAX, ROW_SPLIT_MIN, useSessionsUI, type Col } from './store'
 import { stripRows } from './layouts'
@@ -29,6 +29,7 @@ import { useTouchNav } from '@/components/shell/TouchNav'
 import { enter, MaxxingDriver, promoteColumn, useMaxxing, useMaxxingEnabled } from './maxxing'
 import { MaxxingControls } from './MaxxingMeter'
 import { MobileTabsSlot, stepCol, TabsArrows, TabsBar, TabsToggle, useSwipe } from './Tabs'
+import './conversation.css'
 
 /** Sessions sliding to their new place (reorder, stack, layout): short, the content is heavy. */
 const FLIP_MS = 180
@@ -547,52 +548,69 @@ function Workspace() {
 
   const openIds = React.useMemo(() => new Set(cols.flatMap((c) => (c.kind === 'session' ? [c.id] : []))), [cols])
 
+  // Touch layout only (empty / error states): the page's bar. On a computer the list's title row holds these actions
+  // and each session has its own header - one header, not three stacked.
   const header = (
     <PageHeader
       title={t('nav.sessions')}
       description={<SubtitleWithBadges text={t('sessions.description')} />}
       actions={
         <>
-          {!mobile && <TabsToggle compact />}
-          {!mobile && !tabs && cols.length >= 2 && (
-            <LayoutPicker count={cols.length}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={stacked ? t('sessions.grid.off') : t('sessions.grid.on')}
-                aria-pressed={stacked}
-                onClick={() => (stacked ? useSessionsUI.getState().toColumns() : useSessionsUI.getState().toGrid())}
-                data-testid="sessions-grid"
-              >
-                {stacked ? <Columns2 /> : <LayoutGrid />}
-              </Button>
-            </LayoutPicker>
-          )}
           {maxxingEnabled && <MaxxingControls />}
           <Tooltip content={`${t('sessions.newSession')} (Alt+N)`}>
-            <Button size={mobile ? 'icon' : 'sm'} onClick={newInCurrent} disabled={defaultTopic === null} aria-label={t('sessions.newSession')} data-tour="new-session">
-              <MessageSquarePlus /> <span className="max-md:hidden">{t('sessions.newSession')}</span>
+            <Button size="icon" onClick={newInCurrent} disabled={defaultTopic === null} aria-label={t('sessions.newSession')} data-tour="new-session">
+              <MessageSquarePlus />
             </Button>
           </Tooltip>
         </>
       }
     />
   )
+  useDocumentTitle(t('nav.sessions'))
+  /** Computer: tabs view, layouts (2 sessions or more), Maxxing, new session - in the list's title row, or down the
+   *  slim rail when the list is folded (`vertical`). */
+  const stripActions = (vertical?: boolean) => (
+    <>
+      <TabsToggle compact />
+      {!tabs && cols.length >= 2 && (
+        <LayoutPicker count={cols.length}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={stacked ? t('sessions.grid.off') : t('sessions.grid.on')}
+            aria-pressed={stacked}
+            onClick={() => (stacked ? useSessionsUI.getState().toColumns() : useSessionsUI.getState().toGrid())}
+            data-testid="sessions-grid"
+          >
+            {stacked ? <Columns2 /> : <LayoutGrid />}
+          </Button>
+        </LayoutPicker>
+      )}
+      {maxxingEnabled && <MaxxingControls compact />}
+      <Tooltip content={`${t('sessions.newSession')} (Alt+N)`} side={vertical ? 'right' : undefined}>
+        <Button size="icon-sm" onClick={newInCurrent} disabled={defaultTopic === null} aria-label={t('sessions.newSession')} data-tour="new-session" className={cn('shrink-0', !vertical && 'ml-0.5')}>
+          <Plus />
+        </Button>
+      </Tooltip>
+    </>
+  )
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {maxxingEnabled && <MaxxingDriver sessions={sessions} show={showMaxxing} />}
       {/* Touch layout: the session layer has its own header (☰, ⋯, ⊞); nothing while the session to show is picked. */}
-      {!mobileOpen && !touchPicking && header}
+      {mobile && !mobileOpen && !touchPicking && header}
       <div className="flex min-h-0 flex-1">
         {!mobile && treeHidden && (
           // Folded tree: a slim rail keeps the unfold button where the fold button was (top left of the pane).
-          <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r bg-sidebar/40 py-2">
+          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-sidebar/40 py-2.5">
             <Tooltip content={t('sessions.tree.show')} side="right">
               <Button variant="ghost" size="icon-sm" aria-label={t('sessions.tree.show')} onClick={() => setTreeHidden(false)}>
                 <PanelLeftOpen />
               </Button>
             </Tooltip>
+            <span aria-hidden className="my-1 h-px w-6 bg-border" />
+            {stripActions(true)}
           </div>
         )}
         {mobile && !mobileOpen && !touchPicking && (
@@ -631,7 +649,8 @@ function Workspace() {
         {!mobile && !treeHidden && (
           <SessionTree
             onHide={() => setTreeHidden(true)}
-            className="w-72 shrink-0 border-r bg-sidebar/40"
+            actions={stripActions()}
+            className="w-[272px] shrink-0 border-r bg-sidebar/40"
             onOpenSession={openSession}
             onNewSession={newSession}
             activePath={currentTopic ?? null}

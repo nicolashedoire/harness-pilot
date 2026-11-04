@@ -107,7 +107,7 @@ Session = {
   discussion_pause_reason: "limit"|"user"|null,   // why: a limit reached, or the pause button
   discussion_paused_at: number|null,  // when it paused (limit or pause button); null while not paused
   discussion_turns: int,              // replies of the current period
-  discussion_elapsed: int,            // its running time in seconds up to its last pause (a run in progress not counted)
+  discussion_elapsed: int,            // seconds the current period has run, paused time excluded (live while it runs)
   discussion_turn_limit: int|null,    // replies per period (1-200), null = no limit
   discussion_duration_seconds: int|null   // duration of a period (60-86400 s), null = no limit
 }

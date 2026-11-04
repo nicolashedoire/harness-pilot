@@ -150,6 +150,7 @@ function buildState(scenario) {
   if (ready) {
     seedSessions(st, t)
     seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
+    seedDebate(st, t)
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -228,6 +229,42 @@ function seedSessions(st, t) {
     st.sessions.push(s)
     st.events[id] = conversation(s, d)
   }
+}
+
+/* A Claude Code + Codex debate in progress (conversation view: lanes, reply numbers, progress against the limits). The
+ * runner writes the name of the agent that answers next as an info note before its turn. */
+function seedDebate(st, t) {
+  const id = uuid()
+  const path = topicPath('acme', 'website')
+  const s = { id, title: 'One-page checkout?', path, state: 'running', queue: 0, created: t - 15 * MIN, updated: t - 20, turns: 5, cost_usd: 0.64,
+    model: '', real_model: 'claude-opus-5-5', context_tokens: 31000, context_window: 1000000, archived: false, notify: false, source: 'web', unread: false,
+    last_text: 'Noted. Revised version: Apple Pay first, then the two blocks Codex proposed, and a single pay button at the bottom.', error: null,
+    provider: 'debate', debate_paused: false, discussion_pause_reason: null, discussion_turns: 5, discussion_turn_limit: 20, discussion_duration_seconds: 1800, discussion_elapsed: 14 * MIN }
+  const cwd = `${ROOT}/${path}`
+  let k = 0
+  const at = () => s.created + (k += 30)
+  const turn = (agent, text, cost, extra = []) => [
+    { type: 'note', text: agent, level: 'info', at: at() },
+    { type: 'init', model: agent === 'Codex' ? 'gpt-5.5-codex' : 'claude-opus-5-5', cwd, at: at() },
+    ...extra,
+    { type: 'assistant', text, at: at() },
+    { type: 'result', ok: true, cost_usd: cost, duration_ms: 38000, model: agent === 'Codex' ? 'gpt-5.5-codex' : 'claude-opus-5-5', usage: { input: 900, output: 420, cache_read: 18000, cache_write: 600 }, at: at() },
+  ]
+  const read = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  st.events[id] = [
+    { type: 'user', text: 'Should the shop checkout move to a single page? Debate the benefits and the risks, then end with a recommendation.', attachments: [], at: at(), source: 'web' },
+    ...turn('Claude Code', 'I suggest putting delivery and payment on one page. Today the cart reloads at every step and the address has to be typed again after going back.', 0.18),
+    ...turn('Codex', 'Agreed on the diagnosis, not on the whole cure. On mobile a single page makes the first render heavier: I would keep two collapsible blocks, validated one after the other.', 0),
+    { type: 'user', text: 'Keep Apple Pay at the top of the page, that is a constraint.', attachments: [], at: at(), source: 'web' },
+    ...turn('Claude Code', 'Noted. Revised version: **Apple Pay first**, then the two blocks Codex proposed, and a single pay button at the bottom.', 0.21, [
+      { type: 'tool_use', id: read, name: 'Read', input: { file_path: `${cwd}/src/checkout/steps.tsx` }, summary: 'Read src/checkout/steps.tsx', at: at() },
+      { type: 'tool_result', tool_use_id: read, text: 'export const steps = [delivery, payment]', is_error: false, at: at() },
+    ]),
+    { type: 'note', text: 'Codex', level: 'info', at: at() },
+    { type: 'init', model: 'gpt-5.5-codex', cwd, at: at() },
+    { type: 'assistant', text: 'That works for me. One point to check before concluding: the Apple Pay button must stay visible without scrolling on a small screen.', at: now() - 25 },
+  ]
+  st.sessions.push(s)
 }
 
 /* Maxxing scenario: 30 sessions spread over the topics, most of them running; each finishes after 5 to 40 s
@@ -310,6 +347,14 @@ function conversation(s, d) {
 
   if (s.state === 'running') {
     ev.push({ type: 'assistant', text: d.last, at: at() })
+    const td = tid()
+    ev.push({ type: 'tool_use', id: td, name: 'TodoWrite', input: { todos: [
+      { content: 'Read the topic memory', status: 'completed', activeForm: 'Reading the topic memory' },
+      { content: 'List the existing articles', status: 'completed', activeForm: 'Listing the existing articles' },
+      { content: 'Write the draft', status: 'in_progress', activeForm: 'Writing the draft' },
+      { content: 'Update the memory', status: 'pending', activeForm: 'Updating the memory' },
+    ] }, summary: 'TodoWrite', at: at() })
+    ev.push({ type: 'tool_result', tool_use_id: td, text: 'Todos have been modified successfully.', is_error: false, at: at() })
     const g = tid()
     ev.push({ type: 'tool_use', id: g, name: 'Grep', input: { pattern: 'checkout', path: `${cwd}/drafts` }, summary: 'Grep "checkout" in drafts/', at: at() })
     ev.push({ type: 'tool_result', tool_use_id: g, text: 'drafts/2026-09-cart-abandonment.md:14: …a slow checkout is the first reason…\ndrafts/2026-10-payment-methods.md:3: …one-page checkout…', is_error: false, at: at() })
@@ -329,6 +374,9 @@ function conversation(s, d) {
     ev.push({ type: 'tool_use', id: e1, name: 'Edit', input: { file_path: `${cwd}/memory.md`, old_string: '## Decisions', new_string: `## Decisions\n- 2026-10-11: ${s.title}` }, summary: `Edit ${s.path}/memory.md`, at: at() })
     ev.push({ type: 'tool_result', tool_use_id: e1, text: 'The file has been updated successfully.', is_error: false, at: at() })
     if (s.state === 'error') {
+      const t1 = tid()
+      ev.push({ type: 'tool_use', id: t1, name: 'Bash', input: { command: 'python3 scripts/categorise.py --month 2026-09', description: 'Categorise the rest' }, summary: 'Bash: python3 scripts/categorise.py --month 2026-09', at: at() })
+      ev.push({ type: 'tool_result', tool_use_id: t1, text: 'Traceback (most recent call last):\n  File "scripts/categorise.py", line 42\nKeyError: \'merchant\'\nExit code 1', is_error: true, at: at() })
       ev.push({ type: 'note', text: 'Turn failed: ' + s.error, level: 'error', at: at() })
       return ev
     }
@@ -677,6 +725,7 @@ function startTurn(s, text, attachments = []) {
     const cost = +(0.02 + Math.random() * 0.12).toFixed(4)
     s.turns += 1; s.cost_usd = +(s.cost_usd + cost).toFixed(4); s.real_model = model; s.context_tokens = 20000 + Math.floor(Math.random() * 30000)
     s.last_text = answer.replace(/[*`#]/g, '').slice(0, 200); s.updated = now(); s.unread = true; s.state = 'idle'
+    if (s.plan_mode) s.plan_ready = true // a plan-mode turn ends with a plan to approve (as the server does)
     addEvents(s, { type: 'assistant', text: answer, at: now() },
       { type: 'result', ok: true, cost_usd: cost, duration_ms: 3400, model, usage: { input: 820, output: 164, cache_read: 19870, cache_write: 512 }, at: now() })
     bus('sessions', 'workspace')

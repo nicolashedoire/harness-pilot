@@ -102,7 +102,8 @@ export type Session = {
   discussion_pause_reason?: string | null
   /** When it paused (limit or pause button), Unix seconds; null while not paused. */
   discussion_paused_at?: number | null
-  /** Running seconds of the current period up to its last pause. */
+  /** Seconds the current period has run (paused time excluded): banked up to its last pause, plus the running span
+   *  while it runs. 0 for the other providers. */
   discussion_elapsed?: number
   discussion_turns?: number
   discussion_turn_limit?: number | null

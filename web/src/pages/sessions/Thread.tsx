@@ -13,12 +13,13 @@ import { errorMessage } from '@/lib/api'
 import { hideMessage } from '@/lib/queries'
 import { reducedMotion } from '@/lib/presence'
 import type { Session } from '@/lib/types'
-import { ItemRow, UserMessage } from './Items'
+import { NoteRow, RequestRow, UserItem, UserMessage } from './Items'
+import { buildBlocks, Elapsed, isDuo, TurnView, type Block } from './Turn'
+import { AGENT_NAME, AgentIcon, type AgentId } from '@/features/agents/AgentIcon'
 import { onThreadDragEnd, onThreadDragStart } from './contentDrag'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
-import { isShownTask, setHiddenLocal, taskStatus, turnKeys, unanswered, withoutHidden, type Item, type LogState } from './log'
+import { isShownTask, setHiddenLocal, taskStatus, turnKeys, unanswered, withoutHidden, type LogState } from './log'
 import type { Pending, Seed } from './store'
-import { fmtElapsed } from './util'
 
 const PAGE = 120
 /** A freshly opened thread first renders only its last rows (they fill the screen), then grows to PAGE rows by
@@ -44,7 +45,9 @@ export const Thread = React.forwardRef<ThreadHandle, {
   onEdit?: (seed: Seed) => void
   /** Right click → "New session from this message". */
   onFork?: (seed: Seed) => void
-}>(function Thread({ log, session, pending, onRetry, onLoadEarlier, empty, onEdit, onFork }, ref) {
+  /** Shown after the last message (a plan to approve, a failed turn). */
+  tail?: React.ReactNode
+}>(function Thread({ log, session, pending, onRetry, onLoadEarlier, empty, onEdit, onFork, tail }, ref) {
   const t = useT()
   const scroller = React.useRef<HTMLDivElement>(null)
   const content = React.useRef<HTMLDivElement>(null)
@@ -81,7 +84,6 @@ export const Thread = React.forwardRef<ThreadHandle, {
     }
   }, [ready, items.length, start])
   const from = start ?? Math.max(0, items.length - (ready ? FIRST : PAGE))
-  const visible = from > 0 ? items.slice(from) : items
   const moreOnServer = ready && log.moreBefore && !!onLoadEarlier
 
   const prevHeight = React.useRef<number | null>(null)
@@ -284,13 +286,23 @@ export const Thread = React.forwardRef<ThreadHandle, {
   const forkRef = React.useRef(onFork)
   forkRef.current = onFork
   const onForkItem = React.useCallback((seed: Seed) => forkRef.current?.(seed), [])
-  const turnStart = React.useMemo(() => lastTurnStart(items), [items])
+  // Items -> blocks (user messages, agent turns); only the blocks that reach into the window are shown.
+  const provider = session?.provider
+  const blocks = React.useMemo(() => buildBlocks(items, provider), [items, provider])
+  const shown = React.useMemo(() => (from > 0 ? blocks.filter((b) => b.last >= from) : blocks), [blocks, from])
+  const lastBlock = blocks[blocks.length - 1]
+  // the turn at work: the last one, unless it already has its result (the next one has not shown up yet)
+  const liveKey = running && lastBlock?.kind === 'turn' && !lastBlock.items.some((it) => it.kind === 'result') ? lastBlock.key : null
+  const background = React.useMemo(() => (running ? backgroundText(log, t) : null), [running, log.tasks, t]) // eslint-disable-line react-hooks/exhaustive-deps
+  const since = running ? log.lastUserAt || session?.updated || null : null
+  const duo = isDuo(provider)
+  const showReply = duo && !log.moreBefore
 
   return (
     <div className="relative min-h-0 flex-1">
       {/* one delegated handler for the drags into another session (message grips, files, selected text) */}
       <div ref={scroller} onScroll={onScroll} onDragStart={(e) => onThreadDragStart(e, sid)} onDragEnd={onThreadDragEnd} className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain [contain:layout_paint] [overflow-anchor:none]" data-thread>
-        <div ref={content} className="mx-auto flex min-h-full w-full max-w-(--mx-read,860px) flex-col gap-3 px-4 pt-4 pb-6 max-md:px-3">
+        <div ref={content} className="mx-auto flex min-h-full w-full max-w-[calc(var(--mx-read,740px)+3rem)] flex-col gap-6 px-6 pt-7 pb-6 max-md:gap-5 max-md:px-4 max-md:pt-5">
           {log.status === 'loading' && <ThreadSkeleton />}
           {log.status === 'error' && (
             <EmptyState
@@ -318,16 +330,22 @@ export const Thread = React.forwardRef<ThreadHandle, {
                 </div>
               )}
               {items.length === 0 && optimistic.length === 0 && !running && (empty ?? <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">{t('sessions.emptyThread')}</div>)}
-              {visible.map((it, i) => {
-                const anim = rowAnim(it.key, visible.length - 1 - i)
+              {shown.map((b, i) => {
+                const anim = rowAnim(b.key, shown.length - 1 - i)
                 return (
                   <div
-                    key={it.key}
+                    key={b.key}
                     style={anim.style}
-                    className={cn(anim.className, leaving.has(it.key) && 'pointer-events-none translate-x-4 opacity-0 transition-[opacity,transform] duration-150 ease-in')}
+                    className={cn(
+                      anim.className,
+                      'min-w-0',
+                      b.kind === 'user' && i > 0 && shown[i - 1].kind !== 'user' && 'pt-2',
+                      b.kind === 'turn' && i > 0 && 'pt-1',
+                      leaving.has(b.key) && 'pointer-events-none translate-x-4 opacity-0 transition-[opacity,transform] duration-150 ease-in',
+                    )}
                   >
                     <ErrorBoundary>
-                      <ItemRow item={it} live={running && it.kind === 'tool' && !it.result && from + i > turnStart} onHide={hideable.has(it.key) ? onHide : undefined} onEdit={onEdit && onEditItem} onFork={onFork && onForkItem} />
+                      <BlockRow block={b} live={b.key === liveKey} since={since} background={background} duo={duo} showReply={showReply} onHide={hideable.has(b.key) ? onHide : undefined} onEdit={onEdit && onEditItem} onFork={onFork && onForkItem} />
                     </ErrorBoundary>
                   </div>
                 )
@@ -335,7 +353,8 @@ export const Thread = React.forwardRef<ThreadHandle, {
               {optimistic.map((p) => (
                 <UserMessage key={p.lid} text={p.text} attachments={p.attachments} voice={p.voice || undefined} pending />
               ))}
-              {running && <RunningRow session={session!} log={log} />}
+              {running && !liveKey && <PendingTurn agent={nextAgent(session!, blocks)} since={since} background={background} />}
+              {tail}
               {log.deleted && <p className="text-center text-xs text-muted-foreground">{t('sessions.deleted')}</p>}
             </>
           )}
@@ -358,45 +377,69 @@ export const Thread = React.forwardRef<ThreadHandle, {
   )
 })
 
-/** Index of the last user/result row: only tool calls after it can still be running. */
-function lastTurnStart(items: Item[]): number {
-  for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === 'result' || items[i].kind === 'user') return i
-  return -1
+/** The block as a row: a user message, a summary request, a note between turns, or an agent turn. */
+function BlockRow({
+  block: b,
+  live,
+  since,
+  background,
+  duo,
+  showReply,
+  onHide,
+  onEdit,
+  onFork,
+}: {
+  block: Block
+  live: boolean
+  since: number | null
+  background: string | null
+  duo: boolean
+  showReply: boolean
+  onHide?: (key: string, at: number) => void
+  onEdit?: (key: string, at: number, seed: Seed) => void
+  onFork?: (seed: Seed) => void
+}) {
+  if (b.kind === 'user') return <UserItem item={b.item} intervention={b.intervention} onHide={onHide} onEdit={onEdit} onFork={onFork} />
+  if (b.kind === 'request') return <RequestRow text={b.item.ev.text} />
+  if (b.kind === 'note') return <NoteRow text={b.item.ev.text} level={b.item.ev.level} />
+  return <TurnView turn={b} live={live} since={live ? since : null} background={live ? background : null} duo={duo} showReply={showReply} onFork={onFork} />
 }
 
-/** The running time alone ticks every second (not the row, nor its scan of the log). */
-function Elapsed({ since }: { since: number }) {
-  const [now, setNow] = React.useState(() => Date.now() / 1000)
-  React.useEffect(() => {
-    const id = setInterval(() => setNow(Date.now() / 1000), 1000)
-    return () => clearInterval(id)
-  }, [])
-  return <span className="ml-auto shrink-0 tabular-nums">{fmtElapsed(now - since)}</span>
+/** Who answers next while nothing of the turn has come yet. */
+function nextAgent(session: Session, blocks: Block[]): AgentId {
+  if (session.provider === 'codex') return 'codex'
+  if (!isDuo(session.provider)) return 'claude'
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i]
+    if (b.kind === 'turn') return b.agent === 'claude' ? 'codex' : 'claude'
+  }
+  return 'claude'
 }
 
-function RunningRow({ session, log }: { session: Session; log: LogState }) {
+/** Running, nothing pending in the thread but sub-agents / background commands still run: say so. */
+function backgroundText(log: LogState, t: ReturnType<typeof useT>): string | null {
+  const bg = Object.values(log.tasks).filter((tk) => isShownTask(tk) && taskStatus(tk, true) === 'running')
+  return bg.length ? t(bg.every((tk) => tk.kind === 'agent') ? 'tasks.bar' : 'tasks.barAny', { count: bg.length }) : null
+}
+
+/** The turn has started but nothing of it has arrived yet: who works on it, and for how long. */
+function PendingTurn({ agent, since, background }: { agent: AgentId; since: number | null; background: string | null }) {
   const t = useT()
-  // Current activity: the last tool still waiting for its result, if any.
-  let activity = t('sessions.working')
-  for (let i = log.items.length - 1; i >= 0; i--) {
-    const it = log.items[i]
-    if (it.kind === 'user' || it.kind === 'result') break
-    if (it.kind === 'tool') {
-      if (!it.result) activity = it.use.summary
-      break
-    }
-  }
-  // Nothing pending in the thread but sub-agents / background commands still run: say so (the bar lists them).
-  if (activity === t('sessions.working')) {
-    const bg = Object.values(log.tasks).filter((tk) => isShownTask(tk) && taskStatus(tk, true) === 'running')
-    if (bg.length) activity = t(bg.every((tk) => tk.kind === 'agent') ? 'tasks.bar' : 'tasks.barAny', { count: bg.length })
-  }
-  const since = log.lastUserAt || session.updated
   return (
-    <div className="flex h-7 items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
-      <Spinner className="size-3.5 text-primary" />
-      <span className="truncate">{activity}</span>
-      <Elapsed since={since} />
+    <div className="flex flex-col gap-3 pt-1" aria-busy aria-live="polite" data-testid="turn-pending">
+      <div className="flex items-center gap-2 text-[13px]">
+        <AgentIcon agent={agent} size={22} label={null} />
+        <span className="font-semibold">{AGENT_NAME[agent]}</span>
+        {since && (
+          <span className="text-muted-foreground">
+            {t('conv.working')} <Elapsed since={since} />
+          </span>
+        )}
+      </div>
+      <div className="flex h-7 items-center gap-2 text-xs text-muted-foreground">
+        <Spinner className="size-3.5" />
+        <span className="truncate">{background || t('sessions.working')}</span>
+      </div>
     </div>
   )
 }

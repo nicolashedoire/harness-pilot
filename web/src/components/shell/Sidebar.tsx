@@ -1,7 +1,8 @@
 import * as React from 'react'
-import { NavLink } from 'react-router'
+import { matchPath, NavLink, useLocation } from 'react-router'
 import { HandHeart, MessageSquareText, PanelLeftClose, PanelLeftOpen, PanelRight, Search } from 'lucide-react'
 import { SIDEBAR_W, useUI } from '@/stores/ui'
+import { useSidebarFold } from './rail-store'
 import { useIsTablet } from '@/stores/media'
 import { useTeam, useWorkspace } from '@/lib/queries'
 import { useTeamUI } from '@/features/team/store'
@@ -114,10 +115,11 @@ export function Sidebar() {
   const prefetchLink = usePrefetchLink()
   const t = useT()
   const nav = useNav()
-  const userCollapsed = useUI((s) => s.sidebarCollapsed)
-  const toggle = useUI((s) => s.toggleSidebar)
+  // Sessions page: an icon rail unless unfolded there (rail-store.ts); elsewhere the user's own fold
+  const { collapsed: folded, toggle } = useSidebarFold()
+  const { pathname } = useLocation()
   const tablet = useIsTablet()
-  const collapsed = tablet || userCollapsed
+  const collapsed = tablet || folded
   const badge = useSessionBadge()
   const showSessions = useShowSessions()
   const width = useUI((s) => s.sidebarWidth) ?? SIDEBAR_W.default
@@ -130,7 +132,7 @@ export function Sidebar() {
       ref={side}
       className={cn(
         'mx-boot-side relative z-30 hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar pt-[var(--safe-top)] pl-[var(--safe-left)] md:flex',
-        collapsed && 'w-[60px]',
+        collapsed && 'w-16',
       )}
       style={collapsed ? undefined : { width }}
       aria-label={t('shell.navigation')}
@@ -151,7 +153,8 @@ export function Sidebar() {
             data-tour="palette"
             className={cn(
               'flex h-9 w-full items-center gap-2 rounded-md border bg-background/60 px-2.5 text-sm text-muted-foreground shadow-xs transition hover:border-ring/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:bg-input/20',
-              collapsed && 'justify-center px-0',
+              // rail: a plain 44 px icon like the pages under it
+              collapsed && 'mx-auto size-11 justify-center rounded-[10px] border-0 bg-transparent px-0 shadow-none hover:bg-accent dark:bg-transparent',
             )}
             aria-label={t('palette.open')}
           >
@@ -175,6 +178,7 @@ export function Sidebar() {
           const label = t(item.label)
           // Expanded: the counters stay mounted so they can animate out when they reach 0.
           const showBadge = item.to === '/sessions' && (!collapsed || badge.unread > 0 || badge.running > 0)
+          const isActive = !!matchPath({ path: item.to, end: !!item.end }, pathname)
           return (
             <Tooltip key={item.to} content={collapsed ? label : null} side="right">
               <NavLink
@@ -183,11 +187,12 @@ export function Sidebar() {
                 end={item.end}
                 data-tour={navTourId(item)}
                 style={{ '--i': idx } as React.CSSProperties}
-                className={({ isActive }) => navItemClass(isActive, collapsed)}
+                // a string, not a function: the tooltip's trigger (folded sidebar) merges class names as strings
+                className={navItemClass(isActive, collapsed)}
               >
-                {({ isActive }) => (
+                {(
                   <>
-                    {isActive && <span aria-hidden className="absolute top-2 bottom-2 -left-3 w-[3px] rounded-r-full bg-primary" />}
+                    {isActive && <span aria-hidden className={cn('absolute w-[3px] rounded-r-full bg-primary', collapsed ? 'top-3 bottom-3 -left-2.5' : 'top-2 bottom-2 -left-3')} />}
                     <item.icon className={cn('size-[18px] shrink-0', isActive && 'text-primary')} strokeWidth={isActive ? 2.2 : 1.9} />
                     {!collapsed && <span className="flex-1 truncate">{label}</span>}
                     {item.to === '/team' && <TeamNavExtra collapsed={collapsed} />}
