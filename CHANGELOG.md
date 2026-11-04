@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Two-step sign-in now also works with an authenticator app (Google Authenticator, 1Password, Aegis...) in Settings → Security: scan a QR code, confirm with a code and your password, and keep the recovery codes shown once in case you lose your phone. Telegram approval stays available, alone or alongside the app.
 - A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
 - Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
 - On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.

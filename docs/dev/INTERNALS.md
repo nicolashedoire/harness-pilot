@@ -385,7 +385,25 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `TTL` 120 s, `GRACE` 60 s to collect an approval, `NEW_MAX` 5 per client / 15 min, `PENDING_MAX` 10.
 - Trusted browser: cookie `mx_device` = `<issued_at>.<nonce>.<hmac(device_key)>`, path `/api/auth`, 30 days;
   `forget_devices()` = `device_key` -> None (recreated on first use).
-- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer.
+- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer
+  or the phone with the authenticator app is lost (`off` turns both methods off).
+- `required()` = `enabled()` or `totp.is_on()` (what `POST /api/auth/login` checks). A `login` challenge carries
+  `methods`: `"totp"` when the app is on, `"telegram"` when Telegram is on and linked (an `enable` challenge is
+  Telegram only). Telegram is sent only with `"telegram"`; when that send fails and the app is on, the challenge
+  keeps `("totp",)`. A TOTP-only challenge lives `TOTP_TTL` (300 s). `check(id, code)` tries `totp.verify(code)` first
+  (`via` `totp` | `recovery`), then the Telegram code; wrong ones share `CODE_TRIES` and `BAD_MAX`.
+
+## maxxing.totp (two-step sign-in with an authenticator app)
+- RFC 6238: HMAC-SHA1, 6 digits, `STEP` 30 s, `DRIFT` 1 step either way; `hotp()`, `code_at()`, `uri()` (otpauth link,
+  issuer `harness-pilot`). Secret: 20 random bytes, base32.
+- secrets.json (mode 600, no other encryption, like the password hash): `totp_pending` `{secret, created}` (`begin()`,
+  `PENDING_TTL` 600 s) and `totp` `{secret, last_step, enabled_at, recovery:[sha256 hex]}` (`confirm(code)` -> the 10
+  plain recovery codes, 80 bits each, returned once).
+- `verify(code)` under `config._lock`: a 6-digit code must match a step > `last_step` (stored on success: no replay,
+  the enrolment code included); otherwise a recovery code (normalised: case, spaces, dashes, 0/1/8 -> O/I/B) is
+  removed from the list on use. `disable(code=None)`: with a code only when it verifies (Settings), without at once
+  (`pilot 2fa off`). Throttling is the callers': `twofactor.check` at sign-in, `api/auth._reauth` (password-change
+  throttle) for enable / disable.
 
 ## maxxing.bus
 - `invalidate(*topics)` - thread-safe UI invalidation (see API.md Global bus).

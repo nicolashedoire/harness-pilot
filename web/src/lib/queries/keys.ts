@@ -4,6 +4,7 @@ import type { BusTopic } from '../types'
 
 export const qk = {
   authState: ['auth', 'state'] as const,
+  totp: ['auth', 'totp'] as const,
   onboarding: ['onboarding'] as const,
   claude: ['claude', 'status'] as const,
   workspace: ['workspace', 'tree'] as const,

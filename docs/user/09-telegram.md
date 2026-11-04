@@ -129,7 +129,7 @@ answer cannot lock you out. Unlinking Telegram turns it off.
 **Telegram does not answer** (bot deleted, Telegram down, phone lost): on the server, over SSH,
 
 ```bash
-pilot 2fa off             # password only again (every trusted browser is forgotten)
+pilot 2fa off             # password only again, authenticator app off too (every trusted browser is forgotten)
 pilot 2fa status          # on / off
 ```
 

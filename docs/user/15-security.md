@@ -138,6 +138,15 @@ Recommended on top: SSH keys instead of passwords (`PasswordAuthentication no` o
   most one password every 5 seconds for everyone: retry after a few seconds.
 - **Alerts**: with Telegram linked, every sign-in and repeated wrong passwords are reported in the
   *Alerts* thread.
+- **Two-step sign-in** (optional, Settings -> Security): after the right password, a browser that is not trusted
+  yet also needs a code from an **authenticator app** (Google Authenticator, 1Password, Aegis... - time-based
+  codes, RFC 6238), an approval in Telegram (see [Telegram](telegram#two-step-sign-in)), or either when both are
+  on. Setting up the app shows a QR code and its key as text; it is switched on only once you type a code it shows
+  and your password. Each code works once, even within its 30 seconds. Ten **recovery codes**, shown once when you
+  turn the app on, each sign in once if you lose the phone; the server keeps only a fingerprint of them. The app's
+  key is stored in `secrets.json` like the other secrets. Wrong codes count like Telegram codes (5 per request, 20
+  in an hour on the whole server). Turning the app off asks for the password and a code (or a recovery code) and
+  makes every trusted browser ask again. Without the UI: `pilot 2fa off` on the server turns both methods off.
 
 ## Telegram
 

@@ -1,4 +1,4 @@
-"""Two-step sign-in with Telegram (Settings -> Telegram, `pilot 2fa`).
+"""Two-step sign-in with Telegram (Settings -> Telegram, `pilot 2fa`) and/or an authenticator app (maxxing/totp.py).
 
 - On: config `telegram.two_factor` = true, and only effective while a bot and a chat with its owner are linked
   (`enabled()`); forgetting Telegram turns it off.
@@ -11,7 +11,11 @@
   bridge cannot lock the owner out.
 - Trusted browser: cookie `mx_device` (path /api/auth, 30 days) signed with secrets.device_key. Rotating the key
   (password change, `pilot 2fa off|forget-browsers`, the Settings button) forgets every trusted browser.
-- Way out without the UI: `pilot 2fa off` over SSH.
+- Authenticator app (TOTP): a sign-in challenge lists its `methods`. With "totp", the code typed can be a code of the
+  app or a recovery code (totp.verify: replay refused, recovery single use); no Telegram message is needed, so a
+  TOTP-only challenge lives TOTP_TTL s. With both methods, Telegram's buttons and its code keep working too.
+  Wrong codes count the same way (CODE_TRIES per challenge, BAD_MAX per BAD_WINDOW for the whole server).
+- Way out without the UI: `pilot 2fa off` over SSH (both methods).
 """
 from __future__ import annotations
 
@@ -24,13 +28,14 @@ import threading
 import time
 from dataclasses import dataclass
 
-from . import config
+from . import config, totp
 
 log = logging.getLogger("maxxing.twofactor")
 
 DEVICE_COOKIE = "mx_device"
 DEVICE_MAX_AGE = 30 * 24 * 3600
 TTL = 120
+TOTP_TTL = 300                 # a challenge answered from an authenticator app only (no Telegram message)
 GRACE = 60                     # an approved challenge stays collectable this long after TTL
 CODE_TRIES = 5
 NEW_MAX = 5
@@ -40,6 +45,7 @@ PENDING_PER_CLIENT = 3         # one client can hold this many waiting requests:
 BAD_MAX = 20                   # wrong codes accepted server-wide per BAD_WINDOW; then only the Allow button works
 BAD_WINDOW = 3600
 _CODE_RE = re.compile(r"[0-9]{6}")
+_TOTP_INPUT_RE = re.compile(r"[0-9A-Za-z -]{1,32}")
 _DEVICE_RE = re.compile(r"[0-9]{1,12}\.[0-9a-f]{16}\.[0-9a-f]{64}")
 
 WORDS = {
@@ -83,6 +89,7 @@ class Challenge:
     text: str = ""
     msg: tuple[int, int] | None = None     # (chat_id, message_id) of the Telegram message
     created: float = 0.0
+    methods: tuple[str, ...] = ("telegram",)   # "totp" (authenticator app) and/or "telegram"
 
 
 class Refused(Exception):
@@ -115,6 +122,11 @@ def is_on() -> bool:
 
 def enabled() -> bool:
     return is_on() and available()
+
+
+def required() -> bool:
+    """A sign-in needs a second step: Telegram (on and linked) or the authenticator app."""
+    return enabled() or totp.is_on()
 
 
 def set_on(on: bool) -> None:
@@ -196,8 +208,12 @@ def _prune(now: float) -> None:
 
 
 def start(purpose: str, ip: str, ua: str) -> Challenge:
-    """New challenge + its Telegram message (blocking: call it from a thread). Raises Refused."""
+    """New challenge + its Telegram message (blocking: call it from a thread). Raises Refused. A sign-in challenge
+    takes the authenticator app too when it is on; then Telegram is only asked when it is on as well."""
     now = time.time()
+    methods = ("totp",) if purpose == "login" and totp.is_on() else ()
+    if purpose != "login" or enabled():
+        methods += ("telegram",)
     with _lock:
         _prune(now)
         if len(_new.get(ip, [])) >= NEW_MAX:
@@ -212,10 +228,14 @@ def start(purpose: str, ip: str, ua: str) -> Challenge:
             _close(old, _w("gone"))
         _new.setdefault(ip, []).append(now)
         c = Challenge(id=secrets.token_urlsafe(12), code=f"{secrets.randbelow(10 ** 6):06d}", purpose=purpose,
-                      ip=ip, ua=ua[:120], expires=now + TTL, created=now)
+                      ip=ip, ua=ua[:120], expires=now + (TTL if "telegram" in methods else TOTP_TTL), created=now,
+                      methods=methods)
         _ch[c.id] = c
-    if not _send(c):
+    if "telegram" in methods and not _send(c):
         with _lock:
+            if "totp" in methods:                   # the app still works: no Telegram for this one
+                c.methods = ("totp",)
+                return c
             _ch.pop(c.id, None)
         raise Refused("two_factor_unavailable",
                       "Telegram did not accept the sign-in request - on the server, `pilot 2fa off` turns "
@@ -260,7 +280,12 @@ def check(cid: str, code: str | None = None) -> tuple[str, Challenge | None]:
             if len(_bad) >= BAD_MAX:                # code guessing from many addresses: the button still works
                 return "codes_paused", c
             given = code.strip().replace(" ", "")
-            if _CODE_RE.fullmatch(given) and hmac.compare_digest(given.encode(), c.code.encode()):
+            via = totp.verify(code) if "totp" in c.methods and _TOTP_INPUT_RE.fullmatch(code.strip()) else None
+            if via:                                 # "totp" | "recovery" (used up)
+                c.status, c.via = "approved", via
+                _close(c, _w("allowed_code"))
+            elif "telegram" in c.methods and _CODE_RE.fullmatch(given) \
+                    and hmac.compare_digest(given.encode(), c.code.encode()):
                 c.status, c.via = "approved", "code"
                 _close(c, _w("allowed_code"))
             else:
