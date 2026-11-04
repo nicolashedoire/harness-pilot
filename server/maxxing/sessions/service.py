@@ -616,7 +616,7 @@ def resume_debate(sid: str) -> dict:
             else:
                 q.insert(0, pending)
         busy = m.get("state") == "running" and store.runner_alive(sid, m)
-        if m.get("queue") and not busy:
+        if m.get("queue") and not busy and not _handoff_held(m):   # a continuation: its seed comes first
             m.update(state="running", spawned_at=time.time(), error=None, pid=None)
             start = True
         m["updated"] = time.time()
@@ -838,12 +838,18 @@ def compact(sid: str) -> None:
     _enqueue(sid, _item(DEBATE_SUMMARY_PROMPT if debate else SUMMARY_PROMPT, [], "system", "compact"))
 
 
+# what a discussion's continuation keeps: its objective, roles, models and limits (a new period starts)
+DISCUSSION_CARRIED = ("debate_goal", "claude_role", "codex_role", "codex_model", "discussion_turn_limit",
+                      "discussion_duration_seconds")
+
+
 def handoff(sid: str) -> dict:
-    """New session seeded with a summary of this one (which gets archived once it is handed over)."""
+    """New session seeded with a summary of this one (which gets archived once it is handed over). A discussion /
+    debate: a new discussion with the same objective, roles, models and limits, both agents seeded with a summary of
+    the exchanges (runner `_debate_handoff`); paused with a reply pending, it stays paused on that reply."""
     if _require(sid).get("provider", '').startswith('plugin:'):
         raise SessionError(409, 'unsupported', 'Native thread handoff is owned by this agent adapter.')
-    if _require(sid).get("provider") in ("discussion", "debate"):
-        raise SessionError(409, "unsupported", "Handoff is not yet available for debates.")
+    debate = _require(sid).get("provider") in ("discussion", "debate")
     old = _idle_with_history(sid)
     meta = store.read(sid) or {}
     base = re.sub(r"\s*\(cont\.(?: \d+)?\)$", "", old["title"])
@@ -856,11 +862,19 @@ def handoff(sid: str) -> dict:
         new['swarm_agents'] = meta['swarm_agents']
     if meta.get("favorite"):                 # the continuation stays in the user's favorites
         new["favorite"] = True
+    if debate:
+        new.update({k: meta[k] for k in DISCUSSION_CARRIED if meta.get(k) is not None})
+        pending = meta.get("debate_pending") if meta.get("debate_paused") else None
+        if isinstance(pending, dict):        # the reply the old one was paused on: Resume asks it in the new one
+            new.update(debate_paused=True, debate_pending=pending, debate_next=meta.get("debate_next") or "claude",
+                       discussion_pause_reason="user", discussion_paused_at=time.time())
     new["handoff_pending"] = time.time()     # messages sent to it wait for the summary seed (runner._handoff)
     store.create(new)
     store.append_log(new["id"], {"type": "mx_note", "level": "info", "at": time.time(),
                                  "text": f"Continuation of '{old['title']}' - waiting for the summary…"})
-    _enqueue(sid, _item(SUMMARY_PROMPT, [], "system", "handoff", target=new["id"]))
+    _enqueue(sid, _item(DEBATE_SUMMARY_PROMPT if debate else SUMMARY_PROMPT, [], "system", "handoff", target=new["id"]))
+    if debate and meta.get("debate_paused"):
+        _resolve_paused(sid)                 # its pause is carried over: the old one is archived once handed over
     return get_session(new["id"]) or public(new)
 
 
