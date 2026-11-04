@@ -40,8 +40,6 @@ print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)
     sid = r.json()['id']
     session = wait_idle(client, sid)
     assert session['state'] == 'idle', session
-    graph = client.get(f'/api/companions/runs/{sid}/architecture')
-    assert graph.status_code == 200 and graph.json()['version'] == 1
     r = client.get(f'/api/companions/runs/{sid}/review')
     assert r.status_code == 200, r.text
     proposal = r.json()

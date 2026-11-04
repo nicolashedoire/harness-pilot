@@ -8,7 +8,6 @@ import { useWorkspace } from '@/lib/queries'
 import { Button, Input } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 import { ProposalDiff } from './ProposalDiff'
-import { ArchitectureMap } from './ArchitectureMap'
 
 type Profile = { id: string; name: string; role: string }
 type Run = { id: string; title: string; path: string; state: string; error: string | null }
@@ -59,7 +58,6 @@ export function CompanionsSection() {
       {data && <div className="grid gap-3 text-sm">
         <p className="font-medium">{data.session.title}</p>
         <Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.session.path)}&session=${encodeURIComponent(sid)}`}>{t('companions.session')}</Link>
-        <ArchitectureMap sid={sid} />
         {data.session.state === 'running' ? <p role="status">{t('companions.running')}</p> : <>
           {data.session.error && <p role="alert">{t('companions.failed')} {data.session.error}</p>}
           {!data.has_changes ? <p>{t('companions.nochanges')}</p> : <>

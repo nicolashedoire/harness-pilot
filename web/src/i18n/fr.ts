@@ -2,9 +2,6 @@ import type { en } from './en'
 
 // Dictionnaire français — doit contenir toutes les clés de en.ts (vérifié par TypeScript).
 export const fr: Record<keyof typeof en, string> = {
-  "companions.architecture": "Carte de la plateforme",
-  "companions.architectureDesc": "Vue des principaux liens d’import dans le code au lancement de cette expérience. Des liens à l’exécution ou entre fonctionnalités peuvent manquer ; le compagnon peut consulter la carte complète des fichiers.",
-  "companions.architectureEmpty": "Aucun lien détecté.",
   'companions.filesChanged': '{count} fichiers modifiés',
   "feed.kind.companion.ready.title": "Proposition du compagnon prête",
   "feed.kind.companion.ready.body": "Une proposition de modification du code attend votre avis.",

@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import hashlib
-import json
 import os
 import re
 import shutil
@@ -152,14 +151,6 @@ def _meta(sid: str) -> tuple[dict, dict, Path]:
     if root not in repo.parents or not repo.is_dir():
         raise service.SessionError(404, 'not_found', 'Experiment checkout not found.')
     return meta, c, repo
-
-
-def get_architecture(sid: str) -> dict:
-    _, _, repo = _meta(sid)
-    try:
-        return json.loads((repo.parent / 'architecture.json').read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        raise service.SessionError(404, 'not_found', 'The source map is unavailable for this experiment.') from None
 
 
 def runs() -> list[dict]:

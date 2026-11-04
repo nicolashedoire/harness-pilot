@@ -1,9 +1,6 @@
 // English dictionary — the reference. Every key must also exist in fr.ts (TypeScript enforces it).
 // Variables: {name}. Plurals: add `key#one` next to `key`; it is used when vars.count is 1 (fr: 0 or 1).
 export const en = {
-  "companions.architecture": "Platform map",
-  "companions.architectureDesc": "Overview of the strongest static import links in the source at the start of this experiment. Runtime links and product relationships can be missing; the agent can inspect the full file-level map.",
-  "companions.architectureEmpty": "No links found.",
   'companions.filesChanged': '{count} files changed',
   "feed.kind.companion.ready.title": "Companion proposal ready",
   "feed.kind.companion.ready.body": "A source-code proposal is ready for your review.",
