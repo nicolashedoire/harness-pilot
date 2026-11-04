@@ -1222,7 +1222,7 @@ R('POST', '/api/auth/setup', ({ body, res }) => {
   return { ok: true }
 }, { public: true })
 
-R('POST', '/api/auth/login', async ({ body, res }) => {
+R('POST', '/api/auth/login', async ({ req, body, res }) => {
   if (S.setup_required) fail(409, 'setup_required', 'Run the setup first')
   const t = now()
   if (S.lockUntil > t) fail(429, 'throttled', `Too many attempts, retry in ${Math.ceil(S.lockUntil - t)} s`)
@@ -1235,6 +1235,7 @@ R('POST', '/api/auth/login', async ({ body, res }) => {
     fail(401, 'bad_password', 'Wrong password')
   }
   S.failStreak = 0
+  if (S.telegram.settings.two_factor && !tfTrusted(req)) return { ok: false, two_factor: tfChallenge('login') }
   setCookie(res, newToken())
   return { ok: true }
 }, { public: true })
@@ -1249,6 +1250,52 @@ R('POST', '/api/auth/password', ({ body }) => {
   if (body.current !== S.password) fail(400, 'bad_password', 'Current password is wrong')
   if (!body.new || String(body.new).length < 8) fail(422, 'invalid', 'Password must be at least 8 characters')
   S.password = body.new
+  return { ok: true }
+})
+
+/* ---- two-step sign-in (server/maxxing/twofactor.py): with Telegram setting `two_factor` on, a password sign-in from an
+   untrusted browser waits for Allow in Telegram or the code it shows. Mock: Allow is "pressed" 4 s after the challenge
+   is created, and the code is 246810 (5 wrong codes expire the challenge). */
+const TF_CODE = '246810'
+const tfState = () => (S.twoFactor ||= { deviceKey: crypto.randomBytes(12).toString('hex'), challenges: {} })
+function tfChallenge(kind) { // kind: login | enable
+  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending' }
+  tfState().challenges[c.id] = c
+  const g = GEN
+  setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
+  return { challenge: c.id, expires_in: 300 }
+}
+const tfTrusted = (req) => (req.headers.cookie || '').split(/;\s*/).includes(`mx_device=${tfState().deviceKey}`)
+const tfDeviceCookie = () => `mx_device=${tfState().deviceKey}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=2592000`
+R('POST', '/api/auth/two-factor', ({ req, res, body, authed }) => {
+  const c = tfState().challenges[body.challenge]
+  if (!c || c.status === 'expired' || now() - c.at > 360) fail(410, 'expired', 'This sign-in request expired: sign in again')
+  if (c.kind === 'enable' && !authed) fail(401, 'auth_required', 'Please log in')
+  if (body.code !== undefined && body.code !== null && c.status === 'pending') {
+    if (body.code !== TF_CODE) {
+      c.tries += 1
+      if (c.tries >= 5) { c.status = 'expired'; fail(410, 'expired', 'Too many wrong codes: sign in again') }
+      sendJson(res, 400, { error: 'bad_code', message: 'Wrong code', tries_left: 5 - c.tries })
+      return RAW
+    }
+    c.status = 'approved'
+  }
+  if (c.status === 'pending') return { ok: false, status: 'pending', expires_in: Math.max(0, Math.round(300 - (now() - c.at))) }
+  delete tfState().challenges[c.id] // once only
+  const trust = body.trust !== false || c.kind === 'enable'
+  if (c.kind === 'enable') { S.telegram.settings.two_factor = true; bus('telegram') }
+  res.setHeader('Set-Cookie', [...(c.kind === 'login' ? [`mx_session=${newToken()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`] : []), ...(trust ? [tfDeviceCookie()] : [])])
+  return { ok: true, status: 'approved' }
+}, { public: true })
+R('PUT', '/api/auth/two-factor', ({ body }) => {
+  if (!body.enabled) { S.telegram.settings.two_factor = false; tfState().deviceKey = crypto.randomBytes(12).toString('hex'); bus('telegram'); return { ok: true, enabled: false } }
+  if (!S.telegram.chat) fail(409, 'not_linked', 'Link a Telegram chat first')
+  if (S.telegram.settings.two_factor) return { ok: true, enabled: true }
+  return { ok: false, two_factor: tfChallenge('enable') }
+})
+R('POST', '/api/auth/two-factor/forget-browsers', ({ res }) => {
+  tfState().deviceKey = crypto.randomBytes(12).toString('hex')
+  res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
   return { ok: true }
 })
 
