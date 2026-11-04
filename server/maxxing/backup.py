@@ -684,6 +684,9 @@ def run() -> dict:
     entry: dict[str, Any] = {"at": started, "ok": False, "commit": None, "files": 0, "changed": False,
                              "error": None}
     try:
+        if config.integrations_paused():
+            raise BackupError("The GitHub memory backup is paused on this restored copy: stop the original instance, "
+                              "then resume integrations in Settings > Backup.", "paused")
         with _flock():
             repo, tok = _settings().get("repo"), _token()
             if not repo or not tok:
@@ -716,7 +719,7 @@ def run() -> dict:
         log.exception("backup failed")
         entry.update(error=f"{type(e).__name__}: {e}", code="internal")
     entry["duration_s"] = round(time.time() - started, 2)
-    if entry.get("code") != "busy":
+    if entry.get("code") not in ("busy", "paused"):
         _record(entry)
     return entry
 

@@ -3738,7 +3738,7 @@ export const en = {
   "instanceBackup.excluded": "Application binaries, agent runtimes and external symbolic-link targets are not bundled. External links are listed before restoration.",
   "instanceBackup.limit": "Data limit: {mb} MiB (instance_backup_max_mb).",
   "instanceBackup.hold": "Restored instance — review mode",
-  "instanceBackup.holdBody": "Your data is readable. Background services and changes are paused. Review the restored settings before restarting configured integrations and schedules.",
+  "instanceBackup.holdBody": "Your data is readable. Background services and changes are paused. Telegram, scheduled tasks and GitHub backup stay paused after you enable the services, until you resume them.",
   "instanceBackup.activate": "Enable this instance’s services",
   "instanceBackup.export": "Create an encrypted archive",
   "instanceBackup.passphrase": "Backup passphrase",
@@ -3770,6 +3770,11 @@ export const en = {
   "instanceBackup.error.large": "The archive exceeds the configured backup or upload size limit. Review the included directories and server limits.",
 
   "instanceBackup.resumeError": "Some background services could not resume after the snapshot. Review server logs and restart the application before continuing.",
+  "instanceBackup.integrations.paused": "Telegram, scheduled tasks and GitHub backup are paused",
+  "instanceBackup.integrations.body": "This restored copy does not poll the Telegram bot, run scheduled tasks or push the memory backup, so it cannot clash with the instance it was copied from. Stop the original instance first, then resume them here.",
+  "instanceBackup.integrations.resume": "Resume integrations",
+  "instanceBackup.integrations.confirmTitle": "Is the original instance stopped?",
+  "instanceBackup.integrations.confirmBody": "Resume only once the original instance is stopped. Otherwise both copies answer the same Telegram bot, run every scheduled task twice and push to the same GitHub repository.",
   "agentProviders.textOnly": "This engine accepts text only. Attached files are not supported.",
   "agentProviders.unavailable": "This agent engine is unavailable or disabled. Choose another engine or check Extensions.",
 
