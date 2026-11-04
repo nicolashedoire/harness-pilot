@@ -7,6 +7,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.
+- Local setup: `bash scripts/dev-local.sh cli <command>` runs the `pilot` command with the settings of your local app, for example `bash scripts/dev-local.sh cli doctor`. The guides no longer suggest `uv run pilot` in `server/`, which looked at the folder of a server installation instead of your local one.
+- The Sessions guide and Settings → Codex now say what works with Codex and which features are still for Claude Code only (side questions, MCP servers, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota).
 - Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.
 - An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
 - Codex sessions can now use the product skills (tasks, scheduled jobs, notifications, backup…): `pilot init` and `pilot update` install them for Codex too, and `pilot doctor` reports a missing or outdated Codex copy.
@@ -82,6 +84,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - `pilot doctor` warns when another program called `pilot` comes first in your terminal or for the sessions (some systems ship one), names it, and suggests `maxxing`, the same command under its earlier name.
 - The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
 - The Linux server installer was tried on a test Debian 12 server; what works, what still points to the original project and the plan to turn it back on are documented for maintainers. It stays disabled for now.
+- The Linux installer, still disabled, now takes harness-pilot from this project's repository (`main` branch), shows the harness-pilot name and `pilot` commands, and no longer offers an Enterprise license key.
 - Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
 
 ### Inherited version history
