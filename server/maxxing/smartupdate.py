@@ -332,7 +332,7 @@ def after_update() -> dict | None:
     if not rep["ok"]:
         names = [x.get("name") or x.get("title") for x in rep["extensions"] + rep["checks"] if not x["ok"]]
         title = f"After the update to {m['to']}: {rep['problems']} thing(s) to fix"
-        body = "Not working any more: " + ", ".join(names[:5]) + ". Ask Harness to fix it (Settings -> System)."
+        body = "Not working any more: " + ", ".join(names[:5]) + ". Ask harness-pilot to fix it (Settings -> System)."
         feed.system(title, body, "warning", "system", "/settings/system")
         from .telegram import gateway
         gateway.system_alert(f"{title}\n{body}")
@@ -351,7 +351,7 @@ def after_update() -> dict | None:
 
 def notes_prompt(old: str, new: str, notes: list[dict]) -> str:
     files = "\n".join(f"- {n['file']}" for n in notes)
-    return (f"Harness Maxxing was just updated from {old} to {new} with the Update button. Apply the workspace "
+    return (f"harness-pilot was just updated from {old} to {new} with the Update button. Apply the workspace "
             f"upgrade notes below, following step 5 and 6 of this topic's CLAUDE.md (keep the user's own edits, "
             f"record the last applied version in memory.md), then tell me in two or three plain sentences what "
             f"changed for me.\n\n{files}" + _reply_in())
@@ -365,7 +365,7 @@ def _reply_in() -> str:
 def assist_prompt(rep: dict) -> str:
     """The prompt of the session that adapts this server's changes, then updates."""
     from . import customs
-    lines = [f"Update Harness Maxxing from {rep.get('current')} to {rep.get('latest')} - this server has changes "
+    lines = [f"Update harness-pilot from {rep.get('current')} to {rep.get('latest')} - this server has changes "
              "the update cannot carry over by itself. Here is what the preflight found "
              "(`maxxing update --preflight` shows it again):", ""]
     for c in rep.get("customs") or []:

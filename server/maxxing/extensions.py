@@ -243,11 +243,11 @@ def _load_one(d: Path) -> Extension:
         except (TypeError, ValueError):
             raise ValueError("manifest \"api\" must be a number (the extension API version, e.g. 1)") from None
         if ext.api > EXT_API:
-            raise ValueError(f"built for extension API {ext.api}: update Harness Maxxing (this version supports "
+            raise ValueError(f"built for extension API {ext.api}: update harness-pilot (this version supports "
                              f"{EXT_API_MIN}-{EXT_API})")
         if ext.api < EXT_API_MIN:
             raise ValueError(f"built for extension API {ext.api}, no longer supported ({EXT_API_MIN}-{EXT_API}): "
-                             "ask Harness to update this extension")
+                             "ask harness-pilot to update this extension")
         ext.icon = str(m.get("icon") or "puzzle")[:40]
         ext.version = str(m.get("version") or "")[:20]
         ext.span = min(3, max(1, int(m.get("span") or 1)))

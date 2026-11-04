@@ -129,7 +129,7 @@ def test_extension_api_version(code):
     (d / "manifest.json").write_text(json.dumps({"id": "future", "type": "page", "api": extensions.EXT_API + 1}))
     (d / "page.js").write_text("export function mount(el) {}\n")
     e = next(x for x in extensions.scan() if x.id == "future")
-    assert e.error and "update Harness Maxxing" in e.error
+    assert e.error and "update harness-pilot" in e.error
     # the preflight lists extensions the new version would not load
     src = f"EXT_API = {extensions.EXT_API + 2}\nEXT_API_MIN = {extensions.EXT_API + 1}\n"
     (d / "manifest.json").write_text(json.dumps({"id": "future", "type": "page"}))
