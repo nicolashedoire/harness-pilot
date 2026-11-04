@@ -293,6 +293,60 @@ def test_python_m_maxxing_returns_the_exit_code(tmp_path):
     assert r.returncode == 2
 
 
+# ---- one change of the components at a time ---------------------------------------------------------------------
+def _hold_lock(release: threading.Event, held: threading.Event):
+    with deps.exclusive(log=lambda s: None):
+        held.set()
+        release.wait(10)
+
+
+def test_a_second_update_waits_for_the_first(st, monkeypatch):
+    """`pilot deps update` by hand while the background one of `pilot update` runs: the second waits, says so, and
+    only then touches the components (both at once replaced the same folders under each other)."""
+    monkeypatch.setattr(deps, "LOCK_POLL_S", 0.02)
+    order: list[str] = []
+    monkeypatch.setitem(deps._UPDATERS, "uv", lambda c, explicit=False: (order.append("second ran"), ("ok", ""))[1])
+    release, held = threading.Event(), threading.Event()
+    first = threading.Thread(target=_hold_lock, args=(release, held))
+    first.start()
+    assert held.wait(5)
+    logs: list[str] = []
+    second = threading.Thread(target=lambda: order.append(deps.update(["uv"], log=logs.append)))
+    second.start()
+    second.join(0.3)
+    assert second.is_alive() and order == []                     # still waiting, nothing touched
+    assert logs and logs[0].startswith("waiting: another update of the components is running (process ")
+    order.append("first done")
+    release.set()
+    first.join(5)
+    second.join(5)
+    assert order[:2] == ["first done", "second ran"] and order[2][0]["result"] == "ok"
+    assert deps.lock_file().read_text().strip() == str(os.getpid())
+
+
+def test_an_update_stops_clearly_when_the_other_one_lasts(st, monkeypatch):
+    monkeypatch.setattr(deps, "LOCK_POLL_S", 0.02)
+    monkeypatch.setattr(deps, "LOCK_WAIT_S", 0.2)
+    ran = []
+    monkeypatch.setitem(deps._UPDATERS, "uv", lambda c, explicit=False: (ran.append(1), ("ok", ""))[1])
+    release, held = threading.Event(), threading.Event()
+    first = threading.Thread(target=_hold_lock, args=(release, held))
+    first.start()
+    assert held.wait(5)
+    try:
+        rep = deps.update(["uv"], log=lambda s: None)
+        assert not ran and rep == [{"name": "components", "result": "failed",
+                                    "text": f"another update of the components is still running (process {os.getpid()}):"
+                                            " run it again once it is done"}]
+        assert deps.clean(dry=True) is not None                  # a dry run changes nothing: it does not wait
+        with pytest.raises(deps.Busy):
+            deps.remove("node")                                  # removing waits too (here: gives up)
+    finally:
+        release.set()
+        first.join(5)
+    assert deps.update(["uv"], log=lambda s: None)[0]["result"] == "ok"   # the lock went with its holder
+
+
 # ---- tools paths: one Chromium ---------------------------------------------------------------------------------
 def test_one_chromium_for_pdfs_and_remotion(st, monkeypatch):
     from maxxing import cmd_video

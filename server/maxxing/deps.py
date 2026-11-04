@@ -10,6 +10,7 @@ Standard library only (the CLI stays fast); the network is used by `update` and 
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -41,6 +42,54 @@ FAILED_LOGS_DAYS = 30
 
 class DepError(Exception):
     pass
+
+
+class Busy(DepError):
+    """Another change of the components kept the lock longer than LOCK_WAIT_S."""
+
+
+# ---- one change at a time ----------------------------------------------------------------------------------------
+LOCK_WAIT_S = 3600                   # a second update waits this long for the first one (downloads take minutes)
+LOCK_POLL_S = 1.0
+
+
+def lock_file() -> Path:
+    return config.STATE / "deps.lock"
+
+
+def _try_lock(fd: int) -> bool:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except BlockingIOError:
+        return False
+
+
+@contextlib.contextmanager
+def exclusive(log=print, wait: float | None = None) -> Iterator[None]:
+    """One change of the components at a time: `pilot deps update` by hand, the background one that `pilot update`
+    and install.sh start, `pilot deps remove`, `pilot deps clean` (a weekly job). Two at once replaced the same
+    folders under each other (a venv being created, Node.js missing while it was switched, a `.new` folder cleaned
+    away). The second one says it waits, waits for the first, then goes on; after `wait` seconds (LOCK_WAIT_S) it
+    stops with Busy. The lock is an flock on <state>/deps.lock, released by the system when its process ends."""
+    path = lock_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+    try:
+        if not _try_lock(fd):
+            pid = os.pread(fd, 16, 0).decode(errors="replace").strip()
+            who = f" (process {pid})" if pid.isdigit() else ""
+            log(f"waiting: another update of the components is running{who}")
+            deadline = time.monotonic() + (LOCK_WAIT_S if wait is None else wait)
+            while not _try_lock(fd):
+                if time.monotonic() >= deadline:
+                    raise Busy(f"another update of the components is still running{who}: run it again once it is done")
+                time.sleep(LOCK_POLL_S)
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"{os.getpid()}\n".encode(), 0)
+        yield
+    finally:
+        os.close(fd)
 
 
 # ---- manifest ------------------------------------------------------------------------------------------------
@@ -649,18 +698,23 @@ def update(names: list[str] | None = None, log=print, explicit: bool | None = No
     todo = [n for n in UPDATE_ORDER if (names is None or n in names)]
     explicit = (names is not None) if explicit is None else explicit
     report = []
-    for name in todo:
-        c = get(name)
-        if names is None and c.get("update") not in ("auto", "self"):
-            continue
-        try:
-            res, text = _UPDATERS[name](c, explicit=explicit)
-        except DepError as e:
-            res, text = "failed", str(e)
-        except Exception as e:  # noqa: BLE001 - one component never stops the others
-            res, text = "failed", f"{type(e).__name__}: {e}"
-        report.append({"name": name, "result": res, "text": text})
-        log(f"{name}: {res}{' - ' + text if text else ''}")
+    try:
+        with exclusive(log=log):
+            for name in todo:
+                c = get(name)
+                if names is None and c.get("update") not in ("auto", "self"):
+                    continue
+                try:
+                    res, text = _UPDATERS[name](c, explicit=explicit)
+                except DepError as e:
+                    res, text = "failed", str(e)
+                except Exception as e:  # noqa: BLE001 - one component never stops the others
+                    res, text = "failed", f"{type(e).__name__}: {e}"
+                report.append({"name": name, "result": res, "text": text})
+                log(f"{name}: {res}{' - ' + text if text else ''}")
+    except Busy as e:
+        report.append({"name": "components", "result": "failed", "text": str(e)})
+        log(f"components: failed - {e}")
     return report
 
 
@@ -1024,7 +1078,12 @@ ESSENTIAL = ("uv", "python", "claude")
 
 
 def remove(name: str, force: bool = False) -> list[str]:
-    """Delete what the manifest lists for a component -> the paths removed."""
+    """Delete what the manifest lists for a component -> the paths removed (after a running update: `exclusive`)."""
+    with exclusive():
+        return _remove(name, force)
+
+
+def _remove(name: str, force: bool) -> list[str]:
     c = get(name)
     if name in ESSENTIAL and not force:
         raise DepError(f"{name} is needed by harness-pilot itself (only `pilot uninstall --purge` removes it)")
@@ -1079,7 +1138,15 @@ def _drop(p: Path, why: str, out: list[dict], dry: bool) -> None:
 
 def clean(dry: bool = False, caches: bool = False) -> list[dict]:
     """Caches (`caches`: root's uv/npm/pip/npx caches, shared with every other tool of the server - MCP servers run
-    from ~/.npm/_npx - so only on request), old versions, orphan browsers, leftovers and oversized logs -> what went."""
+    from ~/.npm/_npx - so only on request), old versions, orphan browsers, leftovers and oversized logs -> what went.
+    A real clean waits for a running update (`exclusive`): its new versions and `.new` folders are not leftovers."""
+    if dry:
+        return _clean(dry, caches)
+    with exclusive():
+        return _clean(dry, caches)
+
+
+def _clean(dry: bool, caches: bool) -> list[dict]:
     out: list[dict] = []
     home = root_home()
     tools = config.STATE / "tools"
