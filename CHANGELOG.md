@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A page extension can now be split into several files: `page.js` imports the other `.js`, `.mjs`, `.css` and `.json` files of its folder with a relative path such as `./lib/chart.js`. Before, such a page failed to load. Editing any of these files updates the page at the next visit. Only these files are served, to the signed-in user: not `api.py`, hidden files, or links to files outside the folder.
 - Fixed on Linux servers: rarely, a change to a session saved twice within the same millisecond went unnoticed: a finished turn sent no Telegram reply or notification, or a message sent to a continued session waited up to 10 minutes after its summary failed.
 
 - Codex sessions are now compacted automatically when their context gets large, like Claude Code sessions: at the automatic compaction threshold (Settings → Claude) or at 80 % of Codex's context window, whichever comes first. In a discussion, a Codex reply near its limit now leads to the summary too, instead of waiting for Codex to refuse a reply.

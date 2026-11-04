@@ -4536,14 +4536,18 @@ function serveStatic(req, res, url) {
   fs.createReadStream(path.join(DIST, 'index.html')).pipe(res)
 }
 
+// Page modules, like api/extensions.py: /ext/<id>/[@<version>/]<path> (page.js and the .js .mjs .css .json files of
+// the folder it imports; the version segment is ignored).
+const EXT_MODULE_TYPES = { js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', json: 'application/json' }
 function serveExt(req, res, url) {
-  const m = /^\/ext\/([^/]+)\/page\.js$/.exec(url.pathname)
+  const m = /^\/ext\/([a-z0-9][a-z0-9-]*)\/(?:@[^/]+\/)?((?:[A-Za-z0-9_][A-Za-z0-9_.-]*\/)*[A-Za-z0-9_][A-Za-z0-9_.-]*\.(js|mjs|css|json))$/.exec(url.pathname)
   if (!isAuthed(req)) return sendJson(res, 401, { error: 'auth_required', message: 'Please log in' })
   const e = m && S.extensions.find((x) => x.id === m[1] && x.type === 'page')
   if (!e) return sendJson(res, 404, { error: 'not_found', message: 'Unknown extension page' })
-  if (!e.enabled) return sendJson(res, 409, { error: 'disabled', message: 'Extension is disabled' })
-  const n = S.fs.get(`${ROOT}/extensions/${e.id}/page.js`)
-  res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' })
+  if (!e.enabled) return sendJson(res, 404, { error: 'not_found', message: `no page for extension ${e.id}` })
+  const n = S.fs.get(`${ROOT}/extensions/${e.id}/${m[2]}`)
+  if (!n && m[2] !== 'page.js') return sendJson(res, 404, { error: 'not_found', message: `${m[2]} is not a module of extension ${e.id}` })
+  res.writeHead(200, { 'Content-Type': `${EXT_MODULE_TYPES[m[3]]}; charset=utf-8`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' })
   res.end(n ? n.content : NOTES_PAGE_JS)
 }
 

@@ -338,6 +338,21 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
 - Telegram: `gateway.feed_notify(ev, loud)` / `feed_message(ev)` (body cut at 700 characters BEFORE HTML escaping); thread key `#feed` (`NOTIFY_ONLY` = Crons, Alerts,
   Notifications: never treated as topic threads by the legacy migration); callback `f:<id>` = Ask Claude.
 
+## maxxing.extensions / maxxing.api.extensions - page modules  (owner: organisation)
+- `module_file(ext, rel) -> Path | None`: the file a page may load from its folder (`MODULE_TYPES` `.js .mjs .css
+  .json` -> content type). Every segment of `rel` AND of the real path relative to the resolved folder (links
+  followed) matches `MODULE_SEG_RE` (starts with a letter, digit or `_`: no hidden file, no `..`, never `@`) and the
+  real path has a module suffix: a link to a file outside, to `api.py` or to a hidden file gives None.
+- `page_version(ext) -> int | None` = `Extension.info()["page_v"]`: newest mtime (ms) over the files `module_file`
+  would serve, by an `os.walk` that does not follow folder links, skips `MODULE_SKIP_DIRS` and hidden folders, and
+  stops after `MODULE_SCAN_MAX` files. Computed at each listing (in a thread: `api.extensions._infos`), not at scan
+  time: a module other than page.js is not part of `_signature()` (no rescan, no api.py import when it changes).
+- Routes: `/ext/{id}/page.js` and the catch-all `/ext/{eid:extid}/{rel:path}` (declared after the fixed
+  `/ext/{id}/...` routes) share `_page_module` (enabled page extension without error, `module_file`). A first segment
+  starting with `@` is the version and is dropped. `extid` (a Starlette convertor registered by api/extensions.py,
+  the `ID_RE` pattern) never matches `_blocks`, so the catch-all leaves `/ext/_blocks/...` to api/blocks.py, whose
+  router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
+
 ## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
 Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
 inside the functions that need them), so `sessions/codex.py` could read its output without it.

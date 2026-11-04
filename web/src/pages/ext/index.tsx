@@ -1,4 +1,4 @@
-// /x/:id — extension pages. Loads /ext/<id>/page.js (ES module) and calls mount(el, ctx).
+// /x/:id — extension pages. Loads /ext/<id>/@<page_v>/page.js (ES module) and calls mount(el, ctx).
 // ctx = { api(path, {method, body}), navigate(route), theme: 'dark'|'light', lang: 'en'|'fr', t(key), icon(name) }
 // The page is mounted inside `.mx-ext`, where the shared UI kit (`/ext/ui-kit.css`, `ui-*` classes) applies.
 //   ctx.api('notes') → /api/ext/<id>/notes, JSON body + X-Maxxing header on non-GET, resolves to parsed JSON,
@@ -76,7 +76,7 @@ export default function ExtensionPage() {
   const [attempt, setAttempt] = React.useState(0)
   useUiKit()
 
-  // The extensions list is a shell query (there at boot): wait for it to know page.js's version.
+  // The extensions list is a shell query (there at boot): wait for it to know the page's version.
   const version = exts ? (ext?.page_v ?? 0) : null
   React.useEffect(() => {
     const el = host.current
@@ -94,9 +94,10 @@ export default function ExtensionPage() {
       t: (key) => tDyn(t, key),
       icon: iconSvg,
     }
-    // Versioned by page.js's mtime: the module is downloaded and evaluated once, an edited file gets a new URL.
-    // A retry (attempt) always fetches it again.
-    const url = `/ext/${encodeURIComponent(id)}/page.js?v=${version || Date.now()}${attempt ? `-${attempt}` : ''}`
+    // Versioned in the path (page_v = newest mtime of the page's modules): page.js and the modules it imports
+    // relatively (./lib/x.js -> /ext/<id>/@<v>/lib/x.js) are downloaded and evaluated once; editing any of them gives
+    // them all a new URL (a query string would not reach the relative imports). A retry (attempt) fetches them again.
+    const url = `/ext/${encodeURIComponent(id)}/@${version || Date.now()}${attempt ? `-${attempt}` : ''}/page.js`
     import(/* @vite-ignore */ url)
       .then((mod: { mount?: Mount; default?: { mount?: Mount } }) => {
         if (cancelled) return
