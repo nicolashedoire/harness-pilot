@@ -214,7 +214,7 @@ previous night — open streams then receive `reset`. **Event** (normalised):
 ```
 
 ## Global bus
-`GET /api/stream` — **SSE**, `event: invalidate`, `data: {"topics": ["sessions"|"workspace"|"tasks"|"crons"|"telegram"|"backup"|"health"|"extensions"|"trash"|"feed"|"look"|"themes"|"space-labels"]}` (`look`: the palette changed, `PUT /api/settings/look`; the UI refetches the auth state and adopts it; `themes`: the saved themes changed). The UI refetches the matching queries. Heartbeat every 15 s. Both SSE streams (this one and `/api/sessions/{id}/stream`) re-check their cookie before each frame (one stat of secrets.json while unchanged, a full check at least every 15 s): signed out, password changed, `sessions_not_before` or expired -> the stream ends without sending anything more (the browser's reconnect then gets `401`). Concurrent SSE streams are capped (both kinds together): 24 per sign-in, 96 in total (`streamcap`); beyond that `429 {"error":"too_many_streams"}` with `Retry-After: 5`. A session that appears, goes away or changes state/unread (turn started or ended) sends `sessions` and `workspace` together; the UI relies on that pair to refresh the workspace tree, the Claude status and the token stats.
+`GET /api/stream` — **SSE**, `event: invalidate`, `data: {"topics": ["sessions"|"workspace"|"tasks"|"crons"|"telegram"|"backup"|"health"|"extensions"|"trash"|"feed"|"look"|"themes"|"space-labels"|"atelier"]}` (`look`: the palette changed, `PUT /api/settings/look`; the UI refetches the auth state and adopts it; `themes`: the saved themes changed; `atelier`: a creation, a draft or a version changed - see Atelier). The UI refetches the matching queries. Heartbeat every 15 s. Both SSE streams (this one and `/api/sessions/{id}/stream`) re-check their cookie before each frame (one stat of secrets.json while unchanged, a full check at least every 15 s): signed out, password changed, `sessions_not_before` or expired -> the stream ends without sending anything more (the browser's reconnect then gets `401`). Concurrent SSE streams are capped (both kinds together): 24 per sign-in, 96 in total (`streamcap`); beyond that `429 {"error":"too_many_streams"}` with `Retry-After: 5`. A session that appears, goes away or changes state/unread (turn started or ended) sends `sessions` and `workspace` together; the UI relies on that pair to refresh the workspace tree, the Claude status and the token stats.
 
 ## Space labels
 
@@ -647,6 +647,7 @@ Built-in types (`maxxing/blocks.py` `BUILTINS`, the source of the schemas):
 | `checklist` | `{items: [label \| {label, checked?, hint?}], title?, submit?}` (ticks remembered by the browser) |
 | `app` | `{html, height?, title?}` or raw HTML: sandboxed frame, no network |
 | `created` | `{items: [{kind: task\|cron\|notification\|file\|session\|project\|extension\|other, title, subtitle?, id?, path?, href?}], title?}` |
+| `proposal` | `{draft: "d_<12 hex>", title?}` - a creation waiting in the Atelier (`pilot ext propose` prints it). Everything shown comes from `GET /api/atelier/drafts/{draft}`, never from the body (an agent cannot make a proposal look harmless); `title` is only the fallback while the draft is not registered yet. See Atelier |
 
 Schema subset (`blocks.check_schema` refuses anything else): `type` (string or list), `properties`, `required`,
 `additionalProperties` (bool or schema), `items` (schema or tuple), `enum`, `const`, `anyOf` / `oneOf` (= anyOf),
@@ -702,6 +703,149 @@ What the agents get (never the user's own CLAUDE.md files): the product skill `p
 enabled types (its description, listed in every Claude Code prompt, and its body); `<state>/blocks/agents.md`, added
 to every Codex turn's shared context; `<state>/blocks/reference.md` (full schemas). Rewritten on server start, on
 `GET /api/blocks`, on a toggle, after an extension rescan, and by `pilot init`.
+
+## Atelier
+
+Where everything the agents create for the platform is staged, approved, versioned and rolled back
+(`maxxing/atelier.py`, design in INTERNALS.md `maxxing.atelier`). An agent writes a creation into a **draft folder**
+and submits it with `pilot ext propose <id>`; nothing of it runs or shows on the dashboard until the user approves
+it. Every approval is a new **version** with its provenance; any kept version can be made active again (rollback).
+Extensions that existed before the Atelier are **approved v1** with an unknown origin. Files of an extension changed
+outside the Atelier (Claude in bypass mode writing `<workspace>/extensions/<id>/` directly, an edit by hand) keep
+working and are flagged `unreviewed`.
+
+```
+Kind      = "extension" | "theme" | "skill" | "customization" | "cron"
+            // the route key; extensions are versioned and have drafts, the other kinds are read-only for now
+Type      = "widget" | "html_widget" | "page" | "block" | "agent" | "pin"      // kind extension (pin = a dashboard
+          | "theme" | "skill" | "customization" | "cron"                       // pin, blocks.pin); = kind otherwise
+State     = "pending"      // À valider: a draft waits for approval and no version is active (a new creation)
+          | "active"       // Actif
+          | "error"        // Erreur: active but broken (load error, or a runtime error since its files last changed)
+          | "disabled"     // Désactivé: turned off (Settings -> Extensions, a cron job off, a saved theme not applied)
+          | "review"       // À revoir après la mise à jour: a customization that conflicts with the installed version
+                           // (pending update), an extension built for an extension API this version no longer runs
+Origin    = {agent: "claude"|"codex"|"plugin:<id>"|"user"|"unknown", session: sid|null, session_title: str|null,
+             session_path: str|null,  // topic path of the session (null = unknown or deleted)
+             at: float|null,          // when the agent proposed it (or the files were first seen, for unknown origins)
+             summary: str|null}       // what the agent said it did (`pilot ext propose --summary`, <= 2000 characters)
+Approval  = {by: "user"|"auto"|"migration"|null, at: float|null}
+            // user = approved in the Atelier · auto = config atelier.auto_activate_safe · migration = existed before
+            // the Atelier (approved v1) · null = never approved (files changed outside the Atelier, kept as a version)
+Permissions = {network: [host], secrets: [name], accounts?: [str], files?: [str], declared: bool}
+            // what the creation declares (manifest.json / block.json "permissions", read by maxxing.permissions when
+            // present - the permissions contract owns the fields; network/secrets always present, [] when none);
+            // declared = the creation has a "permissions" object at all
+ErrorInfo = {message, where: "load"|"card"|"api"|"widget"|"page"|"run"|"check", at: float|null, count: int}
+            // load = the extension does not load (its `error`); card/api/widget/page = newest runtime error
+            // (maxxing.exterrors, since its files last changed); run = a cron job's last run failed
+
+AtelierItem = {
+  kind: Kind, id: str, type: Type, name: str, icon: str|null,
+  state: State,
+  version: int|null,          // active version number (null: not versioned - read-only kinds, or nothing approved yet)
+  version_label: str|null,    // the creation's own version string (manifest "version"), shown next to vN
+  versions: int,              // versions kept
+  pending: {draft, at, change: "new"|"update", origin: Origin} | null,   // newest draft waiting for approval
+  unreviewed: bool,           // its files differ from the active version (changed outside the Atelier)
+  unreviewed_since: float|null,
+  origin: Origin|null,        // of the active version; of the pending draft when state is "pending"; null = unknown
+  approval: Approval|null,    // of the active version
+  error: ErrorInfo|null,
+  updated: float|null,        // last change (approval, rollback, files changed, draft proposed)
+  href: str|null,             // where it lives in the app: /ext/<id> (page), /?widget=<id> (widget), /crons?job=<id>,
+                              // /settings/appearance, /settings/updates (customizations); null when nowhere
+  actions: ["approve"|"reject"|"request_change"|"rollback"|"accept"|"enable"|"disable"]   // what the UI may offer
+}
+Version = {n: int, at: float, active: bool, origin: Origin, approval: Approval,
+           base: int|null,            // the version it was made from (draft proposed on top of it)
+           files: int, size: int,     // file count and bytes
+           hash: str,                 // sha256 of the version's file list (path + content hash): same files = same hash
+           restorable: bool,          // its files are kept (false: over the snapshot limits, or metadata restored from a
+                                      // backup without the files)
+           health: "ok"|"error"|"unknown",   // ok = it was active and no error was recorded meanwhile ("Fonctionnait");
+                                             // error = an error was recorded while it was active
+           error: ErrorInfo|null,     // the error seen while it was active
+           note: str|null}            // "rollback to v3", "changed outside the Atelier"…
+Event   = {at, action: "approve"|"auto"|"reject"|"rollback"|"accept"|"direct"|"migrate"|"propose"|"request_change",
+           version: int|null, draft: str|null, by: "user"|"agent"|"system", note: str|null}
+Draft   = {id: "d_<12 hex>", kind: "extension", target: <extension id>, name, type: Type, icon,
+           status: "pending"|"approved"|"rejected"|"superseded",
+           change: "new"|"update", base: int|null,  // the active version when it was proposed (null: new)
+           created: float, origin: Origin, summary: str|null,
+           permissions: Permissions,
+           check: {status: "ok"|"warn"|"error", steps: [{step, status, detail}]},   // static check, see below
+           files: {count, size, added, changed, removed},   // against the version active NOW
+           decided: {at, by: "user"|"auto", version?: int, reason?: str}|null,
+           superseded_by: str|null,
+           change_requests: [{at, message, session}],
+           auto: bool}                  // it qualifies for auto-activation (declares no network and no secrets)
+DraftFile = {path, status: "added"|"changed"|"removed"|"same", size: int|null, old_size: int|null,
+             binary: bool, diff: str|null, truncated: bool}
+             // diff = unified diff against the active version (`a/<path>` -> `b/<path>`, 3 lines of context, text files
+             // only, 200 kB at most then truncated); null for a binary file or a "same" one
+```
+
+**Static check.** A draft is checked without running any of its code (it is not approved): manifest.json /
+block.json as the server loads them, `api.py` compiled (syntax only, never imported), `node --check` of `page.js`,
+the modules it imports and the inline scripts of `widget.html` / the block entry, the document checks of
+`pilot ext check` (`maxxing.extcheck`) and its module resolution. A draft whose check has an error is refused by
+`pilot ext propose` and cannot be approved (`422 check_failed`). `pilot ext check <id> --dir <draft folder>` runs the
+full check (code included) in the agent's own process before proposing.
+
+**Live preview.** Running a draft's code is an explicit user action: `POST /api/atelier/drafts/{id}/preview` (the
+validation screen may call it when it opens: the user went there to review it; a conversation `proposal` block never
+calls it on render - it shows a Preview button). The draft runs with the same `ctx` as once installed (its
+`state_dir`, the configured time zone and language) except `ctx.secret()`, which only answers the secrets the draft
+declares (all of them when it declares no `permissions` at all, with a warning step). A page is never previewed in
+the app (its `page.js` would run in the app's origin with the user's session): its files and diff are the review.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/atelier?kind=&state=` | – | `{items: [AtelierItem], counts: {pending, error, unreviewed, review, disabled, total}}` - every creation of every kind (filters optional, counts ignore them); order: pending first, then error, review, unreviewed, then `updated` newest first. Drafts of a new extension are items with state `pending`; a draft of an existing one is its `pending` |
+| GET | `/api/atelier/{kind}/{id}` | – | `{item: AtelierItem, versions: [Version] (newest first), history: [Event] (newest first, 100 at most), drafts: [Draft] (pending first, then the 20 newest decided), files: [{path, size}] (the active version, kind extension), permissions: Permissions\|null (of the active version), health: {state: State, error: ErrorInfo\|null, errors: [ErrorInfo] (recent, 10 at most), checked_at}}` · `404 not_found` |
+| GET | `/api/atelier/{kind}/{id}/versions/{n}` | – | `{version: Version, files: [DraftFile]}` - the diff of version `n` against `?against=<m>` (default: the version before it; `against=active` = the active one) · `404 not_found` (unknown or pruned version) · `422 not_versioned` |
+| POST | `/api/atelier/{kind}/{id}/rollback` | `{version: int}` | makes that kept version active again: its files replace the extension's folder in one step (the current files are kept first as a version when they changed outside the Atelier) and the extension reloads; no new version is made (`history` gets a `rollback` event) → `{ok, item, version: n}` · `404 not_found` (item, or version not kept) · `409 not_restorable` (its files are not kept) · `422 not_versioned` (a read-only kind) · an already active version → `{ok, item, version}` unchanged |
+| POST | `/api/atelier/{kind}/{id}/accept` | – | accepts files changed outside the Atelier as a new version approved by the user → `{ok, item, version: n}` · `409 nothing_to_accept` (`unreviewed` is false) · `404` · `422 not_versioned` |
+| GET | `/api/atelier/drafts?status=pending\|all` | – | `{drafts: [Draft]}` newest first (default `pending`; `all` = also the decided ones still kept: 30 days) |
+| GET | `/api/atelier/drafts/{id}` | – | `{draft: Draft, files: [DraftFile], active_version: int\|null, stale: bool (another version became active since it was proposed: the diff above is against the active one), preview: "card"\|"html"\|"none"}` · `404 not_found` |
+| GET | `/api/atelier/drafts/{id}/file?path=` | – | `{path, size, binary, content: str\|null}` - one file of the draft as proposed (text up to 2 MB, else `content` null) · `404 not_found` |
+| POST | `/api/atelier/drafts/{id}/preview` | – | runs the draft (user action, see above): card widget → `{kind: "card", card: Card\|null, error: str\|null, trace: [str]}` (`card()` with the dashboard's timeout on the extension threads; never cached, never shown on the dashboard); HTML widget → `{kind: "html", url: "/ext/_drafts/<id>/widget-frame", height}`; page, block, agent → `{kind: "none", reason: "page"\|"block"\|"agent"}` · `404 not_found` · `409 not_pending` · `422 check_failed` |
+| ANY | `/api/atelier/drafts/{id}/api[/{path}]` | – | a previewed HTML widget's `maxxing.api()` (the preview frame's bridge sends here instead of `/api/ext/<id>`): forwarded to the draft's `handle()`, same rules as `/api/ext/{id}` · `404 not_found` (unknown, decided, or no `handle()`) |
+| GET | `/ext/_drafts/{id}/widget-frame` | – | the draft's HTML widget document, exactly as `/ext/{id}/widget-frame` serves an installed one (bridge, UI kit, same sandbox CSP) · `404 not_found` (unknown, decided, not an HTML widget) |
+| POST | `/api/atelier/drafts/{id}/approve` | `{base?: int\|null}` | installs the draft as the extension's new active version, in one step: its files replace `<workspace>/extensions/<id>/` (a new extension is created), the extension reloads, the version is recorded with its origin, `atelier.proposed` is resolved → `{ok, item, version: n}`. `base` = the `active_version` the user reviewed the diff against: another one is active now → `409 stale` `{active, base}` (nothing installed; refetch the draft). `409 not_pending` (already decided or superseded) · `422 check_failed` `{check}` (the check is run again first) · `404 not_found` |
+| POST | `/api/atelier/drafts/{id}/reject` | `{reason?: str}` (<= 500) | `{ok, draft, trash_id}`: the draft is rejected and its files go to the trash (a folder `<id>-draft-<draft>`, restored to the draft folder the agent wrote) · `409 not_pending` · `404 not_found` |
+| POST | `/api/atelier/drafts/{id}/request-change` | `{message: str}` (1-4000) | sends the change request to the session the draft came from (it continues there: `POST /api/sessions/{id}/messages` semantics, queued when it runs); when that session no longer exists (or the origin is unknown), a new session in the same topic (else the workspace root) gets it → `{ok, session: Session, created: bool, queued: bool}`. The message is the user's text inside a short instruction naming the draft folder and `pilot ext propose <id>`. The draft stays pending (`change_requests` + a `request_change` event) until the agent proposes again, which supersedes it · `409 not_pending` · `400 bad_message` · `404 not_found` |
+| GET | `/api/atelier/settings` | – | `{auto_activate_safe: false, keep_days: 90, keep_versions: 10}` (config `atelier`) |
+| PUT | `/api/atelier/settings` | `{auto_activate_safe?: bool, keep_days?: 1-3650, keep_versions?: 1-100}` | the settings · `400 bad_settings` |
+
+Every route needs the session cookie (`401 auth_required`); every non-GET one the CSRF header (`403 csrf`) and is
+refused while a restored instance is held (`409 restore_hold`) or a full snapshot runs (`409 snapshot_busy`), like
+every mutation. Approve, reject, rollback and accept on the same creation are serialized (process lock: the CLI and
+the server share it); writes by `pilot ext propose` are refused while `restore_hold` is set.
+
+**Auto-activation.** Config `atelier.auto_activate_safe` (default false): a proposal that passes the check and declares
+no network host and no secret is approved at once (`approval.by: "auto"`) and posts `atelier.activated` instead of
+`atelier.proposed`. Declarations are what the creation says, not a sandbox: an `api.py` can still open a connection
+(the permissions contract decides what is enforced).
+
+**Retention.** A version is kept while it is younger than `keep_days` OR among the `keep_versions` newest of its
+creation; the active version and the version a pending draft is based on are always kept. Decided drafts are kept 30
+days (their files: rejected ones in the trash, approved ones in their version). Pruned on approval and once a day.
+
+**Proposal block.** After `pilot ext propose`, the agent shows the built-in conversation block `proposal`
+(`{draft}`, Conversation blocks above) in its answer: the web draws the draft's name, type, summary, declared network
+hosts and secrets, files count and state from `GET /api/atelier/drafts/{draft}`, with **Add to the dashboard**
+(approve, `base` = its `active_version`), **Request a change** (`request-change`; in the draft's own session the web
+may simply put the request in the composer instead) and **Open in the Atelier** (`/atelier/drafts/<draft>`). A
+draft not registered yet (`404`: a Codex proposal is registered when its turn ends) shows `title` and "waiting";
+the web refetches on the bus topic `atelier`. A decided draft shows its outcome (approved vN, rejected, superseded).
+
+**App routes the server links to** (feed actions, `href`, the request-change prompt): `/atelier` (list),
+`/atelier/drafts/<draft id>` (validation screen), `/atelier/<kind>/<id>` (detail).
+
+Bus: `atelier` after any change (a proposal registered by the CLI in another process included: the server watches
+`<state>/atelier/rev`); `extensions` too when an approval or a rollback changed extension files.
 
 ## Memory
 
@@ -809,6 +953,8 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
 | `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
+| `atelier.proposed` | system | warning | `draft_id, kind, id, name, type, change ("new"\|"update"), agent, *session_id*, network, secrets` (counts of declared hosts / secrets; `url` = `/atelier/drafts/<draft_id>`, group `atelier:<draft_id>`) | `review` | the draft approved, rejected or replaced by a newer proposal of the same creation |
+| `atelier.activated` | system | success | `draft_id, kind, id, name, type, version, agent, *session_id*` (a proposal activated without review by config `atelier.auto_activate_safe`; `url` = `/atelier/<kind>/<id>`) | `open` | – |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
 | `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
