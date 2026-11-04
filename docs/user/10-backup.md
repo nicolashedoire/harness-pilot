@@ -98,7 +98,24 @@ stored key, then choose **Schedule archives**.
 - A restored copy does not run the schedule until you **Resume integrations**.
 - **Turn off** deletes the stored key; archives already made stay.
 
-Scheduled archives stay on this server: download one regularly and keep it on another device.
+Scheduled archives stay on this server: download one regularly, or set a copy folder (below).
+
+### Copy to a folder
+
+Under **Copy to a folder**, enter the full path of an existing folder: an external drive, or a folder that
+iCloud Drive, Dropbox or another sync client uploads (no cloud service is built in; the client does the upload).
+After every archive, manual or scheduled, the encrypted file is copied there as
+`pilot-<date>-<time>-<id>.pilotbackup`, once services are running again.
+
+- The copy is written under a temporary name, read back and compared with the archive (size and SHA-256) before it
+  gets its final name. **Archives kept on this server** marks each archive **Copied** or **Copy failed**, with a
+  button to copy it again (after reconnecting a drive, for example).
+- The folder is never created: when a drive is unplugged, the copy fails and you are notified, instead of writing
+  to the internal disk where the drive is usually mounted. A failure also shows under **Copy to a folder**; the next
+  successful copy resolves the notification.
+- The folder must be outside the application's data (otherwise the next archive would contain the previous ones).
+- Copies are never deleted from that folder, even when older scheduled archives are deleted from this server: clean
+  it up yourself. The passphrase is never copied; the archives stay encrypted.
 
 ## GitHub memory backup
 

@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Settings → Backup can copy each encrypted instance archive to a folder you choose, such as an external drive or a folder synced by iCloud Drive or Dropbox. Every copy is read back and checked; a failed copy is notified and can be retried.
 - Settings → Backup can create the encrypted instance archive every day or every week at the hour you choose, keeping the number of scheduled archives you set. Your passphrase is never stored: the server keeps a key derived from it, with your agreement, and the passphrase still opens every archive. A failure is notified.
 - The Security help page now describes the local installation: who can reach the interface, where secrets are kept and how, what agents, companions and extensions can do on your computer, telemetry, and good practice.
 - The registration, feedback and license settings inherited from the original project are no longer reachable on this server: they belonged to a service this project does not run, and they now answer "not found" instead of trying to contact it.
