@@ -7,6 +7,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
+- An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
+- Codex sessions can now use the product skills (tasks, scheduled jobs, notifications, backup…): `pilot init` and `pilot update` install them for Codex too, and `pilot doctor` reports a missing or outdated Codex copy.
 - Model Lab experiments no longer end in an error when the adapter's interpreter or program is larger than 16 MB, which was the case of the Python that uv installs on Linux.
 - Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
