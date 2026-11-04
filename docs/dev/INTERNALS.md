@@ -769,6 +769,33 @@ with the thread id `thread.started` gave. Tokens of a failed or stopped turn (no
 the thread's next turn. Turns recorded before this change keep the totals they were given (the log does not say
 where a Codex thread starts, so they are not recalculated).
 
+Context size. The JSON stream carries neither the context of a model call nor the window (nor the model's name):
+`turn.completed` only has the running totals above. Codex writes both to its own session file,
+`<CODEX_HOME, else ~/.codex>/sessions/YYYY/MM/DD/rollout-<local start time>-<thread id>.jsonl` (the day the thread
+started; `exec resume` appends to it; not written with `--ephemeral`): after every model call an `event_msg` line
+`{"type": "token_count", "info": {"total_token_usage": {...}, "last_token_usage": {"input_tokens", "cached_input_tokens",
+"output_tokens", ...}, "model_context_window": 258400}}`, and `task_started` / `turn_context` lines with the window and
+the model. Checked with codex-cli 0.150.1 against the stub: `last_token_usage.input_tokens` is the input of that call
+(102k, 103k... as served), `model_context_window` is the catalog's `context_window` x `effective_context_window_percent`
+(`codex debug models --bundled`: 272 000 x 95 % = 258 400 for every listed model, `gpt-5.6-sol` - the default -,
+`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.2`...; a model without metadata gets the same fallback;
+`-c model_context_window=150000` gives 142 500). Codex compacts its own thread at 90 % of the catalog window (244 800:
+a 240k call did not trigger it, a 245k one did); the file then has a `compacted` line and a `token_count` whose
+`last_token_usage` is 0 until the next call, and the JSON stream only an `error` item ("Heads up: Long threads and
+multiple compactions..."). The TUI's `/status` reads the same events; `codex exec` has no command or flag that prints
+them.
+`codex.session_file(thread, env)` finds the file in `codex.home(env)` (the Codex process environment: `CODEX_HOME`,
+else `$HOME/.codex`); thread ids are UUIDv7, so the day of their timestamp (+-1) is looked at first, then every day
+folder; an id that is not `THREAD_ID_RE` is never looked up. `codex.context_usage(thread, env, first)` reads the last
+`token_count` in the file's last 256 KB (4 MB when none is there) -> `{tokens: last_token_usage.input_tokens, window:
+model_context_window (DEFAULT_WINDOW 258 400 when missing), first: the input of the file's first call (with `first`)}`,
+None without file, without a call or when the last call is 0 (just compacted). `runner._codex_turn` calls it after the
+turn (not in discussions) and sets `Attempt.context_tokens`, `first_context` and `context_window`; `_record` stores
+meta `context_tokens`, `base_tokens` (a thread this turn started) and `context_window`, as for Claude. It is Codex's
+own count, not an estimate, measured against the window Codex itself uses; it depends on a file format internal to
+Codex: when the file is missing or its format changes, the session keeps its last values (none at first) and the gauge
+stays hidden rather than guessing. No setting overrides the window: Codex records the one it applies.
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`
@@ -782,6 +809,10 @@ first call; `_idle_watch` (30 s) closes the browser (`close`) and stops the chil
 an agent disconnect ends every channel and the child. `BLOCKED_TOOLS` (upload_file, screencast, lighthouse) and
 unknown names are refused; the offline answer is a normal tool result (`isError`). One retry when the child dies
 mid-call. Agent binaries: `MAXXING_PC_BIN_DIR`, else `bin/`, else the release in `pc_agent.json` (sha256 checked);
+`pc_agent.json` = `{version, url ("…/releases/download/pc-agent-v{version}/{name}" of this repository), files:
+{<file name of TARGETS>: sha256}}`, written by `pc-agent/build.sh` (`dist/pc_agent.json`, docs/dev/PC-AGENT.md);
+empty `files` = nothing to download (`available()` false, `PcError 409 no_agent` / `404 no_agent`); a release file
+that cannot be fetched is `PcError 502 download_failed`, one that does not match is `502 checksum`.
 `personalised()` appends `<json><uint32 BE len>HMPCCFG1` (server, pairing code, browser, autostart).
 `pc_tools.json` = the tool list shipped for `tools/list` before the first start.
 Security boundaries: `pair()` stores a `candidate` (15 min); `WS /api/pc/ws` holds a candidate's socket

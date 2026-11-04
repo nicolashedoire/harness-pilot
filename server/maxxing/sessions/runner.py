@@ -110,6 +110,7 @@ class Attempt:
     oom: bool = False                                  # SIGKILLed while the unit's oom_kill counter went up
     mcp_used: set[str] = field(default_factory=set)    # MCP servers (tool form) whose tools were called
     connectors: list[str] | None = None                # claude.ai connectors listed by the init event
+    context_window: int | None = None                  # Codex: the window its session file records (Claude: result)
     codex_base: dict | None = None                     # Codex: the thread's running totals before this turn
     codex_total: dict | None = None                    # Codex: its running totals after it (turn.completed)
 
@@ -475,10 +476,13 @@ class Runner:
         base = counted.get("total") if thread and counted.get("thread") == thread else None
         a = self.attempt(args, prompt, cwd, env, meta.get("timeout_s"), hold=False, protocol="codex", codex_base=base)
         a.fresh = not bool(thread)
-        if a.codex_total is not None:
-            now_thread = (store.read(self.sid) or {}).get("codex_thread_id")
-            if now_thread:
-                store.update(self.sid, codex_usage={"thread": now_thread, "total": a.codex_total})
+        now_thread = str((store.read(self.sid) or {}).get("codex_thread_id") or "")
+        if a.codex_total is not None and now_thread:
+            store.update(self.sid, codex_usage={"thread": now_thread, "total": a.codex_total})
+        # the context gauge: the JSON stream has no context size, Codex's own session file does (its last call)
+        ctx = codex.context_usage(now_thread, env, first=a.fresh) if now_thread and not is_debate else None
+        if ctx:
+            a.context_tokens, a.first_context, a.context_window = ctx["tokens"], ctx["first"], ctx["window"]
         if a.stopped:
             self.note("Stopped." if not a.timed_out else "Turn stopped (timeout).", "warn")
         store.append_log(self.sid, {"type": "mx_done", "code": a.rc, "stderr": a.stderr[-STDERR_TAIL:],
@@ -918,9 +922,9 @@ class Runner:
                     m["base_tokens"] = a.first_context
             if a.result is not None:
                 store.record_windows(a.result)
-                cw = store.context_window_of(a.result, a.real_model)
-                if cw:
-                    m["context_window"] = cw
+            cw = a.context_window or (store.context_window_of(a.result, a.real_model) if a.result is not None else None)
+            if cw:
+                m["context_window"] = cw
             if a.final_text.strip():
                 m["last_text"] = a.final_text.strip()[:200]
             m["error"] = err
