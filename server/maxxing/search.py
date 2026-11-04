@@ -378,7 +378,8 @@ def _index_tasks(con: sqlite3.Connection) -> None:
         return
     con.execute("DELETE FROM items WHERE src='t:tasks'")
     try:
-        data = tasks_api.load() if sig != "none" else {"tasks": []}
+        # read only: the shared cached object (a copy of the whole tasks.json per refresh is what reads avoid)
+        data = tasks_api.load(copy_=False) if sig != "none" else {"tasks": []}
     except Exception:                                        # corrupt file: keep nothing, retry later
         data = {"tasks": []}
     for t in data.get("tasks", []):
