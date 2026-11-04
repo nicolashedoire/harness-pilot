@@ -168,6 +168,20 @@ def test_codex_never_writes_what_the_server_runs(mx, monkeypatch, tmp_path):
     assert codex._deny('/srv/state/secrets.json') == {'/srv/state/secrets.json': 'deny'}
 
 
+def test_codex_options_come_before_the_subcommand(mx, monkeypatch, tmp_path):
+    """codex-cli 0.150.1: `-c` options after `fork` / `resume` replace every one before it (the sandbox profile, the
+    privacy settings, a provider): all of them stay before the subcommand (INTERNALS.md maxxing.sessions.codex)."""
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    (mx['state'] / 'secrets.json').write_text('{}')
+    for argv, sub in ((codex.fork_command('thread-1', 'gpt-x'), 'fork'),
+                      (codex.command('thread-1', 'plan', 'gpt-x', mcp=['-c', 'mcp_servers.a.command="x"']), 'resume'),
+                      (codex.command('thread-1', 'bypass', cwd=str(mx['ws'])), 'resume')):
+        at = argv.index(sub)
+        assert argv[at + 1] == 'thread-1' and argv[at + 2:] == ['-']
+        assert all(a not in ('-c', '--config', '--sandbox', '-m', '--model') for a in argv[at:]), argv[at:]
+        assert codex_profile(argv) is not None
+
+
 def test_codex_plain_sandbox_is_the_way_out(mx, monkeypatch, tmp_path):
     """config codex_plain_sandbox: the plain --sandbox in every mode (where bubblewrap cannot start a profile), without
     any of the profile's protections; a turn that fails because the sandbox cannot start says so, with that way out."""

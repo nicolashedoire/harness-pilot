@@ -993,9 +993,15 @@ fails at start ("failed to load AGENTS.md instructions ...: fs sandbox helper fa
 secret path exists; with `codex_plain_sandbox` the turn runs and each command fails ("bwrap: No permissions to create
 new namespace"), the behaviour before.
 Also found, not changed here: on Linux a secret path holding glob characters (`<state [1]>/secrets.json`) is not
-denied, as before (`_glob_literal` fixes it on macOS only); and `exec fork` of a thread started in a write mode keeps
-that thread's writable folder despite `fork_command()`'s read-only profile (a side question can write the topic
-folder; its protected entries stay protected), on main as well.
+denied, as before (`_glob_literal` fixes it on macOS only).
+Side questions and plan turns of a write-mode thread are read-only: `exec --ephemeral fork` with `fork_command()`'s
+profile, and `exec resume` with the plan profile, run the new turn with the profile of their own command line, not the
+one the thread started with (checked on macOS: a fork and a plan resume of a `bypass` thread refuse every write of the
+matrix, including the turn's folder, secrets denied). The stub must answer from the tool outputs after the last user message
+only: a forked or resumed thread carries the earlier turns' outputs in its history (an earlier run of this check read
+the parent turn's results as the fork's, and wrongly concluded that a fork kept its parent's writable folder). Every
+`-c` stays before `fork` / `resume`: `-c` options given after the subcommand replace all those before it (with the
+stub provider before and a profile after `fork`, Codex dropped the provider and tried the OpenAI API).
 Claude in `bypass` can write all of this as the server's user: that is the mode's documented meaning (15-security), a
 separate design point not changed here; Claude's deny rules keep only `.maxxing.json` and `infra.json` out of its edits.
 Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub Responses API and fake secrets:
