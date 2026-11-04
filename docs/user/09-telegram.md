@@ -127,8 +127,9 @@ A discussion started from Telegram pauses after **6 replies**, and the bot says 
 continue for 6 more replies, or `/stop` while they talk. The limit can be changed in the web UI (**Change limits** in
 the session's **…** menu); for roles, the debate mode or a duration limit, start the discussion from the web UI.
 
-Codex must be installed and signed in where harness-pilot runs (Settings → Codex). If it is not, the bot says so -
-with the `codex login` command to run - and starts nothing; a plain message still starts a Claude Code session. In a
+Codex must be installed and signed in where harness-pilot runs (Settings → Codex signs it in from the browser). If it
+is not, the bot says so - sign it in from Settings → Codex, or with `codex login` in a terminal there - and starts
+nothing; a plain message still starts a Claude Code session. In a
 Codex session, `/model` shows its model without changing it: Claude Code's models do not apply to it.
 
 ## Two-step sign-in
