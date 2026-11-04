@@ -14,10 +14,12 @@ from pathlib import Path
 
 import pytest
 
+from _needs import bash4
 from maxxing import deps
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL = ROOT / "install.sh"
+pytestmark = bash4                      # every test sources install.sh
 
 
 def sh(snippet: str, **env: str) -> subprocess.CompletedProcess:
