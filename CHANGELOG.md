@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- **Summarise & restart** on a discussion whose second agent is an agent engine now keeps that engine in the new discussion, and the engine starts from the summary.
 - An agent engine installed as an extension can now take Codex's place in a discussion or debate with Claude Code (**Second agent** in the new-session form), if it declares what the discussion needs: plan mode or attached files are refused clearly otherwise.
 - Scheduled prompts can now run with **Codex**: in a job's editor, choose the agent (Claude Code or Codex) under the prompt, with an optional Codex model; the job list marks Codex jobs.
 - Settings → Backup can create the encrypted instance archive every day or every week at the hour you choose, keeping the number of scheduled archives you set. Your passphrase is never stored: the server keeps a key derived from it, with your agreement, and the passphrase still opens every archive. A failure is notified.
