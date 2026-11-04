@@ -176,14 +176,34 @@ def _idle():
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+_ROOT_LABEL = {'state': 'application data folder', 'workspace': 'workspace folder', 'files': 'Files page folder'}
+
+
+def _broad(path: Path) -> bool:
+    """The filesystem root, the home folder or one of its ancestors (/home, /Users): never archived whole."""
+    home = Path.home().resolve()
+    return path == Path(path.anchor) or path == home or path in home.parents
+
+
+def _included(roots: dict) -> dict[str, dict]:
+    return {name: root for name, root in roots.items() if root.get('archive')}
+
+
 def _roots() -> dict[str, dict]:
+    """The data roots. A broad state or workspace root is refused. A broad files root (the Files page scope: the home
+    folder on default installs) is recorded as not included (`archive: None`) and never read: the application's own
+    data - settings, credentials, conversations, attachments (<topic>/attachments), projects - lives in the other two."""
     cfg = config.load_config()
     paths = {'state': config.STATE, 'workspace': Path(cfg['workspace']), 'files': config.files_root()}
     result, known = {}, {}
     for name, path in paths.items():
         real = path.resolve()
-        if real == Path(real.anchor) or real == Path.home():
-            raise SnapshotError('broad_root', f'The {name} root must be a dedicated application data directory.')
+        if _broad(real):
+            if name == 'files':
+                result[name] = {'source': str(real), 'archive': None, 'excluded': 'broad_root'}
+                continue
+            raise SnapshotError('broad_root', f'The {_ROOT_LABEL[name]} is the filesystem root, your home folder or a '
+                                'folder containing it. Move it to a dedicated folder to create a complete backup.')
         if not real.is_dir():
             raise SnapshotError('missing_root', f'The {name} data directory is unavailable.')
         alias = known.setdefault(real, name)
@@ -192,7 +212,7 @@ def _roots() -> dict[str, dict]:
 
 
 def _relative_target(path: Path, roots: dict) -> str | None:
-    for root in sorted(roots.values(), key=lambda r: len(r['source']), reverse=True):
+    for root in sorted(_included(roots).values(), key=lambda r: len(r['source']), reverse=True):
         try:
             relative = path.relative_to(root['source'])
         except ValueError:
@@ -204,6 +224,7 @@ def _relative_target(path: Path, roots: dict) -> str | None:
 def _inventory(roots: dict) -> tuple[list[dict], dict[str, Path]]:
     entries, sources, total = [], {}, 0
     visited = set()
+    roots = _included(roots)                      # an excluded (broad) root is never walked
     for root in roots.values():
         source, alias = Path(root['source']), root['archive']
         if source in visited:
@@ -249,6 +270,16 @@ def _inventory(roots: dict) -> tuple[list[dict], dict[str, Path]]:
     return sorted(entries, key=lambda r: r['path']), sources
 
 
+def _valid_root(name: str, root, roots: dict) -> bool:
+    if not isinstance(root, dict) or not isinstance(root.get('source'), str) or not Path(root['source']).is_absolute():
+        return False
+    if root.get('archive') is None:                # only a broad Files page root can be left out
+        return name == 'files' and root.get('excluded') == 'broad_root'
+    alias = roots.get(root['archive']) if isinstance(root['archive'], str) else None
+    return (isinstance(alias, dict) and alias.get('archive') == root['archive']
+            and Path(root['source']) != Path(Path(root['source']).anchor))
+
+
 def _safe_name(name: str) -> PurePosixPath:
     if not isinstance(name, str):
         raise SnapshotError('unsafe_path', 'The archive contains an unsafe data path.')
@@ -275,8 +306,11 @@ def _description(manifest: dict) -> dict:
             'files': sum(e['kind'] == 'file' for e in entries),
             'bytes': sum(e.get('size', 0) for e in entries),
             'external_links': [e['path'] for e in entries if e['kind'] == 'symlink' and not e.get('link_to')],
-            'includes': ['settings_and_credentials', 'sessions', 'attachments', 'workspace', 'files', 'space_labels'],
-            'excludes': ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets']}
+            'includes': ['settings_and_credentials', 'sessions', 'attachments', 'workspace',
+                         *(['files'] if manifest['roots']['files'].get('archive') else []), 'space_labels'],
+            'excludes': ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets'],
+            'excluded_roots': {name: {'source': root['source'], 'reason': root['excluded']}
+                               for name, root in manifest['roots'].items() if not root.get('archive')}}
 
 
 def export(password: str) -> dict:
@@ -382,12 +416,12 @@ def _validate(path: Path) -> dict:
                     or not isinstance(manifest.get('created'), (float, int))):
                 raise SnapshotError('manifest', 'The snapshot metadata is invalid.')
             roots, entries = manifest['roots'], manifest['entries']
-            if (set(roots) != {'state', 'workspace', 'files'} or roots['state']['archive'] != 'state'
-                    or any(not isinstance(r, dict) or r.get('archive') not in roots
-                           or not isinstance(r.get('source'), str) or not Path(r['source']).is_absolute()
-                           or Path(r['source']) == Path(Path(r['source']).anchor) for r in roots.values())
+            if (not isinstance(roots, dict) or set(roots) != {'state', 'workspace', 'files'}
+                    or any(not _valid_root(name, r, roots) for name, r in roots.items())
+                    or roots['state']['archive'] != 'state' or roots['workspace']['archive'] is None
                     or not isinstance(entries, list) or len(entries) > MAX_ENTRIES):
                 raise SnapshotError('manifest', 'The snapshot roots are invalid.')
+            aliases = {r['archive'] for r in roots.values() if r['archive']}
             expected, seen, total = {'manifest.json'}, set(), 0
             labels = manifest.get('space_labels', {})
             if not isinstance(labels, dict) or len(labels) > MAX_ENTRIES:
@@ -398,6 +432,8 @@ def _validate(path: Path) -> dict:
                     raise SnapshotError('manifest', 'A snapshot label is invalid.')
             for entry in entries:
                 name = _safe_name(entry['path']).as_posix()
+                if name.split('/', 1)[0] not in aliases:
+                    raise SnapshotError('manifest', 'An entry is outside the archived roots.')
                 if name in seen:
                     raise SnapshotError('manifest', 'The snapshot contains duplicate entries.')
                 seen.add(name)
@@ -476,7 +512,7 @@ def restore(ident: str, fingerprint: str) -> dict:
         destination = config.STATE.parent / f'pilot-restored-{uuid.uuid4().hex[:12]}'
         destination.mkdir(mode=0o700)  # never overwrite an existing instance
         try:
-            for alias in {r['archive'] for r in manifest['roots'].values()}:
+            for alias in {r['archive'] for r in manifest['roots'].values() if r['archive']}:
                 (destination / alias).mkdir(mode=0o700)
             with zipfile.ZipFile(archive) as bundle:
                 for entry in manifest['entries']:
@@ -516,7 +552,8 @@ def restore(ident: str, fingerprint: str) -> dict:
 
 def _retarget(destination: Path, manifest: dict):
     roots = manifest['roots']
-    replacements = [(r['source'], str(destination / r['archive'])) for r in roots.values()]
+    # Paths into a root that was not archived (a broad Files page root) stay as they were: historical references.
+    replacements = [(r['source'], str(destination / r['archive'])) for r in _included(roots).values()]
     replacements.sort(key=lambda pair: len(pair[0]), reverse=True)
     path_keys = {'path', 'cwd', 'file', 'workspace', 'files_root', 'root', 'repo', 'attachments', 'voice'}
 
@@ -543,7 +580,7 @@ def _retarget(destination: Path, manifest: dict):
                 changed.pop('codex_thread_id', None)
             if path == state / 'config.json':
                 changed.update(workspace=str(destination / roots['workspace']['archive']),
-                               files_root=str(destination / roots['files']['archive']),
+                               files_root=str(destination / (roots['files']['archive'] or roots['workspace']['archive'])),
                                restored_path_aliases=[{'source': a, 'target': b} for a, b in replacements],
                                restore_hold=True, integrations_paused=True, bind='127.0.0.1', public_url='')
             if changed != original:

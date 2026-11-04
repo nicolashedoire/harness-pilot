@@ -5,11 +5,13 @@ import { api, errorMessage, isApiError } from '@/lib/api'
 import { useLang, useT } from '@/i18n'
 import { useSettings } from '@/lib/queries'
 import { fmtBytes, fmtDate, fmtRelative } from '@/lib/format'
-import { Button, FormField, Input, Sensitive, Skeleton, confirm } from '@/components/ui'
+import { Badge, Button, FormField, Input, Sensitive, Skeleton, confirm } from '@/components/ui'
 import { CopyButton } from '@/components/ui/code-block'
 
-type Status = { max_bytes: number; restore_hold: boolean; integrations_paused?: boolean; roots: Record<string, { source: string }>; export_error?: string; service_resume_errors?: string[] }
-type Snapshot = { id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string }
+type Root = { source: string; archive: string | null; excluded?: string }
+type Status = { max_bytes: number; restore_hold: boolean; integrations_paused?: boolean; roots: Record<string, Root>; export_error?: string; service_resume_errors?: string[] }
+type Snapshot = { id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string;
+  excluded_roots?: Record<string, { source: string; reason: string }> }
 type Restored = Snapshot & { destination: string; state: string; launch_command: string; background_services_paused: boolean }
 type ExportEntry = { id: string; created: number; archive_bytes: number; files: number | null }
 const queryKey = ['instance-backup'] as const
@@ -45,15 +47,20 @@ export function InstanceBackupPanel() {
   if (status.isLoading) return <Skeleton className="h-48" />
   if (!status.data) return <p role="alert" className="text-sm text-destructive">{errorMessage(status.error)}</p>
 
+  const leftOut = !status.data.roots.files?.archive && !!status.data.roots.files
   return <div className="grid min-w-0 gap-6">
     <div className="grid gap-2 text-sm text-muted-foreground">
       <p>{t('instanceBackup.scope')}</p>
       <p>{t('instanceBackup.excluded')}</p>
       <p>{t('instanceBackup.limit', { mb: Math.floor(status.data.max_bytes / 1048576) })}</p>
-      <details className="min-w-0 rounded-lg border p-3">
+      <details className="min-w-0 rounded-lg border p-3" open={leftOut}>
         <summary className="cursor-pointer font-medium text-foreground">{t('instanceBackup.folders')}</summary>
-        <dl className="mt-3 grid gap-2">{(['state', 'workspace', 'files'] as const).filter(name => status.data.roots[name]).map(name =>
-          <div key={name} className="grid min-w-0 gap-1"><dt>{t(`instanceBackup.root.${name}`)}</dt>
+        <dl className="mt-3 grid gap-3">{(['state', 'workspace', 'files'] as const).filter(name => status.data.roots[name]).map(name =>
+          <div key={name} className="grid min-w-0 gap-1">
+            <dt className="flex flex-wrap items-center gap-2">{t(`instanceBackup.root.${name}`)}
+              {status.data.roots[name].archive
+                ? <Badge variant="success">{t('instanceBackup.included')}</Badge>
+                : <Badge variant="muted">{t('instanceBackup.notIncluded')}</Badge>}</dt>
             <dd className="break-all font-mono text-xs"><Sensitive>{status.data.roots[name].source}</Sensitive></dd></div>)}</dl>
       </details>
     </div>
@@ -90,6 +97,7 @@ export function InstanceBackupPanel() {
           <Input type="password" autoComplete="off" minLength={12} maxLength={1024} required value={exportPhrase}
             onChange={event => setExportPhrase(event.target.value)} disabled={!!busy} />
         </FormField>
+        {leftOut && <p className="text-sm text-muted-foreground" role="note">{t('instanceBackup.filesLeftOut')}</p>}
         <div><Button type="submit" disabled={!!busy || exportPhrase.length < 12 || !!status.data.export_error} loading={busy === 'export'}>
           <Download />{t('instanceBackup.create')}
         </Button></div>
@@ -128,6 +136,7 @@ export function InstanceBackupPanel() {
         <strong>{t('instanceBackup.preview')}</strong>
         <p>{t('instanceBackup.counts', { count: preview.files, mb: (preview.bytes / 1048576).toFixed(1) })}</p>
         <p>{t('instanceBackup.separate')}</p>
+        {preview.excluded_roots?.files && <p>{t('instanceBackup.archiveLeftOut')}</p>}
         {!!preview.external_links.length && <div><p>{t('instanceBackup.external', { count: preview.external_links.length })}</p>
           <ul className="max-h-32 overflow-auto break-all">{preview.external_links.slice(0, 20).map(path => <li key={path}><Sensitive>{path}</Sensitive></li>)}</ul></div>}
         <div><Button disabled={!!busy} loading={busy === 'restore'} onClick={() => void run('restore', async () => {
@@ -138,6 +147,7 @@ export function InstanceBackupPanel() {
       {restored && <div className="grid gap-3 rounded-lg border border-success/30 p-4 text-sm" role="status">
         <strong>{t('instanceBackup.restored')}</strong>
         <p>{t('instanceBackup.restoredBody')}</p>
+        {restored.excluded_roots?.files && <p>{t('instanceBackup.archiveLeftOut')}</p>}
         <div className="flex min-w-0 items-start gap-2 rounded bg-muted p-3">
           <code className="min-w-0 flex-1 whitespace-pre-wrap break-all"><Sensitive>{restored.launch_command}</Sensitive></code>
           <CopyButton text={restored.launch_command} />

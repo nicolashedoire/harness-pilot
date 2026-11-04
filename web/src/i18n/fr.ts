@@ -3760,6 +3760,10 @@ export const fr: Record<keyof typeof en, string> = {
   "instanceBackup.error.large": "L’archive dépasse la limite de sauvegarde ou d’envoi configurée. Vérifiez les dossiers inclus et les limites du serveur.",
 
   "instanceBackup.resumeError": "Certains services n’ont pas pu redémarrer après la sauvegarde. Consultez les journaux du serveur et redémarrez l’application avant de continuer.",
+  "instanceBackup.included": "Inclus",
+  "instanceBackup.notIncluded": "Non inclus",
+  "instanceBackup.filesLeftOut": "Le dossier de la page Fichiers est votre dossier personnel (ou le contient) : il n’est pas inclus. Seuls les dossiers propres à l’application sont archivés — réglages et identifiants, conversations, pièces jointes et projets.",
+  "instanceBackup.archiveLeftOut": "Cette archive n’inclut pas le dossier de la page Fichiers de l’instance d’origine (un dossier personnel). La copie restaurée utilise son espace de travail restauré comme dossier de la page Fichiers ; les chemins vers le dossier personnel d’origine sont conservés tels quels.",
   "instanceBackup.exports.title": "Archives conservées sur ce serveur",
   "instanceBackup.exports.hint": "Les archives chiffrées restent dans le dossier de données de l’application jusqu’à ce que vous les supprimiez. Téléchargez d’abord une copie à conserver ailleurs.",
   "instanceBackup.exports.empty": "Aucune archive n’est conservée sur ce serveur.",
