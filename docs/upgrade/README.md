@@ -1,6 +1,6 @@
 # Workspace upgrade notes (for maintainers)
 
-`maxxing update` replaces the product code, dependencies and skills, and `maxxing init` adds the
+`pilot update` replaces the product code, dependencies and skills, and `pilot init` adds the
 **missing** template files of the workspace - but it never edits a file the user already has
 (their `CLAUDE.md`, `memory.md`, projects...). When a release needs the user's workspace to change
 (a new section in the root `CLAUDE.md`, a renamed topic, a setting to adjust), write it here as
@@ -13,7 +13,7 @@ user in the loop.
 (`2.0.0a2.md`, `2.0.0.md`, `2.1.0rc1.md`). Only releases that need workspace changes have a file.
 Claude applies, in version order, every file with *last applied* < version <= *installed*
 ("last applied" is recorded in `<workspace>/projects/system/topics/update/memory.md`; the first
-value is the version installed initially). `maxxing update` also prints the list of notes between
+value is the version installed initially). `pilot update` also prints the list of notes between
 the old and the new version.
 
 ## Format
