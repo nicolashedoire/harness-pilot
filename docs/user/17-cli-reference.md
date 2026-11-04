@@ -71,7 +71,7 @@ Restart the service after changing the port, bind address or public URL:
 | `--check --json` | machine-readable result `{ok, current, latest, behind, available, changelog, ...}` |
 | `--no-restart` | do not restart the service |
 | `--preflight` | simulate the update on a throw-away copy: per customization *carries over* / *on code that changed* / *now included* / *conflicts*, plus unsaved edits, web UI edits, extensions the new version does not support, upgrade notes to apply, and a verdict (`simple` or `adapt`). Changes nothing; `--json` for machine-readable |
-| `--verify` | check that every extension loads and every widget answers, and run each customization's check. Exit `0` everything works, `1` something to fix |
+| `--verify` | check that every extension loads and every widget answers (a widget whose `card()` fails, or returns an `error`, is reported), and run each customization's check. Exit `0` everything works, `1` something to fix |
 | `--smart` | used by the Update button: after the restart the server opens a `system/harness` session that applies the upgrade notes |
 
 In the local setup (`scripts/dev-local.sh`), `pilot update` refuses to run (exit code `1`), as the Update button does: it would update and restart a server installation. Update your clone with git instead (`git pull` in the repository), then start `bash scripts/dev-local.sh` again. `--check`, `--preflight` and `--verify` still work, since they change nothing.

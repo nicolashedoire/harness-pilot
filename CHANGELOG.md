@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- `pilot update --verify` (and the check after an update) now reports a widget that answers with an error message, such as a missing key, instead of counting it as working.
 - A page extension can now be split into several files: `page.js` imports the other `.js`, `.mjs`, `.css` and `.json` files of its folder with a relative path such as `./lib/chart.js`. Before, such a page failed to load. Editing any of these files updates the page at the next visit. Only these files are served, to the signed-in user: not `api.py`, hidden files, or links to files outside the folder.
 - **Compact when you come back** and **Smart resume** (Settings → Claude) now apply to Codex sessions too: back to a long Codex session after its cache expired, harness-pilot first has Codex summarize it (for the message you just sent, with Smart resume), and your message runs in a fresh, much smaller conversation.
 - Fixed on Linux servers: rarely, a change to a session saved twice within the same millisecond went unnoticed: a finished turn sent no Telegram reply or notification, or a message sent to a continued session waited up to 10 minutes after its summary failed.
