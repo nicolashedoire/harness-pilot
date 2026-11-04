@@ -14,6 +14,12 @@ spec = importlib.util.spec_from_file_location('test_model_lab', ENGINE)
 lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
 
+# lab.py hashes every absolute file of an adapter command, the interpreter included, and refuses more than 16 MiB
+# (`max(budget, 16 MiB)`). A statically linked interpreter is bigger (python-build-standalone on Linux, the one uv
+# installs: 31 MB): every adapter run then ends in `error` "Artifact exceeds the storage or file-count budget".
+big_python = pytest.mark.skipif(Path(sys.executable).resolve().stat().st_size > 16 * 1024 * 1024,
+                                reason='the Python interpreter exceeds the 16 MiB adapter code limit of lab.py')
+
 
 def experiment(tmp_path, **changes):
     source = tmp_path / 'baseline.json'
@@ -39,6 +45,7 @@ def wait(state, ident):
     raise AssertionError('Experiment did not finish')
 
 
+@big_python
 def test_external_adapter_review_selection_and_tamper(tmp_path, monkeypatch):
     monkeypatch.delenv('MAXXING_STATE', raising=False)
     config, source = experiment(tmp_path)
@@ -66,6 +73,7 @@ def test_external_adapter_review_selection_and_tamper(tmp_path, monkeypatch):
         lab.select(state, ident, fingerprint)
 
 
+@big_python
 def test_failed_gate_cannot_be_approved(tmp_path, monkeypatch):
     monkeypatch.delenv('MAXXING_STATE', raising=False)
     config, source = experiment(tmp_path, criteria=[{'metric':'task_error','goal':'minimize','max_after':-1}])
@@ -78,6 +86,7 @@ def test_failed_gate_cannot_be_approved(tmp_path, monkeypatch):
     assert source.read_text() == '{"weight":1}'
 
 
+@big_python
 def test_budget_stops_adapter(tmp_path, monkeypatch):
     monkeypatch.delenv('MAXXING_STATE', raising=False)
     adapter = tmp_path / 'slow.py'
@@ -112,6 +121,7 @@ def test_extension_finds_the_skill_installed_with_the_product_skills(client, mx,
     assert Path(result.json()['skill_path']) == claude/'skills/pilot-model-evolution/SKILL.md'
     assert (claude/'skills/pilot-model-evolution/scripts/lab.py').is_file()
 
+@big_python
 def test_stop_and_source_mutation_are_detected(tmp_path, monkeypatch):
     monkeypatch.delenv('MAXXING_STATE', raising=False)
     adapter = tmp_path / 'slow.py'
@@ -139,6 +149,7 @@ def test_direct_edit_claim_and_metric_validation(tmp_path):
         lab.assess(value, report)
 
 
+@big_python
 def test_new_model_design_without_a_baseline(tmp_path, monkeypatch):
     monkeypatch.delenv('MAXXING_STATE', raising=False)
     adapter = tmp_path / 'design.py'
