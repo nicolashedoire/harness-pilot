@@ -174,6 +174,36 @@ def _track_work(data):
         _bank(data)
 
 
+class _Aborted(service.SessionError):
+    """A launch stopped before its agent received any message (owner pause or stop, shutdown, deadline)."""
+
+    def __init__(self):
+        super().__init__(409, 'stopped', 'Mission stopped before model launch.')
+
+
+def _runs(data):
+    """Counted runs: a reservation released before any model call is not one."""
+    return sum(1 for launch in data['launches'] if not launch.get('aborted'))
+
+
+def _reset(step):
+    for key in ('key', 'started', 'error'):
+        step.pop(key, None)
+    step.update(state='pending', session=None, proposed=False)
+
+
+def _release(data, step):
+    """No model call was made for this step's reservation: the run is not counted and the step runs again (the planner
+    is simply requested again)."""
+    for launch in data['launches']:
+        if launch['key'] == step.get('key'):
+            launch['aborted'] = True
+    if step is data.get('planner'):
+        data['planner'] = None
+    else:
+        _reset(step)
+
+
 def save_plan(ident, steps):
     plan = _validate_steps(steps)
     with _edit(ident) as data:
@@ -191,7 +221,8 @@ def control(ident, action, fingerprint=None):
     stops = []
     with _edit(ident) as data:
         if action == 'plan':
-            if data['phase'] not in ('draft', 'plan_review') or data['planner']:
+            if (data['phase'] not in ('draft', 'plan_review', 'paused') or data['planner']
+                    or any(s.get('session') for s in data['steps'])):
                 raise service.SessionError(409, 'busy', 'This mission already has a planner run.')
             data.update(phase='planning', active_since=None, reason='')
         elif action == 'start':
@@ -199,8 +230,13 @@ def control(ident, action, fingerprint=None):
                 raise service.SessionError(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
             if data['phase'] not in ('draft', 'plan_review', 'paused') or not data['steps']:
                 raise service.SessionError(409, 'busy', 'Review a plan before starting this mission.')
-            if len(data['launches']) >= data['max_runs'] or _elapsed(data) >= data['max_seconds'] or data['tokens'] >= data['max_tokens']:
+            if _runs(data) >= data['max_runs'] or _elapsed(data) >= data['max_seconds'] or data['tokens'] >= data['max_tokens']:
                 raise service.SessionError(409, 'budget', 'The authorized mission budget is exhausted.')
+            for step in data['steps']:
+                if step['state'] == 'interrupted' and not step.get('session'):
+                    _reset(step)  # interrupted before any model call: runs again on resume
+            if any(s['state'] in ('failed', 'rejected', 'interrupted') for s in data['steps']):
+                raise service.SessionError(409, 'unresolved', 'Retry or skip the steps that need your attention first.')
             data.update(phase='active', active_since=None, reason='', approved_plan=fingerprint)
         else:
             if action == 'stop' and data['phase'] in ('completed', 'stopped', 'budget'):
@@ -233,6 +269,19 @@ def acknowledge(ident, step_id):
     return get(ident)
 
 
+def retry(ident, step_id):
+    """Explicit owner decision to run an interrupted, failed or rejected step again (a new, counted run)."""
+    with _edit(ident) as data:
+        if data['phase'] != 'paused':
+            raise service.SessionError(409, 'busy', 'Only a paused mission can retry a step.')
+        step = next((s for s in data['steps'] if s['id'] == step_id), None)
+        if step is None or step['state'] not in ('interrupted', 'failed', 'rejected'):
+            raise service.SessionError(409, 'busy', 'Only an interrupted, failed or rejected step can be retried.')
+        _reset(step)
+        data.update(reason='owner')
+    return get(ident)
+
+
 def _usage(data):
     total = 0
     for launch in data['launches']:
@@ -258,7 +307,8 @@ def _reconcile(data):
         sid = step.get('session') or _find_launch(step['key'])
         if not sid:
             if _now() - step['started'] > 180:
-                step.update(state='failed', error='launch_uncertain')
+                # No session carries this launch key: its message was never sent (the key is stored before it).
+                _release(data, step)
             continue
         step['session'] = sid
         launch = next(l for l in data['launches'] if l['key'] == step['key'])
@@ -359,7 +409,9 @@ def _relocated(ident):
             _bank(data)
             data.update(phase='paused', reason='restored')
             for step in data['steps'] + ([data['planner']] if data.get('planner') else []):
-                if step['state'] in ('starting', 'running'):
+                if step['state'] == 'starting' and not step.get('session'):
+                    _release(data, step)
+                elif step['state'] in ('starting', 'running'):
                     step['state'] = 'interrupted'
             notification = copy.deepcopy(data)
     if notification:
@@ -397,7 +449,7 @@ def advance(ident):
                 except (ValueError, KeyError, TypeError, service.SessionError):
                     data.update(phase='paused', reason='invalid_plan')
                 _bank(data)
-            elif data['planner'] is None and len(data['launches']) < data['max_runs'] and other_slots < 2 and not _stop.is_set():
+            elif data['planner'] is None and _runs(data) < data['max_runs'] and other_slots < 2 and not _stop.is_set():
                 data['planner'] = {'id': 'planner', 'role': 'architect', 'state': 'pending', 'after': []}
                 launch = _prepare(data, data['planner'], 'plan')
         else:
@@ -414,9 +466,7 @@ def advance(ident):
                     if _now() >= data['next_cycle'] and changed:
                         data.update(cycle=data['cycle'] + 1, next_cycle=None, cycle_source=None, reason='')
                         for step in data['steps']:
-                            for key in ('key', 'started', 'error'):
-                                step.pop(key, None)
-                            step.update(state='pending', session=None, proposed=False)
+                            _reset(step)
                 else:
                     _bank(data)
                     data.update(phase='completed', reason='completed')
@@ -424,7 +474,7 @@ def advance(ident):
                 ready = next((s for s in data['steps'] if s['state'] == 'pending' and all(
                     any(d['id'] == dep and d['state'] in ('complete', 'skipped') for d in data['steps']) for dep in s['after'])), None)
                 if ready:
-                    if len(data['launches']) >= data['max_runs']:
+                    if _runs(data) >= data['max_runs']:
                         _bank(data)
                         data.update(phase='budget', reason='runs')
                     elif not _stop.is_set():
@@ -445,12 +495,12 @@ def advance(ident):
     if launch:
         try:
             if _stop.is_set():
-                return
+                raise _Aborted()
             @contextlib.contextmanager
             def guard():
                 with _edit(ident) as live:
                     if _stop.is_set() or live['phase'] not in ('active', 'planning') or _elapsed(live) >= live['max_seconds']:
-                        raise service.SessionError(409, 'stopped', 'Mission stopped before model launch.')
+                        raise _Aborted()
                     yield
             result = companions.run(launch['role'], launch['path'], launch['mission'], purpose=launch['purpose'],
                                     launch_key=launch['key'], timeout_s=launch['timeout_s'], launch_guard=guard)
@@ -466,15 +516,21 @@ def advance(ident):
                     step['state'] = 'running' if keep else 'interrupted'
             if not keep:
                 service.stop(result['id'])
-        except Exception:
+        except Exception as error:
+            aborted = isinstance(error, _Aborted)
             with _edit(ident) as data:
                 step = next((s for s in data['steps'] + ([data['planner']] if data.get('planner') else []) if s.get('key') == launch['key']), None)
-                if step:
+                if step and aborted:
+                    _release(data, step)  # nothing reached a model: pending again, run not counted
+                elif step:
                     step.update(state='failed', error='launch_failed')
-                if data['phase'] in ('active', 'planning'):
+                if not aborted and data['phase'] in ('active', 'planning'):
                     _bank(data)
                     data.update(phase='paused', reason='step_failed')
-            _notify(data)
+                if data['phase'] in ('active', 'planning'):
+                    _track_work(data)
+            if not aborted:
+                _notify(data)
 
 
 def tick():
