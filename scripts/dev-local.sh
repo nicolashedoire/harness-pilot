@@ -24,6 +24,10 @@ export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"
 # The same for Codex: it reads .agents/skills from a session's folder and its parents up to the Git root (the default
 # local dir is inside this checkout), so ~/.agents/skills is never written.
 export MAXXING_CODEX_SKILLS_DIR="$LOCAL_DIR/.agents/skills"
+# Homebrew's ffmpeg has no WebP encoder (thumbnails and previews); its keg-only ffmpeg-full has one: first on the PATH
+for d in /opt/homebrew/opt/ffmpeg-full/bin /usr/local/opt/ffmpeg-full/bin; do
+  if [ -x "$d/ffmpeg" ]; then export PATH="$d:$PATH"; break; fi
+done
 mkdir -p "$MAXXING_STATE" "$HARNESS_PILOT_WORKSPACE"
 chmod 700 "$LOCAL_DIR" "$MAXXING_STATE"
 cd "$ROOT/server"

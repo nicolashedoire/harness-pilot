@@ -17,6 +17,7 @@ Layout:
   <repo>/_maxxing/config.json        non-secret, server-independent settings
   <repo>/_maxxing/crons/jobs.json    managed cron jobs
   <repo>/_maxxing/mcp.json           MCP servers of Claude Code (user + per topic), literal secrets blanked
+  <repo>/_maxxing/space-labels.json  {workspace-relative path: label} of the saved files and their folders
 
 Environment overrides (tests): MAXXING_GITHUB_API (REST base URL), MAXXING_GITHUB_GIT (git base URL,
 default https://github.com; remote = <base>/<owner>/<name>.git).
@@ -520,7 +521,8 @@ def _cron_jobs_file() -> Path:
 def snapshot() -> dict[str, bytes]:
     """Everything that goes into the repo: whitelisted files + `_maxxing/` exports."""
     files: dict[str, bytes] = {}
-    for rel, p in collect().items():
+    selected = collect()
+    for rel, p in selected.items():
         try:
             fd = os.open(p, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
             with os.fdopen(fd, 'rb') as src:
@@ -544,6 +546,14 @@ def snapshot() -> dict[str, bytes]:
     except Exception as e:                                         # noqa: BLE001
         log.warning("backup: MCP servers not exported: %s", e)
         raise BackupError("Cannot export MCP settings; no backup was published.", "read_failed") from e
+    try:
+        from .api import space_labels
+        labels = space_labels.for_backup(config.workspace(), set(selected))
+    except Exception as e:                                         # noqa: BLE001
+        log.warning("backup: space labels not exported: %s", e)
+        raise BackupError("Cannot export the space labels; no backup was published.", "read_failed") from e
+    if labels:
+        files[f"{META_DIR}/space-labels.json"] = (json.dumps(labels, indent=2, ensure_ascii=False) + "\n").encode()
     files[f"{META_DIR}/README.md"] = (b"# harness-pilot memory backup\n\nPrivate backup of the workspace memory "
                           b"(CLAUDE.md, memory.md, tasks, extensions, skills) made by harness-pilot.\n"
                           b"Restore: Settings > Backup > Restore, or `pilot backup restore`.\n")
@@ -818,9 +828,18 @@ def preview(ref: str | None = None) -> dict:
                     "paths": {key: value[:50] for key, value in groups.items()},
                     "settings": f"{META_DIR}/config.json" in files,
                     "crons": f"{META_DIR}/crons/jobs.json" in files,
-                    "mcp": f"{META_DIR}/mcp.json" in files}
+                    "mcp": f"{META_DIR}/mcp.json" in files,
+                    "labels": _label_count(files)}
     except BackupError as e:
         return {"ok": False, "error": str(e), "code": e.code}
+
+
+def _label_count(files: dict[str, bytes]) -> int:
+    try:
+        saved = json.loads(files.get(f"{META_DIR}/space-labels.json") or b"{}")
+    except ValueError:
+        return 0
+    return len(saved) if isinstance(saved, dict) else 0
 
 
 def restore(ref: str | None = None, hold: bool | None = None) -> dict:
@@ -828,7 +847,7 @@ def restore(ref: str | None = None, hold: bool | None = None) -> dict:
 
     Existing files that differ are moved to state_dir('trash')/backup-restore-<ts>/ first.
     `_maxxing/crons/jobs.json` replaces the cron jobs (crontab re-synced); `_maxxing/config.json`
-    restores only server-independent settings. `hold`: True = keep what would run code here off (as on a server
+    restores only server-independent settings, `_maxxing/space-labels.json` the labels of the restored items. `hold`: True = keep what would run code here off (as on a server
     in use) even on a new server (the installer does that, then asks), None = decided by `_fresh_server()`.
     """
     try:
@@ -968,6 +987,15 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
         except Exception as e:                                     # noqa: BLE001
             log.warning("restore: MCP servers not restored: %s", e)
             warnings.append("mcp")
+    labels_set = 0
+    labels_blob = files.get(f"{META_DIR}/space-labels.json")
+    if labels_blob is not None:                    # after the files: a label goes on an item that exists
+        try:
+            from .api import space_labels
+            labels_set = space_labels.restore_backup(config.workspace(), json.loads(labels_blob))
+        except (ValueError, TypeError, OSError) as e:
+            log.warning("restore: space labels not restored: %s", e)
+            warnings.append("labels")
     cfg_blob = files.get(f"{META_DIR}/config.json")
     if cfg_blob is not None:
         try:
@@ -1046,7 +1074,7 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
     bus.invalidate("backup", "workspace", "tasks", "crons", "extensions", "mcp")
     return {"ok": True, "files": len(restored), "restored": restored[:200], "unchanged": unchanged,
             "skipped": skipped[:200], "skipped_count": len(skipped),
-            "crons": crons_restored, "mcp": mcp_added, "held": held, "warnings": warnings,
+            "crons": crons_restored, "mcp": mcp_added, "labels": labels_set, "held": held, "warnings": warnings,
             "trash": str(trash) if trash.exists() else None}
 
 

@@ -58,7 +58,7 @@ export default function LoginPage() {
 
   if (challenge)
     return (
-      <AuthLayout title={t('twofa.title')} subtitle={t('twofa.subtitle')}>
+      <AuthLayout title={t(challenge.methods?.includes('totp') ? 'totp.loginTitle' : 'twofa.title')} subtitle={t(challenge.methods?.includes('totp') ? 'totp.loginSubtitle' : 'twofa.subtitle')}>
         <TwoFactorWait
           challenge={challenge}
           trustOption
