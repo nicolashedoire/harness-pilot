@@ -40,7 +40,7 @@ const VARS: [string, string][] = [
   ].map((n): [string, string] => [`--${n}`, `--${n}`]),
 ]
 
-function themeVars(): Record<string, string> {
+export function themeVars(): Record<string, string> {
   const cs = getComputedStyle(document.documentElement)
   return Object.fromEntries(VARS.map(([k, v]) => [k, cs.getPropertyValue(v).trim()]))
 }

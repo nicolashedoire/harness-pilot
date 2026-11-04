@@ -20,6 +20,10 @@ export function usePinExtension() {
     invalidate: [qk.extensions],
   })
 }
+export function usePageRuntime() {
+  return useMut(({ id, page_runtime }: { id: string; page_runtime: 'frame' | 'trusted' }) =>
+    api.patch<Ok>(`/api/extensions/${seg(id)}`, { page_runtime }), { invalidate: [qk.extensions] })
+}
 export function useClearExtensionErrors() {
   return useMut((id: string) => api.del<Ok>(`/api/extensions/${seg(id)}/errors`), {
     optimistic: (id) => [{ key: qk.extensions, update: (l: Extension[]) => l.map((x) => (x.id === id ? { ...x, runtime_errors: [] } : x)) }],

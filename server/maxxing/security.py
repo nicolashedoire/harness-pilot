@@ -333,6 +333,8 @@ def is_authenticated(request: Request) -> bool:
 
 async def require_auth(request: Request) -> None:
     """Router dependency: authenticated + CSRF header on mutating methods."""
+    if request.headers.get("origin") == "null":
+        raise HTTPException(403, detail={"error": "opaque_origin", "message": "Use the extension bridge"})
     if not is_authenticated(request):
         raise HTTPException(401, detail={"error": "auth_required", "message": "Sign in required"})
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("x-maxxing") != "1":

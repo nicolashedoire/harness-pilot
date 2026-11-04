@@ -395,6 +395,7 @@ def _static_page(run: Any, ext: extensions.Extension, has_handle: bool) -> None:
         elif err:
             run.add("syntax", xc.ERROR, err)
         specs, code = xc._scan_js(src)                                       # noqa: SLF001
+        xc.page_isolation_checks(run, src, rel)
         calls_api = calls_api or bool(xc._CTX_API.search(code))              # noqa: SLF001
         if not by and not xc._MOUNT.search(code):                            # noqa: SLF001
             run.add("mount", xc.ERROR, "page.js does not export mount(el, ctx) (export function mount(el, ctx) {...})")
@@ -493,7 +494,8 @@ def _check(d: Path, eid: str, xc: Any) -> dict:
             run.add("check", xc.ERROR, f"the check itself failed: {type(e).__name__}: {e}")
     res = run.result()
     return {"status": res["status"], "steps": res["steps"], "files": res["files"], "type": type_of(ext),
-            "name": ext.label(), "icon": ext.icon, "permissions": permissions_of(ext)}
+            "name": ext.label(), "icon": ext.icon, "permissions": permissions_of(ext),
+            "runtime": {"page": ext.page_runtime} if ext.type == "page" else None}
 
 
 # ---- origin -----------------------------------------------------------------------------------------------------------
@@ -906,6 +908,8 @@ def _feed_resolve(did: str) -> None:
 
 def qualifies_auto(rec: dict) -> bool:
     perms = rec.get("permissions") or {}
+    if rec.get("type") == "page" and (rec.get("runtime") or {}).get("page") != "frame":
+        return False                           # compatibility mode has the user's full browser session
     return (rec.get("check") or {}).get("status") != "error" and not perms.get("network") and not perms.get("secrets")
 
 
@@ -966,7 +970,8 @@ def register(folder: Path, request: dict | None = None, *, scanned_for: dict | N
                "origin": origin(sid, req.get("agent") if isinstance(req.get("agent"), str) else None,
                                 float(req.get("at") or time.time()), summary),
                "summary": (summary or "").strip()[:SUMMARY_MAX] or None,
-               "permissions": chk["permissions"], "check": {"status": chk["status"], "steps": chk["steps"]},
+               "permissions": chk["permissions"], "runtime": chk.get("runtime"),
+               "check": {"status": chk["status"], "steps": chk["steps"]},
                "file_list": manifest(frozen), "source_dir": str(folder), "decided": None, "superseded_by": None,
                "change_requests": []}
         rec["auto"] = qualifies_auto(rec)
@@ -1084,7 +1089,7 @@ def public_draft(rec: dict, rows: list[dict] | None = None) -> dict:
         rows = _draft_rows(rec)[0] if rec.get("status") == "pending" else []
     out = {k: rec.get(k) for k in ("id", "kind", "target", "name", "type", "icon", "status", "change", "base",
                                    "created", "summary", "permissions", "check", "decided", "superseded_by",
-                                   "change_requests", "auto")}
+                                   "change_requests", "auto", "runtime")}
     out["origin"] = _live_origin(rec.get("origin"))
     files = rec.get("file_list") or {}
     out["files"] = _counts(rows) if rows else {"count": len(files), "size": sum(f["size"] for f in files.values()),

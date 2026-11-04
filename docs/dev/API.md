@@ -559,6 +559,30 @@ Between servers (public, no cookie, `404` while `team_page` is off; protocol in 
 | GET | `/api/team-peer/files/{fid}` | signed | the file, when the sender is a member of a chat where it was shared (`Content-Disposition` built by `downloads.content_disposition`) |
 
 ## Dashboard & extensions
+
+### Isolated pages (extension API 2)
+
+Page manifests accept `runtime: {page: "frame"|"trusted"}`. API 2 pages default to `frame`; API 1 pages retain
+`trusted` compatibility. GET extensions includes `runtime: {page: ...}` for pages. Authenticated
+`PATCH /api/extensions/{id}` accepts `page_runtime` with the same values (400 for a non-page); the user's override
+is kept in config `extensions.page_runtime` across reloads and upgrades. The page and Atelier display the mode.
+Drafts include `runtime` too; a trusted page never qualifies for automatic activation. Permission decisions
+recreate the frame so that a revoked network grant also drops the browser's previous CSP.
+
+`GET /ext/{id}/page-frame` requires sign-in and an enabled, healthy page in frame mode. It serves a document with
+an opaque-origin sandbox, a restricted CSP and an extension-scoped asset token. Assets use the existing
+`/ext/{id}/f/{token}/{path}` CORS route; tokens cannot read another extension, disabled extensions, Python,
+hidden files or files outside the folder. They do not authorize API requests.
+
+The parent accepts messages only from this iframe's WindowProxy, opaque origin and per-load channel. `ctx.api`
+is brokered to `/api/ext/<id>/` only; traversal, encoded separators and unsupported methods are rejected. `ctx.navigate`
+accepts local app routes, not API/asset routes or external URLs. `ctx.route` / `ctx.setRoute` mirror the subroute.
+Theme, language, translations and curated icons are sent as public presentation data. Errors reach the normal
+extension error/fix workflow. The frame never receives session cookies or arbitrary host request capabilities.
+
+Protected routes reject `Origin: null`, even with a valid cookie and CSRF header. The frame CSP separately limits
+connections and scripts to its own token asset path plus approved external network hosts (scripts stay local).
+Legacy trusted pages still have full session access. Python handlers remain in process: stage B is separate.
 ```
 Card = {title?, status?:"ok"|"warn"|"error", link?:string, blocks:[Block], updated?:float}
 // an HTML widget: {blocks: [], html: "/ext/<id>/widget.html", height, updated, network: {state: "open"|"none"|

@@ -1,5 +1,15 @@
 # Internal interfaces (between server modules)
 
+## Page isolation (stage A)
+`pageframes.document(base, hosts, kit)` returns the opaque-origin document and CSP; `assets/page-bridge.js`
+rebuilds the page context inside it. `api.extframes` serves token-scoped page assets as well as widgets.
+`Extension.page_runtime` combines the manifest (API 2 defaults to frame, API 1 stays trusted) and the owner's
+config override. `set_page_runtime` persists that override. `security.require_auth` rejects opaque-origin
+requests independently of cookies/CSRF headers. `PageFrame.tsx` validates sender, channel, paths, methods and
+navigation; limits concurrent RPC, cancels requests on unmount and preserves error/fix reporting. `extcheck`
+checks frame-mode modules through their actual token routes and warns about incompatible APIs. This does not
+isolate Python handlers, which still run in process.
+
 Python modules call each other only through these functions. Keep signatures stable.
 
 ## maxxing.workspace  (owner: core)

@@ -16,6 +16,7 @@ const DEMO_DIAGRAM = `flowchart LR
   D --> E`
 
 export const SHOWCASES: Record<string, TourStep[]> = {
+  'isolated-pages': [{ id: 'isolated-pages', targets: [], title: 'show.isolatedPages.title', body: 'show.isolatedPages.body', route: (c) => c.pathname === '/x' ? null : '/x' }],
   atelier: [{ id: 'atelier', targets: [], title: 'show.atelier.title', body: 'show.atelier.body', route: (c) => (c.pathname === '/atelier' ? null : '/atelier') }],
   'pull-requests': [{ id: 'pull-requests', targets: [], title: 'prQueue.section', body: 'prQueue.intro', route: (c) => (c.pathname === '/settings/pull-requests' ? null : '/settings/pull-requests') }],
   'resident-missions': [{ id: 'resident-missions', targets: [], title: 'show.residentMissions.title', body: 'show.residentMissions.body', route: (c) => (c.pathname === '/settings/missions' ? null : '/settings/missions') }],

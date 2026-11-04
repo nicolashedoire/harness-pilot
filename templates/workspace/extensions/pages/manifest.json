@@ -7,6 +7,13 @@
   "type": "page",
   "icon": "layout-grid",
   "version": "1.1.0",
-  "api": 1,
-  "permissions": {"read": ["projects"]}
+  "api": 2,
+  "permissions": {
+    "read": [
+      "projects"
+    ]
+  },
+  "runtime": {
+    "page": "frame"
+  }
 }

@@ -180,6 +180,10 @@ export function DraftReview() {
                 {t('atelier.review.asks')}
               </h3>
               <PermissionRows permissions={d.permissions} />
+              {d.type === 'page' && <p className="rounded-lg border p-3 text-[13px] text-muted-foreground">
+                {t(d.runtime?.page === 'frame' ? 'ext.isolation.frame' : 'ext.isolation.trusted')}.{' '}
+                {t(d.runtime?.page === 'frame' ? 'ext.isolation.frameHint' : 'ext.isolation.trustedHint')}
+              </p>}
             </section>
 
             <section className="grid gap-3" aria-labelledby="atelier-files-title">

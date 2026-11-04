@@ -1,4 +1,10 @@
-# Extension isolation (design note, not built yet)
+# Extension isolation
+
+Stage A is implemented for API 2 pages: an opaque-origin frame, a scoped bridge, token assets, guarded API
+requests and explicit migration of API 1 pages. Compatibility pages still have full session authority; Python
+handlers remain in the server process. The stage B sections below remain a design, not an implemented boundary.
+
+The original plan follows; see API.md#isolated-pages-extension-api-2 for the shipped contract.
 
 Extensions now declare what they use (manifest `"permissions"`, API.md#dashboard--extensions). Keys and the network
 of HTML widget frames are enforced; everything else is shown, not enforced. This note plans the two stages that would
@@ -6,7 +12,7 @@ turn the declaration into a boundary: running `page.js` in a sandboxed frame, an
 server process as an unprivileged user. It gives the effort, the risks and a migration that never silently breaks an
 extension that works today.
 
-## What each part can reach today
+## Original risk assessment (before stage A)
 
 | Part | Runs | Can reach | Limited by the permissions |
 |---|---|---|---|
@@ -18,7 +24,7 @@ extension that works today.
 The two "no" rows are the targets. A page is the bigger risk: it runs as the signed-in user in the browser. Stage A is
 also the smaller job.
 
-## Stage A - `page.js` in a sandboxed frame
+## Stage A - `page.js` in a sandboxed frame (implemented)
 
 **Shape.** `/x/<id>` hosts an `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups
 allow-downloads">` (no `allow-same-origin`) on `/ext/<id>/page-frame`. That document is built like the widget frame:
@@ -53,7 +59,7 @@ does so before anything moves:
 - `alert` / `confirm`: need `allow-modals`.
 - App keyboard shortcuts do not fire while the focus is in the frame; the page's own ones keep working.
 
-**Effort:** about 5 days.
+**Original planning estimate:** about 5 days (not a remaining-work estimate).
 
 | Work | Days |
 |---|---|
@@ -165,3 +171,11 @@ are not isolated.
 
 Order: A0 (optional), then A, then B. A and B are independent and can ship separately. Each step is one mini PR with
 its contract change first (API.md, INTERNALS.md), as for the permissions.
+
+## Stage A validation
+
+Server tests reject Origin:null with valid session cookies and a CSRF header, check token binding/revocation,
+symlink escapes and compatibility migration. Browser broker tests reject other senders, old channels, traversal
+and unsupported methods. A real browser probe exercises denied direct API reads/writes, parent DOM and storage
+access, and accepted own-handler reads/writes and local navigation. Safari-specific behavior and the separate
+Python process boundary are not certified by this validation.

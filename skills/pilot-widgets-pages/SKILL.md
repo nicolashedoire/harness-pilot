@@ -47,7 +47,7 @@ authors to add something an extension can do.
 - `id`: lowercase slug `^[a-z0-9][a-z0-9-]{0,47}$`, same as the folder name. Reserved:
   `activity tasks day crons server backup telegram shopify usage customize`.
 - `name`: a string, or `{"en": "...", "fr": "..."}` to follow the UI language.
-- `api`: always write `"api": 1` in the manifest (the extension contract version this extension is written
+- `api`: always write `"api": 2` in the manifest (the extension contract version this extension is written
   for; the update preflight uses it to tell the user before a new version stops supporting it).
 - `icon`: an icon name of the app's lucide set (`gauge`, `chart-line`, `shopping-cart`, `server`, `rss`, `users`,
   `receipt`, `calendar-days`, `package`, `star`…; the full list is `ICONS` in `<code dir>/web/src/components/ui/icon.tsx`,
@@ -285,3 +285,7 @@ Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard 
 browser session (401 without it), and never ask for the password or a session cookie. `pilot ext check <id> --dir`
 runs the same code as the server, `api.handle(...)` from Python tries one route, and `pilot update --verify` checks
 every installed extension at once (with the customizations' checks: run after an update).
+
+## Isolated pages (API 2)
+
+New pages use `"api": 2, "runtime": {"page": "frame"}`. They run in an opaque-origin iframe: use `ctx.api` for the extension's own handler; direct app fetches, parent DOM, cookies and browser storage are blocked. Use `ctx.route` / `ctx.setRoute` for routing. Relative module, CSS and JSON imports use token-scoped assets. The user can migrate older pages with **Isolate this page** and explicitly restore compatibility if needed. Run `pilot ext check` before proposing the change through the Atelier. The Python handler is still trusted in-process code; this is browser isolation only.

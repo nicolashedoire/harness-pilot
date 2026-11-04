@@ -485,6 +485,14 @@ def _check_page(run: _Run) -> None:
         run.file("api.py")
     prefix = f"/ext/{ext.id}/"
     entry = f"{prefix}@{extensions.page_version(ext) or 0}/page.js"    # the URL the app imports (pages/ext)
+    if ext.page_runtime == "frame":
+        status, _, doc = _get(f"{prefix}page-frame")
+        base = re.search(r'<base href="([^"]+)"', doc)
+        if status != 200 or base is None:
+            run.add("served", ERROR, f"isolated page-frame -> {status}: {doc[:200]}")
+            return
+        prefix = urlsplit(base.group(1)).path
+        entry = prefix + "page.js"
     status, ctype, body = _get(entry)
     if status != 200:
         run.add("served", ERROR, f"GET {entry} -> {status} ({body})")
@@ -525,6 +533,7 @@ def _check_page(run: _Run) -> None:
         elif err:
             run.add("syntax", ERROR, err)
         specs, code = _scan_js(src)
+        page_isolation_checks(run, src, rel)
         calls_api = calls_api or bool(_CTX_API.search(code))
         if not by and not _MOUNT.search(code):
             run.add("mount", ERROR, "page.js does not export mount(el, ctx) (export function mount(el, ctx) {...})")
@@ -562,6 +571,16 @@ def _check_page(run: _Run) -> None:
         run.add("syntax", OK, f"{len(seen)} module(s) parse" if len(seen) > 1 else "page.js parses")
     if calls_api and not _has_handle(ext):
         run.add("api", ERROR, "the page calls ctx.api() but api.py has no handle(ctx, method, path, query, body)")
+
+
+def page_isolation_checks(run: _Run, src: str, rel: str) -> None:
+    if run.ext.page_runtime != "frame":
+        return
+    _, code = _scan_js(src)
+    if _STORAGE.search(code) or re.search(r"\b(?:window\s*\.\s*(?:parent|top)|document\s*\.\s*cookie|history\s*\.)", code):
+        run.add("isolation", WARN, f"{rel} uses app storage, parent access or history: use its own API or ctx.route / ctx.setRoute")
+    if re.search(r"\bfetch\s*\(\s*['\"]/(?:api|ext)/", src):
+        run.add("isolation", WARN, f"{rel} fetches an app route directly: the isolated page blocks it; use ctx.api for its own handler")
 
 
 _SECRET_CALL = re.compile(r"""secret['"]?\s*\]?\s*\)?\s*\(\s*(['"])([A-Z][A-Z0-9_]{1,63})\1""")

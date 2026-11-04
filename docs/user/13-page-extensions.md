@@ -201,3 +201,16 @@ get the same kit. Inputs of the kit are 16 px on phones (no zoom on iPhone).
   [Dashboard widgets](dashboard-widgets#5-test-then-load)). A page that does not load shows **Ask for a fix** next to
   **Retry**: the error goes to the session that created the page, or to a new session in `system › harness`.
 
+
+## Page isolation
+
+New pages use extension API 2 and an isolated browser frame. They can use their own service through `ctx.api`;
+they cannot read the app DOM or storage, or call the signed-in application API directly. Relative modules and
+assets remain available, and language, icons and theme follow the app. Use `ctx.route` / `ctx.setRoute` for subviews.
+
+The page and the Studio show its mode. Older API 1 pages keep **Compatibility mode: runs with your session**;
+choose **Isolate this page** to migrate one. `pilot ext check` flags storage and direct app calls to adapt. If
+needed, **Use compatibility mode** asks for explicit confirmation because it restores full browser session access.
+The Studio shows the proposed mode before approval; compatibility pages do not activate automatically.
+
+This isolates browser code only. The extension's Python service still runs inside the server until stage B.

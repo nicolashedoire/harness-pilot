@@ -48,7 +48,7 @@ DEFAULT_TTL = 300
 # the version it was written for in its manifest ("api", default 1). EXT_API goes up when something is ADDED;
 # EXT_API_MIN only when a release can no longer run older extensions (announced in the upgrade notes, and the
 # update preflight lists the extensions to adapt before updating).
-EXT_API = 1
+EXT_API = 2
 EXT_API_MIN = 1
 RESERVED_IDS = {"activity", "tasks", "day", "crons", "server", "backup", "telegram", "shopify", "usage", "customize"}   # built-in widgets
 BLOCK_TYPES = {"stat", "stats", "list", "chart", "table", "progress", "markdown", "timeline"}
@@ -88,6 +88,7 @@ class Extension:
     block: dict | None = None              # block plugins: the validated block.json (blocks.parse_manifest)
     agent: dict | None = None              # external executable contract; no Python is imported for an agent
     permissions: dict | None = None        # declared {network, secrets, read} (permissions.parse); None = not declared
+    declared_page_runtime: str = "trusted"
     error: str | None = None
     module: ModuleType | None = field(default=None, repr=False)
 
@@ -96,6 +97,12 @@ class Extension:
             lang = str(config.load_config().get("language") or "en")
             return self.names.get(lang) or self.names.get("en") or self.name or self.id
         return self.name or self.id
+
+    @property
+    def page_runtime(self) -> str:
+        modes = (config.load_config().get("extensions") or {}).get("page_runtime") or {}
+        mode = modes.get(self.id) if isinstance(modes, dict) else None
+        return mode if mode in ("frame", "trusted") else self.declared_page_runtime
 
     def access(self) -> dict | None:
         """What it may use now and what waits for the user (permissions.access); None for a block plugin or an agent."""
@@ -116,6 +123,7 @@ class Extension:
                 "has_html": self.has_html, "height": self.height, "page_v": page_version(self),
                 "pinned": self.type == "page" and self.id in pinned_ids(), "permissions": self.permissions,
                 "access": self.access(),
+                **({"runtime": {"page": self.page_runtime}} if self.type == "page" else {}),
                 **({"renders": (self.block or {}).get("renders") or []} if self.type == "block" else {})}
 
 
@@ -245,6 +253,17 @@ def set_pinned(eid: str, pinned: bool) -> bool:
     return True
 
 
+def set_page_runtime(eid: str, mode: str) -> bool:
+    ext = get(eid)
+    if ext is None or ext.type != "page" or mode not in ("frame", "trusted"):
+        return False
+    with config._lock:
+        modes = dict((config.load_config().get("extensions") or {}).get("page_runtime") or {})
+        modes[eid] = mode
+        config.update_config(extensions={"page_runtime": modes})
+    return True
+
+
 def _module_name(eid: str) -> str:
     return "mx_ext_" + eid.replace("-", "_")
 
@@ -296,6 +315,11 @@ def _load_one(d: Path, load_code: bool = True) -> Extension:
         if ext.api < EXT_API_MIN:
             raise ValueError(f"built for extension API {ext.api}, no longer supported ({EXT_API_MIN}-{EXT_API}): "
                              "ask harness-pilot to update this extension")
+        if ext.type == "page":
+            runtime = m.get("runtime", {})
+            if not isinstance(runtime, dict) or runtime.get("page", "frame") not in ("frame", "trusted"):
+                raise ValueError('runtime.page must be "frame" or "trusted"')
+            ext.declared_page_runtime = runtime.get("page", "frame" if ext.api >= 2 else "trusted")
         ext.icon = str(m.get("icon") or "puzzle")[:40]
         ext.version = str(m.get("version") or "")[:20]
         if ext.type == 'agent':
