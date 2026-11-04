@@ -34,7 +34,7 @@ You may also review and edit the summary before saving it to the topic's `memory
 ## What works with Codex
 
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
-are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact** and
+are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact**,
 **Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
