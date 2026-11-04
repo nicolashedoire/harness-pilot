@@ -407,7 +407,9 @@ stays untouched), and a seed for the `ready` scenario when the page would be emp
 `MOCK_PORT=8809 MOCK_SCENARIO=ready|onboarding|login|setup|maxxing node mock/server.mjs`
 (`maxxing`: 30 more sessions that keep finishing at random, for Maxxing mode; `MOCK_PASSWORD=…` asks for that password;
 `MOCK_DIST=…` serves another build)
-(`POST /__mock/scenario {"name"}` resets at runtime; setup token `dev-token`, password `password123`).
+(`POST /__mock/scenario {"name"}` resets at runtime; setup token `dev-token`, password `password123`; two-step sign-in:
+Telegram code `246810` (Allow is pressed after 4 s), authenticator app: real RFC 6238 codes of the secret it shows, or
+`135790`).
 Visual pass = Playwright screenshots at 375 / 768 / 1280 / 1920 of every page in dark and light, plus a check that
 the console has no errors.
 

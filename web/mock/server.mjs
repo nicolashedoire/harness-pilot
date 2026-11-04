@@ -1242,7 +1242,9 @@ R('POST', '/api/auth/login', async ({ req, body, res }) => {
     fail(401, 'bad_password', 'Wrong password')
   }
   S.failStreak = 0
-  if (S.telegram.settings.two_factor && !tfTrusted(req)) return { ok: false, two_factor: tfChallenge('login') }
+  const app = !!totpState().enabled
+  if ((S.telegram.settings.two_factor || app) && !tfTrusted(req))
+    return { ok: false, two_factor: tfChallenge('login', app ? ['totp', ...(S.telegram.settings.two_factor ? ['telegram'] : [])] : ['telegram']) }
   setCookie(res, newToken())
   return { ok: true }
 }, { public: true })
@@ -1262,15 +1264,16 @@ R('POST', '/api/auth/password', ({ body }) => {
 
 /* ---- two-step sign-in (server/maxxing/twofactor.py): with Telegram setting `two_factor` on, a password sign-in from an
    untrusted browser waits for Allow in Telegram or the code it shows. Mock: Allow is "pressed" 4 s after the challenge
-   is created, and the code is 246810 (5 wrong codes expire the challenge). */
+   is created, and the code is 246810 (5 wrong codes expire the challenge). With the authenticator app on (below), the
+   challenge lists `methods` and also takes a code of the app or a recovery code; an app-only one is never auto-approved. */
 const TF_CODE = '246810'
 const tfState = () => (S.twoFactor ||= { deviceKey: crypto.randomBytes(12).toString('hex'), challenges: {} })
-function tfChallenge(kind) { // kind: login | enable
-  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending' }
+function tfChallenge(kind, methods = ['telegram']) { // kind: login | enable
+  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending', methods }
   tfState().challenges[c.id] = c
   const g = GEN
-  setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
-  return { challenge: c.id, expires_in: 300 }
+  if (methods.includes('telegram')) setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
+  return { challenge: c.id, expires_in: methods.includes('telegram') ? 120 : 300, methods }
 }
 const tfTrusted = (req) => (req.headers.cookie || '').split(/;\s*/).includes(`mx_device=${tfState().deviceKey}`)
 const tfDeviceCookie = () => `mx_device=${tfState().deviceKey}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=2592000`
@@ -1279,7 +1282,8 @@ R('POST', '/api/auth/two-factor', ({ req, res, body, authed }) => {
   if (!c || c.status === 'expired' || now() - c.at > 360) fail(410, 'expired', 'This sign-in request expired: sign in again')
   if (c.kind === 'enable' && !authed) fail(401, 'auth_required', 'Please log in')
   if (body.code !== undefined && body.code !== null && c.status === 'pending') {
-    if (body.code !== TF_CODE) {
+    const viaApp = (c.methods || []).includes('totp') && totpVerify(String(body.code))
+    if (!viaApp && (body.code !== TF_CODE || !(c.methods || ['telegram']).includes('telegram'))) {
       c.tries += 1
       if (c.tries >= 5) { c.status = 'expired'; fail(410, 'expired', 'Too many wrong codes: sign in again') }
       sendJson(res, 400, { error: 'bad_code', message: 'Wrong code', tries_left: 5 - c.tries })
@@ -1304,6 +1308,76 @@ R('POST', '/api/auth/two-factor/forget-browsers', ({ res }) => {
   tfState().deviceKey = crypto.randomBytes(12).toString('hex')
   res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
   return { ok: true }
+})
+
+/* ---- authenticator app (server/maxxing/totp.py): real RFC 6238 codes (SHA-1, 6 digits, 30 s, one step either way, a
+   step never accepted twice), so a phone app scanning the mock's QR code works; 135790 also passes, for clicking through
+   without an app. Ten recovery codes, single use. Re-authentication = the mock password + a code. */
+const TOTP_CODE = '135790'
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+const totpState = () => (S.totp ||= { enabled: false, secret: '', lastStep: 0, recovery: [], enabledAt: null, pending: null })
+const b32encode = (buf) => { let bits = ''; for (const b of buf) bits += b.toString(2).padStart(8, '0'); let out = ''; for (let i = 0; i < bits.length; i += 5) out += B32[parseInt(bits.slice(i, i + 5).padEnd(5, '0'), 2)]; return out }
+const b32decode = (txt) => { let bits = ''; for (const ch of txt.toUpperCase()) { const v = B32.indexOf(ch); if (v >= 0) bits += v.toString(2).padStart(5, '0') } const out = []; for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2)); return Buffer.from(out) }
+function hotp(secret, counter) {
+  const msg = Buffer.alloc(8); msg.writeBigUInt64BE(BigInt(counter))
+  const mac = crypto.createHmac('sha1', b32decode(secret)).update(msg).digest()
+  return String((mac.readUInt32BE(mac[19] & 15) & 0x7fffffff) % 1e6).padStart(6, '0')
+}
+const totpStepOf = (secret, code) => { const s = Math.floor(now() / 30); return [s - 1, s, s + 1].find((x) => hotp(secret, x) === code) ?? null }
+const recoveryNorm = (code) => code.replace(/[\s-]/g, '').toUpperCase().replace(/0/g, 'O').replace(/1/g, 'I').replace(/8/g, 'B')
+const newRecovery = () => Array.from({ length: 10 }, () => Array.from({ length: 4 }, () => Array.from({ length: 4 }, () => B32[crypto.randomInt(32)]).join('')).join('-'))
+/** 'totp' | 'recovery' (spent) | null, like totp.verify */
+function totpVerify(code) {
+  const t = totpState(); const given = code.trim().replace(/\s/g, '')
+  if (!t.enabled) return null
+  if (/^\d{6}$/.test(given)) {
+    if (given === TOTP_CODE) return 'totp'
+    const step = totpStepOf(t.secret, given)
+    if (step === null || step <= t.lastStep) return null
+    t.lastStep = step
+    return 'totp'
+  }
+  const i = t.recovery.findIndex((r) => recoveryNorm(r) === recoveryNorm(code))
+  if (i < 0) return null
+  t.recovery.splice(i, 1)
+  return 'recovery'
+}
+const totpStatus = () => { const t = totpState(); return { enabled: t.enabled, recovery_left: t.enabled ? t.recovery.length : 0, pending: !t.enabled && !!t.pending && now() - t.pending.created < 600, enabled_at: t.enabled ? t.enabledAt : null } }
+const reauth = (body) => { if (body.password !== S.password) fail(401, 'bad_password', 'Current password is wrong') }
+R('GET', '/api/auth/totp', () => totpStatus())
+R('POST', '/api/auth/totp/setup', () => {
+  const t = totpState()
+  if (t.enabled) fail(409, 'already_on', 'The authenticator app is already on - turn it off first')
+  t.pending = { secret: b32encode(crypto.randomBytes(20)), created: now() }
+  const label = encodeURIComponent(S.profile?.name || '')
+  return { secret: t.pending.secret, uri: `otpauth://totp/harness-pilot${label ? ':' + label : ''}?secret=${t.pending.secret}&issuer=harness-pilot&algorithm=SHA1&digits=6&period=30`, expires_in: 600 }
+})
+R('POST', '/api/auth/totp/enable', ({ body, res }) => {
+  reauth(body)
+  const t = totpState()
+  if (t.enabled) fail(409, 'already_on', 'The authenticator app is already on')
+  if (!t.pending || now() - t.pending.created >= 600) fail(410, 'expired', 'The setup expired - start it again')
+  const code = String(body.code || '').replace(/\s/g, '')
+  const step = code === TOTP_CODE ? Math.floor(now() / 30) : totpStepOf(t.pending.secret, code)
+  if (step === null) fail(400, 'bad_code', 'Wrong code')
+  Object.assign(t, { enabled: true, secret: t.pending.secret, lastStep: step, recovery: newRecovery(), enabledAt: now(), pending: null })
+  res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
+  return { ok: true, recovery_codes: [...t.recovery] }
+})
+R('POST', '/api/auth/totp/disable', ({ body }) => {
+  reauth(body)
+  if (!totpVerify(String(body.code || ''))) fail(400, 'bad_code', 'Wrong code')
+  S.totp = null
+  tfState().deviceKey = crypto.randomBytes(12).toString('hex') // every trusted browser asks again
+  return { ok: true }
+})
+R('POST', '/api/auth/totp/recovery-codes', ({ body }) => {
+  reauth(body)
+  const t = totpState()
+  if (!t.enabled) fail(409, 'not_on', 'The authenticator app is off')
+  if (!totpVerify(String(body.code || ''))) fail(400, 'bad_code', 'Wrong code')
+  t.recovery = newRecovery()
+  return { ok: true, recovery_codes: [...t.recovery] }
 })
 
 /* ---- onboarding */

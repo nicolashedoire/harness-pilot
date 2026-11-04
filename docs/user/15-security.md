@@ -41,6 +41,12 @@ websites; it does **not** protect your computer from the agents you start: they 
   (see **Sign-in** below). The first one is set through a one-time link (`pilot setup-link`, valid one hour). Wrong
   passwords are throttled, and every change request needs the `X-Maxxing: 1` header, which another website open in
   your browser cannot send.
+- A website cannot reach the server under its own name either (DNS rebinding): requests whose address is not
+  `127.0.0.1`, `localhost`, another IP address of the computer, its Tailscale (`.ts.net`) or `.local` name or the
+  configured public URL are answered "421" and
+  go no further. If you reach harness-pilot through another name (a reverse proxy, a tunnel), add it with
+  `pilot init --public-url https://<name>`, or list it in `allowed_hosts` in `config.json` or in the
+  `MAXXING_ALLOWED_HOSTS` environment variable.
 - Two-step sign-in is optional (Settings -> Security): a code from an authenticator app, an approval in a linked
   Telegram chat, or both (see **Sign-in** below).
 
@@ -136,6 +142,9 @@ file still can.
   `nosniff` and a strict referrer policy (the server sends the same headers itself, whatever the mode).
 - **Tailscale mode**: only devices of your tailnet can connect.
 - **Local mode**: only through an SSH tunnel.
+- The server only answers requests addressed to one of its names (an IP address, `localhost`, a Tailscale `.ts.net` or `.local` name, the domain of the
+  public URL, or a name of `allowed_hosts` / `MAXXING_ALLOWED_HOSTS`): a website that points its own domain at the
+  server cannot use it (DNS rebinding).
 
 ## The server itself
 
@@ -213,7 +222,8 @@ Recommended on top: SSH keys instead of passwords (`PasswordAuthentication no` o
   codes, RFC 6238), an approval in Telegram (see [Telegram](telegram#two-step-sign-in)), or either when both are
   on. Setting up the app shows a QR code and its key as text; it is switched on only once you type a code it shows
   and your password. Each code works once, even within its 30 seconds. Ten **recovery codes**, shown once when you
-  turn the app on, each sign in once if you lose the phone; the server keeps only a fingerprint of them. The app's
+  turn the app on, each sign in once if you lose the phone; the server keeps only a fingerprint of them. **New
+  recovery codes** (password and a code) replace them all, for example when few are left. The app's
   key is stored in `secrets.json` like the other secrets. Wrong codes count like Telegram codes (5 per request, 20
   in an hour on the whole server). Turning the app off asks for the password and a code (or a recovery code) and
   makes every trusted browser ask again. Without the UI: `pilot 2fa off` on the server turns both methods off.

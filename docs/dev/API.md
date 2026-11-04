@@ -13,6 +13,14 @@ Single source of truth between `server/` and `web/`. Change it here first, then 
   in the temp dir (where the server spools uploads, often a small tmpfs) with min(`upload_min_free_mb`, 128 MB)
   to spare. The full `upload_min_free_mb` reserve (default 1024) is checked on the destination disk per file.
   Both keys are read from config.json on every request (no restart).
+- Every request (HTTP and WebSocket, the app page included) is first checked against DNS rebinding
+  (`maxxing/hostcheck.py`): its `Host` (port ignored, case and a trailing dot ignored) must be an IP address
+  (127.0.0.1, ::1, the Tailscale or LAN address), `localhost` or a `*.localhost` name, a Tailscale MagicDNS `*.ts.net`
+  or mDNS `*.local` name, the host of config
+  `public_url` (the domain behind Caddy), config `bind` when it is a name, or a name of config `allowed_hosts`
+  (list) or `MAXXING_ALLOWED_HOSTS` (comma separated; `*` turns the check off). A request without `Host` passes.
+  Otherwise `421 {"error":"bad_host", message}` (WebSocket: closed before it is accepted). Read on every
+  request (no restart).
 - Other request bodies (JSON, forms...) are capped before they are read (`maxxing/bodylimit.py`), on the declared
   `Content-Length` and, for a chunked body, while it streams: without a valid cookie a mutating request to a route
   that needs one gets `401 auth_required` before a byte is read; the public `/api/auth/*` routes check the CSRF header
@@ -44,6 +52,7 @@ Single source of truth between `server/` and `web/`. Change it here first, then 
 | POST | `/api/auth/totp/setup` | – | auth. `{secret, uri, expires_in:600}`: a new base32 secret (160 bits) and its `otpauth://totp/harness-pilot:<profile name>?secret=…&issuer=harness-pilot&algorithm=SHA1&digits=6&period=30` link (shown as a QR code), pending in secrets.json `totp_pending` for 10 min; replaces an earlier pending one; the sign-in does not change yet · `409 already_on` |
 | POST | `/api/auth/totp/enable` | `{password, code}` | auth. Password + a code of the pending secret (one 30 s step of drift either way) → `{ok, recovery_codes:[10 × "XXXX-XXXX-XXXX-XXXX"]}` shown once (stored as SHA-256 only) + `mx_device` cookie (this browser stays trusted) · `401 bad_password` · `400 bad_code` · `410 expired` (no pending secret) · `409 already_on` · `429 throttled` (the password-change throttle: 8 failures / 15 min per client, a wrong code counts) |
 | POST | `/api/auth/totp/disable` | `{password, code}` | auth. Password + a code of the app or a recovery code (spent) → `{ok}`: off, every trusted browser forgotten and every waiting challenge revoked · `401 bad_password` · `400 bad_code` · `429 throttled` (as enable). Without the UI: `pilot 2fa off` |
+| POST | `/api/auth/totp/recovery-codes` | `{password, code}` | auth. Password + a code of the app or a recovery code (spent) → `{ok, recovery_codes:[10 × "XXXX-XXXX-XXXX-XXXX"]}`: a new set, shown once; every earlier recovery code stops working. The app's secret and trusted browsers are unchanged · `401 bad_password` · `400 bad_code` · `409 not_on` · `429 throttled` (as enable) |
 | POST | `/api/auth/logout` | – | `{ok}` + cookie cleared. The cookie is also revoked server-side (`secrets.revoked_sessions`, kept until it would have expired): a copy of it is refused afterwards; other browsers stay signed in |
 | POST | `/api/auth/password` | `{current, new}` | `{ok}` (min length 12, `security.MIN_PASSWORD`; `400 weak_password`, `400 bad_password` for a character UTF-8 cannot store, same on setup) + new cookie · wrong `current`: `401` after the sign-in delay, `429 throttled` past `FAIL_MAX` (own counter `pw:<client>`); rotates the cookie key: every other browser is signed out |
 

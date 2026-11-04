@@ -7,12 +7,14 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - A mixed team can now be stopped from the session header and from the message box, which says the team is working while it waits, as well as from the team panel.
+- The server now refuses requests sent under a name that is not its own, so a website cannot reach it by pointing its domain at your computer (DNS rebinding). Addresses, `localhost`, Tailscale (`.ts.net`) and `.local` names and the configured public URL keep working; another name in front of the server can be allowed in `config.json`.
 - Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed. Outside **Full access**, Codex only uses the tools a server marks as read-only.
 - A mixed team's mission can be spoken: the recording is transcribed and its text is sent as the mission, like a voice message in the other modes.
 - **Summarise & restart** on a discussion whose second agent is an agent engine now keeps that engine in the new discussion, and the engine starts from the summary.
 - In plan mode, an agent engine taking part in a discussion now gets the same instructions as Codex: work the plan out with Claude Code and give the whole plan in each reply.
 - An agent engine installed as an extension can now take Codex's place in a discussion or debate with Claude Code (**Second agent** in the new-session form), if it declares what the discussion needs: plan mode or attached files are refused clearly otherwise.
 - A mixed team can now be coordinated by Codex instead of Claude, and each agent can use the model you choose; the defaults stay the same.
+- Settings → Security can now make new recovery codes for the authenticator app (with your password and a code), without turning the app off and on again. The old codes stop working.
 - The README explains how to install harness-pilot on a Linux server, and the installation and tools pages say what has been verified there: the installer downloaded from this repository, then PDFs, web scraping and video rendering on Debian 12 and Ubuntu 24.04 (arm64).
 - On a Linux server, `pilot deps update` started while another update of the tools is running (the one that follows an installation or `pilot update`) now waits for it and says so, instead of both failing and leaving Node.js and Remotion missing.
 - The role of each agent of a mixed team can be changed when you create it; the default roles stay filled in.

@@ -378,6 +378,13 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `log_missing()` - one warning per missing tool plus the commands, called by `api/system.startup()` in local mode only
   (the terminal of dev-local.sh); `cmd_core.check_media_tools` is the doctor check `media_tools` (warn, never fail).
 
+## maxxing.hostcheck (DNS rebinding)
+`HostCheck` (ASGI, inside `_SecurityHeaders`, outside every other middleware) refuses an HTTP request with `421
+bad_host` and closes a WebSocket (1008) before it is accepted when `allowed(host)` is false. `allowed`: no Host, an IP
+literal, `localhost` / `*.localhost` / `*.ts.net` / `*.local` (`_OWN_SUFFIXES`), else the hostnames of config `public_url`, `bind`, `allowed_hosts` (list or one
+string) and `MAXXING_ALLOWED_HOSTS` (comma separated, `*` = off); `hostname()` drops port, case and a trailing dot.
+Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=testserver,t` (the test clients' hosts).
+
 ## maxxing.security (session cookie)
 - Cookie `mx_session` = `<issued_at>.<nonce>.<hmac_sha256(cookie_key, "<issued_at>.<nonce>")>` (legacy
   `<issued_at>.<hmac>` from <= 2.0.0a31 still accepted), lifetime `COOKIE_MAX_AGE` = 30 days.
@@ -430,7 +437,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   plain recovery codes, 80 bits each, returned once).
 - `verify(code)` under `config._lock`: a 6-digit code must match a step > `last_step` (stored on success: no replay,
   the enrolment code included); otherwise a recovery code (normalised: case, spaces, dashes, 0/1/8 -> O/I/B) is
-  removed from the list on use. `disable(code=None)`: with a code only when it verifies (Settings), without at once
+  removed from the list on use. `regenerate(code)` (under the same lock): a verified code -> a new list of
+  `RECOVERY_COUNT` codes replaces the old one (`TotpError` `bad_code` / `not_on`). `disable(code=None)`: with a code only when it verifies (Settings), without at once
   (`pilot 2fa off`). Throttling is the callers': `twofactor.check` at sign-in, `api/auth._reauth` (password-change
   throttle) for enable / disable.
 

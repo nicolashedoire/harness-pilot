@@ -256,6 +256,14 @@ async def totp_enable(body: TotpConfirmIn, request: Request, response: Response)
     return {"ok": True, "recovery_codes": codes}
 
 
+@router.post("/totp/recovery-codes", dependencies=[Depends(security.require_auth)])
+async def totp_recovery_codes(body: TotpConfirmIn, request: Request):
+    """Password + a code of the app or a recovery code -> a new set of recovery codes (shown once), the old ones dead."""
+    codes = await _reauth(request, body.password, lambda: totp.regenerate(body.code))
+    _totp_event("New recovery codes for two-step sign-in")
+    return {"ok": True, "recovery_codes": codes}
+
+
 @router.post("/totp/disable", dependencies=[Depends(security.require_auth)])
 async def totp_disable(body: TotpConfirmIn, request: Request):
     """Password + a code of the app or a recovery code -> off; every trusted browser asks again."""
