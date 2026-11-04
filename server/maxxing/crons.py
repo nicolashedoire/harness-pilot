@@ -180,27 +180,34 @@ def tz() -> ZoneInfo:
 
 
 def iter_runs(expr: str | CronExpr, after: float | None = None, zone: ZoneInfo | None = None) -> Iterator[float]:
-    """Yield the next fire times (Unix seconds, strictly after `after`) in time zone `zone`."""
+    """Yield the next fire times (Unix seconds, strictly after `after`) in time zone `zone`.
+
+    Instants are compared, never wall-clock times: in the hour repeated when clocks go back, a wall-clock
+    comparison took 02:30 of the first pass for a time still to come. That hour fires in both passes, as
+    is_due() (the local scheduler, guarded crontab lines) sees it."""
     c = parse(expr) if isinstance(expr, str) else expr
     if c.reboot:
         return
     zone = zone or tz()
-    start = dt.datetime.fromtimestamp(after if after is not None else time.time(), zone)
-    start = start.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
+    first = (math.floor((after if after is not None else time.time()) / 60) + 1) * 60   # next whole minute
     hours, minutes = sorted(c.hours), sorted(c.minutes)
-    day = start.date()
+    day = dt.datetime.fromtimestamp(first, zone).date()
     last = -1.0
     for _ in range(366 * 5):                      # at most 5 years ahead (e.g. Feb 29 on a Monday)
         if c.day_matches(day):
+            nxt = day + dt.timedelta(days=1)
+            shifts = (dt.datetime(day.year, day.month, day.day, tzinfo=zone).utcoffset()
+                      != dt.datetime(nxt.year, nxt.month, nxt.day, tzinfo=zone).utcoffset())
             for h in hours:
-                for m in minutes:
-                    local = dt.datetime(day.year, day.month, day.day, h, m, tzinfo=zone)
-                    if local < start:
-                        continue
-                    ts = local.timestamp()
-                    if ts > last:                 # DST: never yield the same/earlier instant twice
-                        last = ts
-                        yield ts
+                for fold in (0, 1) if shifts else (0,):
+                    for m in minutes:
+                        local = dt.datetime(day.year, day.month, day.day, h, m, fold=fold, tzinfo=zone)
+                        ts = local.timestamp()
+                        if fold and ts <= local.replace(fold=0).timestamp():
+                            continue              # not a repeated time (or one skipped in spring)
+                        if ts >= first and ts > last:   # never the same or an earlier instant twice
+                            last = ts
+                            yield ts
         day += dt.timedelta(days=1)
 
 
