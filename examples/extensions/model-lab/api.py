@@ -1,17 +1,27 @@
 """Optional Model Lab page bridge. All model work is delegated to external adapters."""
 import importlib.util
+import os
 from pathlib import Path
+
+SKILL = 'pilot-model-evolution'
+
+
+def _skill_dirs(ctx):
+    """A copy in the workspace (Codex, Claude Code) first, then the one `pilot init` / `pilot update` install with
+    the other product skills in Claude Code's folder."""
+    root = Path(ctx['workspace'])
+    claude = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude')
+    return (root / '.agents/skills' / SKILL, root / '.claude/skills' / SKILL, claude / 'skills' / SKILL)
 
 
 def _engine(ctx):
-    root = Path(ctx['workspace'])
-    for path in (root / '.agents/skills/model-evolution/scripts/lab.py', root / '.claude/skills/model-evolution/scripts/lab.py'):
+    for path in (d / 'scripts/lab.py' for d in _skill_dirs(ctx)):
         if path.is_file():
             spec = importlib.util.spec_from_file_location('pilot_model_lab', path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             return module
-    raise ValueError('Install the model-evolution skill in this workspace before using Model Lab.')
+    raise ValueError(f'Install the {SKILL} skill (pilot update, or a copy in this workspace) before using Model Lab.')
 
 
 def handle(ctx, method, path, query, body):

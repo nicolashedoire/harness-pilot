@@ -9,7 +9,7 @@ import time
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-ENGINE = ROOT / 'skills/model-evolution/scripts/lab.py'
+ENGINE = ROOT / 'skills/pilot-model-evolution/scripts/lab.py'
 spec = importlib.util.spec_from_file_location('test_model_lab', ENGINE)
 lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
@@ -89,7 +89,7 @@ def test_budget_stops_adapter(tmp_path, monkeypatch):
 
 
 def test_extension_is_optional_and_uses_existing_host_contract(client, mx):
-    for source, target in [(ROOT/'skills/model-evolution', mx['ws']/'.claude/skills/model-evolution'),
+    for source, target in [(ROOT/'skills/pilot-model-evolution', mx['ws']/'.claude/skills/pilot-model-evolution'),
                            (ROOT/'examples/extensions/model-lab', mx['ws']/'extensions/model-lab')]:
         shutil.copytree(source, target)
     result = client.get('/api/ext/model-lab/overview')
@@ -98,6 +98,19 @@ def test_extension_is_optional_and_uses_existing_host_contract(client, mx):
     assert Path(result.json()['skill_path']).is_file()
     assert client.post('/api/ext/model-lab/runs', json={'spec_path':'relative.json'}).status_code == 400
 
+
+
+def test_extension_finds_the_skill_installed_with_the_product_skills(client, mx, monkeypatch):
+    """`pilot init` / `pilot update` install pilot-model-evolution in Claude Code's folder: the page finds it there."""
+    from maxxing import cmd_core
+    claude = mx['tmp'] / 'claude'
+    monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(claude))
+    assert 'pilot-model-evolution' in cmd_core.install_skills()['installed']
+    shutil.copytree(ROOT/'examples/extensions/model-lab', mx['ws']/'extensions/model-lab')
+    result = client.get('/api/ext/model-lab/overview')
+    assert result.status_code == 200, result.text
+    assert Path(result.json()['skill_path']) == claude/'skills/pilot-model-evolution/SKILL.md'
+    assert (claude/'skills/pilot-model-evolution/scripts/lab.py').is_file()
 
 def test_stop_and_source_mutation_are_detected(tmp_path, monkeypatch):
     monkeypatch.delenv('MAXXING_STATE', raising=False)

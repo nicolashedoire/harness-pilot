@@ -1,5 +1,5 @@
 ---
-name: model-evolution
+name: pilot-model-evolution
 description: Design or improve a local AI model through bounded experiments, targeted parameter adaptation, regression evaluation and a user-reviewed candidate. Use when model files and an external adapter are available, regardless of framework or task.
 ---
 
