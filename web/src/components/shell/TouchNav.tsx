@@ -5,7 +5,7 @@ import * as React from 'react'
 import { create } from 'zustand'
 import { NavLink, useLocation, useNavigate } from 'react-router'
 import { BookOpen, Blocks, Bell, ChevronRight, Compass, Download, Eye, GraduationCap, HandHeart, Keyboard, LayoutGrid, LogOut, Menu, MessageSquareText, Search, Settings } from 'lucide-react'
-import { useExtensions, useFeed, useHealth, useLogout, useWorkspace } from '@/lib/queries'
+import { useExtensions, useHealth, useLogout, useWorkspace } from '@/lib/queries'
 import { useUI, type Theme } from '@/stores/ui'
 import { cn } from '@/lib/utils'
 import { useT, withGroups } from '@/i18n'
@@ -17,7 +17,9 @@ import { startTour, useTour, useTutorialHref } from '@/tour/store'
 import { navTourId, useNav } from './nav'
 import { Logo } from './Logo'
 import { HealthSummary, healthTone } from './HealthIndicator'
-import { UpdateIndicator, usePendingUpdate } from './UpdateIndicator'
+import { UpdateIndicator, useReloadPending } from './UpdateIndicator'
+import { useNotificationBadge } from '@/features/notifications/NotificationsNavItem'
+import { useServerNotifies } from '@/features/notifications/capability'
 import { UsageIndicator } from './UsageIndicator'
 import { useShortcutsDialog } from './shortcuts-store'
 import { useFeedbackDialog } from './feedback-store'
@@ -52,17 +54,23 @@ export function TouchSessionsButton({ className }: { className?: string }) {
   )
 }
 
-/** ⊞ - opens the rest of the app. A dot: an update is waiting or the server needs attention. */
+/** ⊞ - opens the rest of the app. Its badge: notifications to handle (count); else a dot for a new version to
+ *  load, unread notifications, or (a server without kinds) a health issue. */
 export function TouchAppButton({ className }: { className?: string }) {
   const t = useT()
-  const pending = usePendingUpdate()
+  const reload = useReloadPending()
+  const { pending, unread, status } = useNotificationBadge()
   const { data: h } = useHealth()
-  const tone = healthTone(h)
-  const dot = pending || tone === 'error' || tone === 'warn'
+  const tone = useServerNotifies() ? 'ok' : healthTone(h)
+  const dot = reload ? 'bg-primary' : unread ? 'bg-primary' : tone === 'error' ? 'bg-destructive' : tone === 'warn' ? 'bg-warning' : null
   return (
-    <button type="button" className={cn(topButton, '-mr-1', className)} aria-label={t('shell.openApp')} onClick={() => useTouchNav.getState().setPanel('app')} data-tour="nav">
+    <button type="button" className={cn(topButton, '-mr-1', className)} aria-label={status ? `${t('shell.openApp')} · ${status}` : t('shell.openApp')} onClick={() => useTouchNav.getState().setPanel('app')} data-tour="nav">
       <LayoutGrid />
-      {dot && <span aria-hidden className={cn('absolute top-2 right-2 size-2 rounded-full ring-2 ring-background', pending ? 'bg-primary' : tone === 'error' ? 'bg-destructive' : 'bg-warning')} />}
+      {pending > 0 ? (
+        <CountBadge count={pending} tone="attention" className="absolute top-0.5 right-0" />
+      ) : (
+        dot && <span aria-hidden className={cn('absolute top-2 right-2 size-2 rounded-full ring-2 ring-background', dot)} />
+      )}
     </button>
   )
 }
@@ -156,8 +164,7 @@ function AppPanel() {
   const nav = useNav()
   const { data: ext } = useExtensions()
   const pages = (ext || []).filter((e) => e.type === 'page' && e.enabled && !e.error)
-  const feed = useFeed()
-  const unreadFeed = feed.data?.unread ?? 0
+  const notif = useNotificationBadge()
   const theme = useUI((s) => s.theme)
   const setTheme = useUI((s) => s.setTheme)
   const presentation = useUI((s) => s.presentation)
@@ -206,10 +213,14 @@ function AppPanel() {
             <span className="max-w-full truncate">{t(n.short ?? n.label)}</span>
           </NavLink>
         ))}
-        <NavLink to="/feed" className={linkCls} onClick={close}>
+        <NavLink to="/notifications" className={linkCls} onClick={close} data-tour="nav-notifications">
           <Bell strokeWidth={1.9} />
           <span className="max-w-full truncate">{t('feed.title')}</span>
-          <CountBadge count={unreadFeed} className="absolute top-2 right-2" title={t('feed.unreadCount', { count: unreadFeed })} />
+          {notif.pending > 0 ? (
+            <CountBadge count={notif.pending} tone="attention" className="absolute top-2 right-2" title={notif.status ?? undefined} />
+          ) : (
+            notif.unread > 0 && <CountDot tone="notice" className="absolute top-3 right-3" />
+          )}
         </NavLink>
         {pages.length > 0 && (
           <NavLink to="/x" end className={linkCls} onClick={close}>

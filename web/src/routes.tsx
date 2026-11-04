@@ -46,7 +46,9 @@ export const routes: RouteObject[] = [
           { path: 'files/*', lazy: page(() => import('./pages/files'), ['files', 'media']) },
           { path: 'tasks/*', lazy: page(() => import('./pages/tasks'), ['tasks']) },
           { path: 'crons/*', lazy: page(() => import('./pages/crons'), ['tasks']) },
-          { path: 'feed', lazy: page(() => import('./pages/feed')) },
+          { path: 'notifications', lazy: page(() => import('./pages/notifications')) },
+          // the notifications page was /feed (links in Telegram messages, push payloads, bookmarks)
+          { path: 'feed', element: <Navigate to="/notifications" replace /> },
           // Optional feature pages (Settings -> Features)
           { path: 'git', lazy: page(() => import('./features/git/GitPage'), ['git']) },
           { path: 'team', lazy: page(() => import('./features/team/TeamPage'), ['team']) },

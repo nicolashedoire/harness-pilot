@@ -15,6 +15,7 @@ import {
   extensionsQuery,
   feedPagesQuery,
   feedQuery,
+  feedSummaryQuery,
   fileKindQuery,
   healthQuery,
   prefetchTail,
@@ -31,6 +32,8 @@ import {
   workspaceQuery,
 } from '@/lib/queries'
 import { prefetchPageChunk } from './prefetch'
+import { FEED_CATEGORIES } from '@/lib/feed'
+import { isCompact } from '@/stores/media'
 
 type Q = { queryKey: readonly unknown[]; queryFn: (...a: never[]) => Promise<unknown>; staleTime?: number }
 
@@ -51,7 +54,7 @@ export function prefetchPageData(qc: QueryClient, pathname: string, search = '')
   const [, top = '', sub = ''] = pathname.split('/')
   switch (top) {
     case '':
-      queries.push(dashboardQuery(), feedQuery(null, false, 30))
+      queries.push(dashboardQuery(), feedQuery({ pending: true }, 50))
       break
     case 'sessions': {
       // The tree (its archived folds load their list when opened), the columns' header data, and the open sessions
@@ -73,9 +76,14 @@ export function prefetchPageData(qc: QueryClient, pathname: string, search = '')
     case 'crons':
       queries.push(cronsQuery(), cronRunsQuery(null, 8))
       break
-    case 'feed':
-      void qc.prefetchInfiniteQuery(feedPagesQuery(null, false))
+    case 'notifications': {
+      // same filter as the page: ?filter=, else "To handle" in the touch layout, "All" on desktop
+      const f = params.get('filter') ?? (isCompact() ? 'pending' : 'all')
+      const category = FEED_CATEGORIES.find((c) => c === f)
+      queries.push(feedSummaryQuery())
+      void qc.prefetchInfiniteQuery(feedPagesQuery(f === 'pending' ? { pending: true } : category ? { category } : {}))
       break
+    }
     case 'settings':
       queries.push(...(SETTINGS[sub]?.() ?? []))
       break

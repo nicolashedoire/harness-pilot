@@ -289,7 +289,8 @@ def decide(cid: str, allow: bool) -> str:
         try:
             from . import feed
             feed.system("Sign-in denied in Telegram (the password was right)", f"{c.ip} · {c.ua}", "warning",
-                        "security")
+                        "security", kind="signin.denied", params={"ip": c.ip, "ua": c.ua},
+                        actions=[feed.link("open", "Open", "/settings/security")])
         except Exception:  # noqa: BLE001
             pass
     return _w("allowed" if allow else "denied")
