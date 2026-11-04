@@ -15,7 +15,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import __version__, bus, config, health
+from .. import __version__, bus, config, health, local_service
 from ..security import require_auth
 
 log = logging.getLogger("maxxing.license")
@@ -236,6 +236,13 @@ async def media_tools():
     """Settings -> System: ffmpeg (with WebP) and pdftoppm found or not, and the commands that install them."""
     from .. import mediatools
     return await asyncio.to_thread(mediatools.status)
+
+
+@router.get("/system/local-service")
+async def get_local_service():
+    """Settings -> System, local mode on macOS: the optional launchd agent of scripts/macos-service.sh (read-only;
+    its commands are run in a terminal)."""
+    return await asyncio.to_thread(local_service.status)
 
 
 @router.get("/system/version")

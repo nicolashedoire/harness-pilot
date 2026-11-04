@@ -223,3 +223,38 @@ def test_the_cli_way_out_turns_the_app_off_too(mx, capsys):
     assert '"authenticator": true' in capsys.readouterr().out
     assert cli.main(["2fa", "off"]) == 0
     assert not totp.is_on()
+
+
+def test_new_recovery_codes_replace_the_old_ones(mx):
+    now = 1_800_000_015.0
+    secret, old = _on(now - 10 * totp.STEP)
+    with pytest.raises(totp.TotpError) as e:
+        totp.regenerate("000000" if totp.code_at(secret, now) != "000000" else "111111", now)
+    assert e.value.error == "bad_code" and totp.status()["recovery_left"] == 10
+    new = totp.regenerate(totp.code_at(secret, now), now)
+    assert len(new) == totp.RECOVERY_COUNT and not set(new) & set(old)
+    assert totp.verify(old[1]) is None                                              # the old set is dead
+    assert totp.verify(new[0]) == "recovery" and totp.status()["recovery_left"] == 9
+    assert config.load_secrets()["totp"]["secret"] == secret                         # the app keeps working
+    newer = totp.regenerate(new[1], now)                                             # a recovery code works too (spent)
+    assert totp.verify(new[2]) is None and len(newer) == 10
+    totp.disable()
+    with pytest.raises(totp.TotpError) as e:
+        totp.regenerate(newer[0], now)
+    assert e.value.error == "not_on"
+
+
+def test_new_recovery_codes_from_the_settings(client, mx):
+    secret, old = _on()
+    path = "/api/auth/totp/recovery-codes"
+    assert client.post(path, json={"password": "wrong password!", "code": old[0]}).status_code == 401
+    assert totp.status()["recovery_left"] == 10                                     # nothing spent on a wrong password
+    assert client.post(path, json={"password": PASSWORD, "code": "000000"}).status_code == 400
+    r = client.post(path, json={"password": PASSWORD, "code": totp.code_at(secret, time.time() + totp.STEP)})
+    assert r.status_code == 200 and len(r.json()["recovery_codes"]) == 10
+    assert totp.verify(old[0]) is None and totp.verify(r.json()["recovery_codes"][0]) == "recovery"
+    c = _signed_out(client)
+    assert c.post(path, json={"password": PASSWORD, "code": "123456"}).status_code == 401
+    totp.disable()
+    client.cookies.set(security.COOKIE, security.make_cookie())
+    assert client.post(path, json={"password": PASSWORD, "code": "123456"}).status_code == 409

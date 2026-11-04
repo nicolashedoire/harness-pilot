@@ -47,6 +47,8 @@ Run it from a terminal where `uv`, `claude` and `codex` work: the service keeps 
 
 Its output goes to `.harness-pilot-local/logs/server.log` and `.harness-pilot-local/logs/server.err.log`. `service status` prints their full paths, which Console.app can open.
 
+**Settings → System** shows the service too: a **Background service** card says whether it is installed and whether it runs the app you are using (and since when), where its service file and logs are, the address, and these commands with a copy button, already filled in for this folder, port and service name. It only reads: you run the commands in a terminal. To update, `git pull` in the repository folder, then `service restart`; the **Version** card gives both commands.
+
 **Where the clone lives matters.** macOS keeps background services out of Desktop, Documents, Downloads, iCloud Drive and external disks. A clone in one of those folders cannot run as a service: `install` notices it, removes the service again and says so. To use the service, clone the repository somewhere else, for example `~/harness-pilot`. The same protection applies to the folders your agents work in while the app runs as a service.
 
 The app uses port 8787. `HARNESS_PILOT_PORT=8790 bash scripts/dev-local.sh service install` picks another one, and the variable works without the service too. After installing a tool in a new place (a new PATH), run `service uninstall`, then `service install` again.

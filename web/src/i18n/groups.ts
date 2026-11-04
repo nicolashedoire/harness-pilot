@@ -6,7 +6,7 @@
 export const GROUPS = {
   settings: [
     'mcp', 'system', 'stats', 'keys', 'memory', 'trash', 'features', 'security', 'profile', 'fonts', 'accent',
-    'density', 'tint', 'colors', 'themegen', 'backup', 'import', 'telegram', 'packs', 'pc', 'license', 'register', 'cdef', 'nset',
+    'density', 'tint', 'colors', 'themegen', 'backup', 'import', 'telegram', 'packs', 'pc', 'license', 'cdef', 'nset',
     'codex', 'update', 'vset', 'instanceBackup', 'prQueue', 'resident', 'setnav',
   ],
   // Settings -> Companions and the words of the companion notifications (`companions.kind.*`, see

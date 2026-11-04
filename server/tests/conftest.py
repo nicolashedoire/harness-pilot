@@ -14,6 +14,7 @@ import pytest
 # before importing maxxing: never the real state dir (each test then gets its own, see `mx`)
 os.environ.setdefault("MAXXING_STATE", os.path.join(tempfile.gettempdir(), "mx-test-boot-state"))
 os.environ["MAXXING_SPAWN"] = "direct"
+os.environ.setdefault("MAXXING_ALLOWED_HOSTS", "testserver,t")   # the test clients' Host names; the check stays on
 os.environ["MAXXING_SYSTEM_TZ"] = "0"                # never switch the real system clock
 os.environ.setdefault("MAXXING_AUTH_CHECK", "0")     # no background `claude -p` check (tests opt in)
 os.environ["MAXXING_CLAUDE_UPDATE"] = "0"          # no background `claude update` (tests call tick())
@@ -53,6 +54,7 @@ def _never_the_real_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(cmd_core, "BIN_LINK", fake / "usr-local-bin" / "maxxing")    # `pilot` / `maxxing` commands
     monkeypatch.setattr(cmd_core, "PILOT_LINK", fake / "usr-local-bin" / "pilot")
     monkeypatch.setenv("MAXXING_CODEX_SKILLS_DIR", str(fake / "agents-skills"))   # never the real ~/.agents/skills
+    monkeypatch.setenv("MAXXING_LAUNCH_AGENTS_DIR", str(fake / "LaunchAgents"))   # never the real ~/Library/LaunchAgents
 
 
 @pytest.fixture(autouse=True)

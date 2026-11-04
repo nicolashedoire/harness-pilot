@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useTotp, useTotpDisable, useTotpEnable, useTotpSetup } from '@/lib/queries'
+import { useTotp, useTotpDisable, useTotpEnable, useTotpRecoveryCodes, useTotpSetup } from '@/lib/queries'
 import { errorMessage, isApiError } from '@/lib/api'
 import { useT, type TFn } from '@/i18n'
 import type { TotpSetup } from '@/lib/types'
@@ -17,16 +17,19 @@ function fieldErrors(t: TFn, err: unknown): Errors {
 }
 
 /** Two-step sign-in with an authenticator app (TOTP): set up with a QR code, recovery codes shown once, turned off
- *  with the password and a code. */
+ *  with the password and a code, recovery codes renewed the same way. */
 export function TotpCard() {
   const t = useT()
   const { data } = useTotp()
   const setup = useTotpSetup()
   const enable = useTotpEnable()
   const disable = useTotpDisable()
+  const renew = useTotpRecoveryCodes()
   const [enroll, setEnroll] = React.useState<TotpSetup | null>(null)
-  const [codes, setCodes] = React.useState<string[] | null>(null)
-  const [turnOff, setTurnOff] = React.useState(false)
+  const [codes, setCodes] = React.useState<{ list: string[]; renewed: boolean } | null>(null)
+  // the password + code dialog: turn the app off, or replace the recovery codes
+  const [confirm, setConfirm] = React.useState<'off' | 'renew' | null>(null)
+  const busy = confirm === 'renew' ? renew.isPending : disable.isPending
   const [password, setPassword] = React.useState('')
   const [code, setCode] = React.useState('')
   const [errors, setErrors] = React.useState<Errors>({})
@@ -54,9 +57,14 @@ export function TotpCard() {
         description={on ? t('totp.onDesc', { count: data?.recovery_left ?? 0 }) : t('totp.desc')}
       >
         {on ? (
-          <Button variant="outline" size="sm" onClick={() => (reset(), setTurnOff(true))}>
-            {t('totp.turnOff')}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => (reset(), setConfirm('renew'))}>
+              {t('totp.renew')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => (reset(), setConfirm('off'))}>
+              {t('totp.turnOff')}
+            </Button>
+          </div>
         ) : (
           <Button size="sm" loading={setup.isPending} onClick={() => setup.mutate(undefined, { onSuccess: (s) => (reset(), setEnroll(s)) })}>
             {t('totp.setUp')}
@@ -83,7 +91,7 @@ export function TotpCard() {
                     onSuccess: (r) => {
                       setEnroll(null)
                       reset()
-                      setCodes(r.recovery_codes)
+                      setCodes({ list: r.recovery_codes, renewed: false })
                     },
                     onError: (err) => (isApiError(err, 'expired') ? (setEnroll(null), toast.error(t('totp.expired'))) : setErrors(fieldErrors(t, err))),
                   },
@@ -123,19 +131,19 @@ export function TotpCard() {
             <DialogTitle>{t('totp.recoveryTitle')}</DialogTitle>
             <DialogDescription>{t('totp.recoveryDesc')}</DialogDescription>
           </DialogHeader>
-          {codes && <CodeBlock code={codes.join('\n')} />}
-          <Callout tone="warning">{t('totp.recoveryOnce')}</Callout>
+          {codes && <CodeBlock code={codes.list.join('\n')} />}
+          <Callout tone="warning">{t(codes?.renewed ? 'totp.renewedOnce' : 'totp.recoveryOnce')}</Callout>
           <DialogFooter>
-            <Button onClick={() => (setCodes(null), toast.success(t('totp.enabled')))}>{t('totp.saved')}</Button>
+            <Button onClick={() => (setCodes(null), toast.success(t(codes?.renewed ? 'totp.renewed' : 'totp.enabled')))}>{t('totp.saved')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={turnOff} onOpenChange={setTurnOff}>
+      <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent className="md:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('totp.offTitle')}</DialogTitle>
-            <DialogDescription>{t('totp.offDesc')}</DialogDescription>
+            <DialogTitle>{t(confirm === 'renew' ? 'totp.renewTitle' : 'totp.offTitle')}</DialogTitle>
+            <DialogDescription>{t(confirm === 'renew' ? 'totp.renewDesc' : 'totp.offDesc')}</DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4"
@@ -143,17 +151,26 @@ export function TotpCard() {
             onSubmit={(e) => {
               e.preventDefault()
               if (!check()) return
-              disable.mutate(
-                { password, code: code.trim() },
-                {
+              const body = { password, code: code.trim() }
+              const onError = (err: unknown) => setErrors(fieldErrors(t, err))
+              if (confirm === 'renew')
+                renew.mutate(body, {
+                  onSuccess: (r) => {
+                    setConfirm(null)
+                    reset()
+                    setCodes({ list: r.recovery_codes, renewed: true })
+                  },
+                  onError,
+                })
+              else
+                disable.mutate(body, {
                   onSuccess: () => {
-                    setTurnOff(false)
+                    setConfirm(null)
                     reset()
                     toast.success(t('totp.disabled'))
                   },
-                  onError: (err) => setErrors(fieldErrors(t, err)),
-                },
-              )
+                  onError,
+                })
             }}
           >
             <FormField label={t('totp.codeOrRecovery')} error={errors.code}>
@@ -163,11 +180,11 @@ export function TotpCard() {
               <SecretInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </FormField>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setTurnOff(false)}>
+              <Button type="button" variant="ghost" onClick={() => setConfirm(null)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" variant="destructive" loading={disable.isPending}>
-                {t('totp.turnOff')}
+              <Button type="submit" variant={confirm === 'renew' ? 'default' : 'destructive'} loading={busy}>
+                {t(confirm === 'renew' ? 'totp.renewSubmit' : 'totp.turnOff')}
               </Button>
             </DialogFooter>
           </form>

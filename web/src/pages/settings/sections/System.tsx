@@ -4,10 +4,10 @@ import { Link } from 'react-router'
 import { Play, RefreshCw, RotateCw, Sparkles, Square, Wrench, KeyRound, GitBranch } from 'lucide-react'
 import { useWhatsNew } from '@/features/whatsnew/store'
 import { applyUpdate } from '@/pwa'
-import { useCheckVersion, useHealth, useLogs, useMediaTools, useServiceAction, useServices, useUpdate, useAutoUpdate, useVersion, useWorkspace } from '@/lib/queries'
+import { useCheckVersion, useHealth, useLocalService, useLogs, useMediaTools, useServiceAction, useServices, useUpdate, useAutoUpdate, useVersion, useWorkspace } from '@/lib/queries'
 import { fmtRelative } from '@/lib/format'
 import { api } from '@/lib/api'
-import type { AuthState, ServiceAction, VersionInfo } from '@/lib/types'
+import type { AuthState, LocalService, ServiceAction, VersionInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
 import { Badge, Button, CopyButton, ProgressBar, Select, Sensitive, Skeleton, Spinner, StatusDot, Switch, confirm, toast } from '@/components/ui'
@@ -66,6 +66,86 @@ function MediaToolsCard() {
         )}
       </div>
     </SettingsCard>
+  )
+}
+
+/** One command to run in a terminal, with a copy button. */
+function Command({ label, cmd }: { label?: React.ReactNode; cmd: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-1">
+      {label && <span className="text-[13px] text-muted-foreground">{label}</span>}
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+        <code className="min-w-0 flex-1 font-mono text-xs [overflow-wrap:anywhere]"><Sensitive length={24}>{cmd}</Sensitive></code>
+        <CopyButton text={cmd} />
+      </div>
+    </div>
+  )
+}
+
+/** Local installation on macOS: the optional background service (launchd agent) of scripts/dev-local.sh. Read-only:
+ *  its state, where its files are, and the commands that install, restart or remove it - run in a terminal, since
+ *  the agent records that terminal's PATH and a restart from here would cut this page off. */
+function LocalServiceCard({ svc }: { svc: Extract<LocalService, { supported: true }> }) {
+  const t = useT()
+  const lang = useLang()
+  const badge = svc.running && svc.since ? (
+    <Badge variant="success" className="gap-1.5"><StatusDot tone="ok" />{t('system.svc.running', { when: fmtRelative(svc.since, lang) })}</Badge>
+  ) : svc.installed ? (
+    <Badge variant="warning">{t('system.svc.installed')}</Badge>
+  ) : (
+    <Badge variant="muted">{t('system.svc.notInstalled')}</Badge>
+  )
+  const rows: [string, React.ReactNode][] = [
+    ...(svc.installed ? ([[t('system.svc.plist'), svc.plist], [t('system.svc.logs'), svc.logs]] as [string, string][]) : []),
+    [t('system.svc.address'), <>{svc.url} <span className="font-sans text-muted-foreground">· {t('system.svc.thisMac')}</span></>],
+  ]
+  return (
+    <SettingsCard title={t('system.svc.title')} description={t('system.svc.desc')} actions={badge}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4" data-testid="local-service">
+        {svc.installed && !svc.running && <p className="text-[13px] text-muted-foreground">{t('system.svc.notThisApp')}</p>}
+        <dl className="grid grid-cols-[minmax(0,1fr)] text-sm">
+          {rows.map(([label, value]) => (
+            <div key={label} className="grid gap-x-4 gap-y-0.5 border-b py-2.5 first:pt-0 last:border-0 last:pb-0 sm:grid-cols-[8rem_minmax(0,1fr)]">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 font-mono text-xs [overflow-wrap:anywhere] sm:pt-0.5"><Sensitive length={20}>{value}</Sensitive></dd>
+            </div>
+          ))}
+        </dl>
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+          <p className="text-[13px] font-medium">{t('system.svc.commands')}</p>
+          {svc.installed ? (
+            <>
+              <Command label={t('system.svc.cmd.restart')} cmd={svc.commands.restart} />
+              <Command label={t('system.svc.cmd.status')} cmd={svc.commands.status} />
+              <Command label={t('system.svc.cmd.uninstall')} cmd={svc.commands.uninstall} />
+            </>
+          ) : (
+            <>
+              <Command cmd={svc.commands.install} />
+              <p className="text-[13px] text-muted-foreground">{t('system.svc.installHint')}</p>
+            </>
+          )}
+        </div>
+      </div>
+    </SettingsCard>
+  )
+}
+
+/** Local installation: updates go through Git, then a restart (the service's command when it runs the app). */
+function LocalUpdate() {
+  const t = useT()
+  const { data: svc } = useLocalService()
+  const mac = svc?.supported ? svc : null
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3" data-testid="local-update">
+      <p className="text-sm text-muted-foreground">{t('system.localMode')}</p>
+      {mac && (
+        <>
+          <Command label={t('system.localUpdate.pull')} cmd={mac.commands.update} />
+          {mac.running ? <Command label={t('system.localUpdate.restart')} cmd={mac.commands.restart} /> : <p className="text-[13px] text-muted-foreground">{t('system.localUpdate.restartTerminal')}</p>}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -337,7 +417,7 @@ function VersionCard() {
             {t('system.updatedDesc')}
           </Callout>
         )}
-        {v.local_mode ? <p className="text-sm text-muted-foreground">{t('system.localMode')}</p> : <SettingRow label={t('system.autoUpdate')} description={t('system.autoUpdateHint')} htmlFor="mx-auto-update" className="py-4 first:pt-4 last:pb-4">
+        {v.local_mode ? <LocalUpdate /> : <SettingRow label={t('system.autoUpdate')} description={t('system.autoUpdateHint')} htmlFor="mx-auto-update" className="py-4 first:pt-4 last:pb-4">
           <Switch id="mx-auto-update" checked={v.auto_update?.enabled ?? false} onCheckedChange={(on) => autoUpdate.mutate(on)} />
         </SettingRow>}
       </div>
@@ -347,9 +427,11 @@ function VersionCard() {
 
 export function SystemSection() {
   const { data: v } = useVersion()
+  const { data: svc } = useLocalService(!!v?.local_mode)
   return (
     <SectionStack>
       <VersionCard />
+      {v?.local_mode && svc?.supported && <LocalServiceCard svc={svc} />}
       <HealthCard />
       <MediaToolsCard />
       {v && !v.local_mode && <ServicesCard />}

@@ -105,7 +105,7 @@ import { MobileTabsSlot } from './Tabs'
 import { AsidePanel, useAside } from './Aside'
 import { SessionSummary } from './Summary'
 import { AgentMap } from './AgentMap'
-import { MixedTeam } from './MixedTeam'
+import { MixedTeam, StopTeamButton, teamActive } from './MixedTeam'
 import { LayoutPicker } from './LayoutPicker'
 import { MIN_W } from './layouts'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
@@ -886,7 +886,8 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   running={running}
                   immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
                   attachDisabledReason={session?.discussion_partner?.startsWith('plugin:') && !session.provider_capabilities?.includes('attachments') ? t('agentProviders.textOnly') : null}
-                  disabledReason={session?.team_phase && ['launching', 'working', 'synthesizing'].includes(session.team_phase) ? t('mixedTeam.wait') : authReason || (!session ? t('sessions.composer.loading') : null)}
+                  disabledReason={authReason || (!session ? t('sessions.composer.loading') : null)}
+                  locked={teamActive(session?.team_phase) ? { text: t('teamx.locked'), action: <StopTeamButton sid={sid} /> } : null}
                   queueCount={session?.queue || 0}
                   queued={queuedPending}
                   queueItems={session?.queue_items}
@@ -1079,6 +1080,7 @@ function ColumnHeader({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {session && !slim && <AgentChip session={session} />}
+          {session && teamActive(session.team_phase) && <StopTeamButton sid={session.id} compact />}
           {gauge && <span className="flex @max-[26rem]:hidden">{gauge}</span>}
           {session?.notify && (
             // Telegram on: a quiet bell says so (a click turns it off; the menu holds the switch)
