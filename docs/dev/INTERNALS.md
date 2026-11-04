@@ -168,6 +168,9 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `/var/lib/claude-maxxing`, a dev server or a test copy of the state never updates the machine's CLI unless
   `MAXXING_CLAUDE_UPDATE=1`; off everywhere with `MAXXING_CLAUDE_UPDATE=0`, first pass after
   `MAXXING_CLAUDE_UPDATE_DELAY` s, default 600), one `tick()` every POLL_S (300 s) in `asyncio.to_thread`.
+- `installed_version()` and `run_update()` run with `_env()`: `spawn.base_env()` without the quiet-start variable
+  (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, which turns off Claude Code's own update check), so the version the
+  server installs is never skipped by it.
 - `tick(now=None, force_check=False) -> "off"|"not_installed"|"unknown"|"up_to_date"|"unsupported"|"busy"|
   "failed_recently"|"updated"|"failed"`: registry read (`latest_version()` = `depcheck.claude_stable`, the npm
   `stable` dist-tag) at most every CHECK_EVERY_S (6 h); no `claude --version` between checks when nothing is pending.

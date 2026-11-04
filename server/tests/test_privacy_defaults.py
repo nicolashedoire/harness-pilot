@@ -40,3 +40,24 @@ def test_claude_default_disables_nonessential_traffic_without_changing_user_sett
     assert spawn.base_env()[spawn.QUIET_START_ENV]=='1'
     assert spawn.claude_env()[spawn.QUIET_START_ENV]=='1'
     assert config.load_config()['claude_quiet_start'] is True
+
+
+def test_claude_update_subprocesses_never_receive_the_quiet_start_variable(mx,monkeypatch,tmp_path):
+    """An update the server was asked to install must not be skipped by Claude Code's update opt-out."""
+    from maxxing import claude_update
+    monkeypatch.delenv(spawn.QUIET_START_ENV,raising=False)
+    binary=tmp_path/'claude';binary.write_text('');binary.chmod(0o755)
+    monkeypatch.setattr(claude_update,'_bin',lambda:str(binary))
+    monkeypatch.setattr(claude_update,'install_method',lambda:('native',[str(binary),'install']))
+    envs=[]
+    class Done:
+        returncode=0;stdout='2.1.0 (Claude Code)';stderr=''
+    def run(args,**kwargs):
+        envs.append((args,kwargs['env']));return Done()
+    monkeypatch.setattr(claude_update.subprocess,'run',run)
+    assert claude_update.installed_version()=='2.1.0'
+    assert claude_update.run_update('2.1.1')[0] is True
+    assert [args[1:] for args,_ in envs]==[['--version'],['install','2.1.1']]
+    assert all(spawn.QUIET_START_ENV not in env and env.get('HOME') for _,env in envs)
+    # Elsewhere (turns, status probes, summaries, cron jobs) the quiet start stays on.
+    assert spawn.base_env()[spawn.QUIET_START_ENV]=='1' and spawn.claude_env()[spawn.QUIET_START_ENV]=='1'
