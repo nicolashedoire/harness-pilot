@@ -23,7 +23,8 @@ listens, no request leaves the machine. An extension that is turned off (or held
 none of its code runs.
 
 Result = {id, name, type, kind: "card"|"html"|"page"|"block"|"agent"|"widget", dir, status: "ok"|"warn"|"error"|
-"skipped", error: first error | None, steps: [{step, status, detail}], files: [names relative to dir], card?, trace?}
+"skipped", error: first error | None, steps: [{step, status, detail}], files: [names relative to dir], card?, trace?,
+runtime_errors: what broke while it ran since its files last changed (exterrors.recent; not part of the status)}
 """
 from __future__ import annotations
 
@@ -36,13 +37,12 @@ import shutil
 import subprocess
 import tempfile
 import time
-import traceback
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit
 
-from . import config, extensions
+from . import config, exterrors, extensions
 
 NODE_TIMEOUT_S = 20
 MAX_MODULES = 40
@@ -72,7 +72,7 @@ class _Run:
         err = next((s["detail"] for s in self.steps if s["status"] == ERROR), None)
         return {"id": self.ext.id, "name": self.ext.label(), "type": self.ext.type, "kind": self.kind,
                 "dir": str(self.ext.dir), "status": status, "error": err, "steps": self.steps, "files": self.files,
-                **self.extra}
+                **self.extra, "runtime_errors": exterrors.recent(self.ext.id, self.ext.dir)}
 
 
 def _kind(ext: extensions.Extension) -> str:
@@ -316,20 +316,6 @@ def _check_document(run: _Run, name: str, raw: bytes, *, api_ok: bool, bridge: s
 
 
 # ---- per kind -------------------------------------------------------------------------------------------------------
-def _frames(e: BaseException, ext: extensions.Extension) -> list[str]:
-    """The frames of an exception inside the extension's folder, innermost last (at most 5)."""
-    root = str(ext.dir.resolve())
-    out = []
-    for fr in traceback.extract_tb(e.__traceback__):
-        try:
-            p = str(Path(fr.filename).resolve())
-        except OSError:
-            continue
-        if p.startswith(root + os.sep):
-            out.append(f"{os.path.relpath(p, root)}:{fr.lineno} in {fr.name}" + (f": {fr.line}" if fr.line else ""))
-    return out[-5:]
-
-
 def _check_card(run: _Run) -> None:
     from . import widgets
     from .api.dashboard import TIMEOUT_S
@@ -350,7 +336,7 @@ def _check_card(run: _Run) -> None:
                                "call without a timeout?")
         return
     except Exception as e:  # noqa: BLE001 - the extension's error is the result
-        frames = _frames(e, ext)
+        frames = exterrors.ext_frames(e, ext.dir)
         if frames:
             run.extra["trace"] = frames
         run.add("card", ERROR, f"{type(e).__name__}: {e}" + (f" ({frames[-1].split(': ', 1)[0]})" if frames else ""))

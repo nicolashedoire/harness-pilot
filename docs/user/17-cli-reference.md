@@ -178,7 +178,10 @@ that id, `3` that extension is turned off (nothing was run).
 
 `kind` is `card`, `html` (HTML widget), `page`, `block` or `agent`; `status` is `ok`, `warn`, `error` or `skipped`;
 `error` is the first error (null when there is none); `files` lists the files of the folder involved. A card widget
-that works also returns the `card` the dashboard would draw.
+that works also returns the `card` the dashboard would draw. `runtime_errors` lists what broke while the extension
+ran since its files last changed (`[{where, message, stack, at, count}]`, newest first, the same as Settings ->
+Extensions: `where` is `widget`, `page`, `card` or `api`); they do not change `status` or the exit code. Without
+`--json`, the latest three are printed after the steps.
 
 ## pilot deps
 

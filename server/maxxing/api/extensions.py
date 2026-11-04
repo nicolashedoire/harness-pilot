@@ -8,6 +8,8 @@ worker thread. The return value is sent as JSON; a `(status, body)` tuple sets t
 (.js .mjs .css .json, `extensions.module_file`), and `GET /ext/{id}/@<version>/<path>` the same files (the version
 segment is ignored: the UI imports `@<page_v>/page.js` so relative imports carry the version too). Auth required, an
 enabled page extension without error, never cached.
+`POST /api/extensions/{id}/errors` records a runtime error the browser saw (maxxing/exterrors.py); a failing `handle()`
+is recorded the same way (`where: "api"`).
 `GET /ext/ui-kit.css` serves the shared UI kit (`ui-*` classes, maxxing/assets/ui-kit.css), loaded by the app for
 page extensions and inlined in every HTML widget frame.
 """
@@ -18,15 +20,15 @@ import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from starlette.convertors import Convertor, register_url_convertor
 
-from .. import bus, extensions
+from .. import bus, exterrors, extensions
 from ..security import require_auth
 
 
@@ -53,7 +55,8 @@ def _err(status: int, code: str, msg: str) -> HTTPException:
 
 
 def _infos(exts: list[extensions.Extension]) -> list[dict]:
-    return [e.info() for e in exts]                    # page_v walks the page's folder: run in a thread
+    errs = exterrors.all_recent(exts)                  # page_v and the errors' signature walk folders: in a thread
+    return [{**e.info(), "runtime_errors": errs.get(e.id, [])} for e in exts]
 
 
 @router.get("/api/extensions")
@@ -83,6 +86,54 @@ async def reload_extensions():
     out = await asyncio.to_thread(lambda: _infos(extensions.scan()))
     bus.invalidate("extensions")
     return out
+
+
+class ErrorIn(BaseModel):
+    where: Literal["widget", "page"]
+    message: str = Field(min_length=1, max_length=4000)
+    stack: str = Field("", max_length=8000)
+
+
+def _frame_offset() -> int:
+    """Lines the widget frame serves before widget.html (the bridge, the UI kit): frame line - offset = file line."""
+    return (WIDGET_BRIDGE + f"<style>{ui_kit_css()}</style>\n").count("\n")
+
+
+@router.post("/api/extensions/{eid}/errors")
+async def report_error(eid: str, body: ErrorIn):
+    ext = await asyncio.to_thread(extensions.get, eid)
+    if ext is None:
+        raise _err(404, "not_found", f"no extension {eid}")
+    if not exterrors.allow(eid):
+        raise _err(429, "rate_limited", "too many error reports, try again in a minute")
+
+    def save() -> dict:
+        offset = _frame_offset() if body.where == "widget" else 0
+        stack = exterrors.trim_stack(body.stack, eid, offset)
+        item = exterrors.record(eid, ext.dir, body.where, body.message, stack)
+        return {k: item.get(k) for k in ("where", "message", "stack", "at", "count")}
+    item = await asyncio.to_thread(save)
+    bus.invalidate("extensions")
+    return {"ok": True, "error": item}
+
+
+@router.delete("/api/extensions/{eid}/errors")
+async def clear_errors(eid: str):
+    if await asyncio.to_thread(extensions.get, eid) is None:
+        raise _err(404, "not_found", f"no extension {eid}")
+    await asyncio.to_thread(exterrors.clear, eid)
+    bus.invalidate("extensions")
+    return {"ok": True}
+
+
+async def _record_api_error(ext: extensions.Extension, message: str, exc: BaseException | None = None) -> None:
+    """A failing handle() as a runtime error of the extension (never fails the request)."""
+    try:
+        stack = "\n".join(exterrors.ext_frames(exc, ext.dir)) if exc is not None else ""
+        await asyncio.to_thread(exterrors.record, ext.id, ext.dir, "api", message, stack)
+        bus.invalidate("extensions")
+    except Exception:  # noqa: BLE001
+        log.warning("could not record the error of extension %s", ext.id, exc_info=True)
 
 
 def _usable(eid: str) -> extensions.Extension:
@@ -123,6 +174,7 @@ async def forward(eid: str, path: str, request: Request):
     except extensions.ExtensionBusy as e:
         raise _err(503, "extension_busy", str(e)) from None
     except asyncio.TimeoutError:
+        await _record_api_error(ext, f"handle() took more than {HANDLE_TIMEOUT_S:.0f} s ({request.method} {path})")
         raise _err(504, "extension_timeout", f"handle() took more than {HANDLE_TIMEOUT_S:.0f} s") from None
     except ValueError as e:
         raise _err(400, "bad_request", str(e)) from None
@@ -130,6 +182,7 @@ async def forward(eid: str, path: str, request: Request):
         raise _err(404, "not_found", str(e)) from None
     except Exception as e:
         log.warning("extension %s handle failed: %s", eid, e, exc_info=True)
+        await _record_api_error(ext, f"{type(e).__name__}: {e}", e)
         raise _err(500, "extension_error", f"{type(e).__name__}: {e}") from None
     status = 200
     if isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], int):
@@ -139,6 +192,7 @@ async def forward(eid: str, path: str, request: Request):
     try:
         return JSONResponse(result, status_code=status)
     except (TypeError, ValueError) as e:
+        await _record_api_error(ext, f"handle() returned a non-JSON value ({e}) for {request.method} {path}")
         raise _err(500, "extension_error", f"handle() returned a non-JSON value ({e})") from None
 
 
@@ -210,7 +264,9 @@ async def page_js(eid: str):
     return await _serve_module(eid, "page.js")
 
 
-# The HTML widget's frame: the bridge (maxxing.api / resize / theme, see web/src/pages/dashboard/HtmlWidget.tsx)
+# The HTML widget's frame: the bridge (maxxing.api / resize / theme, and the frame's uncaught errors and rejected
+# promises sent to the app as {mx:'error'}, see web/src/pages/dashboard/HtmlWidget.tsx; a rejection of maxxing.api()
+# the server already recorded - a 5xx - or a network failure is left out)
 # then the extension's widget.html. Served as a document of its own (not an iframe srcdoc, which would inherit the
 # app's strict script policy): sandboxed by the iframe AND by its own CSP, so even opened directly it has no access to
 # the app, its cookies or its API. The theme comes in the URL fragment (#{"theme":..,"vars":{..}}); the UI kit
@@ -226,8 +282,14 @@ window.maxxing={theme:init.theme||'dark',
  resize:function(h){parent.postMessage({mx:'resize',height:Number(h)||0},'*')},
  onTheme:function(f){cbs.push(f)}};
 addEventListener('message',function(e){if(e.source!==parent)return;var m=e.data||{};
- if(m.mx==='reply'){var p=pending[m.seq];if(p){delete pending[m.seq];m.ok?p[0](m.data):p[1](new Error(m.error||'request failed'))}}
+ if(m.mx==='reply'){var p=pending[m.seq];if(p){delete pending[m.seq];if(m.ok)p[0](m.data);else{var x=new Error(m.error||'request failed');x.status=m.status|0;p[1](x)}}}
  if(m.mx==='theme'){window.maxxing.theme=m.theme;apply(m.vars);cbs.forEach(function(f){try{f(m.theme)}catch(_){}})}});
+function rep(m,s){try{parent.postMessage({mx:'error',message:String(m==null?'':m).slice(0,4000)||'Error',stack:String(s||'').slice(0,8000)},'*')}catch(_){}}
+function txt(x){return x&&x.message?(x.name&&x.name!=='Error'?x.name+': ':'')+x.message:String(x)}
+addEventListener('error',function(e){if(!e.lineno&&e.message==='Script error.')return;var x=e.error;
+ rep(x&&x.message?txt(x):e.message,x&&x.stack||(e.lineno?'at '+location.pathname+':'+e.lineno+':'+(e.colno|0):''))});
+addEventListener('unhandledrejection',function(e){var r=e.reason;if(r&&(r.status===0||r.status>=500))return;
+ rep('Unhandled rejection: '+txt(r),r&&r.stack)});
 apply(init.vars);})();</script>
 <style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;background:transparent;color:var(--mx-fg);font:13px/1.45 Inter,system-ui,sans-serif}</style>
 """

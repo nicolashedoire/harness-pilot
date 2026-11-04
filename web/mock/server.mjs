@@ -160,8 +160,13 @@ function buildState(scenario) {
     widgetUpdated: {},
     uptimeFixed: false,
     extensions: [
-      { id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', enabled: true, error: null, has_api: true },
-      { id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0', enabled: true, error: null, has_api: true },
+      { id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', enabled: true, error: null, has_api: true,
+        runtime_errors: [{ where: 'card', message: 'URLError: <urlopen error timed out>', stack: 'api.py:14 in card: orders = fetch_orders(token)\napi.py:6 in fetch_orders: with urllib.request.urlopen(req, timeout=10) as r:', at: t - 25 * MIN, count: 3 }] },
+      { id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0', enabled: true, error: null, has_api: true,
+        runtime_errors: [
+          { where: 'page', message: "TypeError: Cannot read properties of undefined (reading 'map')", stack: "TypeError: Cannot read properties of undefined (reading 'map')\nat render (lib/list.js:12:24)\nat mount (page.js:31:5)", at: t - 6 * MIN, count: 1 },
+          { where: 'api', message: "KeyError: 'notes'", stack: "api.py:9 in handle: return {\"notes\": data[\"notes\"]}", at: t - 2 * HOUR, count: 2 },
+        ] },
       { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true },
     ],
     fs: new Map(),
@@ -4032,6 +4037,26 @@ R('PATCH', '/api/extensions/:id', ({ params, body }) => {
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
   if (body.enabled && e.error) fail(409, 'broken', `Cannot enable: ${e.error}`)
   e.enabled = body.enabled
+  bus('extensions')
+  return { ok: true }
+})
+// Runtime errors (exterrors.py): the browser's reports, kept 10 per extension, the same message bumps its count
+R('POST', '/api/extensions/:id/errors', ({ params, body }) => {
+  const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', `no extension ${params.id}`)
+  if (!['widget', 'page'].includes(body.where)) fail(422, 'invalid', 'where must be widget or page')
+  const message = String(body.message || '').slice(0, 500)
+  if (!message) fail(422, 'invalid', 'message is required')
+  const stack = String(body.stack || '').split('\n').map((l) => l.trim().replace(/https?:\/\/[^/\s)]+\/ext\/[^/]+\/(?:@[^/]+\/)?/g, '')).filter(Boolean).slice(0, 6).join('\n')
+  const errs = (e.runtime_errors ||= [])
+  if (errs[0] && errs[0].where === body.where && errs[0].message === message) Object.assign(errs[0], { at: now(), count: errs[0].count + 1, stack: stack || errs[0].stack })
+  else errs.unshift({ where: body.where, message, stack, at: now(), count: 1 })
+  errs.splice(10)
+  bus('extensions')
+  return { ok: true, error: errs[0] }
+})
+R('DELETE', '/api/extensions/:id/errors', ({ params }) => {
+  const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', `no extension ${params.id}`)
+  e.runtime_errors = []
   bus('extensions')
   return { ok: true }
 })

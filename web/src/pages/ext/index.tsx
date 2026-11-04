@@ -3,12 +3,16 @@
 // The page is mounted inside `.mx-ext`, where the shared UI kit (`/ext/ui-kit.css`, `ui-*` classes) applies.
 //   ctx.api('notes') → /api/ext/<id>/notes, JSON body + X-Maxxing header on non-GET, resolves to parsed JSON,
 //   rejects with an Error on HTTP errors.
+// What breaks in the page is reported to the server as runtime errors of the extension (features/extensions/report.ts):
+// a module that fails to load, a mount() that throws, and while it is open the window's uncaught errors whose script is
+// under /ext/<id>/ and the unhandled rejections from its code or its ctx.api() (except a 5xx: the server recorded it).
 import * as React from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { useNavigate, useParams } from 'react-router'
 import { Pin, PinOff, Puzzle, TriangleAlert } from 'lucide-react'
 import { request, seg } from '@/lib/api'
+import { describe, reportExtensionError, serverRecorded } from '@/features/extensions/report'
 import { useExtensions, usePinExtension } from '@/lib/queries'
 import { useUI, resolveTheme } from '@/stores/ui'
 import { useLang, useT, tDyn } from '@/i18n'
@@ -78,16 +82,25 @@ export default function ExtensionPage() {
 
   // The extensions list is a shell query (there at boot): wait for it to know the page's version.
   const version = exts ? (ext?.page_v ?? 0) : null
+  const known = !!ext
   React.useEffect(() => {
     const el = host.current
     if (!el || !id || version === null) return
     let cleanup: void | (() => void)
     let cancelled = false
+    let reported = false
+    const report = (message: string, stack = '') => {
+      reported = true
+      if (known) reportExtensionError(id, 'page', message, stack)
+    }
     setState({ status: 'loading' })
     const ctx: ExtensionContext = {
       id,
-      api: (path, opts = {}) =>
-        request(`/api/ext/${seg(id)}/${path.replace(/^\/+/, '')}`, { method: opts.method || 'GET', body: opts.method && opts.method !== 'GET' ? (opts.body ?? {}) : undefined, query: opts.query }),
+      api: <T,>(path: string, opts: Parameters<ExtensionContext['api']>[1] = {}) =>
+        request<T>(`/api/ext/${seg(id)}/${path.replace(/^\/+/, '')}`, { method: opts.method || 'GET', body: opts.method && opts.method !== 'GET' ? (opts.body ?? {}) : undefined, query: opts.query }).catch((e: unknown) => {
+          if (e && typeof e === 'object') (e as { mxExt?: string }).mxExt = id // left unhandled: the page's error
+          throw e
+        }),
       navigate: (to) => navigate(to),
       theme,
       lang,
@@ -102,13 +115,27 @@ export default function ExtensionPage() {
       .then((mod: { mount?: Mount; default?: { mount?: Mount } }) => {
         if (cancelled) return
         const mount = mod.mount || mod.default?.mount
-        if (typeof mount !== 'function') throw new Error(t('ext.noMount'))
+        if (typeof mount !== 'function') {
+          report('page.js does not export mount(el, ctx)')
+          throw new Error(t('ext.noMount'))
+        }
         el.replaceChildren()
-        cleanup = mount(el, ctx)
+        try {
+          cleanup = mount(el, ctx)
+        } catch (e) {
+          const d = describe(e)
+          report(d.message, d.stack)
+          throw e
+        }
         setState({ status: 'ready' })
       })
       .catch((e: unknown) => {
-        if (!cancelled) setState({ status: 'error', error: e instanceof Error ? e.message : String(e) })
+        if (cancelled) return
+        setState({ status: 'error', error: e instanceof Error ? e.message : String(e) })
+        if (!reported) {
+          const d = describe(e) // the module (or one it imports) did not load: missing, not served, a syntax error
+          report(d.message, d.stack)
+        }
       })
     return () => {
       cancelled = true
@@ -119,7 +146,32 @@ export default function ExtensionPage() {
       }
       el.replaceChildren()
     }
-  }, [id, version, theme, lang, navigate, t, attempt])
+  }, [id, version, known, theme, lang, navigate, t, attempt])
+
+  // While the page is open: the window's errors from its own modules, and rejections from its code or its ctx.api().
+  React.useEffect(() => {
+    if (!id || !known) return
+    const mine = `/ext/${encodeURIComponent(id)}/`
+    const ours = (s: unknown) => typeof s === 'string' && s.includes(mine)
+    const onError = (e: ErrorEvent) => {
+      if (!ours(e.filename) && !ours((e.error as Error | undefined)?.stack)) return
+      const d = e.error ? describe(e.error) : { message: e.message, stack: '' }
+      reportExtensionError(id, 'page', d.message || e.message, d.stack || `at ${e.filename}:${e.lineno}:${e.colno}`)
+    }
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const r = e.reason as { mxExt?: string; stack?: unknown } | null | undefined
+      if (!(r && typeof r === 'object' && r.mxExt === id) && !ours(r?.stack)) return
+      if (serverRecorded(r)) return
+      const d = describe(r)
+      reportExtensionError(id, 'page', `Unhandled rejection: ${d.message}`, d.stack)
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
+    }
+  }, [id, known])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
