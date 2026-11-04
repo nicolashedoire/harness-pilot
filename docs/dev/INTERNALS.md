@@ -549,8 +549,8 @@ cron jobs through their own modules, no copy of their data).
   (`approval.by: "user"`); an approval or a rollback first keeps them as a `direct` version, so nothing is lost.
 - **Migration**: the first `refresh()` after the Atelier exists (`<state>/atelier/state.json` without `migrated_at`)
   records every extension folder as v1, `approval.by: "migration"`, origin unknown; later, a folder with no record
-  (written outside the Atelier) gets v1 with `approval.by: null` and `unreviewed`. Pins written by `blocks.pin` and
-  extensions installed by packs are recorded as approved by the user (`origin.agent: "user"`).
+  (written outside the Atelier) gets v1 with `approval.by: null` and `unreviewed`. Pins written by `blocks.pin` are
+  recorded as approved by the user (`origin.agent: "user"`).
 - **Retention** (`prune()`): versions older than config `atelier.keep_days` (90) beyond the `keep_versions` (10) newest
   go, never the active one nor a pending draft's base; decided drafts after 30 days; then unreferenced objects.
   After each approval and from the daily server loop.

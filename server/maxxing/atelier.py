@@ -1260,7 +1260,7 @@ def change_prompt(rec: dict, message: str) -> str:
             f"{message.strip()}\n\n"
             f"Make the change in the draft folder {folder} (if it is gone, `pilot ext draft {eid} --from-draft {did}` "
             f"puts this proposal's files back), check it with `pilot ext check {eid} --dir {folder}`, then run "
-            f"`pilot ext propose {eid} --summary \"...\"`. Nothing is "
+            f"`pilot ext propose {eid} --summary \"...\"` and show the new proposal block it prints. Nothing is "
             "active until the user approves it.")
 
 
