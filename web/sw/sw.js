@@ -151,7 +151,8 @@ self.addEventListener('push', (event) => {
         d = { title: event.data ? event.data.text() : '' }
       }
       const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      if (wins.some((w) => w.focused && w.visibilityState === 'visible')) return // the app shows it
+      // the app shows feed events itself; a test from Settings (no feed row) must reach the system notifications
+      if (d.kind !== 'push.test' && wins.some((w) => w.focused && w.visibilityState === 'visible')) return
       const p = await notifyPrefs()
       const params = d.params || {}
       const title = (p && p.titles && fill(p.titles[d.kind], params)) || d.title || 'harness-pilot'

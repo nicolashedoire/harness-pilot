@@ -388,10 +388,19 @@ def dispatch() -> int:
         if _cursor["id"] is None:
             _cursor["id"] = feed.max_id()
             return 0
-        rows = feed.new_since(_cursor["id"], DISPATCH_BATCH)
-        if not rows:
-            return 0
-        _cursor["id"] = rows[-1]["id"]
+    sent = 0
+    while True:                                    # the watcher only calls again when the feed changes: drain it
+        with _cursor_lock:
+            rows = feed.new_since(_cursor["id"], DISPATCH_BATCH)
+            if not rows:
+                return sent
+            _cursor["id"] = rows[-1]["id"]
+        sent += _send_rows(rows)
+        if len(rows) < DISPATCH_BATCH:
+            return sent
+
+
+def _send_rows(rows: list[dict]) -> int:
     subs = _load()
     if not subs or not available():
         return 0

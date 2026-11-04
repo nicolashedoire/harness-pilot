@@ -13,8 +13,8 @@
  * nothing when a window of the app is focused (the app shows its own notice). `notificationclick` runs an action
  * (a link, or one of the allowed POSTs) or opens the event's page in the running app.
  */
-const VERSION = "4add4a5d6c03"
-const PRECACHE = ["/assets/index-BhaTuZcy.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-BjZFBJsM.js","/assets/vendor-router-B8kuLWb3.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-B1uF2AJN.js","/assets/vendor-query-CthOliPc.js","/assets/files-9SsQe-Q7.js","/assets/queries-V1QSZC9q.js","/assets/bot-hzNgFhmR.js","/assets/wrench-98LzEh96.js","/assets/sparkles-Dih1XyRy.js","/assets/util-eqe5eqod.js","/assets/file-text-B6PjYiVY.js","/assets/globe-BS9u_1aa.js","/assets/plug-UuAAbA6Q.js","/assets/search-D5MJmdG8.js","/assets/viewerStore-BgZC37iU.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-UmmwnOSM.js","/assets/button-Bie983e2.js","/assets/sensitive-BpkWDCY8.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/index-qGM2xDDK.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
+const VERSION = "f025445b15c0"
+const PRECACHE = ["/assets/index-w4J4qWjU.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-BjZFBJsM.js","/assets/vendor-router-B8kuLWb3.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-B1uF2AJN.js","/assets/vendor-query-CthOliPc.js","/assets/files-9SsQe-Q7.js","/assets/queries-V1QSZC9q.js","/assets/bot-hzNgFhmR.js","/assets/wrench-98LzEh96.js","/assets/sparkles-Dih1XyRy.js","/assets/util-eqe5eqod.js","/assets/file-text-B6PjYiVY.js","/assets/globe-BS9u_1aa.js","/assets/plug-UuAAbA6Q.js","/assets/search-D5MJmdG8.js","/assets/viewerStore-BgZC37iU.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-UmmwnOSM.js","/assets/button-Bie983e2.js","/assets/sensitive-BpkWDCY8.js","/assets/store-B_lTs0ox.js","/assets/format-BNVh5Q10.js","/assets/index-D7o-rqH5.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
 const SHELL = `mx-shell-${VERSION}`
 const ASSETS = `mx-assets-${VERSION}`
 const OFFLINE = '/offline.html'
@@ -151,7 +151,8 @@ self.addEventListener('push', (event) => {
         d = { title: event.data ? event.data.text() : '' }
       }
       const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      if (wins.some((w) => w.focused && w.visibilityState === 'visible')) return // the app shows it
+      // the app shows feed events itself; a test from Settings (no feed row) must reach the system notifications
+      if (d.kind !== 'push.test' && wins.some((w) => w.focused && w.visibilityState === 'visible')) return
       const p = await notifyPrefs()
       const params = d.params || {}
       const title = (p && p.titles && fill(p.titles[d.kind], params)) || d.title || 'harness-pilot'
