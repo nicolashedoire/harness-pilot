@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
 - `SettingsCard` (`pages/settings/sections/ui.tsx`): `children` optional; without them the description is the card's text (no body, the header takes the bottom padding). Backup's *What this backup covers* uses it instead of a paragraph in the body, whose top padding made a larger gap under the title than in the other cards.
 - Settings -> Companions: a failed `GET /api/companions` shows `EmptyState` (tone error, `companions.loadError` + `errorMessage` as the description, Retry) instead of the form and the runs card; a failed review uses the same state. Native `<select>`/`<textarea>` replaced by the shared `Select`, `Textarea` and `FormField` (Radix `Select` with an empty value shows the topic placeholder).

@@ -155,8 +155,10 @@ In a folder (the Files page list or grid, and the folder grid of the file viewer
 
 ## Space labels
 
-- Mark a file or folder as **Personal**, **Agents**, **Shared** or **Unclassified** from its menu (*Space*); the label shows
-  next to its name. Projects and topics get the same menu in the session list.
+- Mark a file or folder as **Personal**, **Agents**, **Shared** or **Unclassified** from its menu (*Space*), which ticks
+  the current label. **Personal**, **Agents** and **Shared** show as a badge next to the name; **Unclassified** (the
+  default) shows none, so an unclassified workspace stays uncluttered. Projects and topics get the same menu in the
+  session list.
 - Labels help you organize: they do not prove who made an item and do not restrict access.
 - Existing items start unclassified, and children do not inherit their parent's label. A label follows renames and
   moves made in the app and survives edits saved in the app; an item replaced or moved outside the app may need to be
