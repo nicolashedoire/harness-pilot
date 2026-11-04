@@ -13,6 +13,14 @@ Single source of truth between `server/` and `web/`. Change it here first, then 
   in the temp dir (where the server spools uploads, often a small tmpfs) with min(`upload_min_free_mb`, 128 MB)
   to spare. The full `upload_min_free_mb` reserve (default 1024) is checked on the destination disk per file.
   Both keys are read from config.json on every request (no restart).
+- Every request (HTTP and WebSocket, the app page included) is first checked against DNS rebinding
+  (`maxxing/hostcheck.py`): its `Host` (port ignored, case and a trailing dot ignored) must be an IP address
+  (127.0.0.1, ::1, the Tailscale or LAN address), `localhost` or a `*.localhost` name, a Tailscale MagicDNS `*.ts.net`
+  or mDNS `*.local` name, the host of config
+  `public_url` (the domain behind Caddy), config `bind` when it is a name, or a name of config `allowed_hosts`
+  (list) or `MAXXING_ALLOWED_HOSTS` (comma separated; `*` turns the check off). A request without `Host` passes.
+  Otherwise `421 {"error":"bad_host", message}` (WebSocket: closed before it is accepted). Read on every
+  request (no restart).
 - Other request bodies (JSON, forms...) are capped before they are read (`maxxing/bodylimit.py`), on the declared
   `Content-Length` and, for a chunked body, while it streams: without a valid cookie a mutating request to a route
   that needs one gets `401 auth_required` before a byte is read; the public `/api/auth/*` routes check the CSRF header
