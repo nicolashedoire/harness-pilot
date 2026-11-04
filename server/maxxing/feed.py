@@ -87,6 +87,7 @@ KINDS: dict[str, tuple[str, str]] = {
     "signin.denied": ("security", "warning"),
     "webhook.refused": ("security", "warning"),
     "backup.restore_held": ("security", "warning"),
+    "extension.legacy_secrets": ("security", "info"),
     "instance_backup.copy_failed": ("system", "error"),
     "instance_backup.failed": ("system", "error"),
     "infra.down": ("infra", "error"),
