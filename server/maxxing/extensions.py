@@ -81,7 +81,8 @@ class Extension:
 
     @property
     def enabled(self) -> bool:
-        return self.id not in disabled_ids()
+        # Listing a restored instance must not import or run extension Python before review.
+        return not config.load_config().get('restore_hold') and self.id not in disabled_ids()
 
     def info(self) -> dict:
         return {"id": self.id, "name": self.label(), "type": self.type, "icon": self.icon,

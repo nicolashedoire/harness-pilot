@@ -825,7 +825,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 </div>
               )}
               {session && pausedOnLimit(session) && <PausedBanner session={session} />}
-              <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, providerName: session?.provider_name, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, session?.provider_name, settings?.timezone, claude?.models, running, dir, ws?.root])}>
+              <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, restoredFileRoots: settings?.restored_file_roots, providerName: session?.provider_name, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.restored_file_roots, session?.provider_name, settings?.timezone, claude?.models, running, dir, ws?.root])}>
                 {notFound ? (
                   <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
                     {t('sessions.deleted')}

@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Review pull requests from all channels in Settings → Pull requests, arrange prerequisites and approve an exact commit for integration. The queue starts paused and requires successful checks and repository rules; changed commits require another review. [Show me](#show:pull-requests)
+- Create a complete encrypted local instance archive in Settings → Backup, including conversations, attachments, projects, credentials and space labels. Restore into a separate copy, review its data, then explicitly enable its services and extensions. The GitHub memory backup remains a selected-file backup. [Show me](#show:backup-preview)
 - Companion roles now keep their chosen coding engine independently: use Claude Code, Codex or a trusted external engine installed as an extension. External engines also appear in new single-agent sessions, with their own names and token totals. Unsupported plan or file features are refused clearly. [Show me](#show:companions)
 - App-launched Codex sessions disable analytics and telemetry exporters. The web server also explicitly disables native request telemetry, including when inherited environment settings enable it. Local history, logs and usage statistics remain available.
 - The application now uses the blue crew companion as its icon across sign-in, the sidebar, browser tabs, offline pages and installed-app icons. Its identity stays consistent when the accent colour changes.

@@ -76,6 +76,20 @@ def resolve(path: str | None, *, follow: bool = True, new: bool = False) -> Path
     last part is a name to create, taken as typed."""
     root = _root()
     raw = Path(path) if path else root
+    # Keep historical absolute links in restored conversations usable, while retaining the normal root check.
+    for alias in sorted([item for item in config.load_config().get('restored_path_aliases') or [] if isinstance(item, dict)],
+                        key=lambda item: len(str(item.get('source', ''))), reverse=True):
+        if not isinstance(alias, dict):
+            continue
+        source, target = alias.get('source'), alias.get('target')
+        if not isinstance(source, str) or not isinstance(target, str) or not Path(source).is_absolute():
+            continue
+        try:
+            relative = raw.relative_to(source)
+        except ValueError:
+            continue
+        raw = Path(target) / relative
+        break
     if not raw.is_absolute():
         raise _err(400, "bad_path", "Paths must be absolute")
     raw = _unshow(raw.parent) / raw.name if new and raw.name else _unshow(raw)

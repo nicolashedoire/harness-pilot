@@ -844,6 +844,26 @@ optional `provider`; omitting it preserves the previous choice, defaulting to Co
 A coding companion needs `source-edit`. See [AGENT-PROVIDERS.md](AGENT-PROVIDERS.md) for the external
 executable protocol and trust model. Provider token totals use dynamic keys in `Stats.providers`.
 
+## Complete instance backup
+
+Authenticated endpoints under `/api/backup/instance` are independent of selective GitHub backups.
+All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persisted.
+
+| Method/path | Request | Result |
+| --- | --- | --- |
+| GET base | — | Data roots, size limit, `restore_hold`, export availability |
+| POST `/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
+| GET `/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
+| POST `/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
+| POST `/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command |
+| POST `/activate` | `{}` | Start deferred background services and exit recovered read-only mode |
+
+A full snapshot pauses pausable services and rejects concurrent HTTP mutations/WebSocket activity.
+Changed sources or active/queued sessions abort export. Restored instances defer service startup,
+allow authentication and reads, and reject mutations until explicit activation. Preview hashes are
+rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
+and recovery limits are documented in [the backup guide](../user/10-backup.md).
+
 ## Pull request integration queue
 
 All routes require owner authentication. Work runs off the event loop.

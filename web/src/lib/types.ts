@@ -543,6 +543,8 @@ export type Settings = {
   language: Language
   public_url: string
   files_root: string
+  /** Read-only historical roots accepted by the restored file API. */
+  restored_file_roots?: string[]
   presentation_default?: boolean
   usage_widget: boolean
   /** Settings -> Features: the Git & GitHub page (/git) and its sidebar entry */
