@@ -512,6 +512,7 @@ export const en = {
   'swarm.result': 'Reported result',
   'swarm.noResult': 'No result is available yet.',
   'swarm.loadEarlier': 'Load earlier messages',
+  'swarm.stopHint': 'Subagents run inside Claude\'s current turn: Claude Code cannot stop just one of them. Stop the session to interrupt the coordinator and all its subagents.',
   'summary.memory': 'Shared topic memory',
   'summary.memoryHelp': 'Review and edit this text before saving it to the topic’s memory.md. Codex reads it on its next turn; Claude loads it when starting a new thread. Nothing is saved automatically.',
   'summary.memoryReview': 'Review memory',
