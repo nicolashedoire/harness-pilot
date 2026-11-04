@@ -1842,6 +1842,73 @@ R('DELETE', '/api/tasks/:id', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- voice (server/maxxing/voice.py): speech-to-text on the server (local faster-whisper or Groq / OpenAI keys). The
+   mock never decodes audio: every recording gives the same sentence. An install takes about 6 s. */
+const VOICE_MODELS = [['tiny', 75], ['base', 142], ['small', 466], ['medium', 1530]]
+function voiceState() {
+  if (S.voice) return S.voice
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.voice = { settings: { engine: ready ? 'local' : 'off', model: 'small', language: 'auto', auto_send: false, direct: true }, installed: ready,
+    present: new Set(ready ? ['small'] : []), install: { state: 'idle', step: null, progress: null, model: null, message: '', error: null, at: null } }
+  return S.voice
+}
+function voiceStatus() {
+  const v = voiceState(), st = v.settings, inst = v.install
+  if (inst.state === 'running') { // a background job: dependencies first (when missing), then the model download
+    const p = Math.min(1, (now() - inst.at) / 6)
+    if (p >= 1) { v.installed = true; v.present.add(inst.model); Object.assign(inst, { state: 'done', step: null, progress: 1, message: `Model ${inst.model} ready` }) }
+    else Object.assign(inst, v.installed || p > 0.4 ? { step: 'model', progress: p, message: `Downloading ${inst.model}…` } : { step: 'deps', progress: null, message: 'Installing faster-whisper…' })
+  }
+  const keys = { groq: S.secrets.some((s) => s.name === 'GROQ_API_KEY'), openai: S.secrets.some((s) => s.name === 'OPENAI_API_KEY') }
+  const reason = st.engine === 'off' ? 'off' : st.engine === 'local' ? (v.installed && v.present.has(st.model) ? null : 'not_installed') : keys[st.engine] ? null : 'no_key'
+  return { settings: { ...st }, ready: !reason, reason, ffmpeg: true,
+    local: { installed: v.installed, loaded: v.installed && reason === null && st.engine === 'local' ? st.model : null, recommended: 'small', ram_gb: 7.8, cpus: 4,
+      models: VOICE_MODELS.map(([id, size_mb]) => ({ id, size_mb, present: v.present.has(id) })) },
+    keys, key_names: { groq: 'GROQ_API_KEY', openai: 'OPENAI_API_KEY' }, install: { ...inst }, max_seconds: 900 }
+}
+const formField = (raw, name) => { const m = raw.toString('latin1').match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`)); return m ? Buffer.from(m[1], 'latin1').toString('utf8') : null }
+R('GET', '/api/voice', () => voiceStatus())
+R('PUT', '/api/voice/settings', ({ body }) => {
+  const st = voiceState().settings
+  if (body.engine !== undefined && !['off', 'local', 'groq', 'openai'].includes(body.engine)) fail(422, 'invalid', 'engine')
+  if (body.model !== undefined && !VOICE_MODELS.some(([id]) => id === body.model)) fail(422, 'invalid', 'model')
+  if (body.language !== undefined && body.language !== 'auto' && !/^[a-z]{2,3}$/.test(body.language)) fail(400, 'invalid_language', 'Use auto or an ISO 639-1 code')
+  for (const k of ['engine', 'model', 'language', 'auto_send', 'direct']) if (body[k] !== undefined) st[k] = body[k]
+  return { ok: true, settings: { ...st } }
+})
+R('POST', '/api/voice/install', ({ body }) => {
+  const v = voiceState()
+  if (v.install.state === 'running') fail(409, 'busy', 'An install is already running')
+  const model = body.model || v.settings.model
+  if (!VOICE_MODELS.some(([id]) => id === model)) fail(422, 'invalid', 'model')
+  v.install = { state: 'running', step: v.installed ? 'model' : 'deps', progress: v.installed ? 0 : null, model, message: '', error: null, at: now() }
+  return voiceStatus().install
+})
+R('DELETE', '/api/voice/models/:model', ({ params }) => {
+  if (!VOICE_MODELS.some(([id]) => id === params.model)) fail(422, 'invalid', 'model')
+  voiceState().present.delete(params.model)
+  return { ok: true }
+})
+R('POST', '/api/voice/transcribe', async ({ req, rawBody }) => {
+  const status = voiceStatus()
+  if (status.reason === 'off') fail(409, 'voice_off', 'Voice messages are turned off in Settings')
+  if (status.reason) fail(503, status.reason, status.reason === 'no_key' ? 'No API key for this engine in Secrets' : 'The local engine is not installed')
+  const [audio] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!audio) fail(422, 'bad_audio', 'No audio file in the request')
+  if (audio.data.length < 200) fail(422, 'empty_audio', 'Nothing was heard in this recording')
+  if (audio.data.length > 100 * 1024 * 1024) fail(413, 'too_large', 'Recordings are limited to 100 MB')
+  await sleep(900)
+  const topic = formField(rawBody, 'path'), lang = formField(rawBody, 'language') || status.settings.language
+  let audio_path = null
+  if (topic) {
+    const d = new Date(), ext = path.extname(audio.name) || '.webm'
+    audio_path = `${ROOT}/${topic}/attachments/voice/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}/voice-${Math.floor(now())}${ext}`
+    fsAdd(S, audio_path, audio.data, now(), audio.mime)
+  }
+  return { text: 'Draft a short reply thanking the client for the feedback, and propose a call next Tuesday.', language: lang === 'auto' ? 'en' : lang,
+    duration_s: Math.max(1, Math.round(audio.data.length / 4000)), engine: status.settings.engine, model: status.settings.engine === 'local' ? status.settings.model : status.settings.engine === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-4o-transcribe', ms: 900, audio_path }
+})
+
 /* ---- crons */
 const CRON_FIELDS = ['name', 'schedule', 'kind', 'command', 'topic_path', 'prompt', 'model', 'reuse_session', 'enabled', 'notify', 'timeout_s']
 function applyCron(c, body) {
