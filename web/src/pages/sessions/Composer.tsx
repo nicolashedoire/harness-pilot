@@ -1,7 +1,7 @@
 // Message composer: autosize textarea, drafts, attachments (button / drop / paste), queue stack, quotes,
 // send / stop. Enter sends, Shift+Enter = newline, Ctrl/⌘+Enter sends, Esc blurs.
 import * as React from 'react'
-import { ArrowUp, Clock, CornerDownRight, FileText, MessageCircleQuestion, Paperclip, Pencil, Quote, Square, X } from 'lucide-react'
+import { ArrowUp, Clock, CornerDownRight, FileText, Lock, MessageCircleQuestion, Paperclip, Pencil, Quote, Square, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { loadGroups, useT } from '@/i18n'
 import { Button, Sensitive, Spinner, Textarea, Tooltip, toast } from '@/components/ui'
@@ -32,6 +32,9 @@ export const Composer = React.forwardRef<ComposerHandle, {
   immediateIntervention?: boolean
   /** Reason the composer cannot send (shown inline); null = enabled. */
   disabledReason?: string | null
+  /** Locked (a mixed team at work): one row - a lock, `text` and `action` - instead of the box. Nothing can be sent;
+   *  the draft, its files and quotes are kept and come back when it unlocks. */
+  locked?: { text: React.ReactNode; action?: React.ReactNode } | null
   /** Reason files cannot be attached (a mode that takes written messages only): the attach button is off and says it,
    *  dropped / pasted files are refused, a long paste stays text. null = files accepted. */
   attachDisabledReason?: string | null
@@ -70,7 +73,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
   /** Lines the text grows to before it scrolls (fewer in a small grid pane, so the conversation stays visible). */
   maxRows?: number
 }>(function Composer(props, ref) {
-  const { colKey, draftKey, topicPath, running, immediateIntervention, disabledReason, attachDisabledReason, queueCount = 0, queued = [], queueItems = NO_ITEMS, onClearQueue, clearingQueue, onSteer, steering, steerPending, onTakeQueue, onAsk, asking, onSend, onStop, stopping, toolbar, toolbarEnd, hint, notice, placeholder, autoFocus, maxRows = 12 } = props
+  const { colKey, draftKey, topicPath, running, immediateIntervention, disabledReason, locked, attachDisabledReason, queueCount = 0, queued = [], queueItems = NO_ITEMS, onClearQueue, clearingQueue, onSteer, steering, steerPending, onTakeQueue, onAsk, asking, onSend, onStop, stopping, toolbar, toolbarEnd, hint, notice, placeholder, autoFocus, maxRows = 12 } = props
   const t = useT()
   const [text, setText] = React.useState(() => loadDraft(draftKey))
   const [quotes, setQuotes] = React.useState<string[]>(() => loadQuotes(draftKey))
@@ -304,7 +307,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
   const empty = !text.trim() && ready.length === 0 && quotes.length === 0
   // files attached before switching to a mode that takes none: they must be removed first
   const attachBlocked = attachDisabledReason && atts.length ? attachDisabledReason : null
-  const blocked = disabledReason || attachBlocked || uploading || !!failedUpload
+  const blocked = !!locked || disabledReason || attachBlocked || uploading || !!failedUpload
   const reason = disabledReason || attachBlocked || (uploading ? t('sessions.composer.uploading') : failedUpload ? t('sessions.uploadFailed', { name: failedUpload.name }) : null)
 
   // Sends are chained (never dropped, never reordered) — typing the next message while the previous
@@ -360,7 +363,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
 
   // Voice message sent directly: queued like the other sends (order kept); refused = the recording comes back attached.
   const onVoiceMessage = (file: File) => {
-    if (!props.onSendVoice || disabledReason) {
+    if (!props.onSendVoice || disabledReason || locked) {
       addFiles([file])
       return
     }
@@ -651,9 +654,16 @@ export const Composer = React.forwardRef<ComposerHandle, {
           className={cn(
             // a neutral frame: the focus darkens it, the accent stays for the send button
             'relative z-10 rounded-2xl border border-foreground/15 bg-card shadow-xs transition-[border-color] focus-within:border-foreground/35',
-            disabledReason && 'opacity-80',
+            disabledReason && !locked && 'opacity-80',
           )}
         >
+          {locked ? (
+            <div className="flex min-h-12 flex-wrap items-center gap-x-2.5 gap-y-2 px-3.5 py-2.5 text-[13px] text-muted-foreground" role="status" data-testid="composer-locked">
+              <Lock className="size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 basis-48">{locked.text}</span>
+              {locked.action}
+            </div>
+          ) : (<>
           {atts.length > 0 && (
             // Many files: a small scrolling strip (two rows) instead of a composer that eats the conversation.
             <div ref={attBox} data-testid="composer-attachments" className="flex max-h-[6.75rem] flex-wrap gap-1.5 overflow-y-auto overscroll-contain px-2.5 pt-2.5 [scrollbar-width:thin]">
@@ -710,9 +720,10 @@ export const Composer = React.forwardRef<ComposerHandle, {
               </Tooltip>
             </div>
           </div>
+          </>)}
         </div>
-        {reason && <p className="mt-1 truncate text-[11px] text-muted-foreground sm:hidden">{reason}</p>}
-        {hint && !reason && <p className="mt-2 truncate text-center text-[11px] text-muted-foreground max-md:hidden pointer-coarse:hidden">{hint}</p>}
+        {reason && !locked && <p className="mt-1 truncate text-[11px] text-muted-foreground sm:hidden">{reason}</p>}
+        {hint && !reason && !locked && <p className="mt-2 truncate text-center text-[11px] text-muted-foreground max-md:hidden pointer-coarse:hidden">{hint}</p>}
       </div>
     </div>
   )
