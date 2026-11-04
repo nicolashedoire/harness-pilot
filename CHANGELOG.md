@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- On Telegram, a message sent while the previous answer was still arriving could leave the status message of its own turn stuck on "Working…" after the final summary, with "typing…" shown after the answer. Its turn now has a single status, which ends on the summary.
 - Agents use the current `pilot` command in the workspace instructions retained from older installations, including `pilot doctor`. Startup refreshes recognized product instructions while preserving your custom text; existing conversation messages stay in the history.
 
 - **Protect the secrets** (Settings → Claude, on by default) now covers Codex sessions too: Codex's sandbox refuses to read or change the server's secrets file and your SSH keys (`~/.ssh`), for every command Codex runs, scripts included. Checked on macOS and Linux. MCP servers stay outside Codex's sandbox. On a Linux machine where Codex's sandbox cannot start, a Codex turn now stops with that error; turning the setting off brings the old behaviour back.
