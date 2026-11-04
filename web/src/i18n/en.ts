@@ -3681,6 +3681,7 @@ export const en = {
   'convx.detail.model': 'Model',
   'convx.detail.tokens': 'Tokens',
   'convx.detail.tokensValue': '{input} in · {output} out',
+  'convx.planDuo': 'Approve: the agent whose turn is next implements the latest plan, then the discussion pauses; Resume lets the other agent review the work.',
   'convx.handoffDuo': 'harness-pilot summarises the exchanges, then a new discussion with the same objective, roles, models and limits starts from that summary for both agents, and this one is archived. A paused discussion stays paused, ready to resume on its next reply.',
   'convx.detail.cache': 'Cache',
   'conv.copy': 'Copy the reply',
