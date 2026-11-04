@@ -848,6 +848,16 @@ DraftFile = {path, status: "added"|"changed"|"removed"|"same", size: int|null, o
              // only, 200 kB at most then truncated); null for a binary file or a "same" one
 ```
 
+**Read-only kinds** (`maxxing/atelier_kinds.py`): listed as they are, never versioned (`versions: 0`, `actions: []`,
+rollback `422 not_versioned`); provenance only where it is known. `theme` = a saved theme (`themes.json`): `active` when
+it is the applied palette, else `disabled`; `source` (`created` by the theme generator, `imported`, `received`,
+`custom`). `skill` = a folder of `<workspace>/.claude/skills` or `<workspace>/.agents/skills` (product skills left out):
+`agents` (`["claude"]`, `["claude", "codex"]` once mirrored for Codex, `["codex"]`), `description`, `path`.
+`customization` = `pilot custom list` (`description` = its why, `files_changed`): `review` while a pending update
+conflicts on one of its files (`error.where: "check"`, the target version and the files). `cron` = a scheduled job:
+`disabled` when off, `error` when its last run failed (`error.where: "run"`), `description` = its schedule in words,
+`job_kind`. Their detail has no versions, history, drafts nor files.
+
 **Static check.** A draft is checked without running any of its code (it is not approved): manifest.json /
 block.json as the server loads them, `api.py` compiled (syntax only, never imported), `node --check` of `page.js`,
 the modules it imports and the inline scripts of `widget.html` / the block entry, the document checks of

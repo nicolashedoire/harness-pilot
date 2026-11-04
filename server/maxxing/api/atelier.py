@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from .. import atelier, bus, config, extensions, extfix
+from .. import atelier, atelier_kinds, bus, config, extensions, extfix
 from ..security import require_auth
 
 router = APIRouter(tags=["atelier"], dependencies=[Depends(require_auth)])
@@ -297,7 +297,7 @@ async def _on_turn_end(session: dict, _result: Any = None) -> None:
 
 async def _watch() -> None:
     last = await asyncio.to_thread(atelier.rev)
-    checked = 0.0
+    checked = mirrored = 0.0
     while True:
         await asyncio.sleep(WATCH_S)
         try:
@@ -305,6 +305,9 @@ async def _watch() -> None:
             if cur != last:
                 last = cur
                 _changed(True)
+            if time.time() - mirrored > 300 and not config.load_config().get("restore_hold"):
+                mirrored = time.time()                   # workspace skills for Codex too
+                await asyncio.to_thread(atelier_kinds.mirror_skills)
             if time.time() - checked > 3600:            # retention: once a day (checked every hour)
                 checked = time.time()
                 if await asyncio.to_thread(atelier.prune_due):
@@ -321,6 +324,8 @@ async def startup() -> None:
     if not config.load_config().get("restore_hold"):
         with contextlib.suppress(Exception):
             await asyncio.to_thread(atelier.refresh, True)
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(atelier_kinds.mirror_skills)
     _task = asyncio.create_task(_watch())
 
 

@@ -570,11 +570,21 @@ cron jobs through their own modules, no copy of their data).
   `422 not_versioned`); `version_detail(kind, id, n, against)` diffs blob contents (`diff_files`).
 - **Retention**: `prune(now)` runs inside `approve` and from the API watcher once a day (`prune_due`: `pruned_at` of
   `state.json` older than `PRUNE_EVERY_S`, checked every hour); it returns the counts dropped.
-- **Other kinds** (`items()`): themes = `themes.saved()` (active = the applied palette, else `disabled`; origin from
-  the entry's `source` / `from`); skills = `<workspace>/.claude/skills/*/SKILL.md` and `<workspace>/.agents/skills`
-  (product skills excluded; `agents` = which agent reads it); customizations = `customs.list_customs()` (`review`
-  while a pending update lists it in its conflicts); cron jobs = `crons.list_jobs()` (`disabled`, `error` after a
-  failed last run). Read-only: `actions` is empty, rollback is `422 not_versioned`.
+- **Other kinds** (`maxxing/atelier_kinds.py`, `items()` / `detail()`): themes = `themes.saved()` (active = the
+  applied palette by `themes._colours`, else `disabled`; origin only for `created` / `received` entries); skills =
+  `<workspace>/.claude/skills/*/SKILL.md` and `<workspace>/.agents/skills` (product skills excluded; `agents` = which
+  agent reads it); customizations = `customs.list_customs()` cached 30 s per `.git/HEAD` mtime (`review` while
+  `customs.pending()` is a `conflict` whose files touch it, or lists its title when it names no file); cron jobs =
+  `crons.list_jobs()` (`disabled`, `error` after a failed last run). Read-only: `actions` is empty, rollback is
+  `422 not_versioned`. One kind failing never hides the others.
+- **Workspace skills for Codex** (`atelier_kinds.mirror_skills()`): Codex reads its personal skills folder
+  (`cmd_core.codex_skills_target()`, where the product skills are) and `.agents/skills` from a session's folder up to
+  its Git root, never Claude's `.claude/skills`. Each `<workspace>/.claude/skills/<name>/` (not a product skill name, not
+  a link) is copied there with a marker `.pilot-workspace-skill` (= the source's stat signature: copied again when it
+  changes); a folder there without the marker (the user's own, a product skill) is never touched; a marked one whose
+  source is gone is removed. Run at the API's startup and every 5 minutes. Project-level skills
+  (`projects/<p>/.claude/skills`, loaded by Claude only in that project's topics) are not mirrored: in Codex's folder
+  they would reach every session - a known gap.
 - **Runner**: every turn's environment carries `MAXXING_SESSION` (the session id) and `MAXXING_AGENT` (`claude`,
   `codex`, `plugin:<id>`): Claude turns, Codex turns and agent plugin turns.
 - **Hooks in `extensions`**: `_load_one(d, load_code=False)` validates a folder without importing `api.py` (drafts;
