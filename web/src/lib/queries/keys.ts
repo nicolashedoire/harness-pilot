@@ -56,6 +56,7 @@ export const qk = {
     changelog: ['system', 'changelog'] as const,
     preflight: ['system', 'preflight'] as const,
     mediaTools: ['system', 'media-tools'] as const,
+    localService: ['system', 'local-service'] as const,
   },
   memory: ['memory'] as const,
   stats: { tokens: ['stats', 'tokens'] as const },

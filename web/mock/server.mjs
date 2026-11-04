@@ -10,6 +10,7 @@
 // are listed in docs/dev/DESIGN.md, "Mock & visual checks").
 // Serves the built SPA from ../dist (web/dist). Scenarios: setup | login | onboarding | ready | maxxing.
 // maxxing: 30 more sessions that keep finishing at random (Maxxing mode); MOCK_PASSWORD=... asks for that password.
+// MOCK_LOCAL=mac|mac-terminal|mac-none|linux: a local installation (Settings -> System: background service, Git update).
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -29,6 +30,10 @@ const SETUP_TOKEN = 'dev-token'
 const DEFAULT_PASSWORD = 'password123'
 const SCENARIOS = ['setup', 'login', 'onboarding', 'ready', 'maxxing']
 const MOCK_PASSWORD = process.env.MOCK_PASSWORD || ''
+// MOCK_LOCAL=mac | mac-terminal | mac-none | linux: a local installation (scripts/dev-local.sh): no Update button,
+// services or logs; on a Mac, the background service runs the app / is installed but the app runs in a terminal / is
+// not installed (Settings -> System)
+const LOCAL = ['mac', 'mac-terminal', 'mac-none', 'linux'].includes(process.env.MOCK_LOCAL) ? process.env.MOCK_LOCAL : ''
 
 /* =================================================================== helpers */
 const now = () => Date.now() / 1000
@@ -3365,9 +3370,18 @@ R('GET', '/api/system/logs', ({ q }) => {
   const n = Math.min(2000, Math.max(1, parseInt(q.get('lines') || '200', 10) || 200))
   return { lines: journal(unit, n) }
 })
-R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3,
+R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3, local_mode: !!LOCAL,
   auto_update: { enabled: !!S.autoUpdate, tried: null, last_check: null }, report: S.updateReport ? { at: S.updateReport.at, version: S.updateReport.version, ok: S.updateReport.ok, problems: S.updateReport.problems } : null }))
-R('POST', '/api/system/update', () => ({ ok: true }))
+R('POST', '/api/system/update', () => (LOCAL ? fail(409, 'local_update_unsupported', 'Updates from the application are unavailable in local mode.') : { ok: true }))
+// the optional launchd agent of a local installation on macOS (server/maxxing/local_service.py), read-only
+const MAC_REPO = '/Users/me/harness-pilot'
+const macCmd = (a) => `bash ${MAC_REPO}/scripts/dev-local.sh service ${a}`
+const SERVICE_STARTED = now() - 2 * 3600 - 14 * 60
+R('GET', '/api/system/local-service', () => (!LOCAL.startsWith('mac') ? { supported: false } : {
+  supported: true, installed: LOCAL !== 'mac-none', label: 'local.harness-pilot', plist: '/Users/me/Library/LaunchAgents/local.harness-pilot.plist',
+  running: LOCAL === 'mac', since: LOCAL === 'mac' ? SERVICE_STARTED : null, logs: `${MAC_REPO}/.harness-pilot-local/logs`, url: 'http://127.0.0.1:8787',
+  commands: { ...Object.fromEntries(['install', 'status', 'restart', 'uninstall'].map((a) => [a, macCmd(a)])), update: `git -C ${MAC_REPO} pull` },
+}))
 R('GET', '/api/system/changelog', () => ({ version: VERSION, entries: [
   { version: VERSION, label: 'unreleased', current: true, body: '- **Bulk task actions**: select several tasks and change them at once.\n- **Notifications** when Claude finishes.' },
   { version: '1.9.0', label: '', current: false, body: '- Earlier release.' },
