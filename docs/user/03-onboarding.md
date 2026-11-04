@@ -41,4 +41,4 @@ For questions later, use the topic `system/help` (see [The system project](syste
 
 ## Local setup
 
-Use the commands in [Local installation](installation) to start the application and obtain its setup link. The inherited Linux server setup has not yet been validated for this repository.
+Use the commands in [Local installation](installation) to start the application and obtain its setup link. On a Linux server, the installer prints the setup link at the end.
