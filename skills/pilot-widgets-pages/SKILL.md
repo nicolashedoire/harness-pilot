@@ -7,6 +7,8 @@ description: Build a harness-pilot extension - a dashboard widget (a Card with s
 
 Extensions live in `<workspace>/extensions/<id>/` (workspace from `pilot status`, here
 `{{WORKSPACE}}`). Product updates never touch them and the memory backup includes them.
+The server runs their code as its own user, so a Codex session cannot write that folder (its sandbox keeps it
+read-only, whatever the mode): in Codex, say so and suggest a Claude session in the topic `system/harness`.
 
 - **widget**: `manifest.json` + `api.py` with `card(ctx)` returning a **Card** (JSON). The UI draws
   it with the built-in design system - no HTML/CSS to write, consistent look guaranteed.
