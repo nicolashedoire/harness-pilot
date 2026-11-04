@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- App identity: export all favicons, Apple and maskable icons deterministically from the committed companion master using web/scripts/gen-icons.py (Pillow). Refresh all accent manifests, service-worker/offline paths and legacy aliases with versioned asset names. The icon no longer changes with the accent. Source master and rebuilt web/dist are committed.
 - `skills/pilot-rea-investigation`: `scripts/rea.py` runs an external REA executable (`REA_BIN` or the user connection file, argv without a shell), `scripts/status.py` reports the runtime REA actually uses, `scripts/codex.py` is an opt-in resident-scoped Codex launcher exposing and preapproving two REA analysis tools over local MCP (agent sandbox and global configuration unchanged); `references/rea.md` documents connection and evidence handling; tests in `skills/pilot-rea-investigation/tests/`
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
