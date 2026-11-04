@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Settings → Stats marks the Claude plan usage as **Experimental** and explains where it comes from. When it cannot be read, Stats and the dashboard card say so in a plain sentence instead of showing an error code.
+- A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
 - Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
 - On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.
 - Local setup: `bash scripts/dev-local.sh cli <command>` runs the `pilot` command with the settings of your local app, for example `bash scripts/dev-local.sh cli doctor`. The guides no longer suggest `uv run pilot` in `server/`, which looked at the folder of a server installation instead of your local one.
