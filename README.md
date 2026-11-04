@@ -1,6 +1,6 @@
 # harness-pilot
 
-![An abstract pilot coordinating two luminous agents](docs/assets/project-cover.png)
+![A colorful troupe of AI companions working together](docs/assets/project-cover.png)
 
 **A self-hosted control room for Claude Code and OpenAI Codex.**
 
