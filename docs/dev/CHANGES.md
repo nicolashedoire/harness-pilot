@@ -3313,3 +3313,7 @@ Adapted at integration:
   as `models[].context_window` in `/api/claude/status`. Gauge order: model chosen for the next turn (if it
   differs) > window of the last turn > window known for that model > 200k, or 1M past 200k.
 - Browser preferences (local, `mx-ui`): `notifyDone`, `notifySound`, `badgePulse`.
+
+### Workspace space labels
+
+Projects, topics and files can be explicitly marked Personal, Agents, Shared or Unclassified from their action menus. Labels are organizational and do not establish authorship, inheritance, ownership or access restrictions. Existing items start unclassified. The label follows moves performed through the app and app file edits; items replaced or moved externally may need to be classified again. Labels are stored in local application state and are not currently part of the memory backup.

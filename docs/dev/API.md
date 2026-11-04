@@ -158,6 +158,10 @@ previous night — open streams then receive `reset`. **Event** (normalised):
 ## Global bus
 `GET /api/stream` — **SSE**, `event: invalidate`, `data: {"topics": ["sessions"|"workspace"|"tasks"|"crons"|"telegram"|"backup"|"health"|"extensions"|"trash"|"feed"]}`. The UI refetches the matching queries. Heartbeat every 15 s. Both SSE streams (this one and `/api/sessions/{id}/stream`) re-check their cookie before each frame (one stat of secrets.json while unchanged, a full check at least every 15 s): signed out, password changed, `sessions_not_before` or expired -> the stream ends without sending anything more (the browser's reconnect then gets `401`). Concurrent SSE streams are capped (both kinds together): 24 per sign-in, 96 in total (`streamcap`); beyond that `429 {"error":"too_many_streams"}` with `Retry-After: 5`. A session that appears, goes away or changes state/unread (turn started or ended) sends `sessions` and `workspace` together; the UI relies on that pair to refresh the workspace tree, the Claude status and the token stats.
 
+## Space labels
+
+`GET /api/space-labels` returns explicit labels keyed by absolute path. `PUT /api/space-labels` accepts `{path, label}` with `label` one of `personal`, `agents`, `shared`, or `unclassified`. Paths must exist inside the configured workspace or files root. Labels express the user's organization, not verified authorship, and do not grant or restrict access. Unlabelled or replaced items are `unclassified`; paths moved through the app retain their labels. Labels live in local state and are not automatically inherited by children.
+
 ## Files
 Every `path` is absolute and inside `files_root` (else `400 bad_path` / `403 forbidden`); a path with a NUL byte or a symlink loop is `400 bad_path`.
 | GET | `/api/files/list?path=` | – | `{path, parent, root, entries:[{name, path, type:"file"\|"dir", size, mtime, mime}]}` dirs first |

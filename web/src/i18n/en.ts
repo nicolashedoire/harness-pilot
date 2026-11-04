@@ -1,6 +1,12 @@
 // English dictionary — the reference. Every key must also exist in fr.ts (TypeScript enforces it).
 // Variables: {name}. Plurals: add `key#one` next to `key`; it is used when vars.count is 1 (fr: 0 or 1).
 export const en = {
+  "space.label": "Space",
+  "space.personal": "Personal",
+  "space.agents": "Agents",
+  "space.shared": "Shared",
+  "space.unclassified": "Unclassified",
+  "space.explanation": "These labels are organizational. They do not prove authorship or restrict access.",
   // common
   'common.add': 'Add',
   'common.back': 'Back',

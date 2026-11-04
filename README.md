@@ -60,3 +60,7 @@ You can support development through [PayPal](https://paypal.me/nicolashedoire). 
 ## License
 
 This repository is distributed under the [MIT License](LICENSE), with the original rights holders' permission. Copyright and historical license notices are preserved in [LICENSE.original](LICENSE.original). Third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Organizing spaces
+
+Use the action menu on a project, topic, or file to mark it as **Personal**, **Agents**, **Shared**, or **Unclassified**. These are organizational labels, not proof of authorship or access controls. Existing items start unclassified, and children do not inherit a parent's label. Labels are currently stored in local application state and are not included in the memory backup.
