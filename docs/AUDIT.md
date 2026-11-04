@@ -1,42 +1,28 @@
-# Audit de cohérence — 4 novembre 2026
+# Consistency audit — 4 November 2026
 
-Cet audit relève les écarts observés dans l'interface locale et le code. Il est un état des lieux de travail, pas une certification de toutes les fonctions. Les corrections seront cochées après vérification.
+This audit lists the gaps observed in the local interface and in the code. It is a working inventory, not a certification of every feature. Fixes are ticked after verification. Last reviewed against `CHANGELOG.md` and the pull requests merged up to #75.
 
-## Priorité 1 — informations ou destinations trompeuses
+## Priority 1 — misleading information or destinations
 
-- [x] **Licence et accueil** : la page Licence présente la licence MIT et l'accueil ne demande plus de clé entreprise. Les avis historiques sont conservés.
-- [ ] **Installation et mise à jour** : `install.sh` est désactivé tant que son parcours Linux et ses destinations héritées ne sont pas adaptés et validés. L'installation locale documentée dans le README utilise `scripts/dev-local.sh` ; les autres parcours n'ont pas encore été validés pour ce projet.
-- [x] **Profil et feedback** : le formulaire d'enregistrement hérité a été retiré, le retour utilisateur ouvre les issues de ce dépôt, et le service d'enregistrement d'origine est désactivé par défaut, y compris pour une ancienne configuration.
-- [x] **Dons** : le bouton ouvre le lien PayPal configuré par le propriétaire. Le bénéficiaire a été vérifié sur PayPal ; le lien peut être changé ou retiré dans Réglages → Soutenir.
+- [x] **License and welcome**: the License page presents the MIT license and the welcome flow no longer asks for an enterprise key. The historical notices are kept.
+- [ ] **Installation and update**: `install.sh` is disabled until its Linux path and its inherited destinations are adapted and validated. The local installation documented in the README uses `scripts/dev-local.sh`; the other paths have not yet been validated for this project. The tools page and the Settings page now say so (#69).
+- [x] **Profile and feedback**: the inherited registration form was removed, user feedback opens the issues of this repository, and the original registration service is disabled by default, including for an older configuration.
+- [x] **Donations**: the button opens the PayPal link configured by the owner. The recipient was verified on PayPal; the link can be changed or removed in Settings → Support.
 
-## Priorité 2 — Claude et Codex
+## Priority 2 — Claude and Codex
 
-- [x] **Statistiques** : le quota affiché concerne Claude uniquement. Sur macOS, le message distingue désormais une connexion possible via le trousseau de l'indisponibilité de la lecture du quota.
-- [ ] **Consommation** : les nouveaux tours sont maintenant ventilés par agent ; les tours plus anciens ou sans données restent non attribués. Les tarifs et quotas réels des abonnements ne peuvent pas être déduits d'un compteur de tokens ; il reste à examiner les données disponibles avant d'afficher un coût ou un quota Codex.
-- [x] **Montants Claude** : les montants affichés sont signalés comme indicatifs et ne prétendent plus déterminer la facturation. Les crédits d'utilisation peuvent entraîner des frais supplémentaires ; la facture réelle reste à consulter auprès d'Anthropic. Codex n'est pas inclus dans ce montant.
-- [ ] **Comptage Codex** : les tours antérieurs à la correction pouvaient compter deux fois les tokens mis en cache. Les nouveaux tours distinguent les catégories ; les chiffres historiques ne sont pas recalculés automatiquement.
-- [x] **Connexions et réglages** : une page Codex affiche le statut de la CLI et les limites actuelles ; la connexion a été vérifiée sur l'ordinateur.
-- [x] **Santé des agents** : si Codex est connecté, l'absence de connexion Claude est une information plutôt qu'une panne générale ; Claude reste nécessaire pour l'utiliser et pour les discussions à deux.
-- [x] **Synthèse des échanges** : le menu d'une session propose un résumé, les décisions et des actions à sélectionner avant toute création de tâche. L'essai réel a été effectué avec Codex ; le coût de cet appel n'est pas encore intégré aux statistiques.
-- [x] **Mémoire partagée** : depuis la synthèse, le texte peut être relu et modifié avant ajout explicite à la mémoire du sujet. Codex la lit au prochain tour ; Claude la charge normalement au démarrage d'un nouveau fil. Les écritures refusent les liens symboliques et une mémoire trop volumineuse pour Codex.
-- [x] **Connexions des sessions** : les conversations utilisent des requêtes courtes ; les onglets compatibles partagent une connexion d'actualisation et prennent le relais si elle ferme. Essai local avec plusieurs onglets ; les navigateurs sans coordination conservent une connexion par onglet.
-- [ ] **Fonctions inégales** : plusieurs pages et indications supposent Claude ; vérifier pour chaque parcours si Codex, le dialogue et Telegram sont réellement pris en charge et signaler les limites.
-- [ ] **Navigateur de l'ordinateur** : aucun binaire d'agent n'est publié dans le manifeste ; son URL héritée pointe vers le projet d'origine. Le code compile pour ce Mac et ses tests Go passent ; le jumelage et le pilotage réels restent à vérifier avant de proposer son installation.
+- [x] **Statistics**: the quota shown concerns Claude only. On macOS, the message now distinguishes a sign-in that may go through the keychain from the quota being unreadable.
+- [ ] **Usage**: new turns are now broken down by agent; older turns or turns without data stay unattributed. The real prices and quotas of the subscriptions cannot be deduced from a token counter; the available data still has to be examined before showing a Codex cost or quota.
+- [x] **Claude amounts**: the amounts shown are marked as indicative and no longer claim to determine billing. Usage credits can lead to extra charges; the real invoice is to be checked with Anthropic. Codex is not included in this amount.
+- [ ] **Codex counting**: turns before the fix could count cached tokens twice. New turns separate the categories; historical figures are not recalculated automatically.
+- [x] **Connections and settings**: a Codex page shows the status of the CLI and the current limits; the connection was verified on the computer.
+- [x] **Agent health**: when Codex is signed in, a missing Claude sign-in is information rather than a general failure; Claude is still needed to use it and for two-agent discussions.
+- [x] **Conversation summary**: a session's menu offers a summary, the decisions and actions to select before any task is created. The real test was done with Codex; the cost of this call is not yet included in the statistics.
+- [x] **Shared memory**: from the summary, the text can be reread and edited before it is explicitly added to the topic's memory. Codex reads it at its next turn; Claude loads it normally when a new thread starts. Writes refuse symbolic links and a memory too large for Codex.
+- [x] **Session connections**: conversations use short requests; compatible tabs share one update connection and take over if it closes. Tested locally with several tabs; browsers without coordination keep one connection per tab.
+- [ ] **Uneven features**: several pages and hints assume Claude; check for each path whether Codex, the discussion and Telegram are really supported, and state the limits. Progress: companion roles choose their engine and external engines appear in single-agent sessions, with unsupported plan or file features refused clearly (#44); the new session form explains each mode and turns off attachments, with the reason, for modes that take text only (#64).
+- [ ] **Computer browser**: no agent binary is published in the manifest; its inherited URL points to the original project. The code builds for this Mac and its Go tests pass; real pairing and control remain to be verified before offering its installation.
 
-## Priorité 3 — cohérence générale et documentation
+## Priority 3 — general consistency and documentation
 
-- [x] **Système sur macOS** : la mémoire estimée, la charge et le temps de fonctionnement sont relevés sur le Mac. Les données indisponibles ne sont plus affichées à zéro ; les commandes systemd et les mises à jour automatiques non validées sont masquées et bloquées en mode local.
-- [x] **Tableau de bord** : la carte serveur distingue les mesures indisponibles, les textes des cartes ne désignent plus les agents par l'ancien nom et le quota Claude n'affirme plus que le compte est déconnecté.
-- [x] **Tâches planifiées en local** : un planificateur indépendant de la crontab système lance les tâches pendant que l'application fonctionne. Les exécutions manquées et `@reboot` ne sont pas prises en charge ; les prompts planifiés utilisent Claude Code.
-- [x] **Reprise après interruption sur macOS** : sans `/proc`, l'identité d'un processus de tâche orphelin est vérifiée par sa date de démarrage lue avec `ps` (en UTC). L'exécution suivante de la tâche l'arrête seulement si c'est bien le même processus ; un numéro réutilisé par un autre programme n'est jamais tué. Essai réel sur ce Mac : `tests/test_cron_orphans.py`.
-- [ ] **Chemins internes hérités** : certains liens utilisent encore le sujet système historique. Une migration doit préserver les projets, les sessions et les extensions existants.
-- [ ] Reprendre les pages de documentation embarquées, les textes et liens hérités, ainsi que les notifications produites par le serveur, en conservant les attributions et licences applicables.
-- [x] **Documentation critique** : les pages mémoire, sécurité, Telegram et commandes distinguent les comportements vérifiés en local des fonctions héritées non encore validées.
-- [x] **Navigation de la documentation** : les liens entre guides, y compris les noms de fichiers Markdown et les renvois vers une section, sont utilisables dans l'application ; les licences et l'audit ouvrent les fichiers du dépôt.
-- [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
-- [x] **Tests isolés des tâches et sauvegardes** : 92 tests passent sur macOS avec un GitHub simulé ; un test de nom de fichier non UTF-8 est ignoré lorsque le système de fichiers l'interdit. Cela ne valide pas une sauvegarde réelle du compte utilisateur.
-- [x] **Aperçu et résultat de restauration** : la dernière sauvegarde peut être prévisualisée même sans historique local ; la version examinée est figée et les fichiers ignorés ou mis de côté sont affichés. Un essai isolé avec dépôt Git simulé vérifie le retour des métadonnées de projet, tâches et mémoire ainsi que la conservation des versions précédentes.
-- [x] **Sauvegarde complète d’instance** : une archive locale chiffrée inclut l’état, les conversations, pièces jointes, projets, fichiers et libellés. La restauration prépare une copie distincte en mode lecture seule, puis le propriétaire active ses services. Les tests vérifient authentification, historique, pièce jointe et activation de la copie. La sauvegarde mémoire GitHub reste sélective ; aucune donnée privée n’a été envoyée au compte GitHub réel dans cet essai.
-- [x] **Tests isolés Telegram** : 43 tests de format, de synchronisation et de connexion passent avec des services simulés ; une connexion et une discussion réelles avec un bot restent à vérifier.
-- [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions. Le formulaire de discussion à deux a été contrôlé visuellement en largeur mobile ; un premier contrôle de largeur a aussi été effectué sur les statistiques, Codex, Telegram, Soutenir et le guide des sessions. Les autres parcours restent à examiner.
-- [ ] Ajouter des tests ciblés pour les corrections, puis valider les parcours dans l'interface locale.
+- [x] **Recovery after an interruption on macOS**: without `/proc`, the identity of an orphaned task process is checked with its start date read by `ps` (in UTC). The next run of the task stops it only when it is still the same process; a process number reused by another program is never killed. Tested for real on this Mac: `tests/test_cron_orphans.py`.
