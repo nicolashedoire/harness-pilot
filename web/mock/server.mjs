@@ -2638,6 +2638,98 @@ R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => 
   return { url: run.pull_request.url, target: 'acme/platform' }
 })
 
+/* ---- Infra page (server/maxxing/infra): servers, sites, databases, buckets, workers and domains of this server, a
+   registered one and Cloudflare / Hostinger. infra-resources.json is the output of the real builder (infra/build.py)
+   on the fixture of server/tests/test_infra.py; the owner's annotations, servers and domains live in the mock state. */
+const INFRA_RESOURCES = JSON.parse(fs.readFileSync(path.join(__dirname, 'infra-resources.json'), 'utf8'))
+function infraState() {
+  if (S.infra) return S.infra
+  S.infra = { refreshing: false, generated_at: now() - 7 * MIN, registry: {}, domains: [], servers: [{ name: 'far', label: 'Far VPS', host: '198.51.100.9', user: 'root', port: 22, note: '' }] }
+  return S.infra
+}
+function infraView() {
+  const st = infraState(), t = now()
+  const remote = new Set(INFRA_RESOURCES.filter((r) => r.kind === 'server' && r.location !== 'local').map((r) => r.location)) // registered servers of the fixture
+  const resources = INFRA_RESOURCES.filter((r) => !remote.has(r.location) || st.servers.some((s) => s.name === r.location))
+    .concat(st.domains.map((name) => ({ id: `domain:${name}`, kind: 'domain', name, location: 'other', provider: 'rdap', urls: [`https://${name}/`], status: 'ok', status_detail: '',
+      details: { name, registrar: 'Example Registrar', expires: t + 200 * DAY, auto_renew: true, dns: [{ type: 'A', name, content: '203.0.113.5' }], name_servers: ['ns1.example.net', 'ns2.example.net'], sources: ['rdap', 'dns'] },
+      links: [], project: null, note: '', hidden: false, declared: true, missing: false })))
+    .map((r) => {
+      const out = { ...clone(r), ...(st.registry[r.id] || {}) }
+      if (r.id === 'domain:example.org') out.details.expires = t + 20 * DAY // expiring soon: the warn state
+      if (r.kind === 'server' && r.location !== 'local') { const s = st.servers.find((x) => x.name === r.location); if (s) out.name = s.label || s.name }
+      return out
+    })
+  return { enabled: true, refreshing: st.refreshing, error: null, refresh_min: 15, generated_at: st.generated_at, took_ms: 2840, harness_host: 'ui.example.com',
+    sources: { servers: Object.fromEntries([['local', { ok: true, error: null, took_ms: 410 }], ...st.servers.map((s) => [s.name, { ok: true, error: null, took_ms: 1220 }])]),
+      cloudflare: { connected: true, key: 'CLOUDFLARE_API_TOKEN', error: null, sections: { zones: 'ok', workers: 'ok', worker_domains: 'ok', pages: 'ok', r2: 'ok', d1: 'ok', registrar: 'missing_permission', dns: 'ok' } },
+      hostinger: { connected: true, key: 'HOSTINGER_API_TOKEN', sections: { domains: 'ok', vps: 'ok' } },
+      ...Object.fromEntries(['vercel', 'netlify', 'supabase', 'github'].map((p) => [p, { connected: p === 'github', key: p === 'github' ? 'GITHUB_TOKEN' : null, error: null, label: p[0].toUpperCase() + p.slice(1),
+        beta: p !== 'github', token_url: `https://${p}.example.com/account/tokens`, keys: [`${p.toUpperCase()}_TOKEN`], sections: p === 'github' ? { sites: 'ok' } : {} }])) },
+    resources, servers: clone(st.servers) }
+}
+R('GET', '/api/infra', () => infraView())
+R('POST', '/api/infra/refresh', () => {
+  const st = infraState()
+  if (st.refreshing) return { started: false, refreshing: true }
+  st.refreshing = true
+  const g = GEN
+  setTimeout(() => { if (g === GEN) { st.refreshing = false; st.generated_at = now(); bus('infra') } }, 2500).unref()
+  bus('infra')
+  return { started: true, refreshing: true }
+})
+R('POST', '/api/infra/annotate', ({ body }) => {
+  const st = infraState(), cur = { ...(st.registry[body.id] || {}) }
+  if (body.project !== undefined) cur.project = String(body.project || '').trim().replace(/^\/+|\/+$/g, '') || null
+  if (body.note !== undefined) cur.note = String(body.note || '').trim().slice(0, 500)
+  if (body.hidden !== undefined) cur.hidden = !!body.hidden
+  const kept = Object.fromEntries(Object.entries(cur).filter(([, v]) => v !== null && v !== '' && v !== false))
+  if (Object.keys(kept).length) st.registry[body.id] = kept; else delete st.registry[body.id]
+  bus('infra')
+  return kept
+})
+R('GET', '/api/infra/reserved', () => ({ names: ['api', 'ext', 'assets', 'icons', 'sessions', 'files', 'tasks', 'crons', 'settings', 'infra', 'git', 'team', 'x', 'login', 'sw.js', 'manifest', 'index.html', 'favicon'] }))
+R('POST', '/api/infra/servers/connect', async ({ body }) => {
+  const st = infraState()
+  const host = String(body.host || '').trim(), user = String(body.user || 'root'), port = Number(body.port || 22)
+  if (!host && !body.id) fail(422, 'not_found', 'Give a host or a Hostinger server')
+  if (st.servers.some((s) => s.host === host)) fail(409, 'exists', 'This server is already connected')
+  await sleep(1500)
+  if (!/^192\.0\.2\.\d+$/.test(host) && !body.id) // only the documentation range 192.0.2.0/24 "accepts" the key in the mock
+    return { connected: false, message: 'No key of this server works yet: add the Harness public key to the server, then try again.', public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com',
+      command: `mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com' >> ~/.ssh/authorized_keys` }
+  let name = (body.label || host || 'server').toLowerCase().replace(/[^a-z0-9-]+/g, '-').split('.')[0].slice(0, 36) || 'server'
+  for (let n = 2; st.servers.some((s) => s.name === name); n++) name = `${name.replace(/-\d+$/, '')}-${n}`
+  const s = { name, label: String(body.label || '').slice(0, 60), host: host || '203.0.113.40', user, port, note: '' }
+  st.servers.push(s); bus('infra')
+  return { connected: true, name: s.name, label: s.label, host: s.host, user: s.user, port: s.port, via: body.id ? 'added_key' : 'existing_key' }
+})
+R('POST', '/api/infra/servers/rename', ({ body }) => {
+  const s = infraState().servers.find((x) => x.name === body.name) || fail(404, 'not_found', `no server named ${body.name}`)
+  s.label = String(body.label || '').trim().slice(0, 60); bus('infra')
+  return { name: s.name, label: s.label }
+})
+R('POST', '/api/infra/servers/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.servers.some((x) => x.name === body.name)) fail(404, 'not_found', `no server named ${body.name}`)
+  st.servers = st.servers.filter((x) => x.name !== body.name); bus('infra')
+  return { removed: true }
+})
+R('POST', '/api/infra/domains', ({ body }) => {
+  const name = String(body.name || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name)) fail(400, 'invalid_domain', 'not a domain name (example: example.com)')
+  const st = infraState()
+  if (!st.domains.includes(name) && !INFRA_RESOURCES.some((r) => r.id === `domain:${name}`)) st.domains.push(name)
+  bus('infra')
+  return { name }
+})
+R('POST', '/api/infra/domains/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.domains.includes(body.name)) fail(404, 'not_found', 'This domain was not added by hand')
+  st.domains = st.domains.filter((x) => x !== body.name); bus('infra')
+  return { removed: true }
+})
+
 /* ---- system */
 R('GET', '/api/system/health', () => healthObj())
 R('GET', '/api/system/services', () => S.services)
