@@ -93,8 +93,8 @@ export function atelierState(t, { sessions = [] } = {}) {
       name: 'Shop sales', type: 'widget', icon: 'shopping-cart', change: 'update', base: 4, created: t - 8 * MIN,
       origin: origin('claude', sid(0), stitle(0), spath(0), t - 8 * MIN, 'Adds the orders still to ship, in orange when there are some.'),
       summary: 'Adds the orders still to ship, in orange when there are some.',
-      permissions: { network: ['acme.myshopify.com'], secrets: ['SHOPIFY_ADMIN_TOKEN'], read: [], declared: true },
-      files: files([['manifest.json', 142, '{"id": "shop-sales", "name": "Shop sales", "type": "widget", "version": "1.4"}\n'], ['api.py', 1390, CARD_DRAFT]]),
+      permissions: { network: ['acme.myshopify.com'], secrets: ['SHOP_TOKEN'], read: [], declared: true },
+      files: files([['manifest.json', 142, '{"id": "shop-sales", "name": "Shop sales", "type": "widget", "version": "1.4",\n "permissions": {"network": ["acme.myshopify.com"], "secrets": ["SHOP_TOKEN"]}}\n'], ['api.py', 1390, CARD_DRAFT]]),
     }),
   }
   return { items, others, drafts, settings: { auto_activate_safe: false, keep_days: 90, keep_versions: 10 } }
@@ -146,6 +146,11 @@ export function installAtelier({ R, state, fail, bus, now, sendMessage }) {
     const r = rows || (d.status === 'pending' ? diffRows(d.files, activeOf(it)?.files || {}) : null)
     const { files: fl, ...rest } = d
     return { ...rest, files: r ? counts(r) : { count: Object.keys(fl).length, size: sum(fl), added: 0, changed: 0, removed: 0 } }
+  }
+  // the declaration of the installed extension, as GET /api/extensions has it (one source for both pages)
+  const permissionsOf = (id) => {
+    const p = (state().extensions || []).find((x) => x.id === id)?.permissions ?? null
+    return { network: p?.network || [], secrets: p?.secrets || [], read: p?.read || [], declared: p != null }
   }
   const errorOf = (it) => it.load_error ? { message: it.load_error, where: 'load', at: null, count: 1 } : it.runtime_error || null
   const stateOf = (it) => !it.enabled ? 'disabled' : errorOf(it) ? 'error' : 'active'
@@ -293,7 +298,7 @@ export function installAtelier({ R, state, fail, bus, now, sendMessage }) {
       history: it ? it.history : [],
       drafts: [...pend, ...decided].map((d) => publicDraft(d, [])),
       files: act ? Object.entries(act.files).map(([path, f]) => ({ path, size: f.size })).sort((a, b) => a.path.localeCompare(b.path)) : [],
-      permissions: it ? { network: it.id === 'shop-sales' ? ['acme.myshopify.com'] : [], secrets: it.id === 'shop-sales' ? ['SHOPIFY_ADMIN_TOKEN'] : [], read: [], declared: it.id === 'shop-sales' } : null,
+      permissions: it ? permissionsOf(it.id) : null,
       health: { state: v.state, error: v.error, errors: v.error ? [v.error] : [], checked_at: now() },
     }
   })
