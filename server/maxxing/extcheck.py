@@ -10,9 +10,10 @@ deadline), then, by kind:
 - HTML widget: `GET /ext/<id>/widget-frame` through the real route, then widget.html is parsed: a document with
   content, every `<script>` closed, `node --check` of each inline script (line numbers of widget.html), no `src` of
   the folder (only widget.html is served), `maxxing.api()` needs `handle()` in api.py, storage the sandbox lacks.
-- page: `GET /ext/<id>/page.js` through the real route, `node --check` as an ES module, `mount` exported, and every
-  module it imports, resolved as the browser does (`/ext/<id>/...`): a file of the folder, served by the server with
-  a JavaScript type (a GET through the same routes), checked the same way in turn. Bare names and other origins are
+- page: `GET /ext/<id>/@<page_v>/page.js` (the URL the app imports) through the real route, `node --check` as an ES
+  module, `mount` exported, and every module it imports, resolved as the browser does (`urljoin`): a file of the
+  folder that the server serves with the type the import needs (a GET through the same routes, so the server's own
+  rules for page modules apply), checked the same way in turn. Bare names and other origins are
   refused by the app's `script-src 'self'`; `eval` / `new Function` are flagged; `ctx.api()` needs `handle()`.
 - block plugin: block.json (`blocks.parse_manifest`), `GET /ext/_blocks/<id>/frame`, the entry parsed like a widget.
 - agent: the manifest (`agent_providers.parse`).
@@ -413,14 +414,15 @@ def _check_page(run: _Run) -> None:
     if ext.has_api:
         run.file("api.py")
     prefix = f"/ext/{ext.id}/"
-    status, ctype, body = _get(prefix + "page.js")
+    entry = f"{prefix}@{extensions.page_version(ext) or 0}/page.js"    # the URL the app imports (pages/ext)
+    status, ctype, body = _get(entry)
     if status != 200:
-        run.add("served", ERROR, f"GET {prefix}page.js -> {status} ({body})")
+        run.add("served", ERROR, f"GET {entry} -> {status} ({body})")
         return
-    run.add("served", OK, f"{prefix}page.js")
+    run.add("served", OK, entry)
     root = ext.dir.resolve()
     seen: set[str] = set()
-    todo = [(prefix + "page.js", root / "page.js", "")]
+    todo = [(entry, root / "page.js", "")]
     calls_api = False
     node_missing = False
     while todo and len(seen) < MAX_MODULES:
@@ -473,7 +475,10 @@ def _check_page(run: _Run) -> None:
             if not tpath.startswith(prefix):
                 run.add("modules", ERROR, f"{rel} imports {spec} ({tpath}): outside the extension's own /ext/{ext.id}/")
                 continue
-            fpath = Path(posixpath.normpath(str(root / unquote(tpath[len(prefix):]))))
+            parts = unquote(tpath[len(prefix):]).split("/")
+            if len(parts) > 1 and parts[0].startswith("@"):            # the version segment names the URL only
+                parts = parts[1:]
+            fpath = Path(posixpath.normpath(str(root.joinpath(*parts))))
             try:
                 inside = fpath.resolve(strict=True)
                 inside.relative_to(root)

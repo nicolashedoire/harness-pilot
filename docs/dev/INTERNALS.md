@@ -80,7 +80,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `models()`, `uploads_dir(path)`. Blocking functions raise `SessionError(status, code, message)`.
 - Compaction in the runner (`sessions/runner.py`): `_auto_compact` after a turn above `auto_compact_tokens` (Claude and Codex turns, not plan mode; for Codex, whose `Attempt.context_window` is set, also from `DEBATE_COMPACT_RATIO` of that window, whichever comes first: its 258 400 window is below the 400 000 default; never when the thread's first call - `Attempt.first_context` for a turn that started it, else meta `base_tokens` - already reached that limit: the continuation would start above it and be compacted again, turn after turn, as an end-to-end run with a stub whose fresh threads started at 280k did before this rule); idle
   compaction in `_pop` - `_idle_compact(meta, item, cfg, now)` returns `(away, k_tokens)` when a `user` item (not
-  cron/system source, steer, plan approval) pops for a non-fresh, non-cron session whose last call
+  cron/system source, steer, plan approval) pops for a non-fresh (`resume.thread_open(meta)`: Claude `fresh` false, Codex a `codex_thread_id`), non-cron session whose last call
   (`max(finished_at, cache_at)`; `cache_at` = last side question, it warms the thread too) is older than
   `idle_compact_after_s` with `context_tokens >= max(idle_compact_tokens, IDLE_COMPACT_MIN)`, unless
   `context_tokens - base_tokens` (meta `base_tokens` = context of the first call of the current thread, i.e. its
@@ -338,6 +338,21 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
 - Telegram: `gateway.feed_notify(ev, loud)` / `feed_message(ev)` (body cut at 700 characters BEFORE HTML escaping); thread key `#feed` (`NOTIFY_ONLY` = Crons, Alerts,
   Notifications: never treated as topic threads by the legacy migration); callback `f:<id>` = Ask Claude.
 
+## maxxing.extensions / maxxing.api.extensions - page modules  (owner: organisation)
+- `module_file(ext, rel) -> Path | None`: the file a page may load from its folder (`MODULE_TYPES` `.js .mjs .css
+  .json` -> content type). Every segment of `rel` AND of the real path relative to the resolved folder (links
+  followed) matches `MODULE_SEG_RE` (starts with a letter, digit or `_`: no hidden file, no `..`, never `@`) and the
+  real path has a module suffix: a link to a file outside, to `api.py` or to a hidden file gives None.
+- `page_version(ext) -> int | None` = `Extension.info()["page_v"]`: newest mtime (ms) over the files `module_file`
+  would serve, by an `os.walk` that does not follow folder links, skips `MODULE_SKIP_DIRS` and hidden folders, and
+  stops after `MODULE_SCAN_MAX` files. Computed at each listing (in a thread: `api.extensions._infos`), not at scan
+  time: a module other than page.js is not part of `_signature()` (no rescan, no api.py import when it changes).
+- Routes: `/ext/{id}/page.js` and the catch-all `/ext/{eid:extid}/{rel:path}` (declared after the fixed
+  `/ext/{id}/...` routes) share `_page_module` (enabled page extension without error, `module_file`). A first segment
+  starting with `@` is the version and is dropped. `extid` (a Starlette convertor registered by api/extensions.py,
+  the `ID_RE` pattern) never matches `_blocks`, so the catch-all leaves `/ext/_blocks/...` to api/blocks.py, whose
+  router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
+
 ## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
 Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
 inside the functions that need them), so `sessions/codex.py` could read its output without it.
@@ -371,9 +386,10 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `IMPORT_TIMEOUT_S`; the other extensions are loaded too). A turned-off extension (or `restore_hold`) is `skipped`
   and none of its code runs.
 - Routes taken in-process: a `TestClient` on a FastAPI app with the `api.extensions` and `api.blocks` routers,
-  `require_auth` overridden (`_client()`); GET `/ext/<id>/widget-frame`, `/ext/<id>/page.js`, each module a page
-  imports (resolved with `urljoin` against the module's URL, so a module the server does not serve is a 404 there
-  too), `/ext/_blocks/<id>/frame`. Nothing listens, no request leaves.
+  `require_auth` overridden (`_client()`); GET `/ext/<id>/widget-frame`, `/ext/<id>/@<page_v>/page.js` (the URL
+  pages/ext imports), each module a page imports (resolved with `urljoin` against the module's URL, so
+  `extensions.module_file`'s rules apply: a module the server does not serve is a 404 there too),
+  `/ext/_blocks/<id>/frame`. Nothing listens, no request leaves.
 - Card: `card(ctx)` through `extensions.call(..., timeout=api.dashboard.TIMEOUT_S, key="card:<id>")`, then
   `clean_card` + `widgets.strip_none` (= `widget_card(force=True)` + the dashboard, keeping the raw value to report
   dropped blocks). Exception frames inside the extension folder -> `trace`. A timed-out call keeps an extension

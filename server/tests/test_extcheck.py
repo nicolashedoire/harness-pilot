@@ -20,6 +20,9 @@ def _ext(org, eid, manifest=None, **files):
     if manifest is not None:
         (d / "manifest.json").write_text(json.dumps(manifest))
     for name, text in files.items():
+        if text is None:
+            (d / name).mkdir(exist_ok=True)
+            continue
         (d / name.replace("_", ".", 1) if name in ("api_py", "page_js", "widget_html", "block_json", "block_html")
          else d / name).write_text(text)
     return d
@@ -133,8 +136,15 @@ def test_page_modules_resolved_like_the_browser(org):
     assert '"lodash": a bare name' in errors and "https://cdn.example.com/m.js: the app only runs" in errors
     assert "./missing.js: no such file" in errors and "imports notes.txt" in errors
     assert "excel" not in errors and "no.js" not in errors          # strings and comments are not imports
-    lib = [e for e in _steps(r, "error") if "imports lib.js" in e]
-    assert lib == [] or "GET /ext/mods/lib.js -> 404" in lib[0]     # served once the server serves the folder's modules
+    assert "imports lib.js" not in errors and "lib.js" in r["files"]          # served by the page module route
+    assert "page.js imports notes.txt, but GET /ext/mods/@" in errors and "-> 404" in errors   # not a page module
+    _ext(org, "nested", {"type": "page"}, page_js="import { b } from './lib/b.js'\nexport function mount(el) { b(el) }\n",
+         **{"lib": None})
+    (org.ws / "extensions" / "nested" / "lib" / "b.js").write_text("import { c } from '../c.mjs'\nexport const b = c\n")
+    (org.ws / "extensions" / "nested" / "c.mjs").write_text("export const c = (el) => { el.textContent = 'x' ;\n")
+    r = extcheck.check("nested")
+    assert r["steps"][1]["detail"].startswith("/ext/nested/@") and r["files"][-2:] == ["lib/b.js", "c.mjs"]
+    assert r["error"].startswith("SyntaxError") and "(c.mjs:2)" in r["error"]
 
 
 @node

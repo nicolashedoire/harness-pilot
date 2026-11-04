@@ -151,7 +151,8 @@ What is checked:
   `widget.html` is served), `maxxing.api()` has a `handle()` in `api.py` to answer it; `localStorage` and cookies,
   which the sandboxed frame does not have, are warnings;
 - a page: `page.js` is served and parses as a module (`node --check`), exports `mount`, and every module it imports
-  is a file of the folder that the server serves as JavaScript and that parses in turn; a bare name (`lodash`) or
+  is a file of the folder that the server serves (`.js`, `.mjs`, `.css`, `.json`, see
+  [Page extensions](page-extensions)) and that parses in turn; a bare name (`lodash`) or
   another site's address is refused by the app; `eval` / `new Function` are warnings; `ctx.api()` needs `handle()`;
 - a block plugin: `block.json`, its schema and its frame are served, its HTML is checked like a widget's, and a
   plugin that never calls `maxxing.onData` is a warning.
