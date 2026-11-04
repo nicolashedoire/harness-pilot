@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from starlette.convertors import Convertor, register_url_convertor
 
-from .. import bus, exterrors, extensions, permissions
+from .. import bus, exterrors, extensions, extfix, permissions
 from ..security import require_auth
 
 
@@ -56,7 +56,8 @@ def _err(status: int, code: str, msg: str, **extra: Any) -> HTTPException:
 
 def _infos(exts: list[extensions.Extension]) -> list[dict]:
     errs = exterrors.all_recent(exts)                  # page_v and the errors' signature walk folders: in a thread
-    return [{**e.info(), "runtime_errors": errs.get(e.id, [])} for e in exts]
+    made = extfix.origins([e.id for e in exts])
+    return [{**e.info(), "runtime_errors": errs.get(e.id, []), "origin": made.get(e.id)} for e in exts]
 
 
 @router.get("/api/extensions")
@@ -162,6 +163,35 @@ async def clear_errors(eid: str):
     await asyncio.to_thread(exterrors.clear, eid)
     bus.invalidate("extensions")
     return {"ok": True}
+
+
+class SeenIn(BaseModel):
+    message: str = Field("", max_length=4000)
+    stack: str = Field("", max_length=8000)
+
+
+class FixIn(BaseModel):
+    error: Optional[SeenIn] = None            # the error the user is looking at (a card, a page that did not load)
+    dry_run: bool = False                     # only build the message and say where it would go
+
+
+@router.post("/api/extensions/{eid}/fix")
+async def ask_fix(eid: str, body: FixIn):
+    """"Ask for a fix": the error, the extension and its files, sent to the session that made it (or a new one in
+    the Harness topic) -> {session, reused}; `dry_run` -> {prompt, target} and nothing is sent (maxxing/extfix.py)."""
+    from ..sessions.service import SessionError
+    ext = await asyncio.to_thread(extensions.get, eid)
+    if ext is None:
+        raise _err(404, "not_found", f"no extension {eid}")
+    seen = body.error.model_dump() if body.error else None
+    if body.dry_run:
+        return await asyncio.to_thread(lambda: {"prompt": extfix.prompt(ext, seen), "target": extfix.target(eid)})
+    try:
+        out = await asyncio.to_thread(extfix.ask, ext, seen)
+    except SessionError as e:
+        raise _err(e.status, e.code, e.message) from None
+    bus.invalidate("extensions")
+    return out
 
 
 async def _record_api_error(ext: extensions.Extension, message: str, exc: BaseException | None = None) -> None:

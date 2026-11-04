@@ -2,7 +2,8 @@
 // Edit mode: reorder (drag handle or arrow buttons), hide/show, PUT /api/dashboard/layout.
 import * as React from 'react'
 import { ArrowDown, ArrowUp, Check, ExternalLink, Eye, EyeOff, GripVertical, LayoutDashboard, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
-import { useDashboard, useFillPendingWidgets, useRefreshWidget, useSaveLayout } from '@/lib/queries'
+import { useDashboard, useExtensions, useFillPendingWidgets, useRefreshWidget, useSaveLayout } from '@/lib/queries'
+import { AskFixButton, FixTarget } from '@/features/extensions/AskFix'
 import { PendingCard, usePendingEvents } from '@/features/notifications/PendingCard'
 import { fmtRelative } from '@/lib/format'
 import type { Widget } from '@/lib/types'
@@ -38,6 +39,34 @@ function useWaitForView(ref: React.RefObject<HTMLElement | null>): boolean {
   return wait
 }
 
+/** An extension widget whose card() failed: the error, the lines of its code (recorded on the server), Ask for a fix. */
+function BrokenWidget({ w, onRetry, retrying }: { w: Widget; onRetry: () => void; retrying: boolean }) {
+  const t = useT()
+  const { data: exts } = useExtensions()
+  const ext = exts?.find((e) => e.id === w.id)
+  const message = w.error || ''
+  const stack = ext?.runtime_errors?.find((e) => e.where === 'card' && e.message === message)?.stack || ''
+  const target = ext ?? { id: w.id, origin: null }
+  return (
+    <div className="grid min-w-0 gap-3" data-testid="broken-widget">
+      <p className="flex items-start gap-2 text-[13px]">
+        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+        <span className="min-w-0 font-mono text-[12.5px] [overflow-wrap:anywhere] text-destructive">{message}</span>
+      </p>
+      {stack && (
+        <pre className="max-h-28 overflow-auto rounded-md bg-muted/60 px-2.5 py-2 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground">{stack}</pre>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <AskFixButton ext={target} error={{ message, stack }} />
+        <Button variant="outline" size="sm" onClick={onRetry} loading={retrying}>
+          {t('common.retry')}
+        </Button>
+      </div>
+      <FixTarget ext={target} />
+    </div>
+  )
+}
+
 const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; index: number }) {
   const t = useT()
   const lang = useLang()
@@ -70,6 +99,8 @@ const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; ind
           <SkeletonText lines={3} className="py-1" />
         ) : w.permission?.reason === 'not_allowed' && !card ? (
           <CardConsent id={w.id} refusal={w.permission} />
+        ) : w.error && !card && w.source === 'extension' ? (
+          <BrokenWidget w={w} onRetry={() => refresh.mutate(w.id)} retrying={refresh.isPending} />
         ) : w.error && !card ? (
           <div className="flex min-h-24 flex-col items-center justify-center gap-2 text-center">
             <TriangleAlert className="size-5 text-destructive" />

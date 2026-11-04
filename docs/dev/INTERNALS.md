@@ -443,11 +443,33 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off. Each result
   also carries `runtime_errors` (`exterrors.recent`), printed after the steps; never part of the status.
 
+## maxxing.extfix - "Ask for a fix"  (owner: organisation)
+Reusable by any UI that shows a broken creation (dashboard card, page error state, Settings row, the Atelier):
+- `prompt(ext, seen=None) -> str`: the message (English; "Answer me in French." via `smartupdate._reply_in`): the
+  extension, its kind and folder, what broke (load `error`, the 3 newest `exterrors.recent`, `seen` = `{message,
+  stack?}` the user is looking at unless one of those already says it), the files (`_files`: manifest / block.json,
+  entry, `api.py`, `page.js`, `widget.html`, the files the stacks name, resolved inside the folder, 12 at most), the
+  skill (`pilot-blocks` for a block) and `pilot ext check <id> --json` before and after.
+- `origin(id) -> {id, title, path} | None` (the single lookup of "the session that made it": a live, not archived
+  session of `<state>/extension-origins.json`), `origins(ids)`, `record_origin(id, sid)` (kept: the first live one;
+  called by `cmd_ext` with `$MAXXING_SESSION` after `pilot ext check <id>`). A provenance record of a creation's session
+  should be read first by `origin()`.
+- `target(id) -> {"session": origin} | {"topic": smartupdate.update_topic_path()}`; `ask(ext, seen) -> {session,
+  reused}`: `service.send_message(origin)` (queued behind a running turn), else on `SessionError` or no origin
+  `service.create_session(<harness topic>, prompt, "Fix the extension <name>")`.
+- HTTP: `POST /api/extensions/{id}/fix` `{error?, dry_run?}`; `GET /api/extensions` items carry `origin`. Web:
+  `features/extensions/AskFix.tsx` (`useAskFix().run(ext, error)` = dry run -> `confirm()` with the message -> send ->
+  navigate to the session; `AskFixButton`, `FixTarget`), used by `pages/dashboard` (`BrokenWidget`, an extension card
+  whose `card()` failed, with the recorded stack), `HtmlWidget` (the frame's last error under it), `pages/ext` (load
+  error state) and `RuntimeErrors` / the load error of a Settings row.
+
 ## maxxing.exterrors - runtime errors of extensions  (owner: organisation)
 - `<state>/extension-errors.json` = `{id: [{where, message, stack, at, count, sig}]}`, newest first, `KEEP` (10) per
-  extension, written with `config.write_json` under a module lock. `record(id, dir, where, message, stack)` bumps
+  extension, written with `config.write_json` under a module lock (a stack's first line equal to the message is
+  dropped). `record(id, dir, where, message, stack)` bumps
   `count`/`at` of the newest entry when `where`, `message` and `sig` match; `sig` = `files_sig(dir)` (newest mtime of
-  the folder's files, one level down, hidden ones skipped). `recent(id, dir)` / `all_recent(exts)` return only the
+  the folder's files, one level down, hidden ones, `__pycache__` and `node_modules` skipped: importing `api.py` writes
+  its bytecode, which must not hide the errors). `recent(id, dir)` / `all_recent(exts)` return only the
   entries whose `sig` is the current one (an edit of any file hides the older errors), without `sig`; `clear(id)`.
 - Writers: `api/extensions.report_error` (browser: `where` widget / page; `allow()` = sliding windows of 60 s,
   `RATE_PER_EXT` 20 and `RATE_TOTAL` 120, in memory, before anything is written; `trim_stack()` keeps 6 lines of 240

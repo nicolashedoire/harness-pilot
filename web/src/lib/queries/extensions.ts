@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, seg } from '../api'
-import type { Extension, ExtensionAccess, Ok } from '../types'
+import type { Extension, ExtensionAccess, ExtFixPreview, Ok, Session } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -32,6 +32,16 @@ export function useExtensionConsent() {
     ({ id, decision }: { id: string; decision: 'always' | 'deny' | 'reset' }) =>
       api.post<Ok & { access: ExtensionAccess }>(`/api/extensions/${seg(id)}/consent`, { decision }),
     { invalidate: [qk.extensions, qk.dashboard.all] },
+  )
+}
+/** "Ask for a fix": `dry_run` previews the message and its destination; otherwise it is sent -> the session. */
+export const previewExtensionFix = (id: string, error?: { message: string; stack?: string }) =>
+  api.post<ExtFixPreview>(`/api/extensions/${seg(id)}/fix`, { error, dry_run: true })
+export function useAskExtensionFix() {
+  return useMut(
+    ({ id, error }: { id: string; error?: { message: string; stack?: string } }) =>
+      api.post<{ session: Session; reused: boolean }>(`/api/extensions/${seg(id)}/fix`, { error }),
+    { invalidate: [qk.extensions] },
   )
 }
 export function useReloadExtensions() {
