@@ -19,6 +19,7 @@ def agents(client,monkeypatch):
     monkeypatch.setattr(service,'get_session',lambda sid: copy.deepcopy(sessions.get(sid)))
     monkeypatch.setattr(service,'last_assistant_text',lambda sid: reports.get(sid,''))
     monkeypatch.setattr(companions,'review',lambda sid: reviews.get(sid,{'has_changes':False,'fingerprint':'a'*64}))
+    monkeypatch.setattr(companions,'decision',lambda sid: reviews.get(sid,{}).get('decision'))
     monkeypatch.setattr(missions,'_find_launch',lambda key:keys.get(key))
     def run(role,path,mission,**kwargs):
         with kwargs.get('launch_guard',contextlib.nullcontext)():
@@ -395,3 +396,30 @@ def test_planning_time_counts_as_work(client,topic,agents,monkeypatch):
     finish(agents,text=json.dumps({'steps':[step(1)]}));missions.tick()
     mission=missions.get(ident)
     assert mission['phase']=='plan_review' and mission['spent_seconds']==20 and mission['active_since'] is None
+
+
+def test_a_proposal_waiting_for_a_decision_is_not_reviewed_again_on_every_pass(client,topic,agents,monkeypatch):
+    sessions,calls,_,_,reviews,_=agents
+    ident=create(client,topic,[step(1)])
+    start(ident);missions.tick();sid=finish(agents)
+    reviews[sid]={'has_changes':True,'fingerprint':'a'*64,'decision':None}
+    reviewed=[]
+    fake=companions.review
+    monkeypatch.setattr(companions,'review',lambda s:reviewed.append(s) or fake(s))
+    for _ in range(5):missions.tick()
+    assert reviewed==[sid] and missions.get(ident)['steps'][0]['state']=='review'
+    sessions[sid].update(turns=2,updated=123.0)  # the owner continued the conversation: the copy may differ
+    reviews[sid]['fingerprint']='c'*64
+    missions.tick();missions.tick()
+    assert reviewed==[sid,sid]
+    reviews[sid]['decision']={'value':'approved','fingerprint':'c'*64}  # a decision needs no new review
+    missions.tick()
+    assert reviewed==[sid,sid] and missions.get(ident)['phase']=='completed'
+
+
+def test_the_decision_is_read_from_the_session_record(client,topic,mx):
+    from maxxing.sessions import store as real_store
+    sid=client.post('/api/sessions',json={'path':topic,'title':'Proposal'}).json()['id']
+    assert companions.decision(sid) is None
+    with real_store.edit(sid) as meta:meta['companion']={'run_id':'x','decision':{'value':'approved','fingerprint':'f'*64}}
+    assert companions.decision(sid)=={'value':'approved','fingerprint':'f'*64}

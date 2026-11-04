@@ -242,6 +242,12 @@ def review(sid: str) -> dict:
             'pull_request': companion.get('pull_request')}
 
 
+def decision(sid: str) -> dict | None:
+    """The owner's current decision on a run's proposal, from the session record (no git work)."""
+    c = (store.read_cached(sid) or {}).get('companion')
+    return c.get('decision') if isinstance(c, dict) else None
+
+
 def decide(sid: str, decision: str, fingerprint: str) -> dict:
     if decision not in ('approved', 'rejected'):
         raise service.SessionError(400, 'bad_decision', 'Invalid decision.')

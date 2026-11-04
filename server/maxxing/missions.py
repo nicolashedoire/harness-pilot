@@ -274,9 +274,9 @@ def _reconcile(data):
             step['state'] = 'complete'
         else:
             try:
-                review = companions.review(sid)
-                step['proposed'] = bool(review['has_changes'])
-                decision = review.get('decision') or {}
+                review = _review(step, sid, session)
+                step['proposed'] = review['has_changes']
+                decision = companions.decision(sid) or {}
                 if not review['has_changes']:
                     step['state'] = 'complete'
                 elif decision.get('fingerprint') != review['fingerprint']:
@@ -286,6 +286,18 @@ def _reconcile(data):
             except service.SessionError:
                 step.update(state='failed', error='review_failed')
     data['tokens'] = _usage(data)
+
+
+def _review(step, sid, session):
+    """The proposal of a finished step. `companions.review` runs git in the step's copy, so it is redone only when the
+    session moved on (a new turn or other runner activity); the owner's decision is read separately on every pass."""
+    marker = [session.get('turns'), session.get('updated')]
+    cached = step.get('review')
+    if not isinstance(cached, dict) or cached.get('marker') != marker:
+        result = companions.review(sid)
+        cached = {'marker': marker, 'fingerprint': result['fingerprint'], 'has_changes': bool(result['has_changes'])}
+        step['review'] = cached
+    return cached
 
 
 def _planner_prompt(data):
@@ -414,7 +426,7 @@ def advance(ident):
                     if _now() >= data['next_cycle'] and changed:
                         data.update(cycle=data['cycle'] + 1, next_cycle=None, cycle_source=None, reason='')
                         for step in data['steps']:
-                            for key in ('key', 'started', 'error'):
+                            for key in ('key', 'started', 'error', 'review'):
                                 step.pop(key, None)
                             step.update(state='pending', session=None, proposed=False)
                 else:
