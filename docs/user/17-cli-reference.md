@@ -219,7 +219,18 @@ OAuth sign-ins (state "To connect") are done in Settings -> MCP -> **Connect**. 
 
 ## Installer
 
-The inherited server installer and update commands have not yet been validated for this repository. Use the local startup instructions in [Installation](installation). The commands above describe inherited CLI features and should be verified before use on a production system.
+`install.sh` installs, updates and removes a Linux server installation (Debian 12, Ubuntu 24.04; see [Installation](installation)). Run it as root:
+
+| Command | Purpose |
+|---|---|
+| `bash install.sh` | install, or repair an existing installation (every step keeps what is already done) |
+| `bash install.sh --check` | look at the server and say what the installation would do, changing nothing |
+| `bash install.sh --help` | the options and the variables for an unattended install |
+| `bash /opt/claude-maxxing/install.sh --update` | update (= `pilot update`) |
+| `bash /opt/claude-maxxing/install.sh --uninstall [--purge] [--purge-workspace]` | remove the service and integrations; `--purge` also the code and the state, `--purge-workspace` also the workspace |
+| `bash /opt/claude-maxxing/install.sh --secure` | security updates, fail2ban, firewall and SSH settings again |
+
+The other commands above describe inherited CLI features; not all of them have been verified on a server.
 
 ## Environment variables
 
