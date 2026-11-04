@@ -55,7 +55,26 @@ Whatever its origin - a file, a code, your agent or a contact - a theme is check
 colours are read (anything else, such as a link or code, is ignored or refused), the contrast is measured in light and
 dark, and it is never applied without your click.
 
-The application itself can also be changed in the repository. The web interface is built from `web/src`; run `npm run typecheck` and `npm run build` from `web` after changing it. Restart the local server when server code changes. Keep a backup and review changes before applying them.
+## Changing the application itself
+
+What an update keeps:
+
+| What you changed | After `pilot update` |
+|---|---|
+| The workspace: projects, memory, tasks, extensions (dashboard widgets, pages, conversation blocks), scheduled jobs, settings and keys | kept as it is: updates never touch it |
+| The server, the CLI, the skills or the templates (anything outside `web/`), saved as a *customization* (`pilot custom save`, skill `pilot-customize`) | replayed on the new version; when the new version changed the same code, the update stops with nothing changed (exit code `3`) until the customization is adapted |
+| A change outside `web/` not saved yet | saved as a customization by the update, then replayed |
+| The web interface (`web/src`, or the built `web/dist`) | **not kept**: `pilot custom save` refuses it and `pilot update` sets it aside (a `git stash` in the code directory), so the new version's interface runs without it |
+
+The web interface is shipped pre-built and cannot be rebuilt on a server installation. To change what the app shows,
+add a [page](page-extensions) or a [dashboard widget](dashboard-widgets) instead (or a
+[conversation block](conversation-blocks), or a palette above): they live in the workspace, so updates keep them.
+Ask Claude in the `system/harness` topic; it picks the way that lasts.
+
+In a clone of the repository used for development, you change the code directly: run `npm run typecheck` and
+`npm run build` from `web` after changing `web/src`, restart the local server when server code changes, and keep your
+changes with git (`pilot update` does not run in the local setup). Keep a backup and review changes before applying
+them.
 
 ## Updates and customizations
 

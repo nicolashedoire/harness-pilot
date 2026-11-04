@@ -70,9 +70,10 @@ update: nothing to ask the product's authors.
   touch them, the memory backup includes them). Kinds: Card widget (`api.py` card), **HTML widget**
   (`widget.html`: games, canvas, anything free-form), page (`page.js`). Example of each in
   `{{CODE_DIR}}/examples/extensions/`.
-- Never answer "this needs the authors" or "it would be erased by the next update": an extension
-  can do it, or, for a change of the product itself, follow the `pilot-customize` skill
-  (customizations are recorded and carried over by updates). Never edit `{{CODE_DIR}}` otherwise.
+- Never answer "this needs the authors": an extension can do it (updates never touch it), or, for a
+  change of the product's server, CLI or skills, follow the `pilot-customize` skill (recorded as a
+  customization that updates replay). A change of the web UI (`{{CODE_DIR}}/web`) is not kept by
+  updates: build a page or widget extension instead. Never edit `{{CODE_DIR}}` otherwise.
 - Clarify what the user wants to see (data source, refresh rate, size) in one or two questions,
   then build the smallest version that works, test it with `pilot ext check <id>` (runs it the way the
   server does; exit code 1 with the error: fix and run it again; not `curl`: the HTTP API needs the
