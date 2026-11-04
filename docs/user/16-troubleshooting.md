@@ -141,7 +141,7 @@ of memory".
 The firewall only lets SSH, 80/443 and Tailscale in. Open the port on purpose (`ufw allow 3000/tcp`),
 or better, serve it behind Caddy on your domain.
 
-**Installation and updates.** The inherited Linux installer and update flow have not been validated for this repository. For the verified local setup, see [Installation](installation). No enterprise license key is required.
+**Installation and updates.** See [Installation](installation) for the local setup and for a Linux server (Debian 12, Ubuntu 24.04); on a server, `pilot update` follows the `main` branch of this repository. No enterprise license key is required.
 
 **The page does not load.**
 `systemctl status claude-maxxing`. If it is failing, read the journal. After a manual `git pull`,
