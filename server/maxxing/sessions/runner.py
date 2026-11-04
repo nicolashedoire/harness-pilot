@@ -70,6 +70,8 @@ DEBATE_SUMMARY_PROMPT = (
     "language of this conversation, no preamble.")
 SEED_DEBATE = ("Context of this discussion before compaction (automatic summary of the exchanges so far; your "
                "previous thread was closed to free its context):\n\n{summary}\n\nRead it; we continue from there.")
+SEED_DEBATE_HANDOFF = ("Context carried over from discussion '{title}' (automatic summary of its exchanges; this new "
+                       "discussion continues it):\n\n{summary}\n\nRead it; we continue from there.")
 DEBATE_COMPACT_RATIO = 0.8          # an agent's context above this share of its window: compact before the next reply
 DEBATE_TRANSCRIPT_MAX = 120_000     # characters of exchanges given to the summary (the most recent ones)
 DEBATE_LOG_TAIL = 16 * 1024 * 1024  # bytes of the log read to build them
@@ -198,9 +200,9 @@ class Runner:
             m["spawned_at"] = None
             q = m.get("queue") or []
             m["updated"] = time.time()
-            # a paused discussion runs nothing more, except a compaction asked for meanwhile (service.compact)
+            # a paused discussion runs nothing more, except a summary asked for meanwhile (compact, handoff)
             if not q or (m.get("provider") in ("discussion", "debate") and m.get("debate_paused")
-                         and (q[0].get("kind") if isinstance(q[0], dict) else None) != "compact"):
+                         and (q[0].get("kind") if isinstance(q[0], dict) else None) not in ("compact", "handoff")):
                 m["pid"], m["state"] = None, ("error" if failed else "idle")
                 m.pop("runner_caps", None)
                 m.pop("turn_id", None)
@@ -293,7 +295,7 @@ class Runner:
             self._record(Attempt(rc=1, stderr=err), item)
             return err
         is_debate = meta.get("provider") in ("discussion", "debate")
-        if is_debate and kind == "compact":
+        if is_debate and kind in ("compact", "handoff"):
             return self._debate_compact(item, meta, cfg, cwd)
         actor = (meta.get("debate_next") or "claude") if is_debate else (meta.get("provider") or "claude")
         if is_debate:
@@ -301,9 +303,10 @@ class Runner:
             self.note("Codex" if actor == "codex" else "Claude Code")
             summary = str(meta.get("discussion_summary") or "")
             fresh = not meta.get("codex_thread_id") if actor == "codex" else bool(meta.get("fresh", True))
-            if summary and fresh:                      # the first reply of an agent after a compaction
-                item = {**item, 'preface': '\n\n'.join(filter(None, [SEED_DEBATE.format(summary=summary),
-                                                                      item.get('preface')]))}
+            if summary and fresh:                      # the first reply of an agent after a compaction / a hand-off
+                seed = (SEED_DEBATE_HANDOFF.format(title=meta["discussion_from"], summary=summary)
+                        if meta.get("discussion_from") else SEED_DEBATE.format(summary=summary))
+                item = {**item, 'preface': '\n\n'.join(filter(None, [seed, item.get('preface')]))}
             role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
@@ -517,7 +520,8 @@ class Runner:
     def _debate_compact(self, item: dict, meta: dict, cfg: dict, cwd: str) -> str | None:
         """Summary turn of a discussion: Claude, in a throwaway read-only thread, summarizes the exchanges written in
         the log since the last compaction (and that compaction's summary). Neither agent's own thread is resumed: it
-        may be full. Then both agents start fresh threads, each seeded with the summary on its next reply (`turn`)."""
+        may be full. Then both agents start fresh threads, each seeded with the summary on its next reply (`turn`);
+        for a hand-off, the continuation's agents are (`_debate_handoff`)."""
         store.update(self.sid, turn_provider="claude")
         previous = str(meta.get("discussion_summary") or "")
         exchanges = _debate_transcript(store.log_path(self.sid), meta.get("discussion_compacted_at"))
@@ -540,6 +544,9 @@ class Runner:
                                     "timed_out": a.timed_out, "at": time.time()})
         err = self._record(a, item)
         summary = a.final_text.strip() if err is None and not a.stopped else ""
+        if item.get("kind") == "handoff":
+            self._debate_handoff(item.get("target") or "", summary)
+            return err
         if not summary:
             self.note("Compaction impossible (the summary turn failed) - the discussion keeps its threads.", "warn")
             return err
@@ -547,11 +554,38 @@ class Runner:
             m["csid"], m["fresh"] = str(uuid.uuid4()), True
             m.pop("codex_thread_id", None)
             m.pop("discussion_compact_due", None)
+            m.pop("discussion_from", None)
             m["discussion_summary"] = summary[:DEBATE_SUMMARY_MAX]
             m["discussion_compacted_at"] = time.time()
         self.note("Discussion compacted: Claude Code and Codex continue in fresh threads seeded with the summary "
                   "above; the history stays displayed here.")
         return err
+
+    def _debate_handoff(self, target: str, summary: str) -> None:
+        """A discussion handed over: its continuation (a new discussion, same objective, roles, models and limits)
+        gets the summary for both agents' first replies and shows it as a summary separator; its messages and
+        pending reply then run (`_start_target`), and this one is archived."""
+        if not summary or not store.is_valid_id(target) or store.read(target) is None:
+            self._handoff(target, "")                  # notes the failure, starts the messages held meanwhile
+            return
+        title = (store.read(self.sid) or {}).get("title") or self.sid[:8]
+        try:
+            with store.edit(target) as t:
+                t["discussion_summary"] = summary[:DEBATE_SUMMARY_MAX]
+                t["discussion_from"] = title
+        except (KeyError, OSError):
+            self._handoff(target, "")
+            return
+        store.append_log(target, {"type": "mx_user", "text": SEED_DEBATE_HANDOFF.format(title=title, summary=summary),
+                                  "attachments": [], "source": "system", "kind": "seed", "at": time.time()})
+        self._start_target(target, None)
+        with store.edit(self.sid) as m:
+            m["archived"] = True
+            m.update(debate_active=False, debate_paused=False)   # its pause, if any, went to the continuation
+            for k in ("debate_pending", "discussion_pause_reason", "discussion_paused_at", "discussion_started"):
+                m.pop(k, None)
+        self.note(f"Summary handed over to discussion '{(store.read(target) or {}).get('title', '')}' - "
+                  "this one is archived.")
 
     def _mcp_after(self, item: dict, a: Attempt, err: str | None, cfg: dict, meta: dict,
                    mcp_plan: mcp_auto.Plan, plan: bool) -> None:

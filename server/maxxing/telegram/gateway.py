@@ -1182,6 +1182,10 @@ class Gateway:
                 return
             path = session.get("path") or ROOT
         else:
+            # Telegram can deliver topic creation before a local retry has refreshed its capability state.
+            # It is a service event, not unsupported user input; threaded mode handles it above.
+            if 'forum_topic_created' in msg:
+                return
             sid = None
             path = self._path_for(msg)
             if path is None:
@@ -2257,6 +2261,10 @@ class Gateway:
             if kind == "f":
                 answer = await self._ask_about_event(msg, val)
                 return
+            if kind == "c":
+                from . import reviews
+                answer = await reviews.handle(self, msg, val)
+                return
             if kind == "a":                                # two-step sign-in: Allow / Deny
                 from .. import twofactor
                 cid, _, yes = val.rpartition(":")
@@ -3137,7 +3145,11 @@ def feed_message(ev: dict) -> tuple[str, dict]:
         url = base + url if base.startswith("https://") else ""
     if url.startswith("https://"):
         row.append({"text": "Open", "url": url})
-    return text, {"inline_keyboard": [row]}
+    from . import reviews
+    markup = reviews.buttons(ev)
+    if markup and url.startswith("https://"):
+        markup['inline_keyboard'].append([{'text': 'Open', 'url': url}])
+    return text, markup or {"inline_keyboard": [row]}
 
 
 def feed_notify(ev: dict, loud: bool = False) -> None:

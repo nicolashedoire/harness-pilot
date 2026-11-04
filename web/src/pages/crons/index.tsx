@@ -36,6 +36,7 @@ import {
 } from '@/components/ui'
 import { CronEditor, type EditorSeed } from '@/features/crons/CronEditor'
 import { KindBadge, LastRun, RunsHistory, scheduleText, useNow } from '@/features/crons/parts'
+import { isReboot } from '@/features/crons/schedule'
 
 export default function CronsPage() {
   const t = useT()
@@ -185,7 +186,7 @@ function NextRun({ job, tz, now }: { job: Cron; tz?: string; now: number }) {
   const t = useT()
   const lang = useLang()
   if (!job.enabled) return <span>{t('crons.paused')}</span>
-  if (!job.next_run) return <span>{t('crons.noNextRun')}</span>
+  if (!job.next_run) return <span>{t(isReboot(job.schedule) ? 'crons.nextAtStartup' : 'crons.noNextRun')}</span>
   return (
     <span title={fmtDate(job.next_run, lang, tz)}>
       {t('crons.next')} {fmtRelative(job.next_run, lang, now)} <span className="max-md:hidden">· {fmtDate(job.next_run, lang, tz, { dateStyle: 'medium', timeStyle: 'short' })}</span>
