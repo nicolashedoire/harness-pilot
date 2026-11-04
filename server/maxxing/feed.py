@@ -82,6 +82,8 @@ KINDS: dict[str, tuple[str, str]] = {
     "mission.review": ("system", "warning"),
     "mission.completed": ("system", "info"),
     "task.reminder": ("system", "warning"),
+    "atelier.proposed": ("system", "warning"),
+    "atelier.activated": ("system", "success"),
     "signin.ok": ("security", "info"),
     "signin.failed": ("security", "warning"),
     "signin.denied": ("security", "warning"),
