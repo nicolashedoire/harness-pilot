@@ -13,6 +13,7 @@ extensions/
     manifest.json   {"id": "my-page", "name": "My page", "type": "page", "icon": "layout", "version": "1.0.0"}
     api.py          def handle(ctx, method, path, query, body) -> dict   (optional)
     page.js         export function mount(el, ctx) { ...; return () => {} }
+    lib/chart.js    optional: modules page.js imports with "./lib/chart.js" (.js .mjs .css .json)
 ```
 
 Pages and HTML widgets get the app's UI kit (`ui-card`, `ui-btn`, `ui-input`, `ui-badge`... and `ctx.icon(name)`

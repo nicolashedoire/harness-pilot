@@ -3,7 +3,8 @@
     manifest.json  {"id", "name", "type": "widget"|"page", "icon", "version", "span"?, "ttl"?, "api"?}
                    ("name" may be {"en": ..., "fr": ...}: shown in the UI language)
     api.py         widget: def card(ctx) -> Card   ·   page / API: def handle(ctx, method, path, query, body)
-    page.js        page: ES module exporting mount(el, ctx)
+    page.js        page: ES module exporting mount(el, ctx); it may import the other modules of the folder
+                   (`import "./lib/chart.js"`: .js .mjs .css .json, see module_file)
     block.json     (instead of manifest.json) a conversation block plugin: {"type": "block", "renders": [...],
                    "schema", "entry": "block.html", "permissions": {"network": [hosts]}, "hint"} - see blocks.py
 
@@ -49,6 +50,14 @@ EXT_API = 1
 EXT_API_MIN = 1
 RESERVED_IDS = {"activity", "tasks", "day", "crons", "server", "backup", "telegram", "shopify", "usage", "customize"}   # built-in widgets
 BLOCK_TYPES = {"stat", "stats", "list", "chart", "table", "progress", "markdown", "timeline"}
+# Files of a page extension's folder the app serves to its page (`/ext/<id>/<path>`): page.js and the modules it
+# imports. Nothing else (api.py, data files, widget.html) and no hidden file: a path segment starts with a letter, a
+# digit or "_" (never "." nor "@", which marks the version segment of /ext/<id>/@<v>/<path>).
+MODULE_TYPES = {".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
+                ".css": "text/css; charset=utf-8", ".json": "application/json"}
+MODULE_SEG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
+MODULE_SKIP_DIRS = {"node_modules", "__pycache__"}       # never looked at by page_version
+MODULE_SCAN_MAX = 2000                                    # files page_version stats at most
 
 
 @dataclass
@@ -66,7 +75,6 @@ class Extension:
     has_api: bool = False
     has_page: bool = False
     has_html: bool = False                 # widget drawn by widget.html in a sandboxed frame
-    page_v: int | None = None              # page.js mtime (ms): the UI imports page.js?v=<it> (cached until it changes)
     height: int = 260
     block: dict | None = None              # block plugins: the validated block.json (blocks.parse_manifest)
     agent: dict | None = None              # external executable contract; no Python is imported for an agent
@@ -88,7 +96,7 @@ class Extension:
         return {"id": self.id, "name": self.label(), "type": self.type, "icon": self.icon,
                 "version": self.version, "enabled": self.enabled, "error": self.error,
                 "api": self.api, "has_api": self.has_api, "has_page": self.has_page, "span": self.span,
-                "has_html": self.has_html, "height": self.height, "page_v": self.page_v,
+                "has_html": self.has_html, "height": self.height, "page_v": page_version(self),
                 "pinned": self.type == "page" and self.id in pinned_ids(),
                 **({"renders": (self.block or {}).get("renders") or []} if self.type == "block" else {})}
 
@@ -273,8 +281,6 @@ def _load_one(d: Path) -> Extension:
         ext.ttl = max(0, int(m.get("ttl", DEFAULT_TTL)))
         ext.has_api = (d / "api.py").is_file()
         ext.has_page = (d / "page.js").is_file()
-        if ext.has_page:
-            ext.page_v = (d / "page.js").stat().st_mtime_ns // 1_000_000
         ext.has_html = ext.type == "widget" and (d / "widget.html").is_file()
         ext.height = min(800, max(120, int(m.get("height") or 260)))
         if ext.type == "page" and not ext.has_page:
@@ -415,6 +421,49 @@ def set_enabled(eid: str, enabled: bool) -> bool:
         _cards.pop(eid, None)
     _changed()
     return True
+
+
+# ---- page modules ----------------------------------------------------------------------------
+def module_file(ext: Extension, rel: str) -> Path | None:
+    """The file `rel` ("page.js", "lib/chart.js") of a page extension's folder as the app may serve it, or None:
+    a page module (MODULE_TYPES) whose every segment matches MODULE_SEG_RE, and whose real path (links followed) is
+    still such a file inside the folder - a link to ~/.claude/.credentials.json, to api.py or to a hidden file is
+    never served."""
+    parts = rel.split("/")
+    if not rel or not all(MODULE_SEG_RE.match(x) for x in parts) or Path(parts[-1]).suffix not in MODULE_TYPES:
+        return None
+    try:
+        base = ext.dir.resolve(strict=True)
+        p = (ext.dir / rel).resolve(strict=True)
+        real = p.relative_to(base).parts
+    except (OSError, ValueError, RuntimeError):         # missing, outside the folder, a link loop
+        return None
+    if not real or not all(MODULE_SEG_RE.match(x) for x in real) or p.suffix not in MODULE_TYPES or not p.is_file():
+        return None
+    return p
+
+
+def page_version(ext: Extension) -> int | None:
+    """Version of a page's modules: the newest mtime (ms) of page.js and the files module_file would serve. The UI
+    imports /ext/<id>/@<version>/page.js, so its relative imports get the same version: editing any module of the page
+    gives the whole page new URLs (a browser keeps an imported module for the life of the tab). Bounded walk (hidden
+    folders, node_modules and __pycache__ skipped, MODULE_SCAN_MAX files); None for an extension without a page."""
+    if not ext.has_page:
+        return None
+    newest, seen = 0, 0
+    for top, dirs, files in os.walk(ext.dir):            # links to folders are not followed
+        dirs[:] = sorted(x for x in dirs if MODULE_SEG_RE.match(x) and x not in MODULE_SKIP_DIRS)
+        for name in files:
+            if not MODULE_SEG_RE.match(name) or os.path.splitext(name)[1] not in MODULE_TYPES:
+                continue
+            try:
+                newest = max(newest, os.stat(os.path.join(top, name)).st_mtime_ns)
+            except OSError:
+                continue
+            seen += 1
+            if seen >= MODULE_SCAN_MAX:
+                return newest // 1_000_000
+    return newest // 1_000_000 or None
 
 
 # ---- calling extension code -----------------------------------------------------------------

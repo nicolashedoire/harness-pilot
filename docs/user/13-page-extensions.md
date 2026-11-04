@@ -14,6 +14,7 @@ Settings -> Extensions) to give it its own sidebar entry, right below Extensions
 /root/maxxing/extensions/notes-board/
   manifest.json
   page.js        the page (ES module)
+  lib/chart.js   optional: more modules page.js imports (.js .mjs .css .json)
   api.py         optional: its HTTP API
 ```
 
@@ -100,8 +101,16 @@ For security the app only runs scripts it serves itself: `page.js` cannot add in
 nor build code from text (`eval`); split the code into modules of the extension folder instead. HTML widgets keep
 working as before.
 
-The module is downloaded once per version of `page.js` and kept: code at the top of the file runs once,
-`mount` runs at every visit. Saving `page.js` gives it a new version, picked up at the next visit.
+A long page can be split into several files of its folder: `page.js` imports them with a relative path, such as
+`import { drawChart } from "./lib/chart.js"`. The app serves `.js`, `.mjs`, `.css` and `.json` files of the folder
+and its subfolders to the signed-in user, and nothing else: not `api.py`, not a text or data file of another type,
+not a hidden file (a name starting with `.`), not a link to a file outside the folder. A stylesheet is linked with
+`new URL("./page.css", import.meta.url)`, a JSON file is read with `fetch(new URL("./data.json", import.meta.url))`
+or imported with `import data from "./data.json" with { type: "json" }`. Use relative paths: they keep working
+when the folder is renamed. Data the page saves belongs to `api.py` (its `state_dir`), not to the folder.
+
+The modules are downloaded once per version of the page and kept: code at the top of a file runs once, `mount` runs
+at every visit. Saving `page.js` or any file it imports gives the page a new version, picked up at the next visit.
 
 ```js
 export function mount(el, ctx) {
@@ -169,7 +178,7 @@ get the same kit. Inputs of the kit are 16 px on phones (no zoom on iPhone).
 
 - Python side: call `handle()` directly (see the test snippet in
   [Dashboard widgets](dashboard-widgets), with `api.handle(ctx, "GET", "notes", {}, None)`).
-- JavaScript syntax: `node --check page.js` if Node is installed.
+- JavaScript syntax: `node --check page.js` (and each module it imports) if Node is installed.
 - **Settings -> Extensions -> Reload**, then open the page from the sidebar (Extensions, or its own entry once pinned). Errors appear on the
   extension's row.
 
