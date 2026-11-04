@@ -32,6 +32,7 @@ web/
 
 Commands: `npm ci`, `npm test` (unit tests of `src/lib/theme` in `web/tests`, plain Node), `npm run dev` (Vite on :5173, `MAXXING_API=http://127.0.0.1:8809 npm run dev` for the mock),
 `npm run build` (`tsc -b` + `vite build` → `web/dist`, committed), `npm run mock` (serves `dist` + fake API on :8809).
+Tailwind finds class names by scanning `web/` (minus what `.gitignore` ignores) **except** the committed build: `globals.css` has `@source not "../../dist"`, so a class removed from `src/` leaves the CSS at the next build (one build is enough, a second one changes nothing). Add an `@source not` there for any other generated folder under `web/` that is not git-ignored.
 
 ## 1. Tokens
 
