@@ -1,9 +1,21 @@
 # Changelog
 
-All notable changes to Harness Maxxing. Versions follow semantic versioning.
-`maxxing update` prints the lines added here since your installed version.
+Changes to harness-pilot are recorded here. Older version entries below are inherited project history and do not imply that every feature is verified in the current local setup.
 
 ## 2.0.0-alpha.108 - 2026-11-03
+
+### Current project changes (unreleased, 2026-11-04)
+
+- Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
+- Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
+- View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.
+- Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
+- Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
+- Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
+- The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
+- Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
+
+### Inherited version history
 
 This version brings to every install the Team and session list changes of 2.0.0-alpha.103 and 2.0.0-alpha.104
 (details below, under those versions).
