@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed. Outside **Full access**, Codex only uses the tools a server marks as read-only.
+- A mixed team's mission can be spoken: the recording is transcribed and its text is sent as the mission, like a voice message in the other modes.
 - A mixed team can now be coordinated by Codex instead of Claude, and each agent can use the model you choose; the defaults stay the same.
 - The README explains how to install harness-pilot on a Linux server, and the installation and tools pages say what has been verified there: the installer downloaded from this repository, then PDFs, web scraping and video rendering on Debian 12 and Ubuntu 24.04 (arm64).
 - On a Linux server, `pilot deps update` started while another update of the tools is running (the one that follows an installation or `pilot update`) now waits for it and says so, instead of both failing and leaving Node.js and Remotion missing.

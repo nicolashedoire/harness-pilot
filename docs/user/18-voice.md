@@ -44,6 +44,8 @@ Language) if you always speak the same one, or for very short or noisy notes.
   conversation as one bubble: a round mic button (tap it to listen to the recording, again to pause)
   and, next to it, the transcript once the server has made it; the transcript then goes to Claude. You can keep talking or typing meanwhile: the next messages wait their turn.
   The recording is saved in the topic (`attachments/YYYY-MM/voice-….webm`).
+  For a mixed team (new session), whose mission is text, the recording is transcribed first and the transcript is
+  sent as the mission.
 - Prefer to read the text before sending? Turn off **Settings -> Voice -> Send voice messages right
   away**: the transcript is then inserted at the cursor so you can fix it, or sent as text with
   **Send automatically**.
