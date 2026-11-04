@@ -276,3 +276,11 @@ def test_repeated_stop_preserves_the_terminal_reason(client,topic,agents,termina
     response=client.post('/api/missions/'+ident+'/control',json={'action':'stop'})
     assert response.status_code==409
     assert missions.get(ident)['phase']==terminal and missions.get(ident)['reason']==before['reason']
+
+
+def test_malformed_unicode_from_an_agent_cannot_break_persisted_plan_state(client,topic,agents):
+    ident=create(client,topic);missions.control(ident,'plan');missions.tick()
+    finish(agents,text=json.dumps({'steps':[{**step(1),'instruction':'Broken surrogate: \ud800'}]}))
+    missions.tick();missions.tick()
+    assert missions.get(ident)['phase']=='paused' and missions.get(ident)['reason']=='invalid_plan'
+    assert not missions.get(ident)['steps'] and len(agents[1])==1

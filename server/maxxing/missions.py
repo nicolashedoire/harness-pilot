@@ -77,6 +77,11 @@ def _validate_steps(steps):
         role = str(value.get('role') or '')
         instruction = str(value.get('instruction') or '').strip()
         after = value.get('after') or []
+        try:
+            title.encode('utf-8')
+            instruction.encode('utf-8')
+        except UnicodeEncodeError:
+            raise service.SessionError(400, 'bad_plan', 'The plan contains invalid Unicode text.') from None
         if (not re.fullmatch(r'[a-z0-9-]{1,40}', ident) or ident in seen or not 1 <= len(title) <= 120
                 or role not in roles or not 1 <= len(instruction) <= 2000 or not isinstance(after, list)
                 or any(not isinstance(dep, str) or dep not in seen for dep in after) or len(after) != len(set(after))):
