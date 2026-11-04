@@ -789,6 +789,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
 | `webhook.refused` | security | warning | `hook_id, name, service ("stripe"\|"shopify"\|"github")` | `add_secret` | its signing secret set, or the hook deleted |
 | `backup.restore_held` | security | warning | `extensions, hooks, mcp, review, outside` (counts) | `open` | – |
+| `instance_backup.copy_failed` | system | error | `code, message, folder` (an archive could not be copied to the copy folder, or its copy did not match) | `open` | the next successful copy |
 | `instance_backup.failed` | system | error | `code, message` (a scheduled instance archive could not be made; `code` = the export error code) | `open` | the next scheduled archive made |
 | `infra.down` | infra | error | `resource_id, name, reason` | `open` | `infra.up` of that resource |
 | `infra.up` | infra | success | `resource_id, name` | – | – |
@@ -917,9 +918,12 @@ derived from it instead (see Scheduled archives below).
 
 | Method/path | Request | Result |
 | --- | --- | --- |
-| GET `/api/backup/instance` | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`), `schedule` (below) |
-| POST `/api/backup/instance/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
-| GET `/api/backup/instance/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes, scheduled}]` |
+| GET `/api/backup/instance` | — | Data roots `{state, workspace, files: {source, archive, excluded?}}`, size limit, `restore_hold`, `integrations_paused`, export availability (`export_error`), `schedule` and `copy` (below) |
+| POST `/api/backup/instance/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts, `copy` (below, null when no copy folder is set); idle sessions required |
+| GET `/api/backup/instance/exports` | — | Encrypted exports kept on the server, newest first: `[{id, created, archive_bytes, sha256, version, files, bytes, scheduled, copy}]` |
+| POST `/api/backup/instance/exports/{id}/copy` | `{}` | Copy that archive to the copy folder again: the `copy` record (`ok: false` with `code`, `error` when it failed) · `409 copy_off` without a copy folder · `404 not_found` |
+| PUT `/api/backup/instance/copy` | `{folder}` | The `copy` object · `400 copy_folder` for a folder that is not absolute, does not exist, is not writable or is inside the archived data folders |
+| DELETE `/api/backup/instance/copy` | — | The `copy` object, now off; copies already made stay in the folder |
 | PUT `/api/backup/instance/schedule` | `{frequency: "daily"\|"weekly", hour: 0–23, keep: 1–30, passphrase?, store_key?}` | The `schedule` object · `400 consent_required` when `passphrase` comes without `store_key: true` · `400 passphrase_required` when no key is stored yet · `400 schedule` for another value |
 | DELETE `/api/backup/instance/schedule` | — | The `schedule` object, now off: the stored key is removed; archives already made stay |
 | DELETE `/api/backup/instance/exports/{id}` | — | `{ok, id}`: removes the export and its metadata · `404 not_found` for an unknown id, anything but 32 lowercase hex characters, or a symbolic link |
@@ -966,6 +970,17 @@ blocked by activity (`sessions_active`, `crons_active`, `busy`, `snapshot_busy`,
 (`scheduled: true`) beyond the newest `keep` are deleted; manual archives are never. A failure posts the feed
 kind `instance_backup.failed` once per series of failures (a blocked run only after 6 hours), resolved by the
 next success. Nothing runs while `restore_hold` or `integrations_paused` is set.
+
+**Copy folder.** `copy` = `{folder: string | null, last: CopyRecord | null}` (`last` = the record of the newest archive
+that has one); config `instance_backup_copy` `{folder}`. After every export (manual or scheduled), once services are
+running again, the encrypted file is streamed to `<folder>/.pilot-<YYYYmmdd-HHMMSS>-<id[:12]>.pilotbackup.partial`,
+fsynced, read back and compared with the archive's size and SHA-256, then renamed to the final name (mode 0600). The
+folder is never created: a missing folder (an unplugged drive) fails rather than writing elsewhere. `CopyRecord` =
+`{ok, at, path?, bytes?, sha256?, code?, error?}` is kept in the export's metadata (`copy` of `/exports`); `code`:
+`copy_folder_missing`, `copy_no_space`, `copy_mismatch`, `copy_io`. A failure posts the feed kind
+`instance_backup.copy_failed` (group `instance-backup-copy`, folded while unread), resolved by the next successful copy.
+Copies are never deleted from the folder, also when scheduled archives are pruned. No cloud service is called: a
+synced folder (iCloud Drive, Dropbox…) is uploaded by its own client.
 
 `.pilotbackup` file: a 43-byte header, then the AES-256-GCM ciphertext of the ZIP, then the 16-byte GCM tag.
 Header (big-endian): magic `PILOTBK\n` (8 bytes), format version `u8` = 2, KDF identifier `u8` (1 = scrypt),

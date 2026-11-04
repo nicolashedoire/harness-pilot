@@ -452,6 +452,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
   of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
   scheduled=True)`): pausing services for the snapshot never cancels it.
+- Copy folder: config `instance_backup_copy` `{folder}`; `instance_backup.set_copy_folder()` (absolute, existing,
+  writable, outside the included roots) / `disable_copy()` / `copy_status()`; `copy_export(id)` streams, fsyncs,
+  reads back and compares size + SHA-256 before the rename, stores the record in the export's `.json` and posts or
+  resolves the feed group `instance-backup-copy`. The app's `export_instance` calls it after services resume and
+  outside the activation lock, for manual and scheduled exports alike.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
