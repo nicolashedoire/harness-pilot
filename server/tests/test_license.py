@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from maxxing import config, license
+from maxxing import config, license, register
 from test_cmd_core import _git, env, repos, run_cli  # noqa: F401  (fixtures)
 from test_customs import _upstream_release, code  # noqa: F401  (fixture)
 
@@ -60,6 +60,7 @@ class FakeServer:
 def server(monkeypatch):
     s = FakeServer()
     monkeypatch.setattr(license, "API", s.url)
+    monkeypatch.setattr(register, "_offline", lambda: False)          # MAXXING_LICENSE_PING=1
     yield s
     s.httpd.shutdown()
 
@@ -120,6 +121,7 @@ def _licensed_with_custom(code, tmp_path, monkeypatch):
     opt = _licensed_install(tmp_path, work)
     monkeypatch.setattr(config, "CODE", opt)
     monkeypatch.setattr(license, "GIT_URL", str(code["origin"]))
+    monkeypatch.setattr(register, "_offline", lambda: False)          # the legacy move is an explicit opt-in
     config.set_secret(license.TOKEN, "a1.tok")
     config.set_secret(license.KEY, "HM-ABCD-EFGH-JKMN-PQRS")
     (opt / "server" / "maxxing" / "rules.py").write_text("LIMIT = 50\nNAME = 'product'\n")
@@ -154,6 +156,33 @@ def test_refused_activation_shows_the_message(server, mx, capsys):
     out = capsys.readouterr().out
     assert "already on 1 server" in out and "old-vps" in out
     assert not license.enabled() and not config.get_secret(license.KEY)
+
+
+def test_nothing_reaches_the_original_project_by_default(client, mx, monkeypatch, capsys, tmp_path):
+    """The license server, the registration cloud and the original repository are not this project's backend."""
+    monkeypatch.delenv("MAXXING_LICENSE_PING", raising=False)
+    def no_network(*a, **k):
+        raise AssertionError("a request left this machine")
+    monkeypatch.setattr("urllib.request.urlopen", no_network)
+    monkeypatch.setattr(license, "_git", lambda *a, **k: (_ for _ in ()).throw(AssertionError("git ran")))
+    with pytest.raises(license.LicenseError) as e:
+        license.activate("HM-ABCD-EFGH-JKMN-PQRS")
+    assert e.value.code == "offline" and not config.get_secret(license.KEY)
+    assert run_cli("license", "activate", "HM-ABCD-EFGH-JKMN-PQRS") == 1
+    assert "does not contact the original project" in capsys.readouterr().out
+    r = client.put("/api/settings/license", json={"key": "HM-ABCD-EFGH-JKMN-PQRS"})
+    assert r.status_code in (400, 404) and not config.get_secret(license.KEY)
+    config.set_secrets({license.KEY: "HM-ABCD-EFGH-JKMN-PQRS", license.SEAT: "a1.seat"})
+    with pytest.raises(license.LicenseError) as e:
+        license.release()
+    assert e.value.code == "offline" and config.get_secret(license.SEAT) == "a1.seat"
+    assert run_cli("license", "release") == 1
+    assert license.remove_key() == {"ok": True, "freed": False}                # forgotten here, nothing sent
+    assert not config.get_secret(license.KEY) and not config.get_secret(license.SEAT)
+    assert register._call("POST", "/v1/heartbeat", {"token": "t"}) == {"ok": False, "error": "offline"}
+    config.set_secret(license.TOKEN, "a1.tok")                                  # an install from before 2.0.0a87
+    r = license.move_to_git(tmp_path)
+    assert r["ok"] is False and "original project" in r["error"]
 
 
 def test_the_archive_commands_are_gone(mx, capsys):

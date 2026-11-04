@@ -658,6 +658,9 @@ rebased; `license_token` -> `license_seat`). Triggers: `api/system._after_update
 failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stops with the reason if the move
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
+Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
+`LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
+against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission

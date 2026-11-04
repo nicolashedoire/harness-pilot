@@ -83,7 +83,7 @@ latest fetched version passes the check. Off by default.
 
 ## License
 
-This version uses the MIT license and does not require an enterprise key. Legacy license commands are inherited and are not needed; see [License](license).
+This version uses the MIT license and does not require an enterprise key. Legacy license commands are inherited and are not needed: `pilot license activate` and `pilot license release` refuse without contacting anything, `pilot license remove` only forgets a stored key on this computer. See [License](license).
 
 ## pilot video, pilot pdf
 
