@@ -458,3 +458,55 @@ def test_memory_backup_keeps_the_provenance(client, mx, capsys, monkeypatch):
     assert not det["item"]["unreviewed"]
     assert client.post("/api/atelier/extension/prov/rollback", json={"version": 1}).json()["error"] == "not_restorable"
     assert atelier.import_meta(meta) == 0                              # approved here: this server's record wins
+
+
+def test_read_only_kinds_are_listed(client, mx, monkeypatch):
+    import os
+    from maxxing import atelier_kinds, customs, themes
+    # a saved theme, applied
+    pal = themes.clean_theme({"name": "Harbour", "base": "slate", "accent": "blue"})
+    entry = themes.save_theme(pal, "created")
+    rows = {i["id"]: i for i in client.get("/api/atelier", params={"kind": "theme"}).json()["items"]}
+    assert rows[entry["id"]]["state"] == "disabled" and rows[entry["id"]]["name"] == "Harbour"
+    config.update_config(look={"theme": "dark", "palette": pal, "rev": 1})
+    rows = {i["id"]: i for i in client.get("/api/atelier", params={"kind": "theme"}).json()["items"]}
+    assert rows[entry["id"]]["state"] == "active" and rows[entry["id"]]["actions"] == []
+    # a workspace skill, mirrored for Codex
+    sk = mx["ws"] / ".claude" / "skills" / "invoice-reminders"
+    sk.mkdir(parents=True)
+    (sk / "SKILL.md").write_text("---\nname: invoice-reminders\ndescription: Remind clients.\n---\nBody\n")
+    it = client.get("/api/atelier/skill/invoice-reminders").json()["item"]
+    assert it["agents"] == ["claude"] and it["description"] == "Remind clients."
+    codex_dir = Path(os.environ["MAXXING_CODEX_SKILLS_DIR"])
+    (codex_dir / "mine").mkdir(parents=True)                       # the user's own Codex skill: never touched
+    (codex_dir / "mine" / "SKILL.md").write_text("mine")
+    assert atelier_kinds.mirror_skills()["copied"] == ["invoice-reminders"]
+    assert (codex_dir / "invoice-reminders" / "SKILL.md").read_text().endswith("Body\n")
+    assert atelier_kinds.mirror_skills()["copied"] == []          # unchanged: nothing copied
+    assert client.get("/api/atelier/skill/invoice-reminders").json()["item"]["agents"] == ["claude", "codex"]
+    (mx["ws"] / ".claude" / "skills" / "mine").mkdir()
+    (mx["ws"] / ".claude" / "skills" / "mine" / "SKILL.md").write_text("---\nname: mine\n---\n")
+    atelier_kinds.mirror_skills()
+    assert (codex_dir / "mine" / "SKILL.md").read_text() == "mine"
+    shutil.rmtree(sk)
+    assert atelier_kinds.mirror_skills()["removed"] == ["invoice-reminders"] and (codex_dir / "mine").is_dir()
+    # customizations: one conflicts with a pending update
+    monkeypatch.setattr(atelier_kinds, "_list_customs", lambda: [
+        {"id": "c-1", "title": "Telegram threads", "why": "more", "saved": "2026-10-20", "files": ["server/a.py"]},
+        {"id": "c-2", "title": "Other", "why": "", "saved": "", "files": ["server/b.py"]}])
+    monkeypatch.setattr(customs, "pending", lambda: {"reason": "conflict", "target_version": "2.0.0a109",
+                                                     "conflicts": ["server/a.py"], "customs": ["Telegram threads"]})
+    rows = {i["id"]: i for i in client.get("/api/atelier", params={"kind": "customization"}).json()["items"]}
+    assert rows["c-1"]["state"] == "review" and "2.0.0a109" in rows["c-1"]["error"]["message"]
+    assert rows["c-2"]["state"] == "active"
+    # cron jobs
+    r = client.post("/api/crons", json={"name": "Nightly", "schedule": "0 3 * * *", "kind": "shell", "command": "true"})
+    jid = r.json()["id"]
+    it = client.get(f"/api/atelier/cron/{jid}").json()["item"]
+    assert it["state"] == "active" and it["href"] == f"/crons?job={jid}"
+    client.patch(f"/api/crons/{jid}", json={"enabled": False})
+    assert client.get(f"/api/atelier/cron/{jid}").json()["item"]["state"] == "disabled"
+    counts = client.get("/api/atelier").json()["counts"]
+    assert counts["review"] == 1 and counts["disabled"] >= 1
+    assert client.post(f"/api/atelier/cron/{jid}/rollback", json={"version": 1}).json()["error"] == "not_versioned"
+    assert client.get("/api/atelier/skill/nope").status_code == 404
