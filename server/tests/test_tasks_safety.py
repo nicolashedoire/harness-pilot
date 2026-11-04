@@ -105,15 +105,29 @@ def test_a_project_whose_workspace_is_not_text_does_not_break_the_task_page(clie
 
 def test_reading_the_tasks_does_not_copy_the_whole_file(client, mx, monkeypatch):
     """GET /api/tasks deep-copied the cached tasks.json twice (sync_workspace, then the read) and the dashboard
-    widget once: ~290 ms per list with 5000 tasks. Reads now share the cache; only writers get a copy."""
+    widget once: ~290 ms per list with 5000 tasks. Reads now share the cache; only writers get a copy.
+    The patch of `copy.deepcopy` is process-wide: only copies of the cached tasks.json (or of its task list) count,
+    not what other threads copy meanwhile. The search index, which refreshes in the background after a tasks change,
+    is a reader too (it used to copy the file here, about 5 runs out of 6)."""
     (mx["ws"] / "tasks.json").write_text(json.dumps({"version": 1, "projects": [], "tasks": [
         {"id": f"t_{i}", "title": f"task {i}", "labels": ["a"]} for i in range(50)]}))
     assert client.get("/api/tasks").status_code == 200        # warm the cache and the workspace sync
     copies = []
     real = tasks_api.copy.deepcopy
-    monkeypatch.setattr(tasks_api.copy, "deepcopy", lambda x, *a: copies.append(1) or real(x, *a))
+
+    def spy(x, *a):
+        cached = tasks_api._cache["data"]
+        if cached is not None and (x is cached or x is cached.get("tasks")):
+            copies.append(1)
+        return real(x, *a)
+
+    monkeypatch.setattr(tasks_api.copy, "deepcopy", spy)
     assert len(client.get("/api/tasks").json()["tasks"]) == 50
     assert tasks_api.summary()["open"] == 50
+    with search._lock:                                          # the background index refresh, at once
+        con = search._db()
+        search._drop(con, "t:tasks")
+        search._index_tasks(con)
     assert copies == []
     r = client.patch("/api/tasks/t_1", json={"title": "renamed"})  # writers still work on their own copy
     assert r.status_code == 200 and copies
