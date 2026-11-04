@@ -78,7 +78,8 @@ the workspace (`/root/maxxing`), the state (`/var/lib/claude-maxxing`) and the p
 security updates, fail2ban for SSH and, on a server where nothing else runs, a firewall; the `claude-maxxing`
 service. The service runs as root, with a sandboxing configuration, and never listens on a public interface. The
 tools for videos, PDFs and web pages (see [Videos, PDFs and images](tools)) and the voice model are installed in
-the background afterwards; `pilot deps list` shows them. Unattended installs take their answers from variables,
+the background afterwards; `pilot deps list` shows them (verified: PDFs, web scraping and a video render on Debian
+12 and Ubuntu 24.04, arm64). Unattended installs take their answers from variables,
 for example `ACCESS=local ASSUME_YES=1 bash install.sh` as root; `bash install.sh --help` lists them.
 
 At the end, the installer prints a one-time setup link, valid for one hour: open it (through the tunnel for

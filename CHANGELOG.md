@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The README explains how to install harness-pilot on a Linux server, and the installation and tools pages say what has been verified there: the installer downloaded from this repository, then PDFs, web scraping and video rendering on Debian 12 and Ubuntu 24.04 (arm64).
 - On a Linux server, `pilot deps update` started while another update of the tools is running (the one that follows an installation or `pilot update`) now waits for it and says so, instead of both failing and leaving Node.js and Remotion missing.
 - The role of each agent of a mixed team can be changed when you create it; the default roles stay filled in.
 - On a Mac, the local app can keep running without a terminal: `bash scripts/dev-local.sh service install` makes it a background service of your account (launchd), started at login and restarted after a crash, so scheduled jobs, backups, resident missions and Telegram keep going. `service status`, `restart` and `uninstall` manage it, and its logs go to `.harness-pilot-local/logs/`. Nothing is installed without that command. `HARNESS_PILOT_PORT` picks another port than 8787.
