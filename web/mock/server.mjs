@@ -2053,6 +2053,73 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- MCP servers (server/maxxing/mcp.py): Claude Code's servers per folder, checked with `claude mcp list` in the
+   background (here: 1.5 s), and the OAuth login of a server that needs one (here: any redirect with ?code= works). */
+const mcpWhere = (rel) => {
+  if (!rel) return { rel: null, project: null, topic: null, exists: true, path: null }
+  const [, project, , topic] = rel.split('/')
+  return { rel, project: project || null, topic: topic || null, exists: S.fs.has(`${ROOT}/${rel}`), path: `${ROOT}/${rel}` }
+}
+function mcpState() {
+  if (S.mcp) return S.mcp
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing', t = now()
+  const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
+    literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
+  S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
+    server('user', null, 'github', { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
+    server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
+    server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
+  ] : [] }
+  return S.mcp
+}
+function mcpCheck() {
+  const st = mcpState()
+  if (st.checking) return
+  st.checking = true
+  const g = GEN
+  setTimeout(() => { if (g !== GEN) return; st.checking = false; st.checked_at = now(); for (const x of st.servers) { x.checked_at = now(); if (x.state === 'pending') x.state = 'connected' } bus('mcp') }, 1500)
+}
+R('GET', '/api/mcp', () => { const st = mcpState(); if (st.checked_at === null) mcpCheck(); return { servers: st.servers, checking: st.checking, checked_at: st.checked_at, config_file: '/root/.claude.json', auto: st.auto } })
+R('PUT', '/api/mcp/auto', ({ body }) => { const st = mcpState(); st.auto = !!body.enabled; if (st.auto) mcpCheck(); return { ok: true, enabled: st.auto } })
+R('POST', '/api/mcp/check', () => { mcpCheck(); return { checking: true } })
+R('POST', '/api/mcp', ({ body }) => {
+  const st = mcpState(), name = String(body.name || ''), where = String(body.where || '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) fail(400, 'bad_name', 'Letters, digits, dot, dash and underscore')
+  if (!['http', 'sse', 'stdio'].includes(body.type)) fail(400, 'bad_type', 'type: http, sse or stdio')
+  if (where && !where.startsWith('projects/')) fail(400, 'bad_where', 'where: empty (all folders) or a projects/… folder')
+  if (where && !S.fs.has(`${ROOT}/${where}`)) fail(404, 'folder_missing', 'This folder does not exist')
+  if (body.type === 'stdio' ? !String(body.command || '').trim() : !/^https?:\/\/\S+$/.test(String(body.url || ''))) fail(400, body.type === 'stdio' ? 'bad_command' : 'bad_url', body.type === 'stdio' ? 'A command is required' : 'An http(s) URL is required')
+  if (JSON.stringify(body).length > 32768) fail(400, 'too_long', 'A value is too long')
+  const scope = where ? 'local' : 'user', id = `${scope}|${where}|${name}`
+  if (st.servers.some((x) => x.id === id)) fail(409, 'exists', 'A server with this name already exists here')
+  const def = { type: body.type, ...(body.type === 'stdio' ? { command: body.command.trim(), args: body.args || [] } : { url: body.url }), ...(body.headers ? { headers: body.headers } : {}), ...(body.env ? { env: body.env } : {}) }
+  const keys = [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1])
+  st.servers.push({ id, name, scope, where: mcpWhere(where || null), ...def, literal_secret: false, keys, state: 'pending', detail: '', checked_at: null })
+  mcpCheck(); bus('mcp')
+  return { id, exposed: keys.filter((k) => S.secrets.some((s) => s.name === k && !s.expose)) }
+})
+R('DELETE', '/api/mcp', ({ q }) => { const st = mcpState(); st.servers = st.servers.filter((x) => x.id !== q.get('id')); bus('mcp'); return { ok: true } })
+R('POST', '/api/mcp/login', ({ body }) => {
+  const x = mcpState().servers.find((s) => s.id === body.id) || fail(404, 'folder_missing', 'Server not found')
+  if (x.type === 'stdio') fail(400, 'no_login_url', 'This server does not offer a login')
+  const login = crypto.randomBytes(8).toString('hex')
+  S.mcp.logins[login] = { id: x.id, at: now() }
+  return { login, url: `https://mcp.example.com/oauth/authorize?client_id=claude-code&state=${login}&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback` }
+})
+R('POST', '/api/mcp/login/:login', async ({ params, body }) => {
+  const l = mcpState().logins[params.login] || fail(404, 'login_expired', 'This login expired: start it again')
+  if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(body.redirect || ''))) fail(400, 'bad_redirect', 'Paste the whole address of the page that failed to open (http://localhost:…/callback?code=…)')
+  await sleep(800)
+  if (!/[?&]code=/.test(body.redirect)) fail(400, 'login_failed', 'The address has no authorization code')
+  delete S.mcp.logins[params.login]
+  const x = S.mcp.servers.find((s) => s.id === l.id)
+  if (x) Object.assign(x, { state: 'connected', detail: '', checked_at: now() })
+  bus('mcp')
+  return { ok: true, message: `${x ? x.name : 'Server'}: authenticated` }
+})
+R('DELETE', '/api/mcp/login/:login', ({ params }) => { delete mcpState().logins[params.login]; return { ok: true } })
+
 /* ---- telegram */
 function tgStatus() {
   const tg = S.telegram
@@ -2110,6 +2177,57 @@ R('DELETE', '/api/telegram', () => {
   Object.assign(S.telegram, { token: null, bot: null, chat: null, topics_enabled: false, threads: [], last_error: null, link: null })
   bus('telegram', 'workspace')
   return { ok: true }
+})
+
+/* ---- starter packs (server/maxxing/packs.py): read from the repository's templates/packs/<id>/pack.json, so the mock
+   offers the real catalog. Installing adds the project (a free name when taken), its topics and its jobs, disabled. */
+const PACKS_DIR = path.resolve(__dirname, '../../templates/packs')
+function packList() {
+  const lang = S.settings.language === 'fr' ? 'fr' : 'en', txt = (v) => (typeof v === 'object' && v ? v[lang] || v.en : v || '')
+  let ids = []
+  try { ids = fs.readdirSync(PACKS_DIR).filter((d) => fs.existsSync(path.join(PACKS_DIR, d, 'pack.json'))).sort() } catch {}
+  const packs = ids.map((id) => {
+    const d = JSON.parse(fs.readFileSync(path.join(PACKS_DIR, id, 'pack.json'), 'utf8'))
+    const copies = S.projects.filter((p) => p.name === d.project || p.name.startsWith(d.project + '-'))
+    return { id: d.id, project: d.project, emoji: d.emoji || '', icon: d.icon || 'package', title: txt(d.title), description: txt(d.description),
+      topics: d.topics || [], crons: (d.crons || []).map((c) => c.name), installed: copies.length > 0, partial: false, project_exists: S.projects.some((p) => p.name === d.project), basics: false, def: d }
+  })
+  const missing = ['general', 'system'].filter((n) => !S.projects.some((p) => p.name === n))
+  packs.unshift({ id: 'basics', project: 'general, system', emoji: '', icon: 'house', title: lang === 'fr' ? 'Projets de base' : 'Default projects',
+    description: lang === 'fr' ? 'general/inbox et system (tutoriel, aide, Harness) : remet ceux que vous avez supprimés, sans rien écraser.' : 'general/inbox and system (tutorial, help, Harness): puts back the ones you deleted, never overwrites.',
+    topics: ['general/inbox', 'system/help', 'system/harness', 'system/tutorial'], crons: [], installed: missing.length === 0, partial: missing.length === 1, project_exists: missing.length < 2, basics: true })
+  return packs
+}
+const packOut = ({ def, ...p }) => p
+R('GET', '/api/packs', () => ({ packs: packList().map(packOut) }))
+R('POST', '/api/packs/:id/install', async ({ params }) => {
+  const pack = packList().find((p) => p.id === params.id) || fail(404, 'unknown_pack', 'Unknown pack')
+  await sleep(700)
+  let project = '', created = 0
+  const jobs = []
+  if (pack.basics) {
+    for (const [name, topics] of [['general', ['inbox']], ['system', ['help', 'harness', 'tutorial']]]) {
+      let p = S.projects.find((x) => x.name === name)
+      if (!p) { p = { name, description: '', topics: [] }; S.projects.push(p); fsAdd(S, `${projPath(name)}/CLAUDE.md`, `# Project ${name}\n\n@memory.md\n`, now()); created += 1 }
+      for (const t of topics) if (!p.topics.some((x) => x.name === t)) { p.topics.push({ name: t, description: '' }); fsAdd(S, `${topicPath(name, t)}/CLAUDE.md`, `# Topic ${t}\n`, now()); created += 1 }
+    }
+  } else {
+    project = pack.project
+    for (let n = 2; S.projects.some((p) => p.name === project); n++) project = `${pack.project}-${n}`
+    S.projects.push({ name: project, description: pack.description, topics: pack.topics.map((name) => ({ name, description: '' })) })
+    fsAdd(S, `${projPath(project)}/CLAUDE.md`, `# Project ${project}\n\n> ${pack.description}\n\n@memory.md\n`, now())
+    fsAdd(S, `${projPath(project)}/memory.md`, `# ${project} — memory\n`, now())
+    for (const t of pack.topics) fsAdd(S, `${topicPath(project, t)}/CLAUDE.md`, `# Topic ${t}\n`, now())
+    created = 2 + pack.topics.length
+    for (const c of pack.def.crons || []) {
+      const name = project === pack.project ? c.name : `${c.name} (${project})`
+      S.crons.push({ id: rid('c'), name, schedule: c.schedule, kind: 'claude', command: '', topic_path: topicPath(project, c.topic), prompt: c.prompt, model: '',
+        reuse_session: false, enabled: false, notify: c.notify || 'failure', timeout_s: 600, last_run: null })
+      jobs.push(name)
+    }
+  }
+  bus('workspace', 'crons')
+  return { ok: true, pack: packOut(packList().find((p) => p.id === pack.id)), project, created_files: created, jobs }
 })
 
 /* ---- backup */
