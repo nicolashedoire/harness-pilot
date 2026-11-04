@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Fixed on Linux servers: rarely, a change to a session saved twice within the same millisecond went unnoticed: a finished turn sent no Telegram reply or notification, or a message sent to a continued session waited up to 10 minutes after its summary failed.
+
 - Codex sessions are now compacted automatically when their context gets large, like Claude Code sessions: at the automatic compaction threshold (Settings → Claude) or at 80 % of Codex's context window, whichever comes first. In a discussion, a Codex reply near its limit now leads to the summary too, instead of waiting for Codex to refuse a reply.
 - The Codex model is now chosen from a list instead of typed: a new Codex session, a discussion, a mixed team and a scheduled Codex prompt list the models that the Codex command where harness-pilot runs offers to your account, with **Default** (Codex's own choice) and **Other…** for any other model. Models chosen before are kept as they are.
 - On Telegram, a message sent while the previous answer was still arriving could leave the status message of its own turn stuck on "Working…" after the final summary, with "typing…" shown after the answer. Its turn now has a single status, which ends on the summary.
