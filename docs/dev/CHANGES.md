@@ -30,6 +30,7 @@
   The run prompt asks for the interface language (`config.language`, `companions._language`).
   `pilot-rea-investigation` is a product skill by its `pilot-` prefix: `pilot init` / `pilot update` install it with
   the others. It was never released as `rea-investigation`, so there is no `SKILL_RENAMES` entry.
+- Upgrade note `docs/upgrade/2.0.0a109.md` (the version after 2.0.0a108; rename it if the release gets another number): checks which `pilot` runs (`maxxing` as the way round) and has Claude offer the skill renames in what the user wrote, which `renames.migrate` leaves alone.
 - Product skills `maxxing-*` -> `pilot-*`, command `pilot` (`maxxing` kept as a permanent alias):
   - Skills renamed (folders, front matter `name:`, every cross-reference in skills, templates, docs, code, tests):
     setup, doctor, telegram, backup, tasks, mcp, customize, infra keep their suffix (`maxxing-x` -> `pilot-x`);
