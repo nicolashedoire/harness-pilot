@@ -3342,3 +3342,7 @@ Adapted at integration:
   as `models[].context_window` in `/api/claude/status`. Gauge order: model chosen for the next turn (if it
   differs) > window of the last turn > window known for that model > 200k, or 1M past 200k.
 - Browser preferences (local, `mx-ui`): `notifyDone`, `notifySound`, `badgePulse`.
+
+### Optional model-evolution plugin
+
+Adds a portable companion recipe, a standard-library external-adapter runner, and an optional Model Lab page using the existing extension API. No core model dependency or new core endpoint is introduced. Experiments freeze criteria and input hashes, keep candidate artifacts in isolated job directories, monitor time/output budgets, report comparison metrics and require a user decision before local selection. Selection is a lab pointer, not a model deployment. Adapter-reported evidence is distinct from independent measurement; learned adaptation is distinct from gradient-free edits. The contract also supports architecture-design experiments without a baseline. See `docs/user/30-model-evolution.md` and the skill protocol for limitations and installation.

@@ -60,3 +60,7 @@ You can support development through [PayPal](https://paypal.me/nicolashedoire). 
 ## License
 
 This repository is distributed under the [MIT License](LICENSE), with the original rights holders' permission. Copyright and historical license notices are preserved in [LICENSE.original](LICENSE.original). Third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Optional local-model experiments
+
+The [Model evolution plugin](docs/user/30-model-evolution.md) pairs a companion skill with a removable Model Lab page. External adapters keep model code, weights and frameworks independent of the host. Companions can prepare bounded adaptation or architecture-design trials, compare metrics and regressions, and submit exact candidate artifacts for user review. This is an experimental workflow, not a promise of automatic model improvement.
