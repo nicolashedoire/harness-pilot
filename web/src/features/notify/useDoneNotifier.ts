@@ -4,8 +4,9 @@
 // - tab hidden or window not focused → a system notification (click = open the session), unless this browser has
 //   a push subscription: the service worker shows the server's push then (no double notification);
 // - tab visible → an in-app notice with its buttons, unless that session is already open on screen.
-// Cron sessions never notify (their reports go to Telegram). The other kinds of events come from the feed
-// (features/notifications/useFeedNotifier.ts), which leaves the session ones to this hook.
+// Cron sessions never notify (their reports go to Telegram), nor do the workers of a mixed team on their assignment
+// (`team_turn`: the team notifies once, when its coordinator's synthesis ends). The other kinds of events come from
+// the feed (features/notifications/useFeedNotifier.ts), which leaves the session ones to this hook.
 import * as React from 'react'
 import { appIconSrc } from '@/lib/accent'
 import { useNavigate } from 'react-router'
@@ -53,7 +54,7 @@ function changes(before: Map<string, Seen>, now: Session[]): Change[] {
   const out: Change[] = []
   for (const s of now) {
     const b = before.get(s.id)
-    if (!b || s.source === 'cron') continue
+    if (!b || s.source === 'cron' || s.team_turn) continue
     if (!b.paused && limitPause(s)) out.push({ s, kind: 'discussion.paused', level: 'warning' })
     else if (b.state === 'running' && s.state !== 'running') {
       if (s.state === 'error') out.push({ s, kind: 'session.failed', level: 'error' })
