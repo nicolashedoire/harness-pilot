@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en" class="dark" data-accent="violet" data-density="comfortable">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/icons/harness-pilot.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <!-- PWA: installable app (manifest + service worker registered in src/pwa) and iOS home-screen mode. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/harness-pilot-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="harness-pilot" />
+    <meta name="application-name" content="harness-pilot" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>harness-pilot</title>
+    <script>
+      // Apply theme/accent/density before first paint (no flash). Mirrors src/stores/ui.ts.
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem('mx-ui') || '{}').state || {};
+          var t = s.theme || 'dark';
+          var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          var r = document.documentElement;
+          r.classList.toggle('dark', dark);
+          // Accent in sRGB (copy of src/lib/accent.ts), available from the first paint.
+          var hex = {
+            light: { blue: '#0076ed', clay: '#ea7e00', violet: '#a126d7', green: '#25931c', amber: '#e0bb00', rose: '#e62e1e' },
+            dark: { blue: '#3c91fd', clay: '#f8962d', violet: '#c25af3', green: '#55cc4b', amber: '#f1d025', rose: '#fc523a' }
+          };
+          var a = hex.dark[s.accent] ? s.accent : 'violet';
+          r.dataset.accent = a;
+          r.dataset.tint = s.tint === 'neutral' ? 'neutral' : 'tinted';
+          // Logo in the accent color (copy of src/lib/accent.ts applyAppIcons): tab icon, splash, installed app
+          // (manifest icons and launch screen) and the iOS home-screen icon.
+          var icon = document.querySelector('link[rel="icon"]');
+          if (icon) icon.href = '/icons/harness-pilot.png';
+          var manifest = document.querySelector('link[rel="manifest"]');
+          if (manifest) manifest.href = '/manifest-' + a + '.webmanifest';
+          var touch = document.querySelector('link[rel="apple-touch-icon"]');
+          if (touch) touch.href = '/icons/harness-pilot-192.png';
+          window.__mxLogo = '/icons/harness-pilot.png';
+          // Fonts (copy of src/lib/fonts.ts stacks).
+          var sans = {"geist": "'Geist Variable', ui-sans-serif, system-ui, sans-serif", "plex": "'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif", "dmsans": "'DM Sans Variable', ui-sans-serif, system-ui, sans-serif", "manrope": "'Manrope Variable', ui-sans-serif, system-ui, sans-serif", "jakarta": "'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif", "grotesk": "'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif", "outfit": "'Outfit Variable', ui-sans-serif, system-ui, sans-serif", "sora": "'Sora Variable', ui-sans-serif, system-ui, sans-serif", "nunito": "'Nunito Sans Variable', ui-sans-serif, system-ui, sans-serif", "quicksand": "'Quicksand Variable', ui-sans-serif, system-ui, sans-serif", "comfortaa": "'Comfortaa Variable', ui-sans-serif, system-ui, sans-serif", "rubik": "'Rubik Variable', ui-sans-serif, system-ui, sans-serif", "sourceserif": "'Source Serif 4 Variable', ui-serif, Georgia, 'Times New Roman', serif", "lora": "'Lora Variable', ui-serif, Georgia, 'Times New Roman', serif", "newsreader": "'Newsreader Variable', ui-serif, Georgia, 'Times New Roman', serif", "fraunces": "'Fraunces Variable', ui-serif, Georgia, 'Times New Roman', serif", "garamond": "'EB Garamond Variable', ui-serif, Georgia, 'Times New Roman', serif", "atkinson": "'Atkinson Hyperlegible Next Variable', ui-sans-serif, system-ui, sans-serif", "lexend": "'Lexend Variable', ui-sans-serif, system-ui, sans-serif", "jetbrainsui": "'JetBrains Mono Variable', ui-monospace, monospace", "martian": "'Martian Mono Variable', ui-monospace, monospace", "system": "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"};
+          var mono = {"jetbrains": "'JetBrains Mono Variable', ui-monospace, monospace", "fira": "'Fira Code Variable', ui-monospace, monospace", "geist": "'Geist Mono Variable', ui-monospace, monospace", "cascadia": "'Cascadia Code Variable', ui-monospace, monospace", "sourcecode": "'Source Code Pro Variable', ui-monospace, monospace", "victor": "'Victor Mono Variable', ui-monospace, monospace", "martian": "'Martian Mono Variable', ui-monospace, monospace", "roboto": "'Roboto Mono Variable', ui-monospace, monospace", "redhat": "'Red Hat Mono Variable', ui-monospace, monospace", "atkinsonmono": "'Atkinson Hyperlegible Mono Variable', ui-monospace, monospace"};
+          if (sans[s.font]) r.style.setProperty('--mx-font-sans', sans[s.font]);
+          if (mono[s.monoFont]) r.style.setProperty('--mx-font-mono', mono[s.monoFont]);
+          r.style.setProperty('--mx-splash-accent', hex[dark ? 'dark' : 'light'][a]);
+          r.dataset.density = s.density || 'comfortable';
+          // Touch layout (copy of src/stores/media.ts isCompact): phones, tablets and narrow windows.
+          var narrow = matchMedia('(max-width: 767px)').matches;
+          var touch = matchMedia('(pointer: coarse) and (hover: none)').matches;
+          if (narrow || s.layout === 'touch' || (touch && s.layout !== 'desktop')) r.dataset.compact = '';
+          if (s.language) r.lang = s.language;
+        } catch (e) {}
+        // First load: lets the shell animate in (removed by AppShell once the entrance is over).
+        document.documentElement.dataset.boot = '';
+        // Start the auth check now, in parallel with the JS download (consumed once by fetchAuthState).
+        try {
+          window.__mxAuth = fetch('/api/auth/state', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (a) {
+              // A browser that never picked a theme shows the server's look at once (mirrors Root.tsx adoptLook).
+              var s = JSON.parse(localStorage.getItem('mx-ui') || '{}').state || {};
+              var own = s.lookChosen !== undefined ? s.lookChosen : s.theme !== undefined || s.accent !== undefined;
+              var l = a && a.look;
+              if (l && !own) {
+                var r = document.documentElement;
+                r.classList.toggle('dark', l.theme === 'dark' || (l.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches));
+                r.dataset.accent = l.accent;
+                r.dataset.tint = l.tint;
+              }
+              return a;
+            })
+            .catch(function () { return null; });
+        } catch (e) {}
+      })();
+    </script>
+    <script>(function(){try{var m={"r":[["^/setup$",["/assets/Setup-aj-a3qst.js","/assets/code-block-H8RHSA79.js","/assets/AuthLayout-D6DSLRCy.js","/assets/Page-DxkUmq8n.js","/assets/shield-check-B0SvAxfJ.js","/assets/form-field-JXonVDUQ.js","/assets/label-csFB5HmB.js","/assets/PasswordFields-D-byPVPV.js","/assets/secret-input-BFtjUBRK.js"],["auth"]],["^/login$",["/assets/Login-CyjfmGcY.js","/assets/code-block-H8RHSA79.js","/assets/AuthLayout-D6DSLRCy.js","/assets/Page-DxkUmq8n.js","/assets/form-field-JXonVDUQ.js","/assets/label-csFB5HmB.js","/assets/secret-input-BFtjUBRK.js","/assets/TwoFactorWait-B0L51yFl.js","/assets/checkbox-BrPMSgkK.js"],["auth"]],["^/welcome$",["/assets/onboarding-2tRyNn8Y.js","/assets/arrow-left-BgsT-Bjh.js","/assets/common-DHwINdna.js","/assets/circle-x-DIWwbtlW.js","/assets/dist-C_K1Loka.js","/assets/PackPicker-DYHrGVI9.js","/assets/select-C9kr4NR-.js","/assets/code-block-H8RHSA79.js","/assets/rotate-ccw-mGeWZnXE.js","/assets/folder-kanban-BO7us3wU.js","/assets/key-round--8uARSAl.js","/assets/link-2-pr8t_jDb.js","/assets/shield-alert-qqC9Ijoo.js","/assets/shield-check-B0SvAxfJ.js","/assets/shield-half-BjetvtHI.js","/assets/smartphone-0Y7-KlFI.js","/assets/VoiceButton-C-kcMnVG.js","/assets/label-csFB5HmB.js","/assets/form-field-JXonVDUQ.js","/assets/checkbox-BrPMSgkK.js","/assets/badge-BPspbC-q.js","/assets/tabs-lNhYxFxV.js","/assets/secret-input-BFtjUBRK.js","/assets/Page-DxkUmq8n.js","/assets/CreateProjectTopic-0mzo8HYg.js","/assets/hash-BBRtuStc.js"],["auth","settings"]],["^/$",["/assets/dashboard-rZUXyUHb.js","/assets/arrow-up-DKuO7UMp.js","/assets/arrow-up-right-D7ivqNQb.js","/assets/grip-vertical-D3E1GWPi.js","/assets/card-BOmeeVt4.js","/assets/Page-DxkUmq8n.js","/assets/FeedItems-uQ6YDso0.js","/assets/check-check-GH95W0a6.js","/assets/ellipsis-D0vvOpOV.js","/assets/settings-2-BRdl0Nwy.js","/assets/charts-ih208Reu.js"],[]],["^/sessions(/.*)?$",["/assets/sessions-CHipVBeg.js","/assets/Tree-DIWUuAUE.js","/assets/chevron-left-BaGb-bxr.js","/assets/common-DHwINdna.js","/assets/circle-x-DIWwbtlW.js","/assets/dist-C_K1Loka.js","/assets/ellipsis-D0vvOpOV.js","/assets/square-pen-DAw78acb.js","/assets/flame-Dd_cdW9O.js","/assets/hash-BBRtuStc.js","/assets/list-tree-7d2_1wg8.js","/assets/plug-UuAAbA6Q.js","/assets/shield-alert-qqC9Ijoo.js","/assets/shield-check-B0SvAxfJ.js","/assets/shield-half-BjetvtHI.js","/assets/sliders-horizontal-BJpeLhBN.js","/assets/form-field-JXonVDUQ.js","/assets/label-csFB5HmB.js","/assets/dialog-BVDUf1J5.js","/assets/CreateProjectTopic-0mzo8HYg.js","/assets/arrow-up-DKuO7UMp.js","/assets/paperclip-B6FfOAuq.js","/assets/select-C9kr4NR-.js","/assets/ConnectDialog-OEpR-2CL.js","/assets/columns-2-BZovxMrU.js","/assets/code-block-H8RHSA79.js","/assets/MediaPlayer-DMup7UMb.js","/assets/rotate-ccw-mGeWZnXE.js","/assets/play-CXNZl35L.js","/assets/grip-vertical-D3E1GWPi.js","/assets/log-in-BO2SqXoE.js","/assets/message-square-plus-BOpGLq82.js","/assets/minimize-2-CLjlrGea.js","/assets/rotate-cw-DmzdrKhy.js","/assets/VoiceButton-C-kcMnVG.js","/assets/textarea-B4tOz2LK.js","/assets/checkbox-BrPMSgkK.js","/assets/badge-BPspbC-q.js","/assets/markdown-6tG1Z_HW.js","/assets/diagram-COsCAfDd.js","/assets/workflow-CJosOjy1.js","/assets/Page-DxkUmq8n.js","/assets/people-EIB6mPpt.js","/assets/Avatar-CbuMkfbn.js","/assets/model-B6f8Lfo3.js"],["files"]],["^/files(/.*)?$",["/assets/files-DG32tpbw.js","/assets/arrow-left-BgsT-Bjh.js","/assets/chevron-left-BaGb-bxr.js","/assets/circle-x-DIWwbtlW.js","/assets/columns-2-BZovxMrU.js","/assets/code-block-H8RHSA79.js","/assets/ellipsis-D0vvOpOV.js","/assets/MediaPlayer-DMup7UMb.js","/assets/rotate-ccw-mGeWZnXE.js","/assets/play-CXNZl35L.js","/assets/FilePreview-DQ_IUe6Y.js","/assets/arrow-up-DKuO7UMp.js","/assets/diagram-COsCAfDd.js","/assets/workflow-CJosOjy1.js","/assets/shield-check-B0SvAxfJ.js","/assets/form-field-JXonVDUQ.js","/assets/label-csFB5HmB.js","/assets/dialog-BVDUf1J5.js","/assets/badge-BPspbC-q.js","/assets/Page-DxkUmq8n.js"],["files","media"]],["^/tasks(/.*)?$",["/assets/tasks-DlK1l6Hg.js","/assets/arrow-up-right-D7ivqNQb.js","/assets/select-C9kr4NR-.js","/assets/chevron-left-BaGb-bxr.js","/assets/common-DHwINdna.js","/assets/circle-x-DIWwbtlW.js","/assets/dist-C_K1Loka.js","/assets/ellipsis-D0vvOpOV.js","/assets/flame-Dd_cdW9O.js","/assets/folder-kanban-BO7us3wU.js","/assets/grip-vertical-D3E1GWPi.js","/assets/hash-BBRtuStc.js","/assets/link-2-pr8t_jDb.js","/assets/rotate-cw-DmzdrKhy.js","/assets/settings-2-BRdl0Nwy.js","/assets/textarea-B4tOz2LK.js","/assets/label-csFB5HmB.js","/assets/checkbox-BrPMSgkK.js","/assets/badge-BPspbC-q.js","/assets/dialog-BVDUf1J5.js","/assets/sheet-CO1hZ9Eh.js","/assets/tabs-lNhYxFxV.js","/assets/Page-DxkUmq8n.js","/assets/model-B6f8Lfo3.js"],["tasks"]],["^/crons(/.*)?$",["/assets/crons-BLu-vP9B.js","/assets/arrow-up-right-D7ivqNQb.js","/assets/select-C9kr4NR-.js","/assets/common-DHwINdna.js","/assets/circle-x-DIWwbtlW.js","/assets/dist-C_K1Loka.js","/assets/code-block-H8RHSA79.js","/assets/ellipsis-D0vvOpOV.js","/assets/play-CXNZl35L.js","/assets/rotate-ccw-clock-SECYk2T1.js","/assets/textarea-B4tOz2LK.js","/assets/label-csFB5HmB.js","/assets/form-field-JXonVDUQ.js","/assets/badge-BPspbC-q.js","/assets/dialog-BVDUf1J5.js","/assets/sheet-CO1hZ9Eh.js","/assets/Page-DxkUmq8n.js"],["tasks"]],["^/feed$",["/assets/feed-DjM0gDA8.js","/assets/check-check-GH95W0a6.js","/assets/settings-2-BRdl0Nwy.js","/assets/card-BOmeeVt4.js","/assets/Page-DxkUmq8n.js","/assets/FeedItems-uQ6YDso0.js","/assets/ellipsis-D0vvOpOV.js"],[]],["^/git$",["/assets/GitPage-BlG1ddPl.js","/assets/arrow-up-DKuO7UMp.js","/assets/arrow-left-BgsT-Bjh.js","/assets/folder-git-2-DRkquMPZ.js","/assets/key-round--8uARSAl.js","/assets/CommitDetail-CL2lgvWG.js","/assets/code-block-H8RHSA79.js","/assets/link-2-pr8t_jDb.js","/assets/badge-BPspbC-q.js","/assets/sheet-CO1hZ9Eh.js","/assets/Page-DxkUmq8n.js"],["git"]],["^/team$",["/assets/TeamPage-D5a_PIHZ.js","/assets/Side-DXlSBzLz.js","/assets/arrow-left-BgsT-Bjh.js","/assets/paperclip-B6FfOAuq.js","/assets/check-check-GH95W0a6.js","/assets/common-DHwINdna.js","/assets/circle-x-DIWwbtlW.js","/assets/dist-C_K1Loka.js","/assets/code-block-H8RHSA79.js","/assets/ellipsis-D0vvOpOV.js","/assets/square-pen-DAw78acb.js","/assets/link-2-pr8t_jDb.js","/assets/log-in-BO2SqXoE.js","/assets/message-square-plus-BOpGLq82.js","/assets/settings-2-BRdl0Nwy.js","/assets/shield-alert-qqC9Ijoo.js","/assets/textarea-B4tOz2LK.js","/assets/label-csFB5HmB.js","/assets/checkbox-BrPMSgkK.js","/assets/dialog-BVDUf1J5.js","/assets/markdown-6tG1Z_HW.js","/assets/diagram-COsCAfDd.js","/assets/workflow-CJosOjy1.js","/assets/model-B6f8Lfo3.js","/assets/Avatar-CbuMkfbn.js","/assets/people-EIB6mPpt.js","/assets/Page-DxkUmq8n.js"],["team"]],["^/infra$",["/assets/InfraPage-DdJPKUBL.js","/assets/arrow-up-right-D7ivqNQb.js","/assets/bell-ring-B62UaieC.js","/assets/shared-RP9Lw9R_.js","/assets/workflow-CJosOjy1.js","/assets/select-C9kr4NR-.js","/assets/code-block-H8RHSA79.js","/assets/folder-git-2-DRkquMPZ.js","/assets/key-round--8uARSAl.js","/assets/message-square-plus-BOpGLq82.js","/assets/plug-UuAAbA6Q.js","/assets/settings-2-BRdl0Nwy.js","/assets/textarea-B4tOz2LK.js","/assets/form-field-JXonVDUQ.js","/assets/label-csFB5HmB.js","/assets/badge-BPspbC-q.js","/assets/dialog-BVDUf1J5.js","/assets/sheet-CO1hZ9Eh.js","/assets/Page-DxkUmq8n.js"],["infra"]],["^/settings/[^/]+$",["/assets/settings-CacWGOYv.js","/assets/bell-ring-B62UaieC.js","/assets/sections-B9dY72z5.js","/assets/folder-kanban-BO7us3wU.js","/assets/key-round--8uARSAl.js","/assets/plug-UuAAbA6Q.js","/assets/rotate-ccw-clock-SECYk2T1.js","/assets/sliders-horizontal-BJpeLhBN.js","/assets/select-C9kr4NR-.js","/assets/common-DHwINdna.js","/assets/circle-x-DIWwbtlW.js","/assets/dist-C_K1Loka.js","/assets/ConnectDialog-OEpR-2CL.js","/assets/dialog-BVDUf1J5.js","/assets/code-block-H8RHSA79.js","/assets/ellipsis-D0vvOpOV.js","/assets/rotate-ccw-mGeWZnXE.js","/assets/PackPicker-DYHrGVI9.js","/assets/link-2-pr8t_jDb.js","/assets/shield-alert-qqC9Ijoo.js","/assets/shield-check-B0SvAxfJ.js","/assets/shield-half-BjetvtHI.js","/assets/smartphone-0Y7-KlFI.js","/assets/VoiceButton-C-kcMnVG.js","/assets/label-csFB5HmB.js","/assets/form-field-JXonVDUQ.js","/assets/checkbox-BrPMSgkK.js","/assets/badge-BPspbC-q.js","/assets/tabs-lNhYxFxV.js","/assets/secret-input-BFtjUBRK.js","/assets/log-in-BO2SqXoE.js","/assets/play-CXNZl35L.js","/assets/rotate-cw-DmzdrKhy.js","/assets/InstallSteps-B-EpAbEw.js","/assets/ellipsis-vertical-IdwpY0TP.js","/assets/card-BOmeeVt4.js","/assets/markdown-6tG1Z_HW.js","/assets/diagram-COsCAfDd.js","/assets/workflow-CJosOjy1.js","/assets/Page-DxkUmq8n.js","/assets/model-B6f8Lfo3.js","/assets/Avatar-CbuMkfbn.js","/assets/showcases-CzydWrQa.js","/assets/steps-8ldFxpt7.js","/assets/TwoFactorWait-B0L51yFl.js","/assets/PasswordFields-D-byPVPV.js","/assets/charts-ih208Reu.js"],["settings","auth","show"]],["^/docs$",["/assets/docs-7cpe0RGj.js","/assets/list-tree-7d2_1wg8.js","/assets/sheet-CO1hZ9Eh.js","/assets/markdown-6tG1Z_HW.js","/assets/code-block-H8RHSA79.js","/assets/diagram-COsCAfDd.js","/assets/workflow-CJosOjy1.js","/assets/Page-DxkUmq8n.js"],[]],["^/docs/[^/]+$",["/assets/docs-7cpe0RGj.js","/assets/list-tree-7d2_1wg8.js","/assets/sheet-CO1hZ9Eh.js","/assets/markdown-6tG1Z_HW.js","/assets/code-block-H8RHSA79.js","/assets/diagram-COsCAfDd.js","/assets/workflow-CJosOjy1.js","/assets/Page-DxkUmq8n.js"],[]],["^/x$",["/assets/hub-YRDY7JMn.js","/assets/pin-B7ReKvy6.js","/assets/settings-2-BRdl0Nwy.js","/assets/Page-DxkUmq8n.js"],[]],["^/x/[^/]+(/.*)?$",["/assets/ext-nkmw8HPq.js","/assets/pin-B7ReKvy6.js","/assets/Page-DxkUmq8n.js"],[]]],"l":{"en":{"auth":"/assets/_i18n-en-auth-DuQ2o8Jn.js","core":"/assets/_i18n-en-core-CnYYq0c7.js","drag":"/assets/_i18n-en-drag-RaQRcKz9.js","feedback":"/assets/_i18n-en-feedback-OGQ-eo04.js","files":"/assets/_i18n-en-files-I_N-s68r.js","git":"/assets/_i18n-en-git-BtTyRSVM.js","infra":"/assets/_i18n-en-infra-Bu-sJBWf.js","maxxing":"/assets/_i18n-en-maxxing-CTT7kEFY.js","media":"/assets/_i18n-en-media-DVLbe4pq.js","paste":"/assets/_i18n-en-paste-DhBEcQdo.js","settings":"/assets/_i18n-en-settings-Cu37yOJm.js","show":"/assets/_i18n-en-show-Da2jCZOO.js","tasks":"/assets/_i18n-en-tasks-BNNburAK.js","team":"/assets/_i18n-en-team-DT-tAt6i.js","where":"/assets/_i18n-en-where-jbVyEelC.js"},"fr":{"auth":"/assets/_i18n-fr-auth-CzBVKY36.js","core":"/assets/_i18n-fr-core-CydkgxaM.js","drag":"/assets/_i18n-fr-drag-C9a-bKsM.js","feedback":"/assets/_i18n-fr-feedback-CpU4OEJG.js","files":"/assets/_i18n-fr-files-Bg5-6kSr.js","git":"/assets/_i18n-fr-git-B9jhj6dZ.js","infra":"/assets/_i18n-fr-infra-Dqye8Bs-.js","maxxing":"/assets/_i18n-fr-maxxing-BfP81Ivp.js","media":"/assets/_i18n-fr-media-CGE59DDr.js","paste":"/assets/_i18n-fr-paste-B7Lvhnk-.js","settings":"/assets/_i18n-fr-settings-9uHpAPZQ.js","show":"/assets/_i18n-fr-show-E1pLHhPK.js","tasks":"/assets/_i18n-fr-tasks-TpzqKjR0.js","team":"/assets/_i18n-fr-team-amToOqAF.js","where":"/assets/_i18n-fr-where-DYSUC6lT.js"}}},p=location.pathname,l=[],G=['core'],i;
+for(i=0;i<m.r.length;i++)if(new RegExp(m.r[i][0]).test(p)){l=m.r[i][1];G=G.concat(m.r[i][2]);break}
+var s=JSON.parse(localStorage.getItem('mx-ui')||'{}').state||{},g=s.language||((navigator.language||'').toLowerCase().indexOf('fr')===0?'fr':'en');
+var d=m.l[g]||{};for(i=0;i<G.length;i++)if(d[G[i]])l.push(d[G[i]]);for(i=0;i<l.length;i++){var k=document.createElement('link');k.rel='modulepreload';k.crossOrigin='';k.fetchPriority='low';k.href=l[i];document.head.appendChild(k)}}catch(e){}})()</script>
+    <style>html{background:#fff}html.dark{background:#09090b}.mx-splash{justify-content:center;align-items:center;height:100dvh;display:flex}.mx-splash img{width:48px;height:48px;animation:1.6s ease-in-out infinite mx-splash}@keyframes mx-splash{0%,to{opacity:1}50%{opacity:.55}}</style>
+    <script type="module" crossorigin src="/assets/index-xSrUGHlR.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-hePW80VL.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-CATZNyVw.js">
+    <link rel="modulepreload" crossorigin href="/assets/createLucideIcon-Bl3st4bB.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-router-B8kuLWb3.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-ui-frGWvPt-.js">
+    <link rel="modulepreload" crossorigin href="/assets/utils-C1GiULr8.js">
+    <link rel="modulepreload" crossorigin href="/assets/media-IgMKWFtT.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-query-CthOliPc.js">
+    <link rel="modulepreload" crossorigin href="/assets/files-Mb7jZhYA.js">
+    <link rel="modulepreload" crossorigin href="/assets/spinner-DLzUvvZs.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CgrTZABh.css">
+    <link rel="preload" href="/assets/inter-latin-wght-normal-Dx4kXJAl.woff2" as="font" type="font/woff2" crossorigin="">
+  </head>
+  <body>
+    <div id="root">
+      <div class="mx-splash" aria-hidden="true">
+        <!-- no src in the markup: the browser would fetch (and might show) the blue logo before the accent one -->
+        <img id="mx-splash-logo" alt="" width="48" height="48" />
+        <script>document.getElementById('mx-splash-logo').src = window.__mxLogo || '/icons/harness-pilot.png';</script>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+# harness-pilot
+
+![Two luminous companions representing the agents](docs/assets/project-cover.png)
+
+**A self-hosted workspace for working with Claude Code and OpenAI Codex.**
+
+Create project sessions, work with either agent, or let both exchange ideas automatically while you follow along. The project is under active development; some advanced features currently work only with Claude Code.
+
+## What you can do
+
+- Organize persistent conversations by project and topic.
+- Select Claude Code, Codex, or both for an automatic collaborative discussion or debate.
+- Pause after the current answer, resume, intervene during a turn, stop the conversation, or set an optional response or time limit.
+- Work with files, tasks, schedules, and project memory from the web interface.
+- Optionally configure Telegram, voice features, and GitHub backups.
+
+Each agent uses its own CLI and account. Automatic discussions pass the other agent's latest reply to the next agent; every turn uses the corresponding account. Some features, including parts of the Claude-specific settings, are not yet available for Codex.
+
+## Run locally on macOS
+
+Requirements: Python, [uv](https://docs.astral.sh/uv/), and a signed-in installation of Claude Code and/or Codex. From the repository root:
+
+```sh
+bash scripts/dev-local.sh
+```
+
+Open `http://127.0.0.1:8787`. On the first run, open another terminal and run:
+
+```sh
+bash scripts/dev-local.sh link
+```
+
+Open the configuration link and choose a password in your browser. The local instance binds to your computer only and stores its workspace and state in `.harness-pilot-local/`, which Git ignores. Stop the server with `Ctrl+C` in its terminal.
+
+The local script uses an isolated workspace and test crontab. It starts with restrictive permissions, turns telemetry off by default, and disables registration and license communication with the upstream service. The legacy installer and upgrade paths have not yet been validated for this repository; use the local script above.
+
+## Start an automatic conversation
+
+In **Sessions**, create a session and select **Claude Code + Codex**. Choose a collaborative discussion or a debate, optionally set a maximum number of replies or a time limit, and send your topic. You can pause after the current reply, resume, send an intervention immediately, or stop the exchange. Resuming after a limit starts a new period. Each response may use the allowance associated with the relevant agent's account.
+
+To follow discussions in Telegram, configure a bot in **Settings → Telegram** and enable mirroring. Telegram setup is separate from connecting the agents.
+
+## Documentation and contributions
+
+The guides in `docs/user/` describe the existing application; some legacy pages are still being updated for this version. See [the current audit](docs/AUDIT.md) for known inconsistencies and [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
+
+You can support development through [PayPal](https://paypal.me/nicolashedoire). The link opens PayPal directly; the application does not handle payments or store payment credentials.
+
+## License
+
+This repository is distributed under the [MIT License](LICENSE), with the original rights holders' permission. Copyright and historical license notices are preserved in [LICENSE.original](LICENSE.original). Third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
