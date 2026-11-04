@@ -39,7 +39,7 @@ A link to one project: `/tasks?project=<workspace project name>`.
 ## Using the board
 
 - Create a task with a title; add notes (markdown), priority (none, low, medium, urgent), due
-  date, labels, a task project (with a color) and optionally a linked workspace topic.
+  date, a reminder, a repetition, labels, a task project (with a color) and optionally a linked workspace topic.
 - **Several at once**: Ctrl/⌘ + click cards (or click the round box in their corner, or the one
   next to a column / group title) to select them. A bar appears at the bottom: change their
   status, priority, due date, project or labels in one go, or delete them. Dragging a selected
@@ -48,10 +48,34 @@ A link to one project: `/tasks?project=<workspace project name>`.
 - Filter by label, priority or due date; "today" shows overdue and due-today tasks.
 - The dashboard widget **Tasks** summarizes what is in progress and due.
 
+## Reminders
+
+Give a task a **Reminder** (a date and a time, in the time zone of Settings) and you get a notification when that
+time comes: in **Notifications** (under *To handle*, with **Open the task**), as a sound and a notice in an open tab,
+and as a push notification if you allowed them in this browser. Settings -> Notifications -> *Task reminders* turns
+them off, mutes them or sends them to Telegram as well (off by default).
+
+- One notification per reminder: restarting the app never sends it again. A reminder whose time passed while the app
+  was stopped arrives as soon as it is back.
+- Marking the task done (or deleting it) takes the notification out of *To handle*. A done task is not reminded.
+- Change the reminder to be reminded again at the new time; the cross next to it removes it.
+
+## Recurring tasks
+
+**Repeat** in the task panel: every day, every week on the days you pick, or every month. When you mark a recurring
+task done (on the board, in the panel, several at once, or Claude in the file), the next one is added to *To do*
+with its due date, the same title, notes, priority, project and labels, and its reminder moved to match.
+
+- The next date comes after the task's due date, and after today: a task done late does not come back already overdue.
+- Every month keeps the day of the month: a task due on the 31st comes back on the 30th in a 30-day month, then on the
+  31st again.
+- The done task stops repeating (the series continues with the new one): reopening it and closing it again does not add
+  another one. Set **Repeat** back to *Does not repeat* to end the series.
+
 ## Asking Claude
 
-In any session: "add a task to call the accountant on Friday", "what is due this week?", "close
-the launch tasks". The `pilot-tasks` skill knows the file format and writes it safely. The page
+In any session: "add a task to call the accountant on Friday", "remind me of it Friday at 9:00", "what is due
+this week?", "close the launch tasks". The `pilot-tasks` skill knows the file format and writes it safely. The page
 refreshes by itself within seconds.
 
 When Claude changes the file while you edit a task on the page, both changes are kept: yours is applied
@@ -65,14 +89,16 @@ on top of the file as Claude left it.
   "projects": [{"id": "p_ab12", "name": "acme", "color": "#6366f1", "workspace": "acme"}],
   "tasks": [{
     "id": "t_9f3c2a", "title": "Write the launch post", "notes": "",
-    "status": "todo", "priority": 2, "due": "2026-05-04",
+    "status": "todo", "priority": 2, "due": "2026-05-04", "remind_at": "2026-05-04T09:00",
     "project_id": "p_ab12", "topic_path": "projects/acme/topics/blog", "labels": ["writing"],
     "created": 1767225600.0, "updated": 1767225600.0, "done_at": null, "order": 1000.0
   }]
 }
 ```
 
-- `status`: `todo`, `doing`, `done`; `priority`: 0–3; `due`: `YYYY-MM-DD` or `null`.
+- `status`: `todo`, `doing`, `done`; `priority`: 0–3; `due`: `YYYY-MM-DD` or `null`; `remind_at`: `YYYY-MM-DDTHH:MM`
+  (your time zone) or `null`; `repeat`: `{"every": "daily"}`, `{"every": "weekly", "days": [1, 4]}` (0 = Sunday),
+  `{"every": "monthly"}` or `null`.
 - A project with `workspace` follows that workspace project; `hidden: true` leaves it out of the projects
   column.
 - Unknown fields are preserved, so you can add your own.
