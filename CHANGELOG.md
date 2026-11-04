@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The README explains how to install harness-pilot on a Linux server, and the installation and tools pages say what has been verified there: the installer downloaded from this repository, then PDFs, web scraping and video rendering on Debian 12 and Ubuntu 24.04 (arm64).
 - **Summarise & restart** now works on a Claude Code and Codex discussion: a new discussion with the same objective, roles, models and limits continues from a summary of the exchanges, and a paused discussion stays paused on the reply it was waiting for.
 - Scheduled jobs can run **At startup** (`@reboot`) in the local app: they start each time the application starts. The Crons page shows *At the next start* for them.
 - Make a task repeat every day, every week on chosen days, or every month: when you mark it done, the next one is added to *To do* with its due date and reminder.
