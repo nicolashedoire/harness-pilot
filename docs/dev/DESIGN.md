@@ -119,6 +119,21 @@ domain components reused by onboarding **and** settings: `ClaudeConnect`, `Claud
 - **Density**: rows 40 px comfortable / 32 px compact (`--row-h`); lists use `divide-y` inside a bordered card.
 - Responsive targets: 375 / 768 / 1280 / 1920 px. Test at least 375 and 1280.
 
+### Conversation view (Sessions)
+- One header per session (breadcrumb project › topic, title, agent + model chip, context gauge in %, **…**, close);
+  the Sessions page renders no `PageHeader` on a computer: the list's title row holds its actions. On `/sessions*`
+  the sidebar is folded into a 64 px icon rail (`components/shell/rail-store.ts`; nav items 44 px).
+- Reading column `--mx-read` = 740 px (set on the column, `none` once widened by hand); thread, composer and banners
+  use `max-w-(--mx-read,…)`.
+- `pages/sessions/Turn.tsx` groups items into turns: agent header (`AgentIcon` + name + time), runs of tool calls and
+  thoughts folded into one activity line (expandable rows with +/-, diff / output on demand), the answer
+  (`Markdown` with `.mx-answer`, styles in `pages/sessions/conversation.css`), written-file cards, a footer
+  (duration · cost, copy, new session; model / tokens / cache in its tooltip). Rows are memoised on item identity.
+- States at the end of the thread are cards (`tail`): plan to approve, failed turn (Retry), agent question.
+- Agents: `features/agents/AgentIcon.tsx` (`role="img"`, product names never translated). Discussion lanes use
+  `--agent-claude` / `--agent-codex` (chart series slots, defined in `conversation.css`).
+- Filled buttons (send, approve, retry, new session) are the shared `Button` so they follow the palette.
+
 ### Mobile
 - Inputs 16 px (automatic), touch targets ≥ 44 px (buttons do it automatically below `md`), `Dialog`/`Sheet`
   become bottom sheets, respect `--safe-top/bottom/left/right`.
