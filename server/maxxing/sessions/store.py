@@ -211,9 +211,11 @@ def thread_prev_cost(m: dict, csid: str | None) -> float:
     return float(tc.get("total") or 0) if csid and tc.get("csid") == csid else 0.0
 
 
-def add_usage(m: dict, usage: dict | None, cost: float, when: float, actor: str | None = None) -> None:
+def add_usage(m: dict, usage: dict | None, cost: float, when: float, actor: str | None = None,
+              turn: bool = True) -> None:
     """Add one Claude `result` (raw usage + cost) to the meta counters. `tokens` is only kept up to date
-    once it exists (new sessions; older ones are backfilled from their log first, see stats.py)."""
+    once it exists (new sessions; older ones are backfilled from their log first, see stats.py). `turn=False`: a
+    call beside the conversation (summary) - its tokens count for `actor`, not as one of its turns."""
     u = usage if isinstance(usage, dict) else {}
     total = sum(int(u.get(src) or 0) for _, src in TOKEN_KEYS)
     if isinstance(m.get("tokens"), dict):
@@ -225,7 +227,7 @@ def add_usage(m: dict, usage: dict | None, cost: float, when: float, actor: str 
         p = providers.get(actor) if isinstance(providers.get(actor), dict) else {**empty_tokens(), 'turns': 0}
         for k, src in TOKEN_KEYS:
             p[k] = int(p.get(k) or 0) + int(u.get(src) or 0)
-        p['turns'] = int(p.get('turns') or 0) + 1
+        p['turns'] = int(p.get('turns') or 0) + (1 if turn else 0)
         providers[actor] = p
         m['provider_usage'] = providers
     days = m.get("days") if isinstance(m.get("days"), dict) else {}

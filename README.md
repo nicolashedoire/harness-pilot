@@ -40,7 +40,7 @@ bash scripts/dev-local.sh link
 
 Open the configuration link and choose a password in your browser. Then use `http://127.0.0.1:8787`. The local instance binds to your computer only and stores its workspace and state in `.harness-pilot-local/`, which Git ignores. Stop the server with `Ctrl+C` in its terminal.
 
-The local script uses an isolated workspace and does not change your system crontab. A local scheduler runs jobs while the application is running; it does not replay jobs missed during sleep or shutdown, and does not support `@reboot`. Scheduled prompts currently use Claude Code. A new local configuration starts in Claude's default permission mode. The application's legacy installation counter, registration and license communication with the upstream service are disabled. Agent CLIs and optional integrations have their own network and privacy settings. The legacy installer and upgrade paths have not yet been validated for this repository; use the local script above.
+The local script uses an isolated workspace and does not change your system crontab. A local scheduler runs jobs while the application is running; it does not replay jobs missed during sleep or shutdown, and does not support `@reboot`. Scheduled prompts currently use Claude Code. A new local configuration starts in Claude's default permission mode. The application's legacy installation counter, registration and license communication with the upstream service are disabled. Agent CLIs and optional integrations have their own network and privacy settings. To run it as a service on a Linux server (Debian 12, Ubuntu 24.04), see [Installation](docs/user/02-installation.md).
 
 ## Start an automatic conversation
 
@@ -78,7 +78,7 @@ Coordinate reviewed code proposals with the optional [pull request integration q
 
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 
-Settings → Backup offers an encrypted local **complete instance backup** (settings, credentials, conversations, attachments, projects, files and labels), restored into a separate instance for review before services resume. The optional **GitHub memory backup** covers selected files and non-secret settings only. See the [backup guide](docs/user/10-backup.md) for both workflows, exclusions and recovery instructions.
+Settings → Backup offers an encrypted local **complete instance backup** (settings, credentials, conversations, attachments, projects, files and labels), restored into a separate instance for review before services resume. The optional **GitHub memory backup** covers selected files, non-secret settings and the space labels of those files only. See the [backup guide](docs/user/10-backup.md) for both workflows, exclusions and recovery instructions.
 
 You can support development through [PayPal](https://paypal.me/nicolashedoire). The link opens PayPal directly; the application does not handle payments or store payment credentials.
 
