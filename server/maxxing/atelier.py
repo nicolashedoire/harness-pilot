@@ -339,7 +339,6 @@ def _defines(tree: ast.Module, name: str) -> bool:
 def _static_page(run: Any, ext: extensions.Extension, has_handle: bool) -> None:
     from . import extcheck as xc
     run.file("page.js")
-    base = ext.dir.resolve()
     seen: set[str] = set()
     todo = [("page.js", "")]
     calls_api = node_missing = False
@@ -386,7 +385,6 @@ def _static_page(run: Any, ext: extensions.Extension, has_handle: bool) -> None:
                 run.add("modules", xc.ERROR, f"{rel} imports {spec}: outside the extension folder")
                 continue
             todo.append((target.replace(os.sep, "/"), rel))
-    del base
     if node_missing:
         run.add("syntax", xc.WARN, "Node.js is not installed: the JavaScript syntax was not checked")
     elif not any(s["step"] == "syntax" and s["status"] == xc.ERROR for s in run.steps):
