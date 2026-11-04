@@ -397,6 +397,7 @@ function sourceLabel(source: string, t: ReturnType<typeof useT>): string {
 }
 
 export function AttachmentStrip({ paths }: { paths: string[] }) {
+  const t = useT()
   const open = useOpenPreview()
   const masked = usePresentation()
   return (
@@ -416,7 +417,7 @@ export function AttachmentStrip({ paths }: { paths: string[] }) {
             onPointerEnter={() => prefetchMedia(p)}
             onFocus={() => prefetchMedia(p)}
             className="relative size-20 shrink-0 overflow-hidden rounded-lg border bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            aria-label={masked ? 'Attachment' : baseName(p)}
+            aria-label={masked ? t('sessions.attachment') : baseName(p)}
           >
             {masked ? null : <Thumb path={p} w={160} anim loading="lazy" className="size-full object-cover" />}
             {isGif(p) && <GifBadge />}
@@ -546,8 +547,9 @@ function GifBadge() {
 const isGif = (p: string) => /\.gif$/i.test(p)
 
 function MaskedLines() {
+  const t = useT()
   return (
-    <div className="grid gap-1.5" aria-label="Hidden (presentation mode)">
+    <div className="grid gap-1.5" aria-label={t('presentation.hidden')}>
       <div className="h-3 w-11/12 rounded bg-muted" />
       <div className="h-3 w-9/12 rounded bg-muted" />
       <div className="h-3 w-10/12 rounded bg-muted" />
