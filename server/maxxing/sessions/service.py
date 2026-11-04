@@ -300,7 +300,7 @@ def create_session(path: str, message: str | None = None, title: str | None = No
                    permission_mode: str = "", auto_title: bool = False, voice_path: str | None = None,
                    provider: str = "claude", discussion_turn_limit: int | None = None,
                    discussion_duration_seconds: int | None = None,
-                   claude_role: str = '', codex_role: str = '') -> dict:
+                   claude_role: str = '', codex_role: str = '', codex_model: str | None = None) -> dict:
     """`auto_title`: `title` was made from the first message by the caller (Telegram) - still worth a short title."""
     try:
         p = workspace.normalize_path(path)
@@ -315,6 +315,7 @@ def create_session(path: str, message: str | None = None, title: str | None = No
     audio = _check_voice(voice_path)
     given = (title or "").strip()[:120]
     model = _check_model(model)
+    codex_model = _check_model(codex_model)
     meta = store.new_meta(p, given or _default_title(p, message), model=model or "",
                           source=source, notify=notify, cron=cron, env=env, timeout_s=timeout_s, plan_mode=plan_mode,
                           permission_mode=permission_mode, provider=provider)
@@ -324,7 +325,7 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         if discussion_duration_seconds is not None and not 60 <= discussion_duration_seconds <= 86400:
             raise SessionError(400, "bad_limit", "The duration must be between 1 minute and 24 hours.")
         meta.update(discussion_turn_limit=discussion_turn_limit, discussion_duration_seconds=discussion_duration_seconds,
-                    claude_role=claude_role.strip()[:2000], codex_role=codex_role.strip()[:2000])
+                    claude_role=claude_role.strip()[:2000], codex_role=codex_role.strip()[:2000], codex_model=codex_model)
     automatic, has_text = auto_title or not given, bool((message or "").strip())
     if automatic and not has_text:
         meta["title_auto"] = meta["title"]       # short title on the first message (titles.first_message)

@@ -341,7 +341,8 @@ class Runner:
         thread = str(meta.get("codex_thread_id") or "")
         root = Path(cfg.get("workspace") or "/").resolve()
         images = [str(p) for p in item.get("attachments") or [] if inline_image(str(p), root)]
-        args = codex.command(thread, mode, str(meta.get("model") or ""), images)
+        codex_model = meta.get('codex_model') if is_debate else meta.get('model')
+        args = codex.command(thread, mode, str(codex_model or ''), images)
         env = spawn.base_env()
         env.update({str(k): str(v) for k, v in (meta.get("env") or {}).items()
                     if spawn.ENV_NAME_RE.match(str(k))})

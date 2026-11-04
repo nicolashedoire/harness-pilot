@@ -13,6 +13,8 @@ When creating a session, choose **Claude Code + Codex**, then select a collabora
 
 You can assign a different role to each agent, choose a built-in pair of roles, and save named configurations for later sessions. Roles are included in the instructions sent to the corresponding agent on every turn. Saved configurations live in the server's local state.
 
+The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
+
 Some features described below apply to Claude sessions only; Codex support is still evolving.
 
 ## Layout

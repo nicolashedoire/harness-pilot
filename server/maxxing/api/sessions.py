@@ -52,6 +52,7 @@ class CreateIn(_Text):
     message: str | None = None
     title: str | None = None
     model: str | None = None
+    codex_model: str | None = None
     provider: Literal["claude", "codex", "discussion", "debate"] = "claude"
     discussion_turn_limit: int | None = Field(default=None, ge=1, le=200)
     discussion_duration_seconds: int | None = Field(default=None, ge=60, le=86400)
@@ -163,6 +164,7 @@ async def create_session(body: CreateIn):
                        model=body.model, provider=body.provider, attachments=body.attachments, source="web",
                        discussion_turn_limit=body.discussion_turn_limit,
                        discussion_duration_seconds=body.discussion_duration_seconds,
+                       codex_model=body.codex_model,
                        claude_role=body.claude_role, codex_role=body.codex_role,
                        plan_mode=body.plan_mode, voice_path=body.voice)
 

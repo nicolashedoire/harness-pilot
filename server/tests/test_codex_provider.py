@@ -232,7 +232,7 @@ def test_discussion_roles_reach_the_corresponding_agents(client, topic, mx, monk
     monkeypatch.setenv('ROLE_PROMPTS', str(prompts))
     fake.write_text('''#!/usr/bin/env python3
 import json, os, sys
-with open(os.environ["ROLE_PROMPTS"], "a") as f: f.write(json.dumps(sys.stdin.read()) + "\\n")
+with open(os.environ["ROLE_PROMPTS"], "a") as f: f.write(json.dumps({"prompt": sys.stdin.read(), "argv": sys.argv[1:]}) + "\\n")
 print(json.dumps({"type":"thread.started","thread_id":"role-thread"}), flush=True)
 print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"Review"}}), flush=True)
 print(json.dumps({"type":"turn.completed","usage":{}}), flush=True)
@@ -240,12 +240,15 @@ print(json.dumps({"type":"turn.completed","usage":{}}), flush=True)
     fake.chmod(0o755)
     monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
     s = client.post('/api/sessions', json={'path': topic, 'provider': 'discussion', 'message': 'NOTOOL',
-                    'discussion_turn_limit': 2, 'claude_role': 'PROPOSER ROLE', 'codex_role': 'REVIEWER ROLE'}).json()
+                    'discussion_turn_limit': 2, 'claude_role': 'PROPOSER ROLE', 'codex_role': 'REVIEWER ROLE',
+                    'model': 'claude-test-model', 'codex_model': 'codex-test-model'}).json()
     wait_for(lambda: (x := client.get(f"/api/sessions/{s['id']}").json())['state'] == 'idle' and x['debate_paused'], 20)
     claude_calls = [json.loads(line) for line in (mx['fake_dir'] / 'calls.jsonl').read_text().splitlines()]
     assert 'PROPOSER ROLE' in claude_calls[0]['prompt'] and 'REVIEWER ROLE' not in claude_calls[0]['prompt']
-    codex_prompt = json.loads(prompts.read_text().splitlines()[0])
-    assert 'REVIEWER ROLE' in codex_prompt
+    codex_call = json.loads(prompts.read_text().splitlines()[0])
+    assert 'REVIEWER ROLE' in codex_call['prompt']
+    assert codex_call['argv'][codex_call['argv'].index('--model') + 1] == 'codex-test-model'
+    assert claude_calls[0]['argv'][claude_calls[0]['argv'].index('--model') + 1] == 'claude-test-model'
 
 
 def test_discussion_preset_save_list_delete_and_validation(client):

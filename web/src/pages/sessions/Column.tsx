@@ -1207,6 +1207,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const create = useCreateSession()
   const [title, setTitle] = React.useState('')
   const [model, setModel] = React.useState('')
+  const [codexModel, setCodexModel] = React.useState('')
   const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both'>('claude')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
@@ -1247,11 +1248,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const options = topics.map((tp) => ({ value: tp.path, label: mask(`${tp.project} / ${tp.name}`, 10) }))
   const valid = topics.some((tp) => tp.path === col.path)
   const validLimits = (!turnLimit || (+turnLimit >= 1 && +turnLimit <= 200 && Number.isInteger(+turnLimit))) && (!durationMinutes || (+durationMinutes >= 1 && +durationMinutes <= 1440 && Number.isInteger(+durationMinutes)))
-  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole } : {}
+  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : {}
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
-      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: model || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, attachments, plan_mode: planMode || undefined })
+      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, attachments, plan_mode: planMode || undefined })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text, attachments, queued: false })
       saveDraft(`new:${col.path}`, '')
@@ -1267,7 +1268,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const onSendVoice = async (file: File) => {
     try {
       const up = await uploadAttachment(col.path, file)
-      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: model || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
+      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text: '', attachments: [], queued: false, voice: true })
       becomeSession(col.key, s.id)
@@ -1351,11 +1352,16 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
               {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
             </div>}
-            {provider === 'claude' && <div className="grid gap-1.5">
-              <span className="text-sm font-medium">{t('sessions.model.label')}</span>
+            {provider !== 'codex' && <div className="grid gap-1.5">
+              <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
               <div>
                 <ModelPicker chosen={model} onChange={setModel} />
               </div>
+            </div>}
+            {provider !== 'claude' && <div className="grid gap-1.5">
+              <Label htmlFor={`codex-model-${col.key}`}>{t('sessions.codexModel')}</Label>
+              <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
+              <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>
             </div>}
             {provider !== 'both' && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
               <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
