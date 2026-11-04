@@ -734,7 +734,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   </DropdownMenuCheckboxItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
+                <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>

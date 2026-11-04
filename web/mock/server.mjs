@@ -1659,6 +1659,26 @@ R('POST', '/api/teams/:sid/stop', ({ params }) => {
   return teamOut(params.sid)
 })
 
+/* ---- discussion presets (server/maxxing/sessions/presets.py): saved roles of Claude Code + Codex conversations */
+const presetsState = () => (S.discussionPresets ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? [
+  { id: uuid(), name: 'Builder and reviewer', claude_role: 'Propose the change and write it step by step.', codex_role: 'Review each step: risks, missing tests, simpler options.' },
+  { id: uuid(), name: 'Two copywriters', claude_role: 'Write the first draft in a warm, plain tone.', codex_role: 'Tighten the draft: shorter sentences, no jargon, keep the facts.' },
+] : [])
+R('GET', '/api/discussion-presets', () => presetsState())
+R('POST', '/api/discussion-presets', ({ body }) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name || body.name.length > 80 || String(body.claude_role || '').length > 2000 || String(body.codex_role || '').length > 2000) fail(422, 'invalid', 'name: 1-80 characters, roles: 2000 at most')
+  if (presetsState().length >= 100) fail(400, 'bad_request', 'A maximum of 100 configurations can be saved.')
+  const preset = { id: uuid(), name, claude_role: String(body.claude_role || '').trim(), codex_role: String(body.codex_role || '').trim() }
+  S.discussionPresets.push(preset)
+  return preset
+})
+R('DELETE', '/api/discussion-presets/:id', ({ params }) => {
+  if (!presetsState().some((p) => p.id === params.id)) fail(404, 'not_found', 'Configuration not found')
+  S.discussionPresets = S.discussionPresets.filter((p) => p.id !== params.id)
+  return { ok: true }
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)

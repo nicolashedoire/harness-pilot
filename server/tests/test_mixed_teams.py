@@ -236,9 +236,15 @@ def test_team_live_view_is_bounded_and_cached(client, topic, mx, monkeypatch):
     first = client.get(f'/api/teams/{sid}').json()['agents'][0]
     assert first['state'] == 'running' and first['report'] is None and first['finished_at'] is None
     assert first['activity'][-1] == {'kind': 'say', 'target': 'Starting a long task.'}
-    client.get(f'/api/teams/{sid}')
     assert all(n == teams.LIVE_TAIL for _, n in reads)
-    assert len([s for s, _ in reads if s == claude]) == 1   # the second poll reused the first read (log unchanged)
+    # the worker keeps writing to its log (progress lines): hold its identity still to see the cache at work
+    ident = service.log_ident(claude)
+    real_ident = service.log_ident
+    monkeypatch.setattr(service, 'log_ident', lambda s: ident if s == claude else real_ident(s))
+    client.get(f'/api/teams/{sid}')
+    before = len([s for s, _ in reads if s == claude])
+    client.get(f'/api/teams/{sid}')
+    assert len([s for s, _ in reads if s == claude]) == before   # the second poll reused the first read (log unchanged)
     client.post(f'/api/teams/{sid}/stop')
 
 
