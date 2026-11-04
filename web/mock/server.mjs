@@ -1582,6 +1582,53 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- side question, hidden messages, summary to memory (api/sessions.py): canned answers, real checks */
+const sideBusy = new Set()
+R('POST', '/api/sessions/:id/ask', async ({ params, body }) => {
+  const s = findSession(params.id), question = String(body.question || '').trim()
+  if (!question) fail(422, 'invalid', 'question is required')
+  if (!s.turns) fail(409, 'no_thread', 'This session has no answer yet')
+  if (sideBusy.has(s.id)) fail(409, 'busy', 'A side question is already running for this session')
+  if (sideBusy.size >= 2) fail(429, 'busy', 'Two side questions are already running')
+  sideBusy.add(s.id)
+  try { await sleep(1500) } finally { sideBusy.delete(s.id) }
+  return { answer: `From this conversation (“${s.title}”): ${s.last_text ? s.last_text.slice(0, 160) : 'nothing has been decided yet.'}\n\nNothing was changed and this answer is not saved in the thread.`, cost_usd: 0.012, duration_ms: 1500 }
+})
+R('POST', '/api/sessions/:id/hide', ({ params, body }) => {
+  const s = findSession(params.id), hidden = body.hidden !== false
+  const evs = S.events[s.id] || []
+  if (!evs.some((e) => e.type === 'user' && e.at === body.at)) fail(404, 'not_found', 'No user message at this time')
+  const last = evs.filter((e) => e.type === 'hide' && e.ref === body.at).at(-1)
+  if ((last ? last.hidden : false) !== hidden) addEvents(s, { type: 'hide', ref: body.at, hidden, at: now() })
+  return { ok: true }
+})
+const summaryBusy = new Set()
+R('POST', '/api/sessions/:id/summary', async ({ params }) => {
+  const s = findSession(params.id)
+  if (!(S.events[s.id] || []).some((e) => e.type === 'assistant' || e.type === 'user')) fail(400, 'empty_session', 'Nothing to summarize yet')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  if (summaryBusy.has(s.id)) fail(409, 'summary_busy', 'A summary is already being written for this session')
+  if (summaryBusy.size >= 2) fail(429, 'summary_limit', 'Two summaries are already being written')
+  summaryBusy.add(s.id)
+  try { await sleep(2200) } finally { summaryBusy.delete(s.id) }
+  return { summary: `The conversation “${s.title}” reviewed the current state and agreed on the next steps.${s.last_text ? ` Latest answer: ${s.last_text.slice(0, 140)}` : ''}`,
+    decisions: ['Keep the current structure and change one thing at a time.', 'Check the result on a phone before publishing.'],
+    actions: [{ title: `Follow up: ${s.title.slice(0, 60)}`, notes: 'Review the proposed change and confirm it in this topic.' }, { title: 'Add a test for the fixed case', notes: '' }], truncated: false }
+})
+R('POST', '/api/sessions/:id/summary/memory', ({ params, body }) => {
+  const s = findSession(params.id), text = String(body.text || '').trim()
+  if (!text || text.length > 12000) fail(400, 'empty_memory', 'Nothing to add to the memory')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  const file = `${ROOT}/${s.path}/memory.md`, node = S.fs.get(file)
+  if (!node) fail(409, 'memory_unavailable', 'The topic has no memory.md')
+  if (node.type !== 'file') fail(409, 'invalid_memory', 'memory.md is not a regular file')
+  const next = `${String(node.content || '').replace(/\n*$/, '\n')}\n## Discussion — ${new Date().toISOString().slice(0, 10)}\n\n${text}\n`
+  if (Buffer.byteLength(next) > 32768) fail(409, 'memory_full', 'memory.md would pass 32 KiB')
+  fsAdd(S, file, next, now(), 'text/markdown')
+  bus('workspace')
+  return { ok: true }
+})
+
 /* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
    sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
 const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
