@@ -28,7 +28,9 @@ export const fr: Record<keyof typeof en, string> = {
   'companions.section': 'Compagnons',
   'companions.section.desc': 'Rôles permanents et propositions pour améliorer la plateforme.',
   'companions.intro': 'Lancez un observateur en arrière-plan. Il travaille sur une copie de la version enregistrée du code, puis vous prévient. Le son suit vos réglages de notifications.',
-  'companions.manual': 'Les expériences sont lancées manuellement. Codex est nécessaire. Valider enregistre votre décision sans appliquer ni publier les changements.',
+  'companions.providerHint': 'Le rôle est indépendant de son moteur. Les moteurs externes se gèrent dans Extensions.',
+  'companions.saveFirst': 'Enregistrez ce profil avant de lancer une expérience avec ces modifications.',
+  'companions.manual': 'Les expériences utilisent le moteur enregistré dans le profil du compagnon. Valider enregistre votre décision sans appliquer ni publier les changements.',
   'companions.profile': 'Rôle du compagnon',
   'companions.new': 'Nouveau rôle',
   'companions.name': 'Nom',
@@ -3545,4 +3547,7 @@ export const fr: Record<keyof typeof en, string> = {
   "themegen.team.fwd": "Thème de couleurs « {theme} » envoyé par {name} dans {chat} :",
   "themegen.show.title": "Des thèmes faits pour vous",
   "themegen.show.body": "Décrivez le thème que vous voulez (et ajoutez votre logo si vous voulez) : harness-pilot le compose, vérifie le contraste et vous le montre avant tout changement. Enregistrez vos thèmes, partagez-les en fichier, en code ou avec un contact Team.",
+  "agentProviders.textOnly": "Ce moteur accepte uniquement du texte. Les pièces jointes ne sont pas prises en charge.",
+  "agentProviders.unavailable": "Ce moteur est indisponible ou désactivé. Choisissez-en un autre ou vérifiez les extensions.",
+
 }

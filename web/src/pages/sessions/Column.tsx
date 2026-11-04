@@ -562,7 +562,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
     })
 
   const tgLinked = !!tg?.configured && !!tg?.chat
-  const authReason = session?.provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null
+  const authReason = !session?.provider?.startsWith('plugin:') && session?.provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null
   const dir = absTopicDir(ws, path)
 
   const qc = useQueryClient()
@@ -633,7 +633,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   // the last turn ended on a question of the agent (AskUserQuestion): its options answer it in one click
   const asked = useLogSelect(sid, lastQuestion)
   const question = !running && !planReady && failed === null ? asked : null
-  const agentName = session?.provider === 'codex' ? 'Codex' : 'Claude Code'
+  const agentName = session?.provider_name || (session?.provider === 'codex' ? 'Codex' : 'Claude Code')
   // a paused discussion ends with the date of its pause (and the limit it reached)
   const pauseKey = duo && session?.debate_paused ? [session.discussion_paused_at, session.discussion_pause_reason, session.discussion_turns, session.discussion_turn_limit, session.discussion_duration_seconds, session.discussion_elapsed].join('|') : ''
   const card = React.useMemo(
@@ -731,10 +731,10 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   </DropdownMenuCheckboxItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || running || !session?.turns} onSelect={actions.compact}>
+                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || running || !session?.turns} onSelect={actions.handoff}>
+                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
                 {duo && (
@@ -745,7 +745,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={!session?.turns} onSelect={() => setSummaryOpen(true)}>
                   <ListChecks /> {t('sessions.menu.summary')}
                 </DropdownMenuItem>
-                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('sessions.swarm.map')}</DropdownMenuItem>}
+                {(!session?.provider || session.provider === 'claude') && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('sessions.swarm.map')}</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={actions.archive}>
                   {session?.archived ? <ArchiveRestore /> : <Archive />} {session?.archived ? t('sessions.menu.unarchive') : t('sessions.menu.archive')}
                 </DropdownMenuItem>
@@ -825,7 +825,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 </div>
               )}
               {session && pausedOnLimit(session) && <PausedBanner session={session} />}
-              <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
+              <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, providerName: session?.provider_name, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, session?.provider_name, settings?.timezone, claude?.models, running, dir, ws?.root])}>
                 {notFound ? (
                   <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
                     {t('sessions.deleted')}
@@ -872,7 +872,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                       : duo
                         ? t('conv.composer.intervene')
                         : session
-                          ? t('conv.composer.replyTo', { agent: session.provider === 'codex' ? 'Codex' : 'Claude Code' })
+                          ? t('conv.composer.replyTo', { agent: agentName })
                           : undefined
                   }
                   hint={duo ? t('conv.composer.duoHint') : t('conv.composer.hint')}
@@ -948,8 +948,8 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   }
                   toolbarEnd={
                     session && !duo ? (
-                      session.provider === 'codex' ? (
-                        <span className="truncate px-1 text-xs text-muted-foreground">{session.model || 'Codex'}</span>
+                      (session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? (
+                        <span className="truncate px-1 text-xs text-muted-foreground">{session.model || session.provider_name || 'Codex'}</span>
                       ) : (
                         <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} compact />
                       )
@@ -1011,7 +1011,7 @@ function ColumnHeader({
   const gauge = session && claudeTurns && <ContextGauge percent={!slim} ring={slim} tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />
   if (variant === 'mobile') {
     // phone / tablet: one bar - sessions (☰), the title over where it lives and the model, the menu, the app (⊞)
-    const model = session ? (session.provider === 'codex' ? session.model || 'Codex' : duo ? 'Claude Code · Codex' : modelLabel(session.real_model || session.model || claude?.default_model || '', claude?.models)) : ''
+    const model = session ? ((session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? session.model || session.provider_name || 'Codex' : duo ? 'Claude Code · Codex' : modelLabel(session.real_model || session.model || claude?.default_model || '', claude?.models)) : ''
     return (
       <header className="relative shrink-0 border-b bg-background px-2 pt-[calc(0.25rem+var(--safe-top))] pb-1" data-col-head>
         {maxxing && <MaxxingMeter strip />}
@@ -1384,7 +1384,10 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [title, setTitle] = React.useState('')
   const [model, setModel] = React.useState('')
   const [codexModel, setCodexModel] = React.useState('')
-  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm' | 'team'>('claude')
+  const [provider, setProvider] = React.useState('claude')
+  const {data: agentProviders = []} = useQuery({queryKey:['agent-providers'],queryFn:()=>api.get<import('@/lib/types').AgentProvider[]>('/api/agent-providers'),refetchInterval:10000})
+  const plugin = provider.startsWith('plugin:')
+  const adapter = agentProviders.find(p=>p.id===provider)
   const [swarmAgents, setSwarmAgents] = React.useState('3')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
@@ -1429,6 +1432,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
+      if (plugin && attachments.length && !adapter?.capabilities.includes('attachments')) { toast.error(t('agentProviders.textOnly')); return false }
       if (provider === 'team') {
         if (attachments.length) { toast.error(t('mixedTeam.noAttachments')); return false }
         const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined })
@@ -1437,7 +1441,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
         becomeSession(col.key, s.id)
         return true
       }
-      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, attachments, plan_mode: planMode || undefined })
+      const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' || plugin ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, attachments, plan_mode: planMode || undefined })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text, attachments, queued: false })
       saveDraft(`new:${col.path}`, '')
@@ -1454,7 +1458,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
     try {
       if (provider === 'team') { toast.error(t('mixedTeam.noAttachments')); return false }
       const up = await uploadAttachment(col.path, file)
-      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
+      const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' || plugin ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text: '', attachments: [], queued: false, voice: true })
       becomeSession(col.key, s.id)
@@ -1518,8 +1522,9 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm' | 'team'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('sessions.swarm.provider') }, { value: 'team', label: t('mixedTeam.provider') }]} />
+              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('sessions.swarm.provider') }, { value: 'team', label: t('mixedTeam.provider') }, ...agentProviders.filter(p=>!p.builtin).map(p=>({value:p.id,label:p.name}))]} />
             </div>
+            {plugin && !adapter?.capabilities.includes('attachments') && <p className="text-xs text-muted-foreground">{t('agentProviders.textOnly')}</p>}
             {provider === 'team' && <p className="rounded-lg border p-3 text-xs text-muted-foreground">{t('mixedTeam.hint')}</p>}
             {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
               <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
@@ -1544,18 +1549,18 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
               {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
             </div>}
-            {provider !== 'codex' && provider !== 'team' && <div className="grid gap-1.5">
+            {provider !== 'codex' && !plugin && provider !== 'team' && <div className="grid gap-1.5">
               <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
               <div>
                 <ModelPicker chosen={model} onChange={setModel} />
               </div>
             </div>}
-            {(provider === 'codex' || provider === 'both') && <div className="grid gap-1.5">
-              <Label htmlFor={`codex-model-${col.key}`}>{t('sessions.codexModel')}</Label>
+            {(provider === 'codex' || provider === 'both' || plugin) && <div className="grid gap-1.5">
+              <Label htmlFor={`codex-model-${col.key}`}>{t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
               <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
               <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>
             </div>}
-            {provider !== 'both' && provider !== 'team' && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
+            {provider !== 'both' && provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
               <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
               <span className="grid gap-0.5 leading-tight">
                 <span className="flex items-center gap-1.5 text-sm font-medium">
@@ -1572,7 +1577,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
           colKey={col.key}
           draftKey={`new:${col.path}`}
           topicPath={col.path}
-          disabledReason={!valid ? t('sessions.new.pickTopic') : provider === 'both' && !validLimits ? t('sessions.discussionLimitsInvalid') : provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null}
+          disabledReason={!valid ? t('sessions.new.pickTopic') : provider === 'both' && !validLimits ? t('sessions.discussionLimitsInvalid') : plugin && !adapter ? t('agentProviders.unavailable') : !plugin && provider !== 'codex' && claude && !claude.auth.ok ? t(claude.auth.method ? 'sessions.composer.authExpired' : 'sessions.composer.noAuth') : null}
           onSend={onSend}
           onSendVoice={onSendVoice}
           autoFocus={variant !== 'mobile'}

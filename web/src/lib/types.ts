@@ -97,7 +97,8 @@ export type SessionSource = 'web' | 'telegram' | 'cron'
 export type QueueItem = { text: string; attachments: number; source: 'web' | 'telegram' | 'cron' | 'system' | string; kind: string; /** A voice message sent directly (transcribed before its turn). */ voice?: boolean }
 export type Session = {
   id: string
-  provider?: 'claude' | 'codex' | 'discussion' | 'debate'
+  provider?: string
+  provider_name?: string
   swarm_agents?: number | null
   team_phase?: string | null
   team_parent?: string | null
@@ -141,7 +142,7 @@ export type Session = {
   /** A plan-mode turn finished: its plan waits for the user's validation. */
   plan_ready: boolean
 }
-export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: 'claude' | 'codex' | 'discussion' | 'debate'; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
+export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: string; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
 export type PatchSessionBody = { title?: string; model?: string; archived?: boolean; notify?: boolean; plan_mode?: boolean; favorite?: boolean; /** Move to another topic (idle sessions only). */ path?: string }
 export type SendMessageBody = { text: string; attachments?: string[]; hud?: boolean; /** Absolute path of a voice message sent directly: the server transcribes it, then sends it. */ voice?: string }
 export type SendMessageResult = { queued: boolean; session: Session }
@@ -567,7 +568,7 @@ export type MemoryInfo = { max_lines: number; files: MemoryFile[] }
 export type TokenCounts = { input: number; output: number; cache_read: number; cache_write: number; total: number; cost_usd: number; turns: number; sessions: number }
 export type TokenStats = {
   totals: TokenCounts
-  providers: Record<'claude' | 'codex', Omit<TokenCounts, 'cost_usd' | 'sessions'>>
+  providers: Record<string, Omit<TokenCounts, 'cost_usd' | 'sessions'> & {name?:string}>
   unattributed_turns: number
   projects: (TokenCounts & { name: string })[]
   topics: (TokenCounts & { path: string })[]
@@ -735,7 +736,7 @@ export type DashboardLayout = { order: string[]; hidden: string[] }
 export type Extension = {
   id: string
   name: string
-  type: 'widget' | 'page' | 'block'
+  type: 'widget' | 'page' | 'block' | 'agent'
   icon: string
   version: string
   enabled: boolean
@@ -861,6 +862,7 @@ export type InfraResource = {
   /** "local" (this server), a registered server name, "cloudflare", "hostinger", a platform (vercel, netlify, supabase, github), "other" */
   location: string
   provider: string
+  provider_name?: string
   urls: string[]
   status: InfraStatus
   status_detail: string
@@ -898,3 +900,5 @@ export type InfraView = {
   servers: { name: string; label?: string; host: string; user: string; port: number; note: string }[]
   refresh_min?: number
 }
+
+export type AgentProvider = {id:string;name:string;builtin:boolean;capabilities:string[];protocol?:string}

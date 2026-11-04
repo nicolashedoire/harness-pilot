@@ -145,6 +145,7 @@ def public(meta: dict) -> dict:
             "turns": int(_num(m.get("turns"))), "cost_usd": round(_num(m.get("cost_usd")), 4),
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
+            **({'provider_name': m['provider_name']} if m.get('provider_name') else {}),
             "companion": ({k: m['companion'].get(k) for k in ('id', 'name', 'decision')} if isinstance(m.get('companion'), dict) else None),
             "swarm_agents": m.get("swarm_agents"),
             "team_phase": (m.get("team") or {}).get("phase"),
@@ -347,8 +348,14 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         workspace.topic_dir(p)
     except ValueError as e:
         raise SessionError(400, "bad_path", str(e)) from None
-    if provider not in ("claude", "codex", "discussion", "debate"):
+    from .. import agent_providers
+    adapter = agent_providers.get(provider)
+    if provider not in ('discussion', 'debate') and adapter is None:
         raise SessionError(400, "bad_provider", "Unknown agent")
+    if adapter and plan_mode and 'plan' not in adapter['capabilities']:
+        raise SessionError(400, 'unsupported', 'This agent adapter does not support plan mode.')
+    if adapter and attachments and 'attachments' not in adapter['capabilities']:
+        raise SessionError(400, 'unsupported', 'This agent adapter does not support attachments.')
     if provider in ("discussion", "debate") and plan_mode:
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
     if swarm_agents is not None and (provider != 'claude' or type(swarm_agents) is not int or not 2 <= swarm_agents <= 6):
@@ -361,6 +368,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
     meta = store.new_meta(p, given or _default_title(p, message), model=model or "",
                           source=source, notify=notify, cron=cron, env=env, timeout_s=timeout_s, plan_mode=plan_mode,
                           permission_mode=permission_mode, provider=provider)
+    if adapter and not adapter['builtin']:
+        meta['provider_name'] = adapter['name']
     if swarm_agents is not None:
         meta['swarm_agents'] = swarm_agents
     if provider in ("discussion", "debate"):
@@ -814,6 +823,8 @@ def _idle_with_history(sid: str) -> dict:
 
 def compact(sid: str) -> None:
     """Summary turn, then the runner switches to a fresh Claude thread seeded with it."""
+    if _require(sid).get("provider", '').startswith('plugin:'):
+        raise SessionError(409, 'unsupported', 'Native thread compaction is owned by this agent adapter.')
     if _require(sid).get("provider") in ("discussion", "debate"):
         raise SessionError(409, "unsupported", "Compaction is not yet available for debates.")
     _idle_with_history(sid)
@@ -822,6 +833,8 @@ def compact(sid: str) -> None:
 
 def handoff(sid: str) -> dict:
     """New session seeded with a summary of this one (which gets archived once it is handed over)."""
+    if _require(sid).get("provider", '').startswith('plugin:'):
+        raise SessionError(409, 'unsupported', 'Native thread handoff is owned by this agent adapter.')
     if _require(sid).get("provider") in ("discussion", "debate"):
         raise SessionError(409, "unsupported", "Handoff is not yet available for debates.")
     old = _idle_with_history(sid)

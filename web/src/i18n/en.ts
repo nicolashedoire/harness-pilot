@@ -27,7 +27,9 @@ export const en = {
   "companions.section": "Companions",
   "companions.section.desc": "Persistent roles and reviewable platform improvements.",
   "companions.intro": "Start an observer in the background. It works on a copy of the committed platform source, then notifies you. Sound follows your notification settings.",
-  "companions.manual": "Experiments are started manually. Codex is required. Approving records your decision; it does not apply or publish changes.",
+  "companions.providerHint": "The role persists independently of its engine. External engines are installed and managed in Extensions.",
+  "companions.saveFirst": "Save this profile before starting an experiment with these changes.",
+  "companions.manual": "Experiments use the coding agent saved in the companion profile. Approving records your decision; it does not apply or publish changes.",
   "companions.profile": "Companion role",
   "companions.new": "New role",
   "companions.name": "Name",
@@ -3563,4 +3565,7 @@ export const en = {
   "themegen.team.fwd": "Colour theme “{theme}” sent by {name} in {chat}:",
   "themegen.show.title": "Themes made for you",
   "themegen.show.body": "Describe the theme you want (and add your logo if you like): harness-pilot composes it, checks the contrast and shows it before anything changes. Save your themes, share them as a file, a code or with a Team contact.",
+  "agentProviders.textOnly": "This engine accepts text only. Attached files are not supported.",
+  "agentProviders.unavailable": "This agent engine is unavailable or disabled. Choose another engine or check Extensions.",
+
 }
