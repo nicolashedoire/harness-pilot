@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Mock (`web/mock/server.mjs`): `GET /api/git/repos`, `/graph`, `/commit`, `/pulls`. Two clones (one with a GitHub origin and local changes) and three GitHub repositories; each history is generated from a seed per repository (a main line, a merged feature branch, an open branch, a tag, `HEAD`/`origin/main` refs), commits have files and a GitHub URL when there is one; `404 no_commit`, `400 not_github`.
 - Mock (`web/mock/server.mjs`): `GET /api/trash`, `POST /api/trash/{id}/restore`, `DELETE /api/trash/{id}`, `DELETE /api/trash`. The ready scenarios seed a file, a session, a topic and backup previous versions (`409 not_restorable`); restoring puts the file, session or topic back into the mock state (a free name when taken). The mock's delete routes still remove at once.
 - Mock (`web/mock/server.mjs`): `GET/PUT /api/space-labels` (absolute path inside the workspace or files root that exists in the mock file tree: `400 bad_path`, `403 forbidden`, `404 not_found`; `unclassified` removes the label); the ready scenarios label two projects.
 - Mock (`web/mock/server.mjs`): `GET/POST /api/discussion-presets`, `DELETE /api/discussion-presets/{id}` (validation `422 invalid`, `400 bad_request` past 100, `404 not_found`); the ready scenarios seed two presets.
