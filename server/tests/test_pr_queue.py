@@ -33,7 +33,10 @@ def github(monkeypatch,client):
                     'draft':p['draft'],'merged':p['merged'],'merge_commit_sha':'b'*40 if p['merged'] else None,
                     'mergeable':True,'mergeable_state':'clean'}
         p=next(p for p in pulls.values() if p['head'] in path)
-        if '/compare/' in path:return {'status':'ahead' if p['current_base'] else 'diverged','behind_by':0 if p['current_base'] else 1}
+        if '/compare/' in path:
+            # The live target branch, never the pull request's base.sha (GitHub leaves it stale when main moves).
+            assert '/compare/main...' in path,path
+            return {'status':'ahead' if p['current_base'] else 'diverged','behind_by':0 if p['current_base'] else 1}
         if '/check-runs?' in path:
             return {'total_count':0,'check_runs':[]} if p['checks']=='none' else {'total_count':1,'check_runs':[{'status':'in_progress' if p['checks']=='pending' else 'completed','conclusion':p['checks']}]}
         if path.endswith('/status?per_page=100'):return {'total_count':0,'statuses':[]}

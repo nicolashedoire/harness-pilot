@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.parse
 import uuid
 
 from . import bus, config, feed
@@ -101,7 +102,9 @@ def _api(path: str, *, method='GET', body: dict | None = None, diff=False):
 def _metadata(item: dict) -> dict:
     value = _api(f"repos/{item['repo']}/pulls/{item['number']}")
     if (not isinstance(value, dict) or (value.get('base', {}).get('repo', {}).get('full_name') or '').casefold() != item['repo'].casefold()
-            or not SHA.fullmatch(str(value.get('head', {}).get('sha') or ''))):
+            or not SHA.fullmatch(str(value.get('head', {}).get('sha') or ''))
+            or not SHA.fullmatch(str(value.get('base', {}).get('sha') or ''))
+            or not isinstance(value.get('base', {}).get('ref'), str) or not value['base']['ref']):
         raise SessionError(502, 'github_invalid', 'GitHub returned an unexpected pull request.')
     return {'head': value['head']['sha'], 'base_ref': value['base']['ref'], 'base_sha': value['base']['sha'],
             'title': str(value.get('title') or '')[:500], 'body': str(value.get('body') or '')[:30000],
@@ -221,7 +224,10 @@ def _checks(item: dict, remote: dict) -> str | None:
     if remote['mergeable_state'] in ('blocked', 'behind', 'dirty', 'unknown'):
         return 'repository_rules'
     root = f"repos/{item['repo']}"
-    compared = _api(f"{root}/compare/{remote['base_sha']}...{remote['head']}")
+    # The live target branch: GitHub refreshes a pull request's base.sha only when the pull request itself changes,
+    # so a prerequisite merged into the target since then would go unnoticed against base_sha.
+    target = urllib.parse.quote(remote['base_ref'], safe='/')
+    compared = _api(f"{root}/compare/{target}...{remote['head']}")
     if compared.get('status') not in ('ahead', 'identical') or compared.get('behind_by') != 0:
         return 'base_changed'
     runs = _api(f"{root}/commits/{remote['head']}/check-runs?per_page=100&filter=latest")
