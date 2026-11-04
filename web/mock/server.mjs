@@ -2680,6 +2680,87 @@ R('GET', '/api/git/pulls', ({ q }) => {
     number, title, author, head, base: 'main', draft, url: `https://github.com/${repo.github}/pull/${number}`, updated: now() - (i + 1) * 5 * HOUR }))
 })
 
+/* ---- browser of my PC (server/maxxing/pcbridge.py, api/pc.py): one paired PC runs the Harness PC agent; Claude
+   drives its browser through the MCP `harness-pc`. The mock has no WebSocket: after a pairing code is created, a PC
+   "runs the installer" 5 s later and waits as the candidate; downloads are short placeholders. */
+const PC_TARGETS = ['windows-amd64', 'windows-arm64', 'darwin-arm64', 'darwin-amd64', 'linux-amd64', 'linux-arm64']
+const PC_BROWSERS = ['brave', 'chrome', 'edge', 'vivaldi', 'opera', 'chromium']
+function pcState() {
+  if (S.pc) return S.pc
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.pc = { device: ready ? { id: 'pc_4f2a9c', name: 'Alex-Laptop', os: 'windows', arch: 'amd64', version: '1.4.0', browsers: ['chrome', 'edge'], browser: 'chrome', created: t - 12 * DAY, last_seen: t - 30 } : null,
+    online: ready, browser_running: false, mcp_running: false, last_use: ready ? t - 3 * HOUR : null, pairing: null, candidate: null, mcp_registered: ready, settings: { idle_min: 30 },
+    actions: ready ? [{ at: t - 3 * HOUR, tool: 'navigate_page', args: { url: 'https://shop.example.com/checkout' }, ok: true, ms: 1840 }, { at: t - 3 * HOUR + 4, tool: 'take_screenshot', args: {}, ok: true, ms: 420 }] : [] }
+  return S.pc
+}
+const pcOut = () => { const p = pcState(); return { available: true, device: p.device, online: !!p.device && p.online, browser_running: p.browser_running, mcp_running: p.mcp_running, last_use: p.last_use,
+  mcp_registered: p.mcp_registered, pairing: p.pairing && p.pairing.expires_at > now() ? { expires_at: p.pairing.expires_at, browser: p.pairing.browser, os: p.pairing.os } : null,
+  candidate: p.candidate, settings: { ...p.settings }, browsers: PC_BROWSERS, targets: PC_TARGETS, actions: [...p.actions].reverse().slice(0, 20) } }
+const pcCode = (code) => { const p = pcState().pairing; if (!p || p.code !== code) fail(403, 'bad_code', 'Unknown code'); if (p.expires_at < now()) fail(403, 'expired', 'This code expired'); return p }
+R('GET', '/api/pc', () => pcOut())
+R('POST', '/api/pc/pairing', ({ body }) => {
+  if (!PC_BROWSERS.includes(body.browser) || !['windows', 'darwin', 'linux'].includes(body.os)) fail(422, 'invalid', 'browser and os')
+  const p = pcState(), code = crypto.randomBytes(5).toString('hex').toUpperCase().replace(/(.{5})(.{5})/, '$1-$2'), base = 'https://ui.example.com'
+  p.pairing = { code, browser: body.browser, os: body.os, autostart: body.autostart !== false, expires_at: now() + 15 * MIN }
+  const g = GEN
+  setTimeout(() => { if (g === GEN && p.pairing?.code === code) { p.candidate = { id: 'pc_' + crypto.randomBytes(3).toString('hex'), name: body.os === 'darwin' ? 'Alex-MacBook' : 'Alex-Desktop', os: body.os, arch: body.os === 'darwin' ? 'arm64' : 'amd64', version: '1.4.0', created: now(), ip: '192.0.2.24' }; bus('pc') } }, 5000).unref()
+  return { code, expires_at: p.pairing.expires_at, expires_in: 900, server: base,
+    downloads: Object.fromEntries(PC_TARGETS.map((tg) => [tg, `${base}/api/pc/download/${tg}?code=${code}`])),
+    commands: { windows: `irm "${base}/api/pc/install.ps1?code=${code}&target=windows-amd64" | iex`, darwin: `curl -fsSL "${base}/api/pc/install.sh?code=${code}&target=darwin-arm64" | sh`, linux: `curl -fsSL "${base}/api/pc/install.sh?code=${code}&target=linux-amd64" | sh` } }
+})
+R('POST', '/api/pc/confirm', ({ body }) => {
+  const p = pcState(), c = p.candidate
+  if (!c || c.id !== body.id || now() - c.created > 15 * MIN) return { ok: false }
+  if (body.ok !== false) Object.assign(p, { device: { id: c.id, name: c.name, os: c.os, arch: c.arch, version: c.version, browsers: [p.pairing?.browser || 'chrome'], browser: p.pairing?.browser || 'chrome', created: now(), last_seen: now() }, online: true, mcp_registered: true, pairing: null })
+  p.candidate = null; bus('pc')
+  return { ok: true }
+})
+R('PUT', '/api/pc/settings', ({ body }) => {
+  const m = Number(body.idle_min)
+  if (!Number.isInteger(m) || m < 1 || m > 240) fail(422, 'invalid', 'idle_min: 1-240')
+  pcState().settings.idle_min = m
+  return { idle_min: m }
+})
+R('POST', '/api/pc/stop', () => { Object.assign(pcState(), { browser_running: false, mcp_running: false }); bus('pc'); return { ok: true } })
+R('POST', '/api/pc/wipe', async () => { const p = pcState(); if (!p.device || !p.online) fail(409, 'offline', 'The PC is offline'); await sleep(800); p.browser_running = false; return { ok: true } })
+R('POST', '/api/pc/test', async () => {
+  const p = pcState()
+  if (!p.device || !p.online) fail(409, 'offline', 'The PC is offline')
+  await sleep(1200)
+  Object.assign(p, { browser_running: true, mcp_running: true, last_use: now() })
+  p.actions.push({ at: now(), tool: 'list_pages', args: {}, ok: true, ms: 1200 })
+  bus('pc')
+  return { ok: true, text: '1: about:blank [selected]' }
+})
+R('POST', '/api/pc/mcp/register', () => { const p = pcState(); if (!p.device) fail(409, 'not_paired', 'No PC is paired'); p.mcp_registered = true; return { ok: true } })
+R('DELETE', '/api/pc', () => { Object.assign(pcState(), { device: null, online: false, browser_running: false, mcp_running: false, mcp_registered: false }); bus('pc'); return { ok: true } })
+// Called by the agent on the PC (public: the code is the permission)
+R('POST', '/api/pc/pair', ({ body }) => {
+  pcCode(body.code)
+  const p = pcState()
+  p.candidate = { id: 'pc_' + crypto.randomBytes(3).toString('hex'), name: String(body.name || 'PC').slice(0, 64), os: String(body.os || ''), arch: String(body.arch || ''), version: String(body.version || ''), created: now(), ip: '192.0.2.24' }
+  bus('pc')
+  return { device_id: p.candidate.id, token: crypto.randomBytes(24).toString('base64url') }
+}, { public: true, csrf: false })
+R('GET', '/api/pc/download/:target', ({ params, q, res }) => {
+  pcCode(q.get('code'))
+  if (!PC_TARGETS.includes(params.target)) fail(404, 'not_found', 'Unknown target')
+  const body = Buffer.from(`Harness PC agent ${params.target} (mock placeholder, not a program)\n`)
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': body.length, 'Content-Disposition': `attachment; filename="harness-pc${params.target.startsWith('windows') ? '.exe' : ''}"` })
+  res.end(body)
+  return RAW
+}, { public: true })
+R('GET', '/api/pc/install.:ext', ({ params, q, res }) => {
+  if (!['ps1', 'sh'].includes(params.ext)) fail(404, 'not_found', 'Unknown script')
+  const code = q.get('code') || '', target = q.get('target') || (params.ext === 'ps1' ? 'windows-amd64' : 'linux-amd64')
+  const url = `https://ui.example.com/api/pc/download/${target}?code=${code}`
+  const body = params.ext === 'ps1' ? `# Harness PC (mock): downloads the agent and starts it\n$f = "$env:LOCALAPPDATA\\HarnessPC\\harness-pc.exe"\nInvoke-WebRequest "${url}" -OutFile $f\nStart-Process $f\n`
+    : `#!/bin/sh\n# Harness PC (mock): downloads the agent and starts it\nset -e\nmkdir -p "$HOME/.local/bin"\ncurl -fsSL "${url}" -o "$HOME/.local/bin/harness-pc"\nchmod +x "$HOME/.local/bin/harness-pc"\n"$HOME/.local/bin/harness-pc" &\n`
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': Buffer.byteLength(body) })
+  res.end(body)
+  return RAW
+}, { public: true })
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
