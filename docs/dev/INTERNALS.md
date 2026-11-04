@@ -227,7 +227,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
   raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
   `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
-  `api/auth._alert`, `feedhooks`, `infra._alerts` (trusted `feed.post`)). `feed.link(id, label, url)` /
+  `api/auth._alert`, `feedhooks`, `infra._alerts` and `api/tasks.check_reminders` (trusted `feed.post`)). `feed.link(id, label, url)` /
   `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
   and documented with its params in API.md.
 - Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
@@ -238,7 +238,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
 - `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
   `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,
   `session:<sid>`, `discussion:<sid>`, `hook-secret-<hook id>`, `health:<issue id>`, `down:<resource id>`,
-  `claude-update-failed`.
+  `claude-update-failed`, `task:<task id>`.
 - `feed.list_events(source, unread, before, limit, *, category, kind, pending)` + `counts()` (`{unread, pending,
   sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
   stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
@@ -392,8 +392,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   so a write by any process is seen on the next call.
 - `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
   `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
-  `crons.managed_lines()`, `localcron.tick()`, scheduled `pilot cron run` (detached or `--if-due`) and `backup.run()`
-  (code `paused`, not recorded in the history) do nothing.
+  `crons.managed_lines()`, `localcron.tick()`, `api/tasks.check_reminders()`, scheduled `pilot cron run` (detached or
+  `--if-due`) and `backup.run()` (code `paused`, not recorded in the history) do nothing.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault

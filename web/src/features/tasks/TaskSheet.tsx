@@ -318,6 +318,28 @@ function TaskEditor({
             )}
           </dd>
 
+          <dt className="text-muted-foreground">
+            <label htmlFor="task-remind">{t('tasks.field.remind')}</label>
+          </dt>
+          <dd className="flex min-w-0 flex-wrap items-center gap-2">
+            <Input
+              id="task-remind"
+              type="datetime-local"
+              value={task.remind_at || ''}
+              onChange={(e) => void save({ remind_at: e.target.value.slice(0, 16) || null })}
+              aria-describedby="task-remind-hint"
+              className="w-56"
+            />
+            {task.remind_at && (
+              <Button variant="ghost" size="icon-sm" onClick={() => void save({ remind_at: null })} aria-label={t('tasks.clearRemind')}>
+                <X />
+              </Button>
+            )}
+            <p id="task-remind-hint" className="w-full text-xs text-muted-foreground">
+              {t('tasks.remindHint')}
+            </p>
+          </dd>
+
           <dt className="text-muted-foreground">{t('tasks.field.project')}</dt>
           <dd className="flex min-w-0 items-center gap-2">
             <Select

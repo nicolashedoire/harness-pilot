@@ -365,6 +365,8 @@ export type Task = {
   status: TaskStatus
   priority: TaskPriority
   due: string | null
+  /** Local date and time (`YYYY-MM-DDTHH:MM`, configured time zone) of a `task.reminder` notification, or null. */
+  remind_at: string | null
   project_id: string | null
   topic_path: string | null
   labels: string[]

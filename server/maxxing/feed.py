@@ -77,6 +77,7 @@ KINDS: dict[str, tuple[str, str]] = {
     "pr_queue.review": ("system", "warning"),
     "mission.review": ("system", "warning"),
     "mission.completed": ("system", "info"),
+    "task.reminder": ("system", "warning"),
     "signin.ok": ("security", "info"),
     "signin.failed": ("security", "warning"),
     "signin.denied": ("security", "warning"),

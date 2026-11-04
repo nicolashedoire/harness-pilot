@@ -226,6 +226,7 @@ Everything deleted (files, folders, topics and projects with their sessions, sin
 ## Tasks (`<workspace>/tasks.json`)
 ```
 Task    = {id, title, notes, status:"todo"|"doing"|"done", priority:0|1|2|3, due:"YYYY-MM-DD"|null,
+           remind_at:"YYYY-MM-DDTHH:MM"|null,   // local time in the configured time zone
            project_id|null, topic_path|null, labels:[str] (max 50, 40 chars each), created, updated, done_at|null, order:float}
 TaskProject = {id, name, color, workspace?: str, hidden?: true}
 ```
@@ -239,6 +240,11 @@ A hand-written file is normalised on read (missing fields filled in, `id` / `tit
 another type turned into text, non-numeric `created` / `updated` / `done_at` replaced). Every write (POST / PATCH / DELETE
 below) is a read-modify-write under one lock; when the file changed on disk between the read and the write (Claude edited it),
 the change is re-applied on the fresh file (3 tries), then `409 conflict`. Not valid JSON: every route `409 corrupt_file`.
+Reminders: every 30 s the server posts one `task.reminder` (Kinds below) for each task not `done` whose `remind_at` has
+come, including one missed while the server was stopped; never twice for the same (task, `remind_at`), restarts included
+(`<state>/task-reminders.json` + feed dedupe `task-reminder:<id>:<remind_at>`). Marking the task done, deleting it or
+changing its `remind_at` resolves that notification; a new `remind_at` reminds again. Nothing is posted while
+`integrations_paused` (a restored copy). A `remind_at` that is not `YYYY-MM-DDTHH:MM`: `400 invalid_remind_at` (by hand: read as null).
 | GET | `/api/tasks` | – | `{projects:[TaskProject], tasks:[Task]}` |
 | POST | `/api/tasks` | partial Task (title required) | `Task` · `422` when `order` is not a finite number |
 | PATCH | `/api/tasks/{id}` | partial Task | `Task` · `422` when `order` is not a finite number |
@@ -747,6 +753,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
+| `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
 | `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |

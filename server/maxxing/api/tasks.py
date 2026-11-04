@@ -8,6 +8,8 @@ The file is plain JSON that Claude may edit at any time, so:
 - a write never erases an edit made to the file since the request read it: the change is re-applied on the
   fresh file (`_retry_on_change`), `409 conflict` if the file keeps changing.
 A watcher notices external edits (mtime poll every 2 s) and invalidates the "tasks" bus topic.
+A reminder loop (every REMIND_EVERY_S) posts a `task.reminder` notification for each open task whose `remind_at` has
+come, once per (task, remind_at): the reminders already sent are kept in `<state>/task-reminders.json`.
 
 Every workspace project has a linked task project (`workspace: <project name>`), created on demand (`sync_workspace`, run
 by GET and by the workspace change hook), renamed with it and unlinked (kept, as a free project) when it is deleted.
@@ -22,6 +24,7 @@ import datetime as dt
 import functools
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -38,12 +41,15 @@ from pydantic import BaseModel, Field, field_validator
 from .. import bus, config
 from ..security import require_auth
 
+log = logging.getLogger("maxxing.tasks")
 router = APIRouter(prefix="/api/tasks", tags=["tasks"], dependencies=[Depends(require_auth)])
 
 STATUSES = ("todo", "doing", "done")
 _lock = threading.RLock()
 _cache: dict[str, Any] = {"sig": None, "data": None}
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_REMIND = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")     # local wall-clock time, in the configured time zone
+REMIND_EVERY_S = 30.0
 
 
 class CorruptFile(Exception):
@@ -155,6 +161,8 @@ def _norm_task(t: dict) -> dict:
         out["priority"] = 0
     if not (isinstance(out.get("due"), str) and _DATE.match(out["due"])):
         out["due"] = None
+    if not (isinstance(out.get("remind_at"), str) and _remind_ts(out["remind_at"], dt.timezone.utc) is not None):
+        out["remind_at"] = None
     for key in ("project_id", "topic_path"):
         out[key] = _text(out.get(key)) or None
     labels = out.get("labels")
@@ -392,6 +400,24 @@ def _today() -> dt.date:
         return dt.date.today()
 
 
+def _zone() -> dt.tzinfo:
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(config.load_config().get("timezone") or "UTC")
+    except Exception:
+        return dt.timezone.utc
+
+
+def _remind_ts(value: Any, zone: dt.tzinfo) -> float | None:
+    """`remind_at` ("YYYY-MM-DDTHH:MM", wall-clock time in `zone`) -> Unix seconds; None when it is not one."""
+    if not (isinstance(value, str) and _REMIND.match(value)):
+        return None
+    try:
+        return dt.datetime.fromisoformat(value).replace(tzinfo=zone).timestamp()
+    except ValueError:
+        return None
+
+
 def summary() -> dict:
     """Counts used by the dashboard widget: {doing, due_today, overdue, open, items:[task]}."""
     try:
@@ -432,6 +458,7 @@ class TaskIn(_Text):
     status: Optional[Literal["todo", "doing", "done"]] = None
     priority: Optional[int] = None
     due: Optional[str] = None
+    remind_at: Optional[str] = None
     project_id: Optional[str] = None
     topic_path: Optional[str] = None
     labels: Optional[list[str]] = None
@@ -473,6 +500,11 @@ def _apply(task: dict, body: TaskIn, data: dict, fields: set[str]) -> None:
             except ValueError:
                 raise _err(400, "invalid_due", "due must be YYYY-MM-DD") from None
         task["due"] = due
+    if "remind_at" in fields:
+        remind = body.remind_at or None
+        if remind is not None and _remind_ts(remind, dt.timezone.utc) is None:
+            raise _err(400, "invalid_remind_at", "remind_at must be YYYY-MM-DDTHH:MM")
+        task["remind_at"] = remind
     if "project_id" in fields:
         pid = body.project_id or None
         if pid and not any(p["id"] == pid for p in data["projects"]):
@@ -710,8 +742,84 @@ def delete_task(tid: str):
     return {"ok": True}
 
 
+# ---- reminders ------------------------------------------------------------------------------
+_remind_lock = config.ProcessLock("task-reminders")
+
+
+def reminders_path() -> Path:
+    return config.state_dir() / "task-reminders.json"
+
+
+def _reminder_group(tid: str) -> str:
+    return f"task:{tid}"
+
+
+def check_reminders(now: float | None = None) -> list[str]:
+    """Post a `task.reminder` for every open task whose `remind_at` has come and was not reminded yet; returns their
+    ids. Sent reminders are recorded per task ({tid: {remind_at, resolved}}) AFTER the post, and the post carries a
+    dedupe key: a restart between the two never notifies twice. A done task, a removed one or a changed `remind_at`
+    resolves the notification (no longer "needs attention"); a new `remind_at` reminds again."""
+    from .. import feed
+    if config.integrations_paused():                 # a restored copy: its owner's browsers would be pushed twice
+        return []
+    try:
+        data = load(copy_=False)
+    except CorruptFile:
+        return []
+    now = time.time() if now is None else now
+    zone = _zone()
+    sent_now: list[str] = []
+    with _remind_lock:
+        raw = config.read_json(reminders_path(), {})
+        sent = {k: v for k, v in raw.items() if isinstance(v, dict)} if isinstance(raw, dict) else {}
+        before = copy.deepcopy(sent)
+        tasks = {t["id"]: t for t in data["tasks"]}
+        for tid, rec in list(sent.items()):          # what changed since a reminder was sent
+            t = tasks.get(tid)
+            if t is None or t.get("remind_at") != rec.get("remind_at"):
+                if not rec.get("resolved"):
+                    feed.system_resolve("system", _reminder_group(tid))
+                del sent[tid]
+            elif t["status"] == "done" and not rec.get("resolved"):
+                feed.system_resolve("system", _reminder_group(tid))
+                rec["resolved"] = True
+        for t in data["tasks"]:
+            remind = t.get("remind_at")
+            if not remind or t["status"] == "done" or t["id"] in sent:
+                continue
+            at = _remind_ts(remind, zone)
+            if at is None or at > now:
+                continue
+            url = f"/tasks?task={t['id']}"
+            title = t["title"] or "(untitled)"
+            try:
+                feed.post(f"Reminder: {title}", f"Due {t['due']}" if t.get("due") else "", "warning", "system", url,
+                          dedupe=f"task-reminder:{t['id']}:{remind}", group=_reminder_group(t["id"]),
+                          kind="task.reminder", params={"task_id": t["id"], "title": title, "remind_at": remind,
+                                                        "due": t.get("due")},
+                          actions=[feed.link("open", "Open the task", url)], trusted=True)
+            except Exception:                        # noqa: BLE001 - not recorded: tried again on the next pass
+                log.exception("task %s: could not post its reminder", t["id"])
+                continue
+            sent[t["id"]] = {"remind_at": remind, "resolved": False}
+            sent_now.append(t["id"])
+        if sent != before:
+            config.write_json(reminders_path(), sent, mode=0o600)
+    return sent_now
+
+
+async def _remind(interval: float = REMIND_EVERY_S) -> None:
+    while True:
+        try:
+            await asyncio.to_thread(check_reminders)
+        except Exception:                            # noqa: BLE001 - the loop must survive one bad pass
+            log.exception("task reminders failed")
+        await asyncio.sleep(interval)
+
+
 # ---- external edits watcher -----------------------------------------------------------------
 _task: asyncio.Task | None = None
+_remind_task: asyncio.Task | None = None
 
 
 async def _watch(interval: float = 2.0) -> None:
@@ -729,16 +837,19 @@ async def _watch(interval: float = 2.0) -> None:
 
 
 async def startup() -> None:
-    global _task
+    global _task, _remind_task
     from .. import workspace
     workspace.on_change(on_workspace_change)
     _task = asyncio.create_task(_watch())
+    _remind_task = asyncio.create_task(_remind())
 
 
 async def shutdown() -> None:
-    global _task
-    if _task:
-        _task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await _task
-        _task = None
+    global _task, _remind_task
+    for name in ("_task", "_remind_task"):
+        task = globals()[name]
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+            globals()[name] = None
