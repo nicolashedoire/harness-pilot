@@ -20,6 +20,12 @@ from .sessions import service, store
 DEFAULT = {'id': 'observer', 'name': 'Platform observer', 'provider': 'codex',
            'role': 'Inspect the platform, identify a small useful improvement, implement it in the isolated copy, '
                    'run relevant tests and explain the change, evidence and limitations.'}
+SECURITY = {'id': 'security', 'name': 'Security and dependencies', 'provider': 'codex',
+            'role': 'Inspect the platform for security weaknesses and outdated or vulnerable dependencies. '
+                    'Use available evidence, prepare a narrowly scoped fix or dependency update, and run relevant tests. '
+                    'Do not claim a vulnerability scan or a package version is current without evidence. '
+                    'Report when an advisory database, network access, or further review is needed.'}
+DEFAULTS = (DEFAULT, SECURITY)
 MAX_PATCH = 2 * 1024 * 1024
 
 
@@ -35,9 +41,10 @@ def _read() -> list[dict]:
 
 
 def roles() -> list[dict]:
-    items = _read()
-    return [next((p for p in items if isinstance(p, dict) and p.get('id') == 'observer'), DEFAULT),
-            *[p for p in items if isinstance(p, dict) and p.get('id') != 'observer']]
+    items = [p for p in _read() if isinstance(p, dict)]
+    reserved = {p['id'] for p in DEFAULTS}
+    return [next((p for p in items if p.get('id') == default['id']), default) for default in DEFAULTS] + [
+        p for p in items if p.get('id') not in reserved]
 
 
 def save(name: str, role: str, ident: str | None = None) -> dict:

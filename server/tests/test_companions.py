@@ -28,6 +28,8 @@ print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)
 ''')
     fake.chmod(0o755)
     monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    defaults = client.get('/api/companions').json()['companions']
+    assert {p['id'] for p in defaults} >= {'observer', 'security'}
     r = client.post('/api/companions', json={'name': 'Auditor', 'role': 'Inspect and test'})
     assert r.status_code == 200, r.text
     profile = r.json()
