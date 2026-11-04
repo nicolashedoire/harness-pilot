@@ -557,6 +557,9 @@ Between servers (public, no cookie, `404` while `team_page` is off; protocol in 
 ## Dashboard & extensions
 ```
 Card = {title?, status?:"ok"|"warn"|"error", link?:string, blocks:[Block], updated?:float}
+// an HTML widget: {blocks: [], html: "/ext/<id>/widget.html", height, updated, network: {state: "open"|"none"|
+//   "granted"|"ask"|"denied", hosts: [declared host]}} - what its frame may reach (permissions.network_state):
+//   open = grandfathered, not limited · ask = a declared site waits for the user (the card asks before the frame loads)
 Block =
   {type:"stat", label, value, unit?, hint?, delta?, tone?:"ok"|"warn"|"error"}
     // a number value / delta is written in the user's language (Intl.NumberFormat), `unit` after it ("%" as a percentage)
@@ -578,7 +581,7 @@ Block =
 | GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?, permissions}]` (permissions: the `Permissions` its manifest declares, `null` when it has no `"permissions"` key - a block plugin: `{network: <block.json hosts>, secrets: [], read: []}`, an agent: `null`; pinned: page shown in the sidebar; page_v: newest mtime in ms of page.js and the module files of its folder (`.js .mjs .css .json`, hidden files, `node_modules` and `__pycache__` skipped, 2000 files at most), the UI imports `/ext/<id>/@<page_v>/page.js` so the page and the modules it imports relatively are reused until one of them changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks). Each also has `runtime_errors:[{where:"widget"\|"page"\|"card"\|"api", message, stack, at, count}]`: the errors recorded while it ran (below) since its files last changed, newest first, at most 10; and `origin:{id, title, path}\|null`: the session that made it, where "Ask for a fix" goes (below), and `access`: its `Access` (Permissions below; `null` for a block plugin or an agent) |
 | GET | `/api/extensions/permissions` | – | `{since: float\|null, items: [ExtPermissionsDetail]}` - every widget and page, A-Z; `since` = when this version first scanned the extensions (the extensions found then are grandfathered) |
 | GET | `/api/extensions/{id}/permissions` | – | `ExtPermissionsDetail` · `404 not_found` (unknown, or a block plugin / agent) |
-| POST | `/api/extensions/{id}/consent` | `{decision:"always"\|"deny"\|"reset"}` | `{ok, access: Access}` - `always`: what the manifest declares is allowed (a key added to it later waits again) · `deny`: nothing it declares is allowed, not asked again · `reset`: asked again (keys granted before permissions existed stay). Auth + CSRF, `invalidate extensions` · `400 not_declared` (`always` without a `"permissions"` key) · `404 not_found` (unknown, block plugin, agent) |
+| POST | `/api/extensions/{id}/consent` | `{decision:"always"\|"once"\|"deny"\|"reset"}` | `{ok, access: Access, grant?}` - `always`: what the manifest declares is allowed, keys and sites (one added to it later waits again) · `once`: `grant` = a token valid one hour (in memory) that lets one load of its HTML widget frame reach the declared sites (`/ext/{id}/widget-frame?grant=`); nothing is saved · `deny`: nothing it declares is allowed, not asked again · `reset`: asked again (what was granted before permissions existed stays). Auth + CSRF, `invalidate extensions` (not for `once`) · `400 not_declared` (`always` / `once` without a `"permissions"` key) · `400 no_network` (`once` without a declared site) · `404 not_found` (unknown, block plugin, agent) |
 | PATCH | `/api/extensions/{id}` | `{enabled?, pinned?}` | `{ok}` (`pinned` on a widget -> 400 `not_a_page`) |
 | POST | `/api/extensions/reload` | – | rescans `<workspace>/extensions` |
 | POST | `/api/extensions/{id}/errors` | `{where:"widget"\|"page", message, stack?}` | a runtime error the browser saw, sent by the app itself: the HTML widget bridge's `error` and `unhandledrejection` events (forwarded by the dashboard), and in a page the errors whose script is under `/ext/<id>/` or that came from its `ctx.api()`, a page module that fails to load, a `mount()` that throws -> `{ok:true, error:{where, message, stack, at, count}}`, `invalidate extensions`. Auth + CSRF. `message` (1-4000 characters) is cut at 500, `stack` (8000 at most) kept to 6 lines of 240 characters, the app's addresses made relative (`https://host/ext/<id>/@1712/page.js:12:5` -> `page.js:12:5`; `…/ext/<id>/widget-frame:58:3` -> `widget.html:<58 - the lines served before widget.html>:3`). The same `where` + `message` as the newest error bumps its `count` and `at`. `404 not_found` (unknown extension) · `422` (bad `where`, empty or too long fields) · `429 rate_limited` past 20 reports of one extension or 120 in all per minute (nothing kept) |
@@ -588,7 +591,9 @@ Block =
 | GET | `/ext/{id}/page.js` | – | page module (ES module) |
 | GET | `/ext/{id}/{path}` · `/ext/{id}/@{version}/{path}` | – | a module of the page's folder, `page.js` included, for its relative imports: `.js`/`.mjs` (`text/javascript`), `.css` (`text/css`), `.json` (`application/json`), in the folder or a subfolder. Every segment of `path` starts with a letter, a digit or `_` (no hidden file, no `.`/`..`), and the real path (links followed) must be such a file inside the folder. The `@{version}` segment is ignored (the UI imports `@<page_v>[-<retry>]/page.js`, so relative imports carry the version). Same checks as `page.js`: signed in (`401`), an enabled page extension without error, else `404 not_found`; `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. `{id}` only matches an extension id, so `/ext/_blocks/...` stays with Conversation blocks |
 | GET | `/ext/ui-kit.css` | – | the UI kit of extensions (`server/maxxing/assets/ui-kit.css`): `ui-*` classes scoped to `.mx-ext` (page host) and `[data-mx-kit]` (widget frame), built on the theme variables; the app adds it once when a page extension opens; `ETag` (content hash), `If-None-Match` -> `304` |
-| GET | `/ext/{id}/widget-frame` | – | HTML widget document: the bridge (`maxxing.api / resize / theme`, theme from the URL fragment) + the UI kit inlined (`<html data-mx-kit>`) + `widget.html`, `Content-Security-Policy: sandbox allow-scripts allow-pointer-lock` (the UI frames it with the same sandbox; an srcdoc frame would inherit the app's script policy). `/ext/{id}/widget.html` stays the raw file (text/plain) |
+| GET | `/ext/{id}/widget-frame?grant=` | – | HTML widget document: `<base href="/ext/{id}/f/{token}/">` (a new frame token, below), the bridge (`maxxing.api / resize / theme`, theme from the URL fragment) + the UI kit inlined (`<html data-mx-kit>`) + `widget.html` (the UI frames it with `sandbox="allow-scripts allow-pointer-lock"`; an srcdoc frame would inherit the app's script policy). `Content-Security-Policy`: a widget that declares `permissions` (or was created after them, or was refused) gets `sandbox allow-scripts allow-pointer-lock; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'self'; style-src 'unsafe-inline' 'self'; img-src data: blob: 'self' [hosts]; media-src data: blob: 'self' [hosts]; font-src data: 'self' [hosts]; connect-src 'self' [hosts]; worker-src blob: 'self'; form-action 'none'; frame-ancestors 'self'` where `[hosts]` = `https://<host>` of the declared sites the user allowed (all of them with a valid `once` grant) and `'self'` = its own files through the frame token (the frame sends no cookie, so `/api/...` answers 401); a grandfathered widget without a declaration keeps `sandbox allow-scripts allow-pointer-lock; frame-ancestors 'self'` (any site) plus `Content-Security-Policy-Report-Only` = the same rules with the sites already recorded and `report-uri /ext/{id}/f/{token}/@csp-report`. `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `nosniff`. `/ext/{id}/widget.html` stays the raw file (text/plain) |
+| GET | `/ext/{id}/f/{token}/{path}` | – | **no session** (the sandboxed frame sends no cookie; the frame token is the permission: issued by `widget-frame`, bound to the extension, 12 h renewed while used, in memory): a file of the widget's folder its frame loads with a relative URL - scripts, styles, JSON, images, fonts, sound, video, wasm (`extensions.FRAME_TYPES`), the page modules' rules otherwise (no hidden file, no link out of the folder, never `api.py` nor an `.html` file). `Access-Control-Allow-Origin: *` (module scripts and fonts are CORS requests from the frame's opaque origin), `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox`, `no-store`, `nosniff` · `404 not_found` (bad or expired token, another extension's token, not such a file, the widget off or broken) |
+| POST | `/ext/{id}/f/{token}/@csp-report` | a CSP report (`application/csp-report` or `application/reports+json`, 16 kB at most) | **no session**, always `204`: when the token's frame is a grandfathered widget without a declaration, each http(s) / ws(s) site of the report (`blocked-uri` / `blockedURL`: host and a non-default port, lowercased) is recorded as granted before permissions existed (`access.legacy.network`, notification `extension.legacy_network`, 50 sites at most per extension); 200 reports per frame token at most |
 | GET | `/ext/{id}/widget.html` | – | the raw `widget.html` as `text/plain` (`no-store`, `nosniff`) · `404 not_found` when the extension is unknown, off, broken or has none |
 
 The app page (`index.html`) is served with `script-src 'self'` plus the hashes of its inline boot scripts
@@ -631,6 +636,11 @@ What is enforced (the rest is shown, not enforced: `api.py` runs inside the serv
   - A refusal is recorded (Settings, the Atelier: `access.denied`; a runtime error `where` `card` / `api` of the
     extension) and logged, even when the extension catches the exception; `pilot ext check` reports it (its own run
     records nothing).
+- **Sites** (HTML widgets only): the frame's own policy (`/ext/{id}/widget-frame` below) lets it reach only the
+  declared sites the user allowed, with scripts and styles inline or from the widget's own files (never another
+  site). A grandfathered widget without a declaration keeps an unlimited frame; its report-only policy reports the
+  sites it reaches and each one is recorded as granted before permissions existed (notification
+  `extension.legacy_network`). Declaring them later keeps them allowed. `api.py` and `page.js` are not limited.
 - What the user allowed lives in `<state>/extension-permissions.json` (Settings -> Extensions, the Atelier), by
   extension id, not with the extension's files: code that deletes an extension calls `permissions.forget(id)`, so a
   new extension with the same id asks again.
@@ -643,15 +653,18 @@ Access = {
     // undeclared: no "permissions", created later - no key
   secrets: [{name, status: "allowed"|"pending"|"refused", how: "accepted"|"legacy"|null, at: float|null}],
     // declared: each declared key; legacy: each key recorded so far (how "legacy")
-  legacy: {secrets: [{name, at}]},     // recorded as granted before permissions existed (the "grandfathered" list)
-  pending: bool,                       // a declared key waits for the user (Allow / Refuse)
+  network: [{host, status, how, at}],  // the same for the sites of its HTML widget frame
+  network_open: bool,                  // legacy and not refused: its frame is not limited (the sites are recorded)
+  legacy: {secrets: [{name, at}], network: [{host, at}]},   // recorded as granted before permissions existed (the
+                                       // "grandfathered" lists)
+  pending: bool,                       // a declared key or site waits for the user (Allow / Refuse)
   refused: bool,
   denied: [{kind: "secret", name, reason: "undeclared"|"not_allowed"|"refused", at, count}]   // refusals at run
                                        // time, newest first, 20 at most (one entry per kind + name + reason)
 }
 ExtPermissionsDetail = {id, name, type, permissions: Permissions|null (declared), access: Access,
   suggested: Permissions}   // the declaration that keeps it working as it does today: the declared one plus the
-                            // keys recorded as granted before permissions existed (what to write in a grandfathered
+                            // keys and sites recorded as granted before permissions existed (what to write in a grandfathered
                             // extension's manifest)
 ```
 
@@ -1027,7 +1040,8 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
 | `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
-| `extension.legacy_secrets` | security | info | `extension_id, name, secrets` (every key recorded so far, comma-separated): a grandfathered extension read a key for the first time (`url` = `/settings/extensions`, group `ext-legacy:<id>`) | `open` | – |
+| `extension.legacy_network` | security | info | `extension_id, name, hosts` (every site recorded so far): a grandfathered HTML widget reached a site for the first time (`url` = `/settings/extensions`, group `ext-legacy:<id>:network`) | `open` | – |
+| `extension.legacy_secrets` | security | info | `extension_id, name, secrets` (every key recorded so far, comma-separated): a grandfathered extension read a key for the first time (`url` = `/settings/extensions`, group `ext-legacy:<id>:secrets`) | `open` | – |
 | `atelier.proposed` | system | warning | `draft_id, kind, id, name, type, change ("new"\|"update"), agent, *session_id*, network, secrets` (counts of declared hosts / secrets; `url` = `/atelier/drafts/<draft_id>`, group `atelier:<draft_id>`) | `review` | the draft approved, rejected or replaced by a newer proposal of the same creation |
 | `atelier.activated` | system | success | `draft_id, kind, id, name, type, version, agent, *session_id*` (a proposal activated without review by config `atelier.auto_activate_safe`; `url` = `/atelier/<kind>/<id>`) | `open` | – |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
