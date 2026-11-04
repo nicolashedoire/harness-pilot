@@ -4,7 +4,7 @@
 // Desktop: a table. Touch layout: one card per creation.
 import * as React from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Search, TriangleAlert, WandSparkles, X } from 'lucide-react'
+import { Search, Settings2, TriangleAlert, WandSparkles, X } from 'lucide-react'
 import { useAtelier } from '@/lib/queries'
 import { errorMessage } from '@/lib/api'
 import type { AtelierItem, AtelierType } from '@/lib/types'
@@ -16,6 +16,7 @@ import { Page } from '@/components/shell/Page'
 import { Origin, StatePill, TypeTile, VersionTag, pillState, typeLabel } from '@/features/atelier/parts'
 import { RowAction } from './RowAction'
 import { itemHref, newSessionHref } from './links'
+import { SettingsSheet } from './Settings'
 
 /** The chips: one per group of types. Agents and cron jobs only show when there are some. */
 const FILTERS = {
@@ -66,13 +67,21 @@ export function AtelierList() {
   }
   const create = () => navigate(newSessionHref(t('atelier.createPrompt')))
 
+  const settingsOpen = params.get('settings') === '1'
   const actions = (
-    <Tooltip content={touch ? t('atelier.create') : null}>
-      <Button size={touch ? 'icon' : 'sm'} onClick={create} aria-label={t('atelier.create')}>
-        <WandSparkles />
-        <span className="max-md:hidden">{t('atelier.create')}</span>
-      </Button>
-    </Tooltip>
+    <>
+      <Tooltip content={t('atelier.settings.title')}>
+        <Button variant="outline" size="icon-sm" onClick={() => set({ settings: '1' })} aria-label={t('atelier.settings.title')} className="max-md:size-11">
+          <Settings2 />
+        </Button>
+      </Tooltip>
+      <Tooltip content={touch ? t('atelier.create') : null}>
+        <Button size={touch ? 'icon' : 'sm'} onClick={create} aria-label={t('atelier.create')}>
+          <WandSparkles />
+          <span className="max-md:hidden">{t('atelier.create')}</span>
+        </Button>
+      </Tooltip>
+    </>
   )
 
   return (
@@ -141,6 +150,7 @@ export function AtelierList() {
           <p className="px-1 text-xs leading-relaxed text-muted-foreground">{t('atelier.footer')}</p>
         </div>
       )}
+      <SettingsSheet open={settingsOpen} onOpenChange={(o) => set({ settings: o ? '1' : null })} />
     </Page>
   )
 }
