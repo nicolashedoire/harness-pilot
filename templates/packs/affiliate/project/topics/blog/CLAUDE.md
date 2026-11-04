@@ -54,6 +54,6 @@ clean a cast iron pan", "which old posts should I update first?". Drafts here, p
 
 ## Automations
 
-- No job is created for this topic. Useful ones to add on request (`maxxing-cron` skill): a weekly
+- No job is created for this topic. Useful ones to add on request (`pilot-crons` skill): a weekly
   draft of the next article from the plan for review, or a monthly list of posts to refresh.
-- Drafts ready for review can be announced with `maxxing feed post "New draft ready" --source blog`.
+- Drafts ready for review can be announced with `pilot feed post "New draft ready" --source blog`.

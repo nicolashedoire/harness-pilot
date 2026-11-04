@@ -6,6 +6,35 @@
 - Palettes: a palette is a versioned Theme object (`web/src/lib/theme`: tokens, bases zinc / graphite / marine, accents, `derive`, `validate`, `css`; DESIGN.md "Themes"). New tokens `--action` / `--action-foreground` (Tailwind `bg-action` / `text-action-foreground`) for filled buttons and checked controls, `--primary` stays the accent; `html { accent-color: var(--action) }`. `globals.css` keeps only the default palette (Zinc & blue), checked against `DEFAULT_THEME` by `web/tests/theme.test.ts` (`npm test`). Settings -> Appearance (new section; theme, fonts and density moved out of General). UI store `mx-ui` v3: `accent` + `tint` became `palette` (+ `paletteRev`, `palettePending`, `customPalette`); a browser that had chosen keeps its colours (`legacyTheme`), the others start on `DEFAULT_THEME` (the old default was violet + tinted). The notification fields (`notifyPrefs`, `soundSet`, `soundVolume`, `soundPrefs`, `pushOn`) are still normalised in `merge`, without a version bump. Applied palette cached as CSS in localStorage `mx-theme` and injected by `index.html` / `offline.html` before the first paint. Sync: `PUT /api/settings/look` takes `palette` (validated by `maxxing/themes.py` `clean_theme`, 16 KB, `422 invalid_theme`), `look.rev` grows with each palette change and sends the new bus topic `look`; `accent` / `tint` stay for older clients. Contrast adjustments of the default tokens: light `muted-foreground`, `warning`, `destructive`, dark `destructive`; `primary-foreground` is dark for blue and rose in dark mode.
 - Themes created, saved and shared: `GET/POST /api/settings/themes`, `PATCH/DELETE /api/settings/themes/{id}` (`themes.saved/save_theme/rename_theme/delete_theme`, `<state>/themes.json` 600, 50 at most, same colours saved once, `clean_theme` on every entry, bus topic `themes`); `GET /api/settings/themes/session/{sid}?since=` (`themes.latest_file`: newest `*.theme.json` of the session's topic folder or `themes/`, no symlink, `O_NOFOLLOW`, 16 KB, 404 `no_theme`, 422 `invalid_theme`). Team message kind `theme` (`POST /api/team/chats/{cid}/themes`, `team.send_theme`; `clean_theme` on send and in `_remote_message`, a bad theme refuses the message with 400 `invalid_theme`; `_wire` carries `theme`, `_blank` drops it, summaries name it only). Skill `skills/pilot-theme` (+ `check_theme.py`, stdlib), installed by the `pilot-` prefix. Web: `src/features/themes` (previews, review dialog, share dialog, My themes, generator at `/settings/appearance?create=1&session=<id>` using the topic `projects/system/topics/themes`, created on first use), `lib/theme/share.ts` (theme codes `theme1:` + base64url), i18n block `themegen.` (settings group), showcase `theme-agent`; the mock gained saved themes, a simulated pilot-theme turn and a minimal Team.
 - Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory; mixed-provider teams are not yet implemented. Existing session permissions and stop handling are unchanged.
+- Product skills `maxxing-*` -> `pilot-*`, command `pilot` (`maxxing` kept as a permanent alias):
+  - Skills renamed (folders, front matter `name:`, every cross-reference in skills, templates, docs, code, tests):
+    setup, doctor, telegram, backup, tasks, mcp, customize, infra keep their suffix (`maxxing-x` -> `pilot-x`);
+    `maxxing-cron` -> `pilot-crons`, `maxxing-feed` -> `pilot-notifications`, `maxxing-extension` -> `pilot-widgets-pages`.
+    Mapping: `server/maxxing/renames.py` `SKILL_RENAMES` (keep every pair). The other skills keep their names.
+    Skill texts name the product `harness-pilot` and show `pilot ...` commands (one line per skill: `maxxing` still works).
+  - `cmd_core.install_skills()`: product skills = `PRODUCT_SKILL_PREFIXES` (`pilot-`, `maxxing-`) + `PRODUCT_SKILLS_EXTRA`
+    (`is_product_skill()`). Upgrade: the new folders are installed, the old copies listed in install.json `skills` are
+    deleted (as any obsolete product skill), an old-named folder that is not listed (manual copy, install older than the
+    manifest) is moved to `<state>/trash/skills/` (reported in `backed_up`). Test: `test_renames.py`.
+  - `renames.migrate(ws)`, run by every `init` after the default jobs (report key `renamed: {files, jobs}`, printed when
+    not empty): exact old skill names -> new ones, only in product text - a workspace line copied from a template whose
+    renamed text equals a line of the current rendered template (CLI name and product name ignored in the comparison;
+    starter packs mapped to `projects/<project>` and `<project>-N`), and job prompts equal, once renamed, to a shipped
+    prompt (`COMPACTION_JOB`, new `cmd_core.MORNING_TASKS_PROMPT`, packs' `crons[].prompt`). User-written lines and job
+    prompts are untouched (left to Claude with the user). Idempotent; atomic writes keep the file mode.
+  - Command `pilot`: pyproject `[project.scripts]` has `pilot` and `maxxing` -> `maxxing.cli:main` (no uv.lock change;
+    `uv sync` creates `.venv/bin/pilot`). argparse `prog` = the name called (`cli.prog_name()`, `pilot` for `python -m
+    maxxing`); description names the alias. `cmd_core.ensure_cli_alias()` (every init, report key `cli`): symlink
+    `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing` next to install.sh's `BIN_LINK` (venv link or state-dir wrapper:
+    same program, same state); never replaces a foreign `pilot`; skipped with `MAXXING_SPAWN=direct` or without
+    BIN_LINK. `uninstall` removes PILOT_LINK only when it is that link. Unchanged on purpose: crontab lines and default
+    job commands (`crons.maxxing_bin()`), `python -m maxxing`, the package, `MAXXING_*`, state paths, unit names
+    (`maxxing-cron-<id>`, `maxxing-<sid8>`), User-Agents. `scripts/dev-local.sh` runs `uv run pilot`; install.sh's
+    final hints show `pilot`; `conftest.py` points BIN_LINK / PILOT_LINK into tmp for every test.
+  - `web/src/features/infra/InfraPage.tsx` ("Ask Claude" text: `pilot infra list --json`, skill `pilot-infra`);
+    `web/dist` rebuilt with it.
+  - `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old skill name back
+    outside the history files (CHANGELOG.md, this file, docs/upgrade/<version>.md): re-apply the rename there.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users
 (what changes for them, plain language), shown in the app ("What's new" after an update) and by

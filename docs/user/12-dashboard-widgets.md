@@ -57,7 +57,7 @@ mode, on desktop and phone. (Need free-form drawing or interaction - a game, a c
 [HTML widgets](#html-widgets-games-custom-drawings) below.)
 
 The fastest way: ask Claude in a session, "create a dashboard widget that shows ...". The
-`maxxing-extension` skill knows everything below.
+`pilot-widgets-pages` skill knows everything below.
 
 ### 1. Create the folder
 

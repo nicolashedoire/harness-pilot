@@ -5,18 +5,18 @@ description: Make a motion design video with Remotion (React) on this server - a
 
 # Motion design videos (Remotion)
 
-Remotion is installed once on the server (`maxxing video status`). A video is a React project:
+Remotion is installed once on the server (`pilot video status`). A video is a React project:
 each frame is rendered from components, so everything is code - text, timing, transitions.
 
 ## 1. Create the project
 ```bash
-maxxing video new <topic folder>/videos/<slug>      # e.g. projects/acme/topics/blog/videos/launch
+pilot video new <topic folder>/videos/<slug>      # e.g. projects/acme/topics/blog/videos/launch
 ```
 It holds `src/Root.jsx` (one `<Composition>` per video: id, size, fps, duration), `src/Intro.jsx`
 (an example scene), `public/` (images, audio, fonts: use them with `staticFile('logo.png')`).
 `node_modules` is a link to the shared install: to add an npm package, first replace the link with a
 real install (`rm node_modules && npm install --no-audit --no-fund <pkg>`), never install into the
-shared one. If `maxxing video new` says Remotion is not prepared: `maxxing deps update` (as root).
+shared one. If `pilot video new` says Remotion is not prepared: `pilot deps update` (as root).
 
 ## 2. Write it
 - Agree on the format first: 1920x1080 (landscape), 1080x1920 (shorts, reels, stories), 1080x1080

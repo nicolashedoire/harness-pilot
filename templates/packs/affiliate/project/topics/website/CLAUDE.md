@@ -51,6 +51,6 @@ by category", "the site feels slow on mobile". Static site or WordPress, changes
 
 ## Automations
 
-- No job is created for this topic. Useful ones to add on request (`maxxing-cron` skill): a weekly
+- No job is created for this topic. Useful ones to add on request (`pilot-crons` skill): a weekly
   check that key pages answer 200 and render a table, or a monthly speed check of 3 money pages.
-- Problems can go to the feed with `maxxing feed post "Site down" --level warning --source site`.
+- Problems can go to the feed with `pilot feed post "Site down" --level warning --source site`.

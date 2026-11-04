@@ -32,7 +32,7 @@ Editing, captions and thumbnails: "make burned-in captions for this clip", "cut 
   if captions are burned in on shorts.
 - Burned-in captions for shorts: 2-4 words at a time, big bold font, high contrast with outline or box,
   highlight the word being spoken; check them on a phone-sized preview.
-- Remotion: `maxxing video new DIR` creates a project; keep timings in a data file (JSON) driven by the
+- Remotion: `pilot video new DIR` creates a project; keep timings in a data file (JSON) driven by the
   transcript so changes in the voice do not mean re-timing by hand; render a few still frames to check
   before a full render.
 - B-roll list: from the script's `[B-roll: ...]` cues, list each shot with timecode, what to show and
@@ -55,6 +55,6 @@ Editing, captions and thumbnails: "make burned-in captions for this clip", "cut 
 
 ## Automations
 
-- Long renders run in the background; post a feed notification when done (`maxxing-feed` skill).
+- Long renders run in the background; post a feed notification when done (`pilot-notifications` skill).
 - No scheduled job by default; a watch-folder job (e.g. caption every new file in `inbox/`) can be
-  created with the `maxxing-cron` skill if the user asks.
+  created with the `pilot-crons` skill if the user asks.

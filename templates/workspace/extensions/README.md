@@ -22,4 +22,4 @@ After adding or editing an extension: **Settings -> Extensions -> Reload**.
 
 Guides (in the app: Settings -> Docs): "Dashboard widgets" and "Page extensions".
 Quickest way: open a session and ask Claude "create a widget that shows ..." - the
-`maxxing-extension` skill knows the format.
+`pilot-widgets-pages` skill knows the format.

@@ -23,7 +23,7 @@ Your apps, side by side, built from one shared starter: "start a new app for boo
   ask the user to paste a secret in the chat, never write one into a file.
 - Never deploy to production, change DNS, delete data or spend money without an explicit "yes" from the
   user in the current conversation.
-- Follow-ups go to the task board (`maxxing-tasks` skill); alerts go to the feed (`maxxing-feed` skill,
-  e.g. `maxxing feed post "Deploy failed" --level error --source app-1`).
+- Follow-ups go to the task board (`pilot-tasks` skill); alerts go to the feed (`pilot-notifications` skill,
+  e.g. `pilot feed post "Deploy failed" --level error --source app-1`).
 
 @memory.md

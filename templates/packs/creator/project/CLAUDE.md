@@ -22,7 +22,7 @@ for this clip", "which videos kept people watching last month?".
   the user in the current conversation.
 - Write in the creator's voice and language as noted in memory; no generic "AI" phrasing, no clickbait
   the content does not deliver.
-- Follow-ups go to the task board (`maxxing-tasks` skill); alerts that matter go to the feed
-  (`maxxing-feed` skill, e.g. `maxxing feed post "Render done: ep-12" --level info --source creator`).
+- Follow-ups go to the task board (`pilot-tasks` skill); alerts that matter go to the feed
+  (`pilot-notifications` skill, e.g. `pilot feed post "Render done: ep-12" --level info --source creator`).
 
 @memory.md
