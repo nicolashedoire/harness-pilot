@@ -1980,7 +1980,8 @@ class Gateway:
         p.update(chat=chat, thread=thread)
         p["refs"].append(ref)
         p["sending"].add(ref)
-        if p.get("task") is None or p["task"].done():
+        ending = p.get("ending")                        # on_turn_end of the previous turn starts the loop itself
+        if (p.get("task") is None or p["task"].done()) and (ending is None or ending.done()):
             p["task"] = self.spawn(self._typing(sid), "typing")
         return p
 
@@ -2129,6 +2130,9 @@ class Gateway:
         last = session.get("last_turn")
         kind = (last or {}).get("kind") or "user"
         if p is not None:
+            # a message tracked until the end of this starts no loop of its own: the one started below is the only
+            # one (a second loop was never stopped: "typing…" and status edits after the final summary)
+            p["ending"] = asyncio.current_task()
             t = p.get("task")                           # stop the status loop first: an edit still in
             if t is not None and not t.done():          # flight must not land after the final summary
                 t.cancel()
@@ -2154,9 +2158,12 @@ class Gateway:
                 await self.send_html(p["chat"], thread_of(sid) or p["thread"], "⚠️ " + fmt.escape(str(err)[:3000]))
                 return
             await self._recheck(sid, p)
+            if p.get("ending") is asyncio.current_task():
+                del p["ending"]
             if self._pending.get(sid) is p and p["refs"]:
                 self._reset_status(p)                   # the next message gets its own typing / status loop
-                p["task"] = self.spawn(self._typing(sid), "typing")
+                if p.get("task") is None or p["task"].done():
+                    p["task"] = self.spawn(self._typing(sid), "typing")
             elif self._pending.get(sid) is p:
                 self._untrack(sid)
             if done:

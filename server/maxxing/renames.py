@@ -11,14 +11,19 @@ update) then:
     stays as it is;
   * the prompt of a default job or a starter-pack job the user never edited (equal to the shipped prompt once
     renamed).
-  CLI references in recognized template-owned CLAUDE.md lines are also refreshed to the current spelling.
-  Text the user wrote is never touched: Claude proposes those changes to the user (upgrade notes).
+  Only the exact old skill names are replaced. Text the user wrote is never touched: Claude proposes those
+  changes to the user (upgrade notes).
+The command was renamed from `maxxing` to `pilot` (`maxxing` stays its alias). `refresh_cli_guidance(ws)` (init, after
+the `pilot` link is made, and the local start-up) gives `pilot` to the product lines of the template `CLAUDE.md` files
+that still name `maxxing`, once per workspace and only when the agents' `pilot` is this program: where another program
+has that name, the agents keep using `maxxing`, and a line the user changes back later stays as written.
 """
 from __future__ import annotations
 
 import logging
 import os
 import re
+import stat
 import tempfile
 from pathlib import Path
 
@@ -45,8 +50,19 @@ _OLD_SKILL = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(S
 _PRODUCT = re.compile(r"Harness Maxxing|harness-pilot")
 _CLI = re.compile(r"(?<![\w./@-])(?:pilot|maxxing)(?![\w./@-])")
 _OLD_CLI = re.compile(r"(?<![\w./@-])maxxing(?![\w./@-])")
-_CLI_ALIAS_NOTES = (" (`maxxing`, its earlier name, still works)",
-                    " (`maxxing` = the same command, earlier name)")
+_ALIAS_NOTE = "(`maxxing`, its earlier name, still works)"
+# exact lines of earlier templates that differ from their current version by more than the CLI name -> that version
+# (applied only while it is a line of the file's current template; no other line loses or gains an alias note)
+_CLI_LINES = {
+    "UI; the server CLI is `maxxing`:":                                         # root CLAUDE.md before 2.0.0a109
+        f"UI; the server CLI is `pilot` {_ALIAS_NOTE}:",
+    "| `17-cli-reference.md` | every `maxxing` command |":                       # help topic before 2.0.0a109
+        f"| `17-cli-reference.md` | every `pilot` command {_ALIAS_NOTE} |",
+    "| `17-cli-reference.md` | every `pilot` command (`maxxing` = the same command, earlier name) |":  # first `pilot` text
+        f"| `17-cli-reference.md` | every `pilot` command {_ALIAS_NOTE} |",
+}
+CLI_REFRESHED = "cli_guidance"          # install.json: the workspaces whose product lines got `pilot` (once each)
+MAX_FILE_BYTES = 1 << 20                # a larger workspace file is no template's copy: skipped (logged), never read
 RENDERED_SUFFIXES = (".md", ".json", ".txt")
 
 
@@ -63,6 +79,55 @@ def _neutral(line: str) -> str:
     """A line without what may differ between the text an older version wrote and the current template, apart from
     the skill names: the CLI name and the product name."""
     return _CLI.sub("<cli>", _PRODUCT.sub("<product>", line)).rstrip()
+
+
+def _read_text(path: Path, what: str) -> str | None:
+    """The text of a workspace file a migration may change: a regular file (not a link) of at most MAX_FILE_BYTES
+    (a larger one is skipped and logged, never read whole), in UTF-8; read as bytes, so CRLF and a missing final
+    newline stay. None otherwise."""
+    try:
+        st = path.lstat()
+    except FileNotFoundError:                    # a default topic the user deleted, a pack never installed
+        return None
+    except OSError as e:
+        log.warning("%s: %s not migrated: %s", what, path, e)
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    try:
+        data = b""
+        if st.st_size <= MAX_FILE_BYTES:
+            with open(path, "rb") as f:
+                data = f.read(MAX_FILE_BYTES + 1)
+        if st.st_size > MAX_FILE_BYTES or len(data) > MAX_FILE_BYTES:
+            log.warning("%s: %s skipped: larger than %d bytes", what, path, MAX_FILE_BYTES)
+            return None
+        return data.decode("utf-8")
+    except UnicodeDecodeError:                   # not a text a template made
+        return None
+    except OSError as e:
+        log.warning("%s: %s not migrated: %s", what, path, e)
+        return None
+
+
+def _rewrite(path: Path, text: str, what: str) -> bool:
+    """Write `text` into `path` unless the user made it read-only (no write bit, or not writable for this process:
+    os.replace would only need the folder) -> written."""
+    if not path.stat().st_mode & 0o222 or not os.access(path, os.W_OK):
+        log.info("%s: %s skipped: read-only", what, path)
+        return False
+    _write_text(path, text)
+    return True
+
+
+def _lines(text: str) -> list[tuple[str, str]]:
+    """(line, its end) as str.splitlines() cuts `text`: besides LF and CRLF, a form feed, U+2028, NEL... end a line
+    too, and a changed line keeps its own end (two lines are never joined)."""
+    out = []
+    for full in text.splitlines(keepends=True):
+        body = full.splitlines()[0]
+        out.append((body, full[len(body):]))
+    return out
 
 
 def _write_text(path: Path, text: str) -> None:
@@ -107,13 +172,8 @@ def _template_pairs(ws: Path) -> list[tuple[Path, Path]]:
 
 def _migrate_file(template: Path, dst: Path, variables: dict[str, str]) -> int:
     """Rename the old skills in the lines of `dst` that are the template's text -> number of lines changed."""
-    if dst.is_symlink() or not dst.is_file():
-        return 0
-    try:
-        text = dst.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return 0
-    if not has_old_skill(text):
+    text = _read_text(dst, "skill rename")
+    if text is None or not has_old_skill(text):
         return 0
     from .cmd_core import render_template
     try:
@@ -121,16 +181,15 @@ def _migrate_file(template: Path, dst: Path, variables: dict[str, str]) -> int:
     except (OSError, UnicodeDecodeError):
         return 0
     out, n = [], 0
-    for ln in text.splitlines(keepends=True):
-        body = ln.rstrip("\r\n")
+    for body, end in _lines(text):
         if has_old_skill(body):
             new = rename_skills(body)
             if _neutral(new) in product:
-                ln = new + ln[len(body):]
+                body = new
                 n += 1
-        out.append(ln)
-    if n:
-        _write_text(dst, "".join(out))
+        out.append(body + end)
+    if n and not _rewrite(dst, "".join(out), "skill rename"):
+        return 0
     return n
 
 
@@ -157,35 +216,55 @@ def migrate_workspace(ws: Path) -> list[str]:
 
 
 def migrate_cli_workspace(ws: Path) -> list[str]:
-    """Refresh only original product instruction lines; custom prose and historical messages are untouched."""
+    """One pass of `pilot` over the template CLAUDE.md files (refresh_cli_guidance decides when) -> changed files.
+    A line naming `maxxing` as the command becomes the line of the current template it equals once the CLI and
+    product names are ignored, or, for an exact earlier line of _CLI_LINES, its new version. Lines the user wrote or
+    edited, and conversation history, are left."""
     from .cmd_core import render_template, template_vars
     variables = template_vars(ws)
     changed = []
     for template, dst in _template_pairs(ws):
         try:
-            if dst.name != 'CLAUDE.md' or not _workspace_file(ws, dst) or not dst.is_file():
+            if dst.name != "CLAUDE.md" or not _workspace_file(ws, dst):
                 continue
-            text = dst.read_bytes().decode('utf-8')  # keep CRLF and missing final newlines
-            if not _OLD_CLI.search(text):
+            text = _read_text(dst, "CLI guidance")
+            if text is None or not _OLD_CLI.search(text):
                 continue
-            current = render_template(template.read_text(encoding='utf-8'), variables).splitlines()
+            current = render_template(template.read_text(encoding="utf-8"), variables).splitlines()
             product = {_neutral(line): line for line in current}
             out, n = [], 0
-            for line in text.splitlines(keepends=True):
-                body = line.rstrip('\r\n')
-                lookup = body
-                for note in _CLI_ALIAS_NOTES:
-                    lookup = lookup.replace(note, '')
-                target = product.get(_neutral(lookup))
-                if target is not None and _OLD_CLI.search(body) and target != body:
-                    line = target + line[len(body):]
-                    n += 1
-                out.append(line)
-            if n:
-                _write_text(dst, ''.join(out))
+            for body, end in _lines(text):
+                if _OLD_CLI.search(body):
+                    target = _CLI_LINES.get(body)
+                    if target not in current:
+                        target = product.get(_neutral(body))
+                    if target is not None and target != body:
+                        body = target
+                        n += 1
+                out.append(body + end)
+            if n and _rewrite(dst, "".join(out), "CLI guidance"):
                 changed.append(str(dst.relative_to(ws)))
         except (OSError, UnicodeDecodeError) as error:
-            log.warning('CLI guidance: %s not migrated: %s', dst, error)
+            log.warning("CLI guidance: %s not migrated: %s", dst, error)
+    return changed
+
+
+def refresh_cli_guidance(ws: Path) -> list[str]:
+    """migrate_cli_workspace(ws) once per workspace (install.json CLI_REFRESHED), and only when the `pilot` the
+    sessions run is this program (cmd_core.sessions_run_our_pilot): where another program has the name, the product
+    lines keep `maxxing` and nothing is recorded, so a later init tries again. Once done, a line the user changes
+    back to `maxxing` stays. -> changed files."""
+    from . import cmd_core
+    key = str(ws.resolve())
+    done = cmd_core._install_state().get(CLI_REFRESHED)
+    done = [w for w in done if isinstance(w, str)] if isinstance(done, list) else []
+    if key in done or not cmd_core.sessions_run_our_pilot():
+        return []
+    changed = migrate_cli_workspace(ws)
+    try:
+        cmd_core._save_install_state(**{CLI_REFRESHED: sorted({*done, key})})
+    except OSError as e:                         # never stops an init or the local start-up: tried again next time
+        log.warning("CLI guidance: %s not recorded: %s", ws, e)
     return changed
 
 
@@ -227,6 +306,5 @@ def migrate_jobs() -> list[str]:
 
 
 def migrate(ws: Path) -> dict:
-    """-> {"files": [relative paths], "jobs": [ids]} changed by product-name migrations (empty once done)."""
-    files = migrate_workspace(ws) + migrate_cli_workspace(ws)
-    return {"files": list(dict.fromkeys(files)), "jobs": migrate_jobs()}
+    """-> {"files": [relative paths], "jobs": [ids]} changed by the skill rename (empty once done)."""
+    return {"files": migrate_workspace(ws), "jobs": migrate_jobs()}
