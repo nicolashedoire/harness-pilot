@@ -16,6 +16,8 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [ ] **Comptage Codex** : les tours antérieurs à la correction pouvaient compter deux fois les tokens mis en cache. Les nouveaux tours distinguent les catégories ; les chiffres historiques ne sont pas recalculés automatiquement.
 - [x] **Connexions et réglages** : une page Codex affiche le statut de la CLI et les limites actuelles ; la connexion a été vérifiée sur l'ordinateur.
 - [x] **Santé des agents** : si Codex est connecté, l'absence de connexion Claude est une information plutôt qu'une panne générale ; Claude reste nécessaire pour l'utiliser et pour les discussions à deux.
+- [x] **Synthèse des échanges** : le menu d'une session propose un résumé, les décisions et des actions à sélectionner avant toute création de tâche. L'essai réel a été effectué avec Codex ; le coût de cet appel n'est pas encore intégré aux statistiques.
+- [x] **Connexions des sessions** : les mises à jour des conversations utilisent des requêtes courtes pour éviter de saturer les connexions du navigateur quand plusieurs sessions sont ouvertes.
 - [ ] **Fonctions inégales** : plusieurs pages et indications supposent Claude ; vérifier pour chaque parcours si Codex, le dialogue et Telegram sont réellement pris en charge et signaler les limites.
 
 ## Priorité 3 — cohérence générale et documentation

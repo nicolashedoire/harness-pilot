@@ -194,6 +194,12 @@ async def ask_aside(sid: str, body: AskIn):
     return await _call(aside.ask, sid, body.question)
 
 
+@router.post('/sessions/{sid}/summary')
+async def summarize_session(sid: str):
+    from ..sessions import summary
+    return await _call(summary.generate, sid)
+
+
 @router.post("/sessions/{sid}/plan/approve")
 async def approve_plan(sid: str, body: ApproveIn):
     return await _call(service.approve_plan, sid, body.text)

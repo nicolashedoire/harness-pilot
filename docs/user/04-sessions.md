@@ -15,6 +15,8 @@ You can assign a different role to each agent, choose a built-in pair of roles, 
 
 The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
 
+From a session's **More actions** menu, **Summary and actions** asks Codex to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The summary request uses the connected Codex account and is not yet included in turn statistics.
+
 Some features described below apply to Claude sessions only; Codex support is still evolving.
 
 ## Layout

@@ -1,18 +1,17 @@
 // Per-session event log, shared by every view of a session in this tab.
 // - first load: GET /events?tail=100 (TAIL_EVENTS) (the server reads the log backwards: a 500 MB log opens instantly);
 // - older events on demand: GET /events?before=<start> ("Show earlier messages"), prepended;
-// - then live: SSE /stream?from=<next> (re-evaluated on reconnect → no gap, no duplicate);
+// - then poll /events?from=<next> for new events without occupying a persistent connection per session;
 // - `reset` (log rewritten by `maxxing sessions compact-logs`): the tail is reloaded;
 // - events are folded into render *items* incrementally (tool_use + tool_result = one item), so
 //   existing items keep their identity and memoised rows never re-render on append.
 // The cache survives column moves / remounts (no reload, no flash).
 import * as React from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { fetchBefore, fetchTail, liveStreams, qk, takeEarlyTail, TAIL_EVENTS, useSetSessionCache } from '@/lib/queries'
+import { fetchBefore, fetchTail, qk, takeEarlyTail, TAIL_EVENTS } from '@/lib/queries'
 import { refreshFileStamps } from '@/lib/queries/files'
-import { errorMessage } from '@/lib/api'
-import { useEventSource } from '@/lib/sse'
-import type { Session, SessionEvent, SessionStreamEvents, TaskEvent } from '@/lib/types'
+import { api, errorMessage, isApiError, seg } from '@/lib/api'
+import type { Session, SessionEvent, SessionEventsPage, TaskEvent } from '@/lib/types'
 import { usePending } from './store'
 
 type Ev<T extends SessionEvent['type']> = Extract<SessionEvent, { type: T }>
@@ -350,54 +349,53 @@ function refreshSoon(qc: QueryClient) {
   }, 800)
 }
 
-/** Loads a session log and keeps it live (SSE), without re-rendering the caller on each event. */
-export function useSessionStream(id: string | null) {
+/** Keep logs current using short requests, leaving browser connections free for actions in other tabs.
+ *  The global bus still updates session metadata; polling the byte offset preserves live output and older pages. */
+export function useSessionStream(id: string | null, running = false) {
   React.useEffect(() => {
     if (id) void loadLog(id)
   }, [id])
-  const setSession = useSetSessionCache()
   const qc = useQueryClient()
   const ready = useLogSelect(id, (st) => st.status === 'ready' && !st.deleted)
-  const status = useEventSource(
-    id && ready ? () => `/api/sessions/${encodeURIComponent(id!)}/stream?from=${get(id!).next}` : null,
-    {
-      events: (data: SessionStreamEvents) => {
-        if (!id || !data || typeof data.next !== 'number') return
-        const cur = get(id)
-        if (data.next <= cur.next) return // already have it (reconnect overlap)
-        put(id, fold(cur, data.events || [], data.next, id))
-        // A tool result or the end of a turn: files may have been written - previews on screen re-check theirs.
-        // The end of a turn also refreshes the folder listings on screen (Files page, folder in the viewer).
-        const evs = data.events || []
-        if (evs.some((e) => e?.type === 'result')) void qc.invalidateQueries({ queryKey: ['files', 'list'] })
-        if (evs.some((e) => e?.type === 'tool_result' || e?.type === 'result')) refreshSoon(qc)
-      },
-      // The log was rewritten under us (compact-logs) or our offset is stale: reload the tail.
-      reset: () => {
-        if (id) void loadLog(id, true)
-      },
-      state: (s: Session | null) => {
-        if (!id) return
-        if (s === null) {
+  React.useEffect(() => {
+    if (!id || !ready) return
+    let stopped = false
+    let timer = 0
+    let controller: AbortController | null = null
+    const poll = async () => {
+      controller = new AbortController()
+      let delay = 5000
+      try {
+        const page = await api.get<SessionEventsPage & { more?: boolean; reset?: boolean }>(`/api/sessions/${seg(id)}/events`, { from: get(id).next }, { signal: controller.signal })
+        if (stopped) return
+        if (page.reset) await loadLog(id, true)
+        else {
+          const cur = get(id)
+          if (page.next > cur.next) {
+            put(id, fold(cur, page.events || [], page.next, id))
+            if (page.events.some((e) => e.type === 'result')) void qc.invalidateQueries({ queryKey: ['files', 'list'] })
+            if (page.events.some((e) => e.type === 'tool_result' || e.type === 'result')) refreshSoon(qc)
+          }
+        }
+        if (qc.getQueryData<Session>(qk.sessions.one(id))?.state !== page.state) void qc.invalidateQueries({ queryKey: qk.sessions.one(id) })
+        delay = page.more ? 0 : page.state === 'running' ? 1000 : 5000
+      } catch (e) {
+        if (stopped) return
+        if (isApiError(e) && e.status === 404) {
           put(id, { ...get(id), deleted: true })
-          qc.invalidateQueries({ queryKey: qk.sessions.all })
+          void qc.invalidateQueries({ queryKey: qk.sessions.all })
           return
         }
-        setSession(s)
-      },
-    },
-  )
-  // While the stream is open, its `state` frames keep the Session fresh: the global bus does not refetch it.
-  React.useEffect(() => {
-    if (!id || status !== 'open') return
-    const open = liveStreams.sessions
-    open.set(id, (open.get(id) || 0) + 1)
-    return () => {
-      const n = (open.get(id) || 1) - 1
-      if (n) open.set(id, n)
-      else open.delete(id)
+      }
+      if (!stopped) timer = window.setTimeout(poll, delay)
     }
-  }, [id, status])
+    void poll()
+    return () => {
+      stopped = true
+      window.clearTimeout(timer)
+      controller?.abort()
+    }
+  }, [id, ready, running, qc])
 }
 
 /** A brand-new session has an empty log: mark it ready so its column renders without a skeleton. */

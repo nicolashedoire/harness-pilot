@@ -94,6 +94,7 @@ import { MaxxingControls, MaxxingMeter } from './MaxxingMeter'
 import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
 import { MobileTabsSlot, TabsToggle } from './Tabs'
 import { AsidePanel, useAside } from './Aside'
+import { SessionSummary } from './Summary'
 import { LayoutPicker } from './LayoutPicker'
 import { MIN_W } from './layouts'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
@@ -383,7 +384,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const navigate = useNavigate()
   const { data: session, isError, error } = useSessionSeeded(sid)
   // The stream lives here; only the thread re-renders on new events (LiveThread), not the column and its composer.
-  useSessionStream(sid)
+  useSessionStream(sid, session?.state === 'running')
   const deleted = useLogSelect(sid, (st) => st.deleted)
   const pending = usePendingFor(sid)
   const { data: ws } = useWorkspace()
@@ -435,6 +436,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const composer = React.useRef<ComposerHandle>(null)
   const body = React.useRef<HTMLDivElement>(null)
   const [dragFiles, setDragFiles] = React.useState(false)
+  const [summaryOpen, setSummaryOpen] = React.useState(false)
 
   const notFound = (isError && isApiError(error) && error.status === 404) || deleted
   const running = session?.state === 'running'
@@ -672,6 +674,9 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
+                <DropdownMenuItem disabled={!session?.turns} onSelect={() => setSummaryOpen(true)}>
+                  <ListChecks /> {t('summary.title')}
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={actions.archive}>
                   {session?.archived ? <ArchiveRestore /> : <Archive />} {session?.archived ? t('sessions.menu.unarchive') : t('sessions.menu.archive')}
                 </DropdownMenuItem>
@@ -738,6 +743,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
           onPlan={session?.provider === 'debate' || session?.provider === 'discussion' ? undefined : () => session && patch.mutate({ id: sid, plan_mode: !session.plan_mode })}
           onNotify={actions.notify}
         />
+        <SessionSummary key={sid} sid={sid} path={path} open={summaryOpen} onOpenChange={setSummaryOpen} />
         {session?.archived && (
           <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
             <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
