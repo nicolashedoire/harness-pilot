@@ -50,6 +50,7 @@ export const en = {
   "companions.selectTopic": "Choose a topic",
   "companions.loading": "Loading…",
   "companions.error": "Could not load the experiment.",
+  "companions.loadError": "Could not load the companions.",
   "companions.saved": "Role saved.",
   "companions.started": "Experiment started.",
   "companions.approved": "Approved",
