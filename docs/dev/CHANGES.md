@@ -19,6 +19,8 @@
   Web: Settings -> Companions (`pages/settings/sections/Companions.tsx`, `ProposalDiff.tsx`: diff colours from the
   `success` / `destructive` / `primary` tokens); keys `companions.*` in the `settings` dictionary group, feed kinds
   `feed.kind.companion.{ready,empty,error}.*` in the core.
+  The run prompt asks for the interface language (`config.language`, `companions._language`). `rea-investigation`
+  is a product skill (`cmd_core.PRODUCT_SKILLS_EXTRA`): `pilot init` / `pilot update` install it with the others.
 - Product skills `maxxing-*` -> `pilot-*`, command `pilot` (`maxxing` kept as a permanent alias):
   - Skills renamed (folders, front matter `name:`, every cross-reference in skills, templates, docs, code, tests):
     setup, doctor, telegram, backup, tasks, mcp, customize, infra keep their suffix (`maxxing-x` -> `pilot-x`);

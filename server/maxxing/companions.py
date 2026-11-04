@@ -136,7 +136,8 @@ def run(ident: str, path: str, mission: str = '') -> dict:
                 "A static source import map is available at ../architecture.json. "
                 "Use it to navigate, but recognize that runtime and product relationships may be missing. "
                 "Do not claim an unperformed check. The user must review and approve or reject your proposal. "
-                "Respond in French.\n\n"
+                f"Respond in the user's language: {_language()} (the interface language) unless the mission "
+                "below is written in another one.\n\n"
                 f"Additional mission: {mission.strip() or 'Find a useful, small improvement.'}")
         service.send_message(sid, text, source='companion')
         bus.invalidate('companions', 'sessions')
@@ -144,6 +145,11 @@ def run(ident: str, path: str, mission: str = '') -> dict:
     except Exception:
         # Preserve any session already created for diagnosis; do not touch other runs.
         raise
+
+
+def _language() -> str:
+    """The interface language set in Settings, named for the prompt."""
+    return {'fr': 'French'}.get(str(config.load_config().get('language') or ''), 'English')
 
 
 def _meta(sid: str) -> tuple[dict, dict, Path]:

@@ -36,7 +36,7 @@ CADDY_SITE = Path("/etc/caddy/claude-maxxing.caddy")
 BIN_LINK = Path("/usr/local/bin/maxxing")         # written by install.sh: the venv's script, or a state-dir wrapper
 PILOT_LINK = Path("/usr/local/bin/pilot")          # the CLI's name; `maxxing` stays a permanent alias (ensure_cli_alias)
 PRODUCT_SKILLS_EXTRA = ("memory", "memory-compaction", "video-motion-design", "pdf-document", "image-edit",
-                        "seo-audit", "web-scraping")                     # + every skill named pilot-*
+                        "seo-audit", "web-scraping", "rea-investigation")                     # + every skill named pilot-*
 PRODUCT_SKILL_PREFIXES = ("pilot-", "maxxing-")    # maxxing-* = the names of earlier versions (renames.SKILL_RENAMES)
 UPDATE_TOKEN = "github_update_token"
 STDIN_SECRETS = (UPDATE_TOKEN, "claude_oauth_token", "anthropic_api_key")
