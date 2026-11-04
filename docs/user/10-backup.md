@@ -27,7 +27,9 @@ are excluded. Those links are listed before restoration; reinstall their depende
 5. Review the verified inventory and external dependencies, then choose **Create the restored instance**.
    A new `pilot-restored-…` directory is created next to the current state directory. The current
    installation is never overwritten. Copy the displayed launch command into a terminal;
-   choose another available port if 8790 is already used.
+   choose another available port if 8790 is already used. The command gives the copy its own
+   crontab file inside the new directory, so it never changes the system crontab or the current
+   instance's scheduled jobs.
 6. Sign in to the recovered copy with the backed-up **application password**. Review conversations,
    files and settings. The copy starts on loopback in read-only review mode with background services
    paused. **Enable this instance’s services** in Settings → Backup when ready. Reconnect external
@@ -47,8 +49,9 @@ loaded into browser memory. A dedicated workspace and files directory is require
 root or the whole home directory cannot be used as a complete-backup root.
 
 Verified previews temporarily contain decrypted data in the private state directory (mode 0700).
-They expire after 24 hours and are removed on the next backup operation; successful restores delete
-that staged plaintext immediately. Encrypted exports remain in `instance-backups/exports` until
+They expire after 24 hours and are removed on the next backup operation or when Settings → Backup is
+next opened; successful restores delete that staged plaintext immediately, and the unencrypted staging
+of an interrupted export is removed at the next backup operation. Encrypted exports remain in `instance-backups/exports` until
 removed by the owner. Keep a downloaded recovery copy outside the machine you are backing up.
 This is a file-based application snapshot, not an operating-system snapshot of unrelated services
 or a guarantee against external writers deliberately bypassing filesystem modification metadata.

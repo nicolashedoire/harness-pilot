@@ -243,3 +243,21 @@ def test_excluded_runtime_symlinks_are_reported_and_expired_previews_cannot_rest
     with pytest.raises(snapshots.SnapshotError, match='expired'):
         snapshots.restore(preview['id'], preview['sha256'])
     assert not staging.exists()
+
+
+def test_restored_copy_gets_its_own_crontab_and_interrupted_exports_leave_no_plaintext(mx):
+    seed(mx)
+    # A server stopped in the middle of an export leaves its plaintext staging behind: the next operation removes it.
+    leftover = snapshots._base() / 'export-interrupted'
+    leftover.mkdir()
+    (leftover / 'snapshot.zip').write_bytes(b'plaintext credentials')
+    _, preview, restored = round_trip(mx)
+    assert not leftover.exists()
+    destination = Path(restored['destination'])
+    assert f"MAXXING_CRONTAB_FILE={destination / 'crontab'}" in restored['launch_command']
+    # An expired preview (decrypted data) is cleared as soon as the Backup page asks for the status.
+    preview = snapshots.inspect(snapshots.exported(snapshots.export(PASSWORD)['id']), PASSWORD)
+    staging = snapshots._base() / 'imports' / preview['id']
+    os.utime(staging, (1, 1))
+    snapshots.status()
+    assert not staging.exists()

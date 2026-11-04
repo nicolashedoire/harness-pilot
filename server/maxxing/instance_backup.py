@@ -53,8 +53,13 @@ def _archive_limit() -> int:
 
 
 def _purge_previews():
+    """Called with the operation lock held: expired previews go, and so does the plaintext staging of an export that
+    was interrupted (server stopped mid-export) - no export can be running while the lock is held."""
     for directory in (_base() / 'imports').glob('*'):
         if directory.is_dir() and time.time() - directory.stat().st_mtime > PREVIEW_TTL:
+            shutil.rmtree(directory)
+    for directory in _base().glob('export-*'):
+        if directory.is_dir() and not directory.is_symlink():
             shutil.rmtree(directory)
 
 
@@ -437,7 +442,9 @@ def restore(ident: str, fingerprint: str) -> dict:
                         os.utime(path, ns=(entry['mtime_ns'], entry['mtime_ns']), follow_symlinks=False)
             result = {'destination': str(destination), 'state': str(destination / manifest['roots']['state']['archive']),
                       'background_services_paused': True, **preview}
-            result['launch_command'] = (f"MAXXING_STATE={shlex.quote(result['state'])} uv run --directory "
+            # Its own crontab file: a review copy never writes the system crontab nor the current instance's jobs.
+            result['launch_command'] = (f"MAXXING_STATE={shlex.quote(result['state'])} "
+                f"MAXXING_CRONTAB_FILE={shlex.quote(str(destination / 'crontab'))} uv run --directory "
                 f"{shlex.quote(str(config.CODE / 'server'))} python -m uvicorn maxxing.app:create_app "
                 '--factory --host 127.0.0.1 --port 8790')
             config.write_json(destination / 'restore-report.json', result, mode=0o600)
@@ -498,6 +505,9 @@ def _retarget(destination: Path, manifest: dict):
 
 
 def status() -> dict:
+    with contextlib.suppress(SnapshotError):          # opening Settings -> Backup also clears expired plaintext
+        with _lock():
+            _purge_previews()
     try:
         roots, error = _roots(), None
     except SnapshotError as problem:
