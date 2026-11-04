@@ -8,6 +8,11 @@ description: Build a harness-pilot extension - a dashboard widget (a Card with s
 Extensions live in `<workspace>/extensions/<id>/` (workspace from `pilot status`, here
 `{{WORKSPACE}}`). Product updates never touch them and the memory backup includes them.
 
+**Every creation goes through the Atelier**: you write it in a **draft folder** (`pilot ext draft <id>`), test it,
+then submit it with `pilot ext propose <id>`. Nothing of it runs or shows on the dashboard until the user approves it
+(each approval is a version the user can come back to). Do not write `<workspace>/extensions/<id>/` yourself: Codex
+cannot, and a direct change by Claude is flagged "changed outside the Atelier" for the user to review. Steps below.
+
 - **widget**: `manifest.json` + `api.py` with `card(ctx)` returning a **Card** (JSON). The UI draws
   it with the built-in design system - no HTML/CSS to write, consistent look guaranteed.
 - **HTML widget**: `manifest.json` (`"type": "widget"`, optional `"height"`) + `widget.html` (one
@@ -220,26 +225,37 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
 
 ## Steps
 1. Ask what to show, where the data comes from, refresh rate, which secrets are needed.
-2. Create the folder and files; for API calls use `urllib.request` with `timeout=10`.
+2. Get the draft folder and write the files there; for API calls use `urllib.request` with `timeout=10`:
+   ```bash
+   pilot ext draft <id>            # prints the folder: <your session folder>/.atelier/<id>/
+   ```
+   For a change to an existing extension the folder starts as a copy of what runs now; for a new one it is empty.
+   It already exists when you come back to it (`--reset` starts again from what runs).
 3. Test it the way the server runs it, and fix until it passes:
    ```bash
-   pilot ext check <id>            # --json: steps, the first error, the card it computes, the files involved,
-                                   # and runtime_errors: what broke while the user used it
+   pilot ext check <id> --dir <draft folder>   # --json: steps, the first error, the card it computes, the files
    ```
    It loads the manifest and `api.py` (10 s limit), runs `card(ctx)` with the dashboard's 20 s limit through the
    same cleaning (dropped blocks of an unknown type are reported), checks an HTML widget's frame and every inline
    script (`node --check`, lines of widget.html), and a page's `page.js` and the modules it imports (served, parse,
    `mount` exported). Exit `0` = works (warnings allowed), `1` = broken: read `error` / the `trace` lines of your
-   `api.py`, fix, run it again. Do not tell the user it is done while it exits `1`. To try one route of a page's API,
-   call `api.handle(ctx, 'GET', 'notes', {}, None)` from `python3 -c` in the folder.
-4. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
-   Errors (bad manifest, import error, exception in card) are shown on the extension's row there, with the errors
-   recorded while it ran (an HTML widget's or a page's script errors, exceptions of `card()` / `handle()`).
-   To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the
-   user since its files last changed (they disappear once you change the files).
-5. Record the extension's purpose and data source in the topic memory (`memory` skill).
+   `api.py`, fix, run it again. Never propose it while it exits `1`. To try one route of a page's API, call
+   `api.handle(ctx, 'GET', 'notes', {}, None)` from `python3 -c` in the draft folder.
+4. Submit it to the user:
+   ```bash
+   pilot ext propose <id> --summary "Shows today's orders and revenue from the Shopify store."
+   ```
+   The summary is what the user reads first: what it does, in one or two plain sentences (for a change: what
+   changed). Exit `1` = its check failed, nothing was submitted. Otherwise tell the user the creation is **waiting
+   for them in the Atelier** (they see what it asks for - network hosts, secrets - and the files, then add it to the
+   dashboard, ask for a change or refuse it). Do not say it is on the dashboard: it is not until they approve it.
+5. A message starting with `[Atelier] The user asked for a change` is the user's review: make the change in the same
+   draft folder, check it again and propose again (the new proposal replaces the old one).
+6. To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the
+   user since its files last changed. Then `pilot ext draft <id>`, fix, check with `--dir`, propose.
+7. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
 Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in
-browser session (401 without it), and never ask for the password or a session cookie. `pilot ext check <id>` runs
-the same code as the server, `api.handle(...)` from Python tries one route, and `pilot update --verify` checks every
-extension at once (with the customizations' checks: run after an update).
+browser session (401 without it), and never ask for the password or a session cookie. `pilot ext check <id> --dir`
+runs the same code as the server, `api.handle(...)` from Python tries one route, and `pilot update --verify` checks
+every installed extension at once (with the customizations' checks: run after an update).

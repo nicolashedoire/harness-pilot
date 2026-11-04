@@ -21,6 +21,7 @@ import crypto from 'node:crypto'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
+import { atelierState, installAtelier, serveDraftFrame } from './atelier.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -181,6 +182,7 @@ function buildState(scenario) {
     seedSessions(st, t)
     seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
     seedDebate(st, t)
+    st.atelier = atelierState(t, { sessions: st.sessions.filter((x) => !x.archived).slice(0, 2) })
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -4004,6 +4006,30 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
 })
 R('GET', '/api/extensions', () => S.extensions)
 installBlocks({ R, state: () => S, fail, bus })
+installAtelier({
+  R, state: () => S, fail, bus, now,
+  // request-change: continue the draft's session (queued while it runs), else a new session in its topic
+  sendMessage: (sid, path, text, title) => {
+    const s = sid && S.sessions.find((x) => x.id === sid)
+    if (s) {
+      if (s.archived) s.archived = false
+      if (s.state === 'running') {
+        (S.queues[s.id] ||= []).push({ text, attachments: [] })
+        s.queue = S.queues[s.id].length
+        bus('sessions')
+        return { session: s, created: false, queued: true }
+      }
+      startTurn(s, text, [])
+      return { session: s, created: false, queued: false }
+    }
+    const t = now()
+    const n = { id: uuid(), title, path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+    S.sessions.push(n); S.events[n.id] = []
+    startTurn(n, text, [])
+    bus('sessions', 'workspace')
+    return { session: n, created: true, queued: false }
+  },
+})
 // The extensions' own API (`/api/ext/<id>[/<path>]`, forwarded to their api.py `handle()` on the server): the two
 // seeded extensions answer like their example code; a LookupError is 404, a ValueError 400.
 const EXT_HANDLERS = {
@@ -4614,6 +4640,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/') || url.pathname === '/api') return await handleApi(req, res, url)
     if (url.pathname.startsWith('/ext/_blocks/')) return serveBlockFrame(req, res, url, isAuthed(req), () => S)
+    if (url.pathname.startsWith('/ext/_drafts/')) return serveDraftFrame(req, res, url, isAuthed(req), () => S)
     if (url.pathname.startsWith('/ext/')) return serveExt(req, res, url)
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method_not_allowed', message: 'Static files are read-only' })
     return serveStatic(req, res, url)

@@ -755,8 +755,9 @@ AtelierItem = {
   approval: Approval|null,    // of the active version
   error: ErrorInfo|null,
   updated: float|null,        // last change (approval, rollback, files changed, draft proposed)
-  href: str|null,             // where it lives in the app: /ext/<id> (page), /?widget=<id> (widget), /crons?job=<id>,
-                              // /settings/appearance, /settings/updates (customizations); null when nowhere
+  href: str|null,             // where it lives in the app: /x/<id> (page), /?widget=<id> (widget, html_widget, pin),
+                              // /settings/blocks (block), /crons?job=<id>, /settings/appearance (theme),
+                              // /settings/updates (customization); null when nowhere (a pending one, an agent)
   actions: ["approve"|"reject"|"request_change"|"rollback"|"accept"|"enable"|"disable"]   // what the UI may offer
 }
 Version = {n: int, at: float, active: bool, origin: Origin, approval: Approval,

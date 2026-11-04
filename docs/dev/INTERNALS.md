@@ -510,6 +510,22 @@ cron jobs through their own modules, no copy of their data).
   failed last run). Read-only: `actions` is empty, rollback is `422 not_versioned`.
 - **Runner**: every turn's environment carries `MAXXING_SESSION` (the session id) and `MAXXING_AGENT` (`claude`,
   `codex`, `plugin:<id>`): Claude turns, Codex turns and agent plugin turns.
+- **Hooks in `extensions`**: `_load_one(d, load_code=False)` validates a folder without importing `api.py` (drafts;
+  the permissions declaration is parsed before the import, so a draft gets it too); `_import(ext, name)` imports a
+  draft's `api.py` under `mx_draft_<did>` for a preview (kept per draft while its files are unchanged, dropped on a
+  decision: `atelier.forget_preview`); `_root_override` / `_state_override` (the extensions root and the extensions'
+  data folder of the process) are set only by `pilot ext check --dir`, on a temporary copy, and restored after it.
+- **Preview** (`api/atelier.preview`): `preview_ext(did)` (pending, check not failed) + `preview_ctx` (the installed
+  extension's ctx; `secret()` limited to the declared secrets when the draft declares `permissions`); card widgets run
+  `card()` with `api.dashboard.TIMEOUT_S` on the extension threads (key `draft:<did>`) and get the dashboard's
+  cleaning; HTML widgets get `/ext/_drafts/<did>/widget-frame` (the `widget-frame` document of api/extensions.py) and
+  `/api/atelier/drafts/<did>/api/<path>` (their `handle()`, the `/api/ext/<id>` rules). Pages, blocks and agents:
+  `kind: none`.
+- **User installs**: `record_user_install(id, note)` records an extension the user made in the app as a version
+  approved by the user (`blocks.pin` calls it for dashboard pins).
+- Mock: `web/mock/atelier.mjs` (`installAtelier`, `serveDraftFrame`): every route above, with seeded items of every
+  state and kind (pending, active, error, disabled, review, unreviewed; extension, pin, theme, skill, customization,
+  cron) and two drafts (a new HTML widget, a change with a diff).
 
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
