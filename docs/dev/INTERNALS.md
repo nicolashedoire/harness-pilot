@@ -90,6 +90,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `base_tokens`) says whether a summary goes first. If so the idle-compaction mechanics run (`held` + `compact` item)
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
+- Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
@@ -104,8 +105,13 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, agents: [{..., state, session}]}`; `state` = `stopped` once the user stopped that worker,
-  else the session's state (`missing` when it is gone). A session without a team -> 404 `not_found`.
+- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+  `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
+  session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
+  (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
+  `ACTIVITY_MAX` (3) tool calls and texts, the first `REPORT_MAX` (600) characters of its last answer once it stopped.
+  Cached per worker in `_live` (64 entries) on `(service.log_ident, running)`: the panel's polls re-read a log only
+  when it changed.
 - `stop_agent(sid, agent_id)`: only while `working` and that worker runs (else 409 `not_running`), marks it
   `stopped` and stops it alone. `stop(sid)`: phase `stopped`, running workers marked, every worker and the
   coordinator stopped. Both call `service.stop(..., _team_internal=True)`.
@@ -283,7 +289,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - Agents: `skill_vars(ps)` -> `{{PILOT_BLOCKS_TYPES}}`, `{{PILOT_BLOCKS_ENABLED}}`, merged into `cmd_core._skill_vars()`
   (install and `skills_status` render `skills/pilot-blocks/SKILL.md` with them); `sync_agent_files()` writes
   `<state>/blocks/agents.md` (Codex: `sessions/codex.workspace_context` appends it, the only hook in session code),
-  `<state>/blocks/reference.md`, and renders the installed skill again when it exists. Idempotent (files rewritten only
+  `<state>/blocks/reference.md`, and renders the installed skill again (Claude's and Codex's copies) when it exists. Idempotent (files rewritten only
   on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `pilot init`. The
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
@@ -422,9 +428,12 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.
   The run history is parsed once per file version (`_all_runs`, keyed on path + mtime + size); `read_runs`
   returns copies.
-- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid"}`; a normal end
-  empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the orphan
-  job shell (`pgid`), records a failed Run (`code -9`, "interrupted: …") and reports it.
+- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid", "pgid_start"}`; a
+  normal end empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the
+  orphan job shell (`pgid`) when `_proc_start(pgid)` still equals `pgid_start`, records a failed Run (`code -9`,
+  "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
+  unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
+  when the process is gone or `ps` fails.
 - Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
   timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
@@ -643,6 +652,8 @@ The optional Enterprise key: `activate(key)`, `release()`, `remove_key()`, `stat
 the key) talk to `{API}/v1/activate|release` (activation token kept as `license_seat`, only to free the seat;
 machine = sha256("harness-maxxing:" + /etc/machine-id)). Also `API`, `USER_AGENT`, `disk_version()` (used by
 `register.py`, `feedback.py`).
+The HTTP routes `/api/settings/register|feedback|license` depend on `api/settings._legacy_cloud`: `404 not_found`
+while `register._offline()` (`MAXXING_LICENSE_PING` is not `1`); the modules are kept for the update and CLI paths.
 Installs from before 2.0.0a87 (`enabled()` = `license_token` in secrets.json) run the code of a signed archive
 imported by their old code as a commit on `refs/remotes/origin/<branch>`. `move_to_git()` makes them a clone of
 `GIT_URL` on `stable` (the `stable` commit with the same tree, else the same `__version__`; customizations
@@ -651,6 +662,9 @@ rebased; `license_token` -> `license_seat`). Triggers: `api/system._after_update
 failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stops with the reason if the move
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
+Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
+`LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
+against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
@@ -682,7 +696,9 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 
 ## CLI
 Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in
-pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog` = the name it was called by
+pyproject `[project.scripts]`. In the local setup `bash scripts/dev-local.sh cli <args>` runs it with the
+exports and preparation of the local server (`MAXXING_STATE`, workspace, skills dirs, local crontab file), from
+the caller's folder; a bare `uv run pilot` has no `MAXXING_STATE` and reads `/var/lib/claude-maxxing`. argparse `prog` = the name it was called by
 (`cli.prog_name()`, `pilot` for `python -m maxxing`). On a server, install.sh writes `/usr/local/bin/maxxing`
 (`cmd_core.BIN_LINK`: a link to the venv's script, or a wrapper exporting `MAXXING_STATE`) and every `init`
 (so every update) runs `cmd_core.ensure_cli_alias()`: `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing`, the
@@ -711,8 +727,11 @@ default project/topic once - install.json `seeded`), `install_skills()` (copies 
 install.json `skills` lists what was installed, an obsolete listed one is deleted, an old-named folder of
 `renames.SKILL_RENAMES` that is not listed goes to `trash/skills/` - from `skills/*` to `<claude_dir>/skills`
 and renders the same placeholders in their `.md`/`.json`/`.txt` files, so shipped skills never hard-code
-`/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`; `skills_status()` compares with the rendered
-text), `default_jobs()` / `ensure_default_crons()` (install.json
+`/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`. The same copy goes to Codex's user skills
+folder `codex_skills_target()` = `~/.agents/skills` (where Codex CLI reads personal skills; checked with codex-cli
+0.150.1), with its own record install.json `codex_skills` (a folder it moves away goes to `trash/skills/<name>-codex-<time>`); the result keeps `installed`/`removed`/`backed_up` for
+Claude and adds `codex: {target, installed, removed, backed_up}`. `skills_status()` compares with the rendered text:
+`[{name, state, codex}]`, `state` for Claude's copy and `codex` for Codex's, each `ok` | `missing` | `outdated`), `default_jobs()` / `ensure_default_crons()` (install.json
 `default_crons`; the morning job's prompt is `MORNING_TASKS_PROMPT`), `check_update(branch) -> {ok, current, latest, behind, available, changelog}` (no change to the
 code; `update_source()` = "license" | "git" (clone with an `origin` remote) | None - None: `{ok: true, git: false,
 message: "no license, no remote"}`, `update --check` exits 0 with "updates unavailable (no license, no remote)", and
@@ -830,6 +849,11 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
+  also read by the doctor, uninstall and `blocks.sync_agent_files`) instead of `~/.agents/skills`.
+  `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and
+  its parents up to the Git repository root (the default local dir is inside the checkout), so the personal
+  `~/.agents/skills` of the computer is never written. Tests point it to a temporary folder (`conftest.py`).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL

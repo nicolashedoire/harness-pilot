@@ -1,34 +1,29 @@
 #!/usr/bin/env bash
-# The inherited Linux installer still targets upstream services and has not been validated for this project.
-# Refuse execution before it can download code or change the host; keep library mode for its regression tests.
-if [ "${MAXXING_INSTALL_LIB:-}" != 1 ]; then
-  printf '%s\n' 'The legacy Linux installer is disabled for this project: it is not yet validated.' \
-    'For the verified local setup, see README.md and run: bash scripts/dev-local.sh' >&2
-  exit 1
-fi
+# bash 4 or newer (associative arrays): Debian and Ubuntu have it; `sh install.sh` and the bash 3.2 of macOS do not
+if [ -z "${BASH_VERSION:-}" ]; then echo "Run this installer with bash: sudo bash install.sh" >&2; exit 1; fi
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then echo "This installer needs bash 4 or newer (this is bash $BASH_VERSION)." >&2; exit 1; fi
 # =============================================================================================
-#  Harness Maxxing - one-line installer (Ubuntu / Debian with systemd, x86_64 or arm64, as root)
+#  harness-pilot - server installer (Ubuntu / Debian with systemd, x86_64 or arm64, as root)
 #
-#  Install from the public git repository (no key needed; updates come from git):
-#    curl --proto '=https' --tlsv1.2 -fsSL https://get.harness-maxxing.com | bash
-#  An Enterprise key (optional, companies only) can be given too: LICENSE=HM-XXXX-XXXX-XXXX-XXXX (recorded, nothing else changes)
+#  Install from the public git repository github.com/nicolashedoire/harness-pilot (updates come from git):
+#    curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.com/nicolashedoire/harness-pilot/main/install.sh
+#    sudo bash install.sh
 #  From a private fork or mirror (read token): GH_TOKEN=$T REPO=owner/name bash install.sh
 #  Install from a local copy of the code (an unpacked archive or a clone, web/dist built), no network
 #  for the code itself (updates then come from a new copy: SOURCE_DIR=... bash install.sh again):
-#    bash /path/to/harness-maxxing/install.sh        (or SOURCE_DIR=/path/to/harness-maxxing bash install.sh)
-#  Options (pass them after `bash -s --` when piping):
+#    bash /path/to/harness-pilot/install.sh        (or SOURCE_DIR=/path/to/harness-pilot bash install.sh)
+#  Options (after the script, or after `bash -s --` when piping):
 #    --check              only look at this server and say what the install would do (changes nothing)
-#    --update             update an existing install (= maxxing update)
-#    --uninstall          remove service + integrations (= maxxing uninstall), keeps the workspace
+#    --update             update an existing install (= pilot update)
+#    --uninstall          remove service + integrations (= pilot uninstall), keeps the workspace
 #      --purge            ... also remove the code and the state directory
 #      --purge-workspace  ... also remove the workspace (irreversible)
 #    -h, --help
 #
 #  Unattended: answer with variables and ASSUME_YES=1, e.g.
-#    curl --proto '=https' --tlsv1.2 -fsSL https://get.harness-maxxing.com | ACCESS=domain DOMAIN=ui.example.com ASSUME_YES=1 bash
+#    ACCESS=domain DOMAIN=ui.example.com ASSUME_YES=1 bash install.sh      (as root, e.g. after sudo -i)
 #  Variables (default):
-#    LICENSE (optional: an Enterprise key, recorded - or later in Settings -> License)  LICENSE_API (https://api.harness-maxxing.com)
-#    REPO (makushingu/harness-maxxing)  BRANCH (stable)  GH_TOKEN (private fork or mirror only)  INSTALL_DIR (/opt/claude-maxxing)
+#    REPO (nicolashedoire/harness-pilot)  BRANCH (main)  GH_TOKEN (private fork or mirror only)  INSTALL_DIR (/opt/claude-maxxing)
 #    WORKSPACE (/root/maxxing)  STATE_DIR (/var/lib/claude-maxxing)  PORT (8787)
 #    ACCESS (domain|tailscale|local)  DOMAIN  ASSUME_YES (0)
 #    TIMEZONE (system zone - also chosen later in the web onboarding, which switches the system clock)
@@ -39,21 +34,21 @@ fi
 #    VOICE (local - default: Whisper on this server, model downloaded in the background; under 3 GB of memory it is
 #      off unless you set VOICE=local and confirm | groq | openai | off)
 #    TOOLS (background - default: Node.js, Chromium, Remotion, Scrapling, the voice model are installed by
-#      `maxxing deps update` once the service runs | foreground: wait for them | 0: skip, `maxxing deps update` later)
+#      `pilot deps update` once the service runs | foreground: wait for them | 0: skip, `pilot deps update` later)
 #    SWAP (auto - a 2 GB /swapfile when the server has under 4 GB of memory and no swap, on a fresh server only |
 #          1 - the same on a server already in use | 0 never)
 #    SOURCE_DIR (a local copy of the code to install instead of a git download)
-#    CACHE_DIR (/var/cache/harness-maxxing - downloads kept until the install succeeds: a re-run does not download again)
+#    CACHE_DIR (/var/cache/harness-pilot - downloads kept until the install succeeds: a re-run does not download again)
 #    FIREWALL (auto - enabled only on a server with nothing else exposed | 1 always | 0 never)
 #    SSH_HARDEN (auto - SSH password logins are turned off only when this very session is proven to use a key
 #      | 1 also when a key is installed but the session cannot be checked | 0 never touch SSH)
 #    SYSTEM_CLOCK (auto | follow: the system zone follows yours | keep: never touch it - default on used servers)
-#    CLAUDE_DIR (~/.claude - another folder, e.g. /root/.claude-harness, keeps Harness Maxxing apart from a Claude
+#    CLAUDE_DIR (~/.claude - another folder, e.g. /root/.claude-harness, keeps harness-pilot apart from a Claude
 #      Code already used here: its own skills, global CLAUDE.md, transcripts and sign-in. When Claude Code is
 #      already used and CLAUDE_DIR is not set, the installer asks: own folder ~/.claude-harness (default) or share)
 #
 #  Re-runnable: every step keeps what exists. The server never listens on a public interface.
-#  Secrets (license key, tokens) are best typed at the prompts (hidden) or set with `read -rs NAME; export NAME`:
+#  Secrets (tokens, API keys) are best typed at the prompts (hidden) or set with `read -rs NAME; export NAME`:
 #  never on the command line, where they stay in the shell history and are visible in `ps`.
 # =============================================================================================
 set -euo pipefail
@@ -62,17 +57,16 @@ cd /                          # never run from a directory another user controls
 unset BASH_ENV ENV CDPATH PYTHONPATH PYTHONHOME PYTHONSTARTUP LD_PRELOAD LD_LIBRARY_PATH NODE_OPTIONS GIT_DIR GIT_WORK_TREE \
   GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT 2>/dev/null || true
 
-REPO="${REPO:-makushingu/harness-maxxing}"
-# every install follows `stable` (published versions); an Enterprise key changes nothing there (2.0.0a88)
-BRANCH="${BRANCH:-stable}"
+REPO="${REPO:-nicolashedoire/harness-pilot}"
+# this repository publishes on `main` (no `stable` branch, tag or release yet)
+BRANCH="${BRANCH:-main}"
 GH_TOKEN="${GH_TOKEN:-}"
-LICENSE="${LICENSE:-}"
-LICENSE_API="${LICENSE_API:-https://api.harness-maxxing.com}"
+LICENSE="${LICENSE:-}"   # harness-pilot has no license key: a LICENSE given anyway is ignored (init_state says so)
 LICENSED=0          # 1 = an install from before 2.0.0a87 still on signed archives: kept, it moves to git by itself
 
 # ---- third-party downloads ------------------------------------------------------------------
 # Versions, URLs and sha256 of uv, Claude Code, Node.js, Caddy's key... are in server/maxxing/deps.toml (the same
-# manifest `maxxing deps` reads): `dep` below reads it from the code once it is here, and every download goes through
+# manifest `pilot deps` reads): `dep` below reads it from the code once it is here, and every download goes through
 # fetch_verified (HTTPS, private work folder, sha256 checked before anything runs or is extracted).
 # a script run from a source tree (bash ./install.sh in an unpacked archive or a clone) installs that tree
 SELF_DIR=""
@@ -132,7 +126,7 @@ AFTER=""
 TOKEN_USED=0
 # filled by detect_server (pre-flight check of a server that may already be in use)
 EXISTING=0          # 1 = the server already runs other things: be careful
-PRIOR=0             # 1 = Harness Maxxing was already installed here (a re-run)
+PRIOR=0             # 1 = harness-pilot was already installed here (a re-run)
 PUBLIC_OTHER=""     # other services listening on public interfaces ("port/process ...")
 WEB_BUSY=""         # process holding port 80/443 that is not Caddy (nginx, apache2, docker-proxy...)
 FW_ACTIVE=""        # ufw | nftables | "" (no firewall rules)
@@ -162,19 +156,19 @@ fmt_secs() { local s=$1; if [ "$s" -ge 60 ]; then printf '%d min %02d s' $((s / 
 
 logo() {
   local lines=(
-'███╗   ███╗ █████╗ ██╗  ██╗██╗  ██╗██╗███╗   ██╗ ██████╗ '
-'████╗ ████║██╔══██╗╚██╗██╔╝╚██╗██╔╝██║████╗  ██║██╔════╝ '
-'██╔████╔██║███████║ ╚███╔╝  ╚███╔╝ ██║██╔██╗ ██║██║  ███╗'
-'██║╚██╔╝██║██╔══██║ ██╔██╗  ██╔██╗ ██║██║╚██╗██║██║   ██║'
-'██║ ╚═╝ ██║██║  ██║██╔╝ ██╗██╔╝ ██╗██║██║ ╚████║╚██████╔╝'
-'╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ')
+'██████╗ ██╗██╗      ██████╗ ████████╗'
+'██╔══██╗██║██║     ██╔═══██╗╚══██╔══╝'
+'██████╔╝██║██║     ██║   ██║   ██║   '
+'██╔═══╝ ██║██║     ██║   ██║   ██║   '
+'██║     ██║███████╗╚██████╔╝   ██║   '
+'╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝   ')
   echo
   if [ "$FANCY" = 1 ] && [ "$(tput cols 2>/dev/null || echo 80)" -ge 64 ]; then
     printf '  %s%sH A R N E S S%s\n' "$C_B" "$C_C" "$C_0"
     local i
     for i in "${!lines[@]}"; do printf '  \033[38;5;%sm%s%s\n' "${BLUES[$i]}" "${lines[$i]}" "$C_0"; done
   else
-    printf '  %sHARNESS MAXXING%s\n' "$C_B" "$C_0"
+    printf '  %sHARNESS-PILOT%s\n' "$C_B" "$C_0"
   fi
   printf '  %sThe control room for Claude Code on your own server%s\n' "$C_D" "$C_0"
 }
@@ -399,7 +393,7 @@ dep_url() {
 # ---- download cache: a failed install run again does not download again --------------------------
 # Every verified download is kept in CACHE_DIR under its sha256 until an install succeeds (then emptied): a re-run
 # after a failure reuses it, or resumes a transfer that was cut. Root only (700); the sha256 is checked on every use.
-CACHE_DIR="${CACHE_DIR:-/var/cache/harness-maxxing}"
+CACHE_DIR="${CACHE_DIR:-/var/cache/harness-pilot}"
 cache_ready() { # the cache folder exists, is ours and is not a link (otherwise downloads go straight to $WORK)
   [ ! -L "$CACHE_DIR" ] && mkdir -p -m 700 "$CACHE_DIR" 2>/dev/null && [ -d "$CACHE_DIR" ] && [ -O "$CACHE_DIR" ]
 }
@@ -470,7 +464,7 @@ check_inputs() {
   not_system_dir INSTALL_DIR "$INSTALL_DIR"; not_system_dir WORKSPACE "$WORKSPACE"; not_system_dir STATE_DIR "$STATE_DIR"
   [ -z "$CLAUDE_DIR" ] || not_system_dir CLAUDE_DIR "$CLAUDE_DIR"
   local v
-  for v in BRANCH REPO RESTORE_FROM TIMEZONE DOMAIN LICENSE_API; do
+  for v in BRANCH REPO RESTORE_FROM TIMEZONE DOMAIN; do
     one_line "${!v:-}" || die "$v must be on one line"
   done
   case "$PORT" in ''|*[!0-9]*) die "PORT must be a number" ;; esac
@@ -481,7 +475,6 @@ check_inputs() {
   if [ -n "$RESTORE_FROM" ] && ! printf '%s' "$RESTORE_FROM" | grep -Eq '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
     die "RESTORE_FROM must be owner/name (got '$RESTORE_FROM')"
   fi
-  url_ok "$LICENSE_API" || die "LICENSE_API must be an https:// address (got '$LICENSE_API')"
   case "$RESTORE_TRUST" in 0|1) ;; *) die "RESTORE_TRUST must be 0 or 1" ;; esac
   case "$ALLOW_UNPROTECTED" in 0|1) ;; *) die "ALLOW_UNPROTECTED must be 0 or 1" ;; esac
   case "$FIREWALL" in auto|add|0|1) ;; *) die "FIREWALL must be auto, 1 or 0" ;; esac
@@ -503,17 +496,17 @@ mx() { MAXXING_STATE="$STATE_DIR" "$BIN" "$@"; }
 
 usage() {
   cat <<'USAGE'
-Harness Maxxing installer
-  curl --proto '=https' --tlsv1.2 -fsSL https://get.harness-maxxing.com | bash   install or repair from the public git repository (re-runnable)
-  ... | LICENSE=HM-XXXX-XXXX-XXXX-XXXX bash                 the same, recording an Enterprise key (companies only)
+harness-pilot installer (as root)
+  curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.com/nicolashedoire/harness-pilot/main/install.sh
+  bash install.sh                                            install or repair from the public git repository (re-runnable)
+  bash install.sh --check                                    look at this server first, change nothing
   GH_TOKEN=<token> REPO=owner/name bash install.sh         from a private fork or mirror
-  bash /opt/claude-maxxing/install.sh --update              update (= maxxing update)
+  bash /opt/claude-maxxing/install.sh --update              update (= pilot update)
   bash /opt/claude-maxxing/install.sh --uninstall [--purge] [--purge-workspace]
-  bash /opt/claude-maxxing/install.sh --tools               (re)install Node.js, Chromium, Remotion, Scrapling (= maxxing deps update)
+  bash /opt/claude-maxxing/install.sh --tools               (re)install Node.js, Chromium, Remotion, Scrapling (= pilot deps update)
   bash ./install.sh                                          from an unpacked copy of the code (or SOURCE_DIR=DIR)
   bash /opt/claude-maxxing/install.sh --secure              security updates, SSH by key, fail2ban, firewall (FIREWALL=0, SSH_HARDEN=0)
-  curl --proto '=https' --tlsv1.2 -fsSL https://get.harness-maxxing.com | bash -s -- --check   look at this server first, change nothing
-Variables: LICENSE LICENSE_API REPO BRANCH GH_TOKEN INSTALL_DIR WORKSPACE STATE_DIR PORT ACCESS(domain|tailscale|local)
+Variables: REPO BRANCH GH_TOKEN INSTALL_DIR WORKSPACE STATE_DIR PORT ACCESS(domain|tailscale|local)
            FIREWALL(auto|1|0) SSH_HARDEN(auto|1|0) SYSTEM_CLOCK(auto|follow|keep) DOMAIN TIMEZONE ASSUME_YES=1 RESTORE_FROM RESTORE_TOKEN
            CLAUDE_TOKEN ANTHROPIC_API_KEY CLAUDE_DIR (own Claude Code folder, default ~/.claude) VOICE TOOLS SWAP SOURCE_DIR CACHE_DIR
 USAGE
@@ -546,7 +539,7 @@ check_system() {
 # ---- pre-flight check: is this server already in use? ----------------------------------------
 # Nothing is changed here: detect_server fills the variables above, preflight prints them and says
 # what the installer will do differently. `install.sh --check` stops after it.
-manifest() { # remember what the installer changed on this server (read by maxxing uninstall)
+manifest() { # remember what the installer changed on this server (read by pilot uninstall)
   mkdir -p "$STATE_DIR"
   grep -qxF "$1" "$STATE_DIR/install-manifest" 2>/dev/null || echo "$1" >> "$STATE_DIR/install-manifest"
 }
@@ -630,7 +623,7 @@ detect_server() {
   [ -d "$HOME/.claude/projects" ] && conv=$(ls -A "$HOME/.claude/projects/" 2>/dev/null | wc -l)
   [ "$conv" -gt 0 ] && parts+=("conversations in $conv folder(s)")
   [ ${#parts[@]} -gt 0 ] && CLAUDE_SETUP=$(IFS=,; echo "${parts[*]}" | sed 's/,/, /g')
-  [ -f "$STATE_DIR/config.json" ] && CLAUDE_SETUP=""   # a re-run: that setup is Harness Maxxing's own (its skills)
+  [ -f "$STATE_DIR/config.json" ] && CLAUDE_SETUP=""   # a re-run: that setup is harness-pilot's own (its skills)
   [ -f "$STATE_DIR/config.json" ] && PRIOR=1
 
   if [ -n "$PUBLIC_OTHER$WEB_BUSY$BRIDGES" ] || [ "$HAS_DOCKER" = 1 ] || [ "$OTHER_CRON" = 1 ] \
@@ -678,7 +671,7 @@ preflight() {
     warn "other services reachable from outside: $PUBLIC_OTHER"
   fi
   case "$FIREWALL:$FW_ACTIVE" in
-    add:ufw) ok "firewall: your ufw rules are kept - only the ports Harness Maxxing needs are added" ;;
+    add:ufw) ok "firewall: your ufw rules are kept - only the ports harness-pilot needs are added" ;;
     add:*)   ok "firewall: your $FW_ACTIVE rules are left as they are (open 80/443 yourself for a domain)" ;;
     0:*)     warn "firewall: not enabled, it could cut these services off (to force it: FIREWALL=1 install.sh --secure)" ;;
   esac
@@ -687,33 +680,33 @@ preflight() {
     warn "$WEB_BUSY already serves ports 80/443: Caddy is not installed; with a domain you get a ready-made"
     warn "reverse-proxy block to paste into $WEB_BUSY (or pick tailscale / local)"
   fi
-  [ -n "${PORT_MOVED_FROM:-}" ] && warn "port $PORT_MOVED_FROM is taken by another program: Harness Maxxing uses $PORT"
+  [ -n "${PORT_MOVED_FROM:-}" ] && warn "port $PORT_MOVED_FROM is taken by another program: harness-pilot uses $PORT"
   if [ "$SYSTEM_CLOCK" = keep ]; then
     ok "server clock: left as it is ($(system_tz)) - your jobs still run at the times you choose"
   fi
-  [ -n "$NODE_OLD" ] && ok "Node.js: your $NODE_OLD is kept, the pinned one goes to $STATE_DIR/tools/nodejs for Harness Maxxing only"
+  [ -n "$NODE_OLD" ] && ok "Node.js: your $NODE_OLD is kept, the pinned one goes to $STATE_DIR/tools/nodejs for harness-pilot only"
   if [ -n "$CLAUDE_DIR" ]; then
-    ok "Claude Code folder for Harness Maxxing: $CLAUDE_DIR (your ~/.claude is not used nor touched)"
+    ok "Claude Code folder for harness-pilot: $CLAUDE_DIR (your ~/.claude is not used nor touched)"
   elif [ -n "$CLAUDE_SETUP" ]; then
     ok "Claude Code already used on this server ($CLAUDE_SETUP): kept as it is"
     if [ -f "$STATE_DIR/config.json" ]; then
-      info "Harness Maxxing already shares it - its setting is kept"
+      info "harness-pilot already shares it - its setting is kept"
     else
-      info "next question: give Harness Maxxing its own Claude Code folder, or share this one"
+      info "next question: give harness-pilot its own Claude Code folder, or share this one"
     fi
   fi
   if [ -n "$BRIDGES" ]; then
     warn "other Telegram bridge / agent running: $BRIDGES"
-    warn "give Harness Maxxing a NEW bot (BotFather): one bot token can only be read by one program"
+    warn "give harness-pilot a NEW bot (BotFather): one bot token can only be read by one program"
   fi
-  [ "$OTHER_CRON" = 1 ] && ok "your crontab lines are kept (Harness Maxxing only edits its own block)"
+  [ "$OTHER_CRON" = 1 ] && ok "your crontab lines are kept (harness-pilot only edits its own block)"
   info "nothing else is touched: your files, services and settings stay as they are"
 }
 
 # ---- choices (asked up front, then everything runs unattended) ------------------------------
 # Claude Code folder. Asked only when Claude Code is already used on this server (sign-in, skills, CLAUDE.md or
-# conversations in ~/.claude) and Harness Maxxing is not installed yet: its own folder (default) keeps that setup
-# untouched; sharing makes the existing skills and global instructions apply to Harness Maxxing sessions.
+# conversations in ~/.claude) and harness-pilot is not installed yet: its own folder (default) keeps that setup
+# untouched; sharing makes the existing skills and global instructions apply to harness-pilot sessions.
 # An existing installation keeps its setting (switching would lose its sign-in and its conversations).
 CLAUDE_DIR_DEFAULT_NAME=".claude-harness"
 choose_claude_dir() {
@@ -727,14 +720,14 @@ choose_claude_dir() {
   if has_tty; then
     echo "      Claude Code is already used on this server ($CLAUDE_SETUP)."
     printf '        %s1%s  %sown folder%s  %s - your ~/.claude is not touched %s(recommended)%s\n' "$C_A$C_B" "$C_0" "$C_B" "$C_0" "$own" "$C_G" "$C_0"
-    printf '        %s2%s  %sshare%s       ~/.claude - your skills, CLAUDE.md and sign-in also apply to Harness Maxxing\n' "$C_A$C_B" "$C_0" "$C_B" "$C_0"
+    printf '        %s2%s  %sshare%s       ~/.claude - your skills, CLAUDE.md and sign-in also apply to harness-pilot\n' "$C_A$C_B" "$C_0" "$C_B" "$C_0"
     ask CDIR "Choice (1/2)" "$n"
     case "${CDIR:-$n}" in 2|share|shared) CLAUDE_DIR="" ;; *) CLAUDE_DIR=$own ;; esac
   else
     CLAUDE_DIR=$own
   fi
   if [ -n "$CLAUDE_DIR" ]; then
-    ok "Claude Code folder for Harness Maxxing: $CLAUDE_DIR (sign in again in the web setup; bring skills over later)"
+    ok "Claude Code folder for harness-pilot: $CLAUDE_DIR (sign in again in the web setup; bring skills over later)"
   else
     ok "Claude Code folder shared with your existing setup (~/.claude)"
   fi
@@ -804,7 +797,7 @@ choose_access() {
   ok "access: $ACCESS${PUBLIC_URL:+ ($PUBLIC_URL)}, server bound to $BIND:$PORT"
 
   if [ -z "$RESTORE_FROM" ] && [ ! -f "$WORKSPACE/memory.md" ] && has_tty; then
-    if ask_yn "Restore your memory from an existing Harness Maxxing GitHub backup?" n; then
+    if ask_yn "Restore your memory from an existing harness-pilot GitHub backup?" n; then
       ask RESTORE_FROM "Backup repository (owner/name)" ""
     fi
   fi
@@ -826,12 +819,12 @@ choose_access() {
   choose_source
   [ "$ACCESS" = domain ] && dns_check
 
-  SYS_TZ=$(system_tz)
-  [ -n "$TIMEZONE" ] || TIMEZONE=$(cfg_get timezone)
-  [ -n "$TIMEZONE" ] || TIMEZONE=$SYS_TZ                 # chosen in the web onboarding
   if [ ! -d /usr/share/zoneinfo ] || [ ! -e /usr/share/zoneinfo/UTC ]; then   # minimal images ship without tzdata
     apt_get update -qq >/dev/null 2>&1; apt_get install -y -qq tzdata >/dev/null 2>&1 || true
   fi
+  SYS_TZ=$(system_tz)                                    # after tzdata: without it systemd says UTC, then Etc/UTC
+  [ -n "$TIMEZONE" ] || TIMEZONE=$(cfg_get timezone)
+  [ -n "$TIMEZONE" ] || TIMEZONE=$SYS_TZ                 # chosen in the web onboarding
   valid_tz "$TIMEZONE" || die "unknown time zone '$TIMEZONE' (see: timedatectl list-timezones)"
   if [ "$TIMEZONE" != "$SYS_TZ" ] && [ "$SYSTEM_CLOCK" = keep ]; then
     ok "time zone: $TIMEZONE (the server clock stays at $SYS_TZ, jobs follow your zone)"
@@ -1087,7 +1080,7 @@ claude_install_failed() { # explain the most common causes, then stop
 }
 
 # Node.js, Chromium (Playwright's, shared by Scrapling, Remotion and PDFs), Remotion, Scrapling and the voice model:
-# `maxxing deps update` installs the versions of deps.toml, each checked, next to the old ones. In the background
+# `pilot deps update` installs the versions of deps.toml, each checked, next to the old ones. In the background
 # once the service runs (TOOLS=background), or now (TOOLS=foreground, install.sh --tools).
 DEPS_LOG_NAME=deps-install.log
 install_tools_now() {
@@ -1097,12 +1090,12 @@ install_tools_now() {
     ok "tools ready: $(mx deps list 2>/dev/null | awk '$2 ~ /^(node|chromium|remotion|scrapling)$/ {printf "%s %s · ", $2, $3}' | sed 's/ · $//')"
   else
     grep -E 'failed' "$log" | tail -n 5 | sed 's/^/      | /'
-    warn "some tools could not be installed - re-run: maxxing deps update (log: $log)"
+    warn "some tools could not be installed - re-run: pilot deps update (log: $log)"
   fi
 }
 start_tools() {
   case "$TOOLS" in
-    0) info "tools skipped (TOOLS=0) - install them later: maxxing deps update"; return 0 ;;
+    0) info "tools skipped (TOOLS=0) - install them later: pilot deps update"; return 0 ;;
     foreground) run_step "Tools (Node.js, Chromium, Remotion, Scrapling)" install_tools_now; return 0 ;;
   esac
   local log="$STATE_DIR/logs/$DEPS_LOG_NAME"
@@ -1113,7 +1106,7 @@ start_tools() {
        "$BIN" deps update --notify >/dev/null 2>&1; then
     TOOLS_BG=1
   else
-    warn "could not start the background tools install - run: maxxing deps update"
+    warn "could not start the background tools install - run: pilot deps update"
   fi
 }
 
@@ -1186,7 +1179,7 @@ ssh_key_only() { # called by secure_server: adds to its "done" list
   prl=$(sshd -T 2>/dev/null | awk '$1=="permitrootlogin"{print $2}') || true
   mkdir -p "$(dirname "$SSH_DROPIN")"
   {
-    echo "# Harness Maxxing (install.sh --secure): SSH logins by key only. To undo: rm $SSH_DROPIN && systemctl reload ssh"
+    echo "# harness-pilot (install.sh --secure): SSH logins by key only. To undo: rm $SSH_DROPIN && systemctl reload ssh"
     echo "PasswordAuthentication no"
     echo "KbdInteractiveAuthentication no"
     [ "$prl" = yes ] && echo "PermitRootLogin prohibit-password"     # only tightened, never loosened
@@ -1238,7 +1231,7 @@ ufw_open_rules() {
 # ufw_tailscale - on the Tailscale interface: the web UI and SSH only (not every port of the server)
 ufw_tailscale() {
   local p
-  ufw allow in on tailscale0 to any port "$PORT" proto tcp comment 'Harness Maxxing (Tailscale)' >/dev/null
+  ufw allow in on tailscale0 to any port "$PORT" proto tcp comment 'harness-pilot (Tailscale)' >/dev/null
   for p in $(ssh_ports); do ufw allow in on tailscale0 to any port "$p" proto tcp comment 'SSH (Tailscale)' >/dev/null; done
 }
 
@@ -1250,7 +1243,7 @@ ufw_ipv6_warn() {
 
 # f2b_jail - our fail2ban jail for SSH, on the ports sshd really listens on (fail2ban's default is "ssh" = 22 only)
 f2b_jail() {
-  printf '# Harness Maxxing (written by install.sh, re-written by each run: put your own settings in another jail.d file)\n'
+  printf '# harness-pilot (written by install.sh, re-written by each run: put your own settings in another jail.d file)\n'
   printf '# ban an IP for 1 h after 5 failed SSH logins in 10 min, on the SSH ports of this server\n'
   printf '[sshd]\nenabled = true\nport = %s\nbackend = systemd\nmaxretry = 5\nfindtime = 10m\nbantime = 1h\n' \
     "$(ssh_ports | tr '\n' ',' | sed 's/,$//')"
@@ -1363,19 +1356,19 @@ secure_server() {
 # ---- code -----------------------------------------------------------------------------------
 # fetch_local - SOURCE_DIR copied into $INSTALL_DIR as a git repository without remote
 fetch_local() {
-  local src=$SOURCE_DIR ver id=(-c user.name="Harness Maxxing" -c user.email="local@localhost")
+  local src=$SOURCE_DIR ver id=(-c user.name="harness-pilot" -c user.email="local@localhost")
   if [ -z "$src" ]; then ok "local install in $INSTALL_DIR (no remote) - kept"; return; fi
   src=$(cd "$src" 2>/dev/null && pwd -P) || die "SOURCE_DIR=$SOURCE_DIR not found"
-  [ -f "$src/server/maxxing/__init__.py" ] && [ -f "$src/install.sh" ] || die "$src is not a Harness Maxxing source tree"
+  [ -f "$src/server/maxxing/__init__.py" ] && [ -f "$src/install.sh" ] || die "$src is not a harness-pilot source tree"
   [ -f "$src/web/dist/index.html" ] || die "$src/web/dist is missing (the built web UI): use a release archive, or build it (cd web && npm ci && npm run build)"
   ver=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$src/server/maxxing/__init__.py" | head -n1)
   if [ -d "$INSTALL_DIR/.git" ]; then
     if [ -n "$(git -C "$INSTALL_DIR" status --porcelain 2>/dev/null)" ]; then
-      warn "changes in $INSTALL_DIR are not committed - kept as it is (maxxing custom save, then run this again)"; return
+      warn "changes in $INSTALL_DIR are not committed - kept as it is (pilot custom save, then run this again)"; return
     fi
     git -C "$INSTALL_DIR" ls-files -z | (cd "$INSTALL_DIR" && xargs -0 -r rm -f)
   elif [ -e "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-    die "$INSTALL_DIR exists and is not a Harness Maxxing install - move it away or set INSTALL_DIR"
+    die "$INSTALL_DIR exists and is not a harness-pilot install - move it away or set INSTALL_DIR"
   fi
   (umask 022; mkdir -p "$INSTALL_DIR")
   if git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -1388,7 +1381,7 @@ fetch_local() {
   [ -d "$INSTALL_DIR/.git" ] || git -C "$INSTALL_DIR" init -q -b "$BRANCH" --
   git -C "$INSTALL_DIR" add -A
   if git -C "$INSTALL_DIR" diff --cached --quiet 2>/dev/null; then ok "local copy $ver - unchanged"; return; fi
-  git "${id[@]}" -C "$INSTALL_DIR" commit -q -m "Harness Maxxing $ver (local copy of $src)" || die "git commit of the local copy failed"
+  git "${id[@]}" -C "$INSTALL_DIR" commit -q -m "harness-pilot $ver (local copy of $src)" || die "git commit of the local copy failed"
   ok "version $ver copied from $src into $INSTALL_DIR (no remote: updates come from a newer copy)"
 }
 
@@ -1397,7 +1390,7 @@ fetch_code() {
   export GIT_TERMINAL_PROMPT=0
   if [ "$LOCAL" = 1 ]; then fetch_local; return; fi
   if [ "$LICENSED" = 1 ]; then
-    ok "install from before 2.0.0a87 in $INSTALL_DIR - kept (it moves to the git repository by itself; now: maxxing update)"
+    ok "install from before 2.0.0a87 in $INSTALL_DIR - kept (it moves to the git repository by itself; now: pilot update)"
     return
   fi
   if [ -d "$INSTALL_DIR/.git" ]; then
@@ -1410,7 +1403,7 @@ fetch_code() {
       if git -C "$INSTALL_DIR" merge -q --ff-only "origin/$BRANCH" >/dev/null 2>&1; then
         ok "updated to $(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
       else
-        warn "customizations in $INSTALL_DIR - kept; update with: maxxing update (carries them over)"
+        warn "customizations in $INSTALL_DIR - kept; update with: pilot update (carries them over)"
       fi
     else
       warn "could not reach $url - keeping the current code"
@@ -1480,20 +1473,13 @@ init_state() {
   [ -n "$TIMEZONE" ] && args+=(--timezone "$TIMEZONE")
   :
   rm -f "$STATE_DIR/logs/install-init.log"     # holds the setup link: 0600 (umask), removed after the banner
-  mx "${args[@]}" > "$STATE_DIR/logs/install-init.log" 2>&1 || { cat "$STATE_DIR/logs/install-init.log"; die "maxxing init failed"; }
+  mx "${args[@]}" > "$STATE_DIR/logs/install-init.log" 2>&1 || { cat "$STATE_DIR/logs/install-init.log"; die "pilot init failed"; }
   grep -E '^ *[✔!✘–]' "$STATE_DIR/logs/install-init.log" | sed -E 's/^ *//; s/^/      /' || true
   if [ "$TOKEN_USED" = 1 ] && [ -n "$GH_TOKEN" ]; then
     printf '%s' "$GH_TOKEN" | mx init --quiet --no-crons --secret-from-stdin github_update_token \
-      && ok "update token stored in $STATE_DIR/secrets.json (used by maxxing update)"
+      && ok "update token stored in $STATE_DIR/secrets.json (used by pilot update)"
   fi
-  if [ -n "$LICENSE" ]; then                       # optional Enterprise key: recorded, checked by the license server
-    LICENSE=$(printf '%s' "$LICENSE" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
-    local lic_env=()
-    [ "$LICENSE_API" = https://api.harness-maxxing.com ] || lic_env=(MAXXING_LICENSE_API="$LICENSE_API")
-    printf '%s\n' "$LICENSE" | env ${lic_env[@]+"${lic_env[@]}"} MAXXING_STATE="$STATE_DIR" "$BIN" license activate --key-from-stdin --no-fetch >/dev/null \
-      && ok "Enterprise key recorded (Settings -> License, maxxing license status)" \
-      || warn "could not record the Enterprise key (…${LICENSE: -4}) - Settings -> License, or: maxxing license activate"
-  fi
+  [ -z "$LICENSE" ] || warn "LICENSE ignored: harness-pilot has no license key (nothing to record)"
   if [ -n "$CLAUDE_TOKEN" ]; then
     printf '%s' "$CLAUDE_TOKEN" | mx init --quiet --no-crons --secret-from-stdin claude_oauth_token && ok "Claude token stored"
   fi
@@ -1503,7 +1489,7 @@ init_state() {
   if [ -n "$VOICE" ]; then
     mx voice set --engine "$VOICE" >/dev/null || warn "could not enable voice messages (Settings -> Voice)"
     case "$VOICE" in
-      local)                                    # the model comes with the tools (maxxing deps update)
+      local)                                    # the model comes with the tools (pilot deps update)
         info "the speech model (~150-500 MB) is downloaded with the tools" ;;
       groq|openai)
         info "add your ${VOICE^^}_API_KEY in Settings -> Voice to finish" ;;
@@ -1517,7 +1503,7 @@ restore_backup() {
     return
   fi
   if ! mx backup restore --help >/dev/null 2>&1; then
-    warn "this version has no 'maxxing backup restore' - restore later from Settings -> Backup"
+    warn "this version has no 'pilot backup restore' - restore later from Settings -> Backup"
     return
   fi
   # held like on a server in use: whoever can push to the backup repository must not get code run here before
@@ -1527,7 +1513,7 @@ restore_backup() {
     RESTORED=1
   else
     tail -n 5 "$WORK/restore.log" | sed 's/^/      | /'
-    warn "restore failed - retry with: maxxing backup restore --from $RESTORE_FROM  (it asks for the token)"
+    warn "restore failed - retry with: pilot backup restore --from $RESTORE_FROM  (it asks for the token)"
   fi
 }
 
@@ -1549,7 +1535,7 @@ restore_review() {
   info "they come from $RESTORE_FROM: whoever can write to that repository wrote them"
   if [ "$RESTORE_TRUST" = 1 ] || ask_yn "Turn all of this on now? (only if you trust everything in $RESTORE_FROM)" n; then
     mx backup release >/dev/null 2>&1 && ok "restored jobs, extensions, hooks and MCP servers turned on" \
-      || warn "could not turn them on - run: maxxing backup release"
+      || warn "could not turn them on - run: pilot backup release"
     if [ -n "$patches" ]; then
       if mx custom restore >/dev/null 2>&1; then
         ok "customizations of the product code re-applied (CUSTOMIZATIONS.md)"
@@ -1559,7 +1545,7 @@ restore_review() {
       fi
     fi
   else
-    ok "kept off - check them, then: maxxing backup release${patches:+ and maxxing custom restore} (or the Crons / Extensions pages)"
+    ok "kept off - check them, then: pilot backup release${patches:+ and pilot custom restore} (or the Crons / Extensions pages)"
   fi
 }
 
@@ -1579,7 +1565,7 @@ setup_caddy() {
   local before_cf=""
   [ -f "$CADDYFILE" ] && before_cf=$(cat "$CADDYFILE")
   (umask 022; cat > "$CADDY_SITE") <<EOF
-# Harness Maxxing (written by install.sh - re-run the installer to change it)
+# harness-pilot (written by install.sh - re-run the installer to change it)
 $DOMAIN {
 	encode zstd gzip
 	header {
@@ -1643,7 +1629,7 @@ caddy_repo() {
 caddy_admin_dropin() {
   local d=/etc/systemd/system/caddy.service.d
   [ -f "$d/harness-maxxing-admin.conf" ] && return 0
-  (umask 022; mkdir -p "$d" && printf '# Harness Maxxing: directory of the admin socket (admin unix//run/caddy/admin.sock)\n[Service]\nRuntimeDirectory=caddy\nRuntimeDirectoryPreserve=yes\n' \
+  (umask 022; mkdir -p "$d" && printf '# harness-pilot: directory of the admin socket (admin unix//run/caddy/admin.sock)\n[Service]\nRuntimeDirectory=caddy\nRuntimeDirectoryPreserve=yes\n' \
     > "$d/harness-maxxing-admin.conf")
   systemctl daemon-reload
   manifest "caddy admin socket"
@@ -1670,8 +1656,8 @@ proxy_snippet() {
   mkdir -p "$STATE_DIR"
   case "$WEB_BUSY" in
     nginx*) cat > "$f" <<NGINX
-# Harness Maxxing behind nginx - e.g. /etc/nginx/sites-available/harness-maxxing, then:
-#   ln -s /etc/nginx/sites-available/harness-maxxing /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx
+# harness-pilot behind nginx - e.g. /etc/nginx/sites-available/harness-pilot, then:
+#   ln -s /etc/nginx/sites-available/harness-pilot /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx
 #   certbot --nginx -d $DOMAIN        (HTTPS certificate)
 server {
     listen 80;
@@ -1691,8 +1677,8 @@ server {
 NGINX
     ;;
     apache*|httpd*) cat > "$f" <<APACHE
-# Harness Maxxing behind Apache - e.g. /etc/apache2/sites-available/harness-maxxing.conf, then:
-#   a2enmod proxy proxy_http && a2ensite harness-maxxing && systemctl reload apache2
+# harness-pilot behind Apache - e.g. /etc/apache2/sites-available/harness-pilot.conf, then:
+#   a2enmod proxy proxy_http && a2ensite harness-pilot && systemctl reload apache2
 #   certbot --apache -d $DOMAIN       (HTTPS certificate)
 <VirtualHost *:80>
     ServerName $DOMAIN
@@ -1705,7 +1691,7 @@ NGINX
 APACHE
     ;;
     *) cat > "$f" <<OTHER
-# Harness Maxxing behind your own reverse proxy ($WEB_BUSY on ports 80/443):
+# harness-pilot behind your own reverse proxy ($WEB_BUSY on ports 80/443):
 #   https://$DOMAIN  ->  http://127.0.0.1:$PORT
 # keep responses unbuffered (live updates use server-sent events), allow uploads up to 500 MB
 # and long requests (1 h).
@@ -1713,7 +1699,7 @@ OTHER
     ;;
   esac
   ok "$WEB_BUSY keeps ports 80/443 - add the block saved in $f to it"
-  info "then https://$DOMAIN opens Harness Maxxing (Caddy was not installed)"
+  info "then https://$DOMAIN opens harness-pilot (Caddy was not installed)"
 }
 
 setup_access() {
@@ -1742,7 +1728,7 @@ service_memory_max() {
 unit_text() {
   cat <<EOF
 [Unit]
-Description=Harness Maxxing - web control room for Claude Code
+Description=harness-pilot - web control room for Claude Code
 After=network-online.target$AFTER
 Wants=network-online.target
 StartLimitIntervalSec=0
@@ -1836,7 +1822,7 @@ banner() {
   echo
   box_rule ╭ ╮
   box_row ""
-  box_row "$C_G$C_B✔  Harness Maxxing is installed$C_0  $C_D($took)$C_0"
+  box_row "$C_G$C_B✔  harness-pilot is installed$C_0  $C_D($took)$C_0"
   box_row ""
   if [ "$ACCESS" = local ]; then
     box_row "From your computer, open an SSH tunnel and keep it open:"
@@ -1882,7 +1868,7 @@ banner() {
 # ---- entry points ---------------------------------------------------------------------------
 do_update() {
   [ "$(id -u)" = 0 ] || die "Run as root."
-  [ -x "$BIN" ] || die "Harness Maxxing is not installed ($BIN missing) - run the installer without --update"
+  [ -x "$BIN" ] || die "harness-pilot is not installed ($BIN missing) - run the installer without --update"
   mx update
 }
 
@@ -1935,7 +1921,7 @@ main() {
             detect_server
             TOTAL=1; run_step "Server security ($ACCESS)" secure_server; exit $? ;;
     tools) [ "$(id -u)" = 0 ] || die "Run as root."; check_inputs
-           [ -x "$BIN" ] || die "Harness Maxxing is not installed ($BIN missing)"
+           [ -x "$BIN" ] || die "harness-pilot is not installed ($BIN missing)"
            TOTAL=1; run_step "Tools (Node.js, Chromium, Remotion, Scrapling)" install_tools_now; exit $? ;;
   esac
   logo
@@ -1957,7 +1943,7 @@ main() {
   else printf '      %s3 to 6 minutes on a small server - nothing else to answer%s\n\n' "$C_D" "$C_0"; fi
   run_step "System packages" install_packages
   align_tz
-  run_step "Harness Maxxing code" fetch_code
+  run_step "harness-pilot code" fetch_code
   prefetch                                    # Claude Code and uv downloads, in the background
   run_step "Python toolchain (uv)" install_uv
   python_start                                # Python environment in the background while Claude Code installs

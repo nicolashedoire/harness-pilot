@@ -245,10 +245,92 @@ def test_skills_dir_override_keeps_the_personal_skills_untouched(env, tmp_path, 
     assert blocks.agents_summary()["skill"] == str(local / "pilot-blocks" / "SKILL.md")
 
 
+def test_codex_skills_dir_override_keeps_the_personal_skills_untouched(env, tmp_path, monkeypatch):
+    """The local setup also sets MAXXING_CODEX_SKILLS_DIR (<local dir>/.agents/skills): ~/.agents/skills is never
+    written, and uninstall removes only the copies it installed there."""
+    personal = env["home"] / ".agents" / "skills"
+    (personal / "memory").mkdir(parents=True)
+    (personal / "memory" / "SKILL.md").write_text("the user's own")
+    local = tmp_path / "local" / ".agents" / "skills"
+    monkeypatch.setenv("MAXXING_CODEX_SKILLS_DIR", str(local))
+    assert cmd_core.codex_skills_target() == local
+    assert run_cli("init", "--workspace", str(env["ws"]), "--quiet") == 0
+    assert (local / "pilot-theme" / "SKILL.md").read_text().startswith("---\nname: pilot-theme\n")
+    assert sorted(p.name for p in personal.iterdir()) == ["memory"]
+    assert (personal / "memory" / "SKILL.md").read_text() == "the user's own"
+    (local / "my-skill").mkdir()
+    assert run_cli("uninstall", "--yes") == 0
+    assert sorted(p.name for p in local.iterdir()) == ["my-skill"]
+    assert not any(p.name.startswith("pilot-") for p in (env["home"] / ".claude" / "skills").iterdir())
+
+
 def test_local_setup_installs_the_product_skills_beside_its_workspace():
     script = (config.CODE / "scripts" / "dev-local.sh").read_text()
     assert 'export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"' in script
+    assert 'export MAXXING_CODEX_SKILLS_DIR="$LOCAL_DIR/.agents/skills"' in script
     assert "cmd_core.install_skills()" in script
+
+
+def test_local_cli_runs_with_the_state_of_the_local_app(tmp_path):
+    """`dev-local.sh cli <args>` = `pilot <args>` with the local app's settings; a bare `uv run pilot` has no
+    MAXXING_STATE and reads /var/lib/claude-maxxing (the docs used to suggest it)."""
+    import shutil
+    if not shutil.which("uv"):
+        pytest.skip("uv not installed")
+    local = tmp_path / "local"
+    env = {k: v for k, v in os.environ.items() if k != "MAXXING_STATE"}
+    env["HARNESS_PILOT_LOCAL_DIR"] = str(local)
+    r = subprocess.run(["bash", str(config.CODE / "scripts" / "dev-local.sh"), "cli", "status", "--json"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr
+    st = json.loads(r.stdout)
+    assert st["state"] == str(local / "state") and st["workspace"] == str((local / "workspace").resolve())
+
+
+def test_init_installs_the_product_skills_for_codex_too(env, monkeypatch):
+    """Codex reads personal skills from ~/.agents/skills: init installs the same rendered copies there, with its own
+    record, so a same-named skill of the user is moved to the trash, an obsolete one dropped, a stale one reported."""
+    monkeypatch.delenv("MAXXING_CODEX_SKILLS_DIR")
+    codex = env["home"] / ".agents" / "skills"
+    assert cmd_core.codex_skills_target() == codex
+    (codex / "memory").mkdir(parents=True)
+    (codex / "memory" / "SKILL.md").write_text("user's own skill")
+    (codex / "my-skill").mkdir()
+    (codex / "my-skill" / "SKILL.md").write_text("keep me")
+    assert run_cli("init", "--workspace", str(env["ws"]), "--quiet") == 0
+    names = cmd_core.product_skill_names()
+    assert sorted(p.name for p in codex.iterdir()) == sorted([*names, "my-skill"])
+    assert (codex / "my-skill" / "SKILL.md").read_text() == "keep me"
+    assert f'p = "{env["ws"]}/tasks.json"' in (codex / "pilot-tasks" / "SKILL.md").read_text()   # rendered
+    trash = list((env["state"] / "trash" / "skills").iterdir())
+    assert [p.name.rsplit("-", 1)[0] for p in trash] == ["memory-codex"]
+    assert (trash[0] / "SKILL.md").read_text() == "user's own skill"
+    assert json.loads((env["state"] / "install.json").read_text())["codex_skills"] == names
+    r = cmd_core.install_skills()                                     # again (update): nothing more moved away
+    assert r["installed"] == names and r["codex"] == {"target": str(codex), "installed": names, "removed": [],
+                                                      "backed_up": []}
+    assert all(s["state"] == "ok" and s["codex"] == "ok" for s in cmd_core.skills_status())
+    assert cmd_core.check_skills()["level"] == "ok"
+    # a stale Codex copy is reported by the doctor and rendered again by the next init (update)
+    (codex / "memory" / "SKILL.md").write_text("stale")
+    st = {s["name"]: s for s in cmd_core.skills_status()}["memory"]
+    assert (st["state"], st["codex"]) == ("ok", "outdated")
+    check = cmd_core.check_skills()
+    assert check["level"] == "warn" and "memory (Codex: outdated)" in check["detail"]
+    from maxxing import blocks
+    (codex / "pilot-blocks" / "SKILL.md").write_text("stale")
+    blocks.sync_agent_files()                                    # the enabled blocks are rendered in both copies
+    assert (codex / "pilot-blocks" / "SKILL.md").read_text() != "stale"
+    assert run_cli("init", "--quiet") == 0
+    assert all(s["codex"] == "ok" for s in cmd_core.skills_status())
+    # a product skill disappears from the code -> its Codex copy goes too; the user's skill stays
+    fake_src = env["home"] / "skills-src"
+    (fake_src / "pilot-doctor").mkdir(parents=True)
+    (fake_src / "pilot-doctor" / "SKILL.md").write_text("---\nname: pilot-doctor\n---\n")
+    monkeypatch.setattr(config, "SKILLS_DIR", fake_src)
+    r = cmd_core.install_skills()
+    assert sorted(p.name for p in codex.iterdir()) == ["my-skill", "pilot-doctor"]
+    assert "memory" in r["codex"]["removed"]
 
 
 def test_shipped_skills_use_placeholders_not_default_paths():
@@ -776,6 +858,21 @@ def test_update_check_not_a_git_clone(env, tmp_path, monkeypatch, capsys):
     (tmp_path / "plain").mkdir()
     assert run_cli("update", "--check", "--notify") == 0
     assert "not a git clone" in capsys.readouterr().out
+
+
+def test_update_is_refused_in_local_mode(env, released, monkeypatch, capsys):
+    """Like the Update button (POST /api/system/update -> 409): the local setup updates its clone with git, never by a
+    fetch, rebase and service restart. Checking, which changes nothing, still works."""
+    monkeypatch.setenv("HARNESS_PILOT_LOCAL_MODE", "1")
+    clone = released["clone"]
+    _release(released["work"], "1.2.0", "shiny feature")
+    head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    for argv in (["update"], ["update", "--rollback"], ["update", "--resume"], ["update", "--branch", "main"]):
+        assert run_cli(*argv) == 1
+        out = capsys.readouterr().out
+        assert "unavailable in local mode" in out and f"git -C {clone} pull" in out, argv
+    assert subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True).stdout == head
+    assert run_cli("update", "--check") == 0 and "1.2.0" in capsys.readouterr().out
 
 
 def test_update_lists_upgrade_notes(env, released, monkeypatch, capsys):

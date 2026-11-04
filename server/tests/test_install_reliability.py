@@ -14,10 +14,12 @@ from pathlib import Path
 
 import pytest
 
+from _needs import bash4
 from maxxing import deps
 
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL = ROOT / "install.sh"
+pytestmark = bash4                      # every test sources install.sh
 
 
 def sh(snippet: str, **env: str) -> subprocess.CompletedProcess:
@@ -266,6 +268,16 @@ def test_cache_dir_is_validated(value, ok):
            STATE_DIR="/var/lib/x", PORT="8787", REPO="o/n", LICENSE_API="https://api.example.com", RESTORE_TRUST="0",
            ALLOW_UNPROTECTED="0", FIREWALL="auto", SSH_HARDEN="auto", TOOLS="background", SWAP="auto")
     assert ("fine" in r.stdout) is ok, r.stderr
+
+
+def test_installer_defaults_to_this_repository():
+    """The default source is this repository's `main` (it has no `stable` branch, tag nor release), and nothing in the
+    installer points to the original project's repository, domains or license server."""
+    r = sh('echo "$REPO $BRANCH $CACHE_DIR"')
+    assert r.stdout.split() == ["nicolashedoire/harness-pilot", "main", "/var/cache/harness-pilot"], r.stderr
+    text = INSTALL.read_text()
+    for gone in ("makushingu", "harness-maxxing.com", "LICENSE_API", "license activate", "Harness Maxxing installer"):
+        assert gone not in text, gone
 
 
 def test_a_new_install_needs_no_license_key(tmp_path):
