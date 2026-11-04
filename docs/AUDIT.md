@@ -32,6 +32,7 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [ ] **Chemins internes hérités** : certains liens utilisent encore le sujet système historique. Une migration doit préserver les projets, les sessions et les extensions existants.
 - [ ] Reprendre les pages de documentation embarquées, les textes et liens hérités, ainsi que les notifications produites par le serveur, en conservant les attributions et licences applicables.
 - [x] **Documentation critique** : les pages mémoire, sécurité, Telegram et commandes distinguent les comportements vérifiés en local des fonctions héritées non encore validées.
+- [x] **Navigation de la documentation** : les liens entre guides, y compris les noms de fichiers Markdown et les renvois vers une section, sont utilisables dans l'application ; les licences et l'audit ouvrent les fichiers du dépôt.
 - [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
 - [x] **Tests isolés des tâches et sauvegardes** : 92 tests passent sur macOS avec un GitHub simulé ; un test de nom de fichier non UTF-8 est ignoré lorsque le système de fichiers l'interdit. Cela ne valide pas une sauvegarde réelle du compte utilisateur.
 - [x] **Tests isolés Telegram** : 43 tests de format, de synchronisation et de connexion passent avec des services simulés ; une connexion et une discussion réelles avec un bot restent à vérifier.

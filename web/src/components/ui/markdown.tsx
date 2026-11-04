@@ -75,7 +75,7 @@ export type MarkdownProps = {
   children: string
   className?: string
   /** Rewrite internal links (e.g. docs slugs). Return null to keep the default behaviour. */
-  onLink?: (href: string) => (() => void) | null
+  onLink?: (href: string) => (() => void) | { href: string; onClick: () => void } | null
   /** Extra component overrides. */
   components?: Components
 }
@@ -93,22 +93,25 @@ export function Markdown({ children, className, onLink, components }: MarkdownPr
   const comps = React.useMemo<Components>(
     () => ({
       a({ href = '', children: c, node: _n, ...rest }) {
-        if (!SAFE_URL.test(href)) return <span>{c}</span>
-        const handler = onLink?.(href)
-        if (handler)
+        const target = onLink?.(href)
+        if (target) {
+          const resolved = typeof target === 'function' ? { href, onClick: target } : target
+          if (!SAFE_URL.test(resolved.href)) return <span>{c}</span>
           return (
             <a
-              href={href}
+              href={resolved.href}
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
                 e.preventDefault()
-                handler()
+                resolved.onClick()
               }}
               {...rest}
             >
               {c}
             </a>
           )
+        }
+        if (!SAFE_URL.test(href)) return <span>{c}</span>
         // Internal app routes stay in the SPA (no full reload).
         if (href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/api/'))
           return (
