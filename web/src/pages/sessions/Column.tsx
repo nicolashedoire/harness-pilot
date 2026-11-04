@@ -114,6 +114,7 @@ import { Composer, type ComposerHandle } from './Composer'
 import { QuotePill } from './Quote'
 import { FileMenu } from './FileMenu'
 import { ItemContext } from './Items'
+import { agentName, sessionAgents } from '@/features/agents/AgentIcon'
 import { AgentChip, ContextGauge, ModelPicker, StateBadge } from './Widgets'
 import { ModePanel, ModePicker } from './NewSessionModes'
 import { absTopicDir, fileQuote, modelLabel, topicLabel } from './util'
@@ -146,6 +147,7 @@ function MobileTabs() {
 
 /* ---------------------------------------------------------------- shell */
 export function ColumnShell({ col, index, count, variant, place, children }: { col: Col; index: number; count: number; variant: ColumnVariant; place?: Place; children: React.ReactNode }) {
+  const t = useT()
   const focused = useSessionsUI((s) => s.focused === col.key)
   const focus = useSessionsUI((s) => s.focus)
   const strip = React.useContext(StripContext)
@@ -167,7 +169,7 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
     <section
       ref={ref}
       data-col={col.key}
-      aria-label={`Column ${index + 1}`}
+      aria-label={t('sessions.columnN', { n: index + 1 })}
       onFocusCapture={() => isCol && focus(col.key)}
       onPointerDownCapture={() => isCol && focus(col.key)}
       onDragOver={(e) => {
@@ -227,7 +229,7 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize"
+          aria-label={t('shell.resize')}
           onPointerDown={(e) => strip.startColResize(place?.top ?? col.key, e)}
           onDoubleClick={() => strip.resetColWidth(place?.top ?? col.key)}
           // Just past the right edge (never over the column's own scrollbar); the strip keeps an 8 px gutter at its
@@ -239,7 +241,7 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
         <div
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize"
+          aria-label={t('shell.resize')}
           onPointerDown={strip.startRowResize}
           onDoubleClick={strip.resetRowSplit}
           className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize touch-none after:absolute after:inset-x-0 after:top-1 after:h-[3px] after:transition-colors hover:after:bg-primary/40 active:after:bg-primary/60"
@@ -634,7 +636,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   // the last turn ended on a question of the agent (AskUserQuestion): its options answer it in one click
   const asked = useLogSelect(sid, lastQuestion)
   const question = !running && !planReady && failed === null ? asked : null
-  const agentName = session?.provider_name || (session?.provider === 'codex' ? 'Codex' : 'Claude Code')
+  const replyAgent = agentName(sessionAgents(session?.provider)[0], t, session?.provider_name)
   // a paused discussion ends with the date of its pause (and the limit it reached)
   const pauseKey = duo && session?.debate_paused ? [session.discussion_paused_at, session.discussion_pause_reason, session.discussion_turns, session.discussion_turn_limit, session.discussion_duration_seconds, session.discussion_elapsed].join('|') : ''
   const card = React.useMemo(
@@ -644,10 +646,10 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       ) : failed ? (
         <FailedTurn sid={sid} error={failed} onRetry={(text, attachments) => void sendNow.current(text, attachments)} />
       ) : question ? (
-        <QuestionCard question={question} agent={agentName} onAnswer={(text) => void sendNow.current(text, [])} onOther={() => composer.current?.focus()} />
+        <QuestionCard question={question} agent={replyAgent} onAnswer={(text) => void sendNow.current(text, [])} onOther={() => composer.current?.focus()} />
       ) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [planReady, failed, sid, planReady && session?.id, question, agentName],
+    [planReady, failed, sid, planReady && session?.id, question, replyAgent],
   )
   const tail = React.useMemo(
     () => (pauseKey && session ? <>{<PauseSeparator session={session} />}{card}</> : card),
@@ -662,9 +664,9 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       send: (text) => sendNow.current(text, []),
       openPanel: panel.open,
       beside,
-      agent: duo ? undefined : agentName,
+      agent: duo ? undefined : replyAgent,
     }),
-    [sid, panel.open, beside, duo, agentName],
+    [sid, panel.open, beside, duo, replyAgent],
   )
 
   // (a picture dragged from a thread carries a file too: that is a content drag)
@@ -732,7 +734,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   </DropdownMenuCheckboxItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
+                <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
@@ -873,7 +875,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                       : duo
                         ? t('conv.composer.intervene')
                         : session
-                          ? t('conv.composer.replyTo', { agent: agentName })
+                          ? t('conv.composer.replyTo', { agent: replyAgent })
                           : undefined
                   }
                   hint={duo ? t('conv.composer.duoHint') : t('conv.composer.hint')}
@@ -1561,7 +1563,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               {(provider === 'codex' || provider === 'both' || plugin) && <div className="grid gap-1.5">
                 <Label htmlFor={`codex-model-${col.key}`}>{t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
                 <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
-                <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>
+                <p className="text-xs text-muted-foreground">{plugin ? t('agentProviders.modelHint', { name: agentName('plugin', t, adapter?.name) }) : t('sessions.codexModelHint')}</p>
               </div>}
               {provider !== 'both' && provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
                 <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />

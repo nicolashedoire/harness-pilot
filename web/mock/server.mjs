@@ -1222,7 +1222,7 @@ R('POST', '/api/auth/setup', ({ body, res }) => {
   return { ok: true }
 }, { public: true })
 
-R('POST', '/api/auth/login', async ({ body, res }) => {
+R('POST', '/api/auth/login', async ({ req, body, res }) => {
   if (S.setup_required) fail(409, 'setup_required', 'Run the setup first')
   const t = now()
   if (S.lockUntil > t) fail(429, 'throttled', `Too many attempts, retry in ${Math.ceil(S.lockUntil - t)} s`)
@@ -1235,6 +1235,7 @@ R('POST', '/api/auth/login', async ({ body, res }) => {
     fail(401, 'bad_password', 'Wrong password')
   }
   S.failStreak = 0
+  if (S.telegram.settings.two_factor && !tfTrusted(req)) return { ok: false, two_factor: tfChallenge('login') }
   setCookie(res, newToken())
   return { ok: true }
 }, { public: true })
@@ -1249,6 +1250,52 @@ R('POST', '/api/auth/password', ({ body }) => {
   if (body.current !== S.password) fail(400, 'bad_password', 'Current password is wrong')
   if (!body.new || String(body.new).length < 8) fail(422, 'invalid', 'Password must be at least 8 characters')
   S.password = body.new
+  return { ok: true }
+})
+
+/* ---- two-step sign-in (server/maxxing/twofactor.py): with Telegram setting `two_factor` on, a password sign-in from an
+   untrusted browser waits for Allow in Telegram or the code it shows. Mock: Allow is "pressed" 4 s after the challenge
+   is created, and the code is 246810 (5 wrong codes expire the challenge). */
+const TF_CODE = '246810'
+const tfState = () => (S.twoFactor ||= { deviceKey: crypto.randomBytes(12).toString('hex'), challenges: {} })
+function tfChallenge(kind) { // kind: login | enable
+  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending' }
+  tfState().challenges[c.id] = c
+  const g = GEN
+  setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
+  return { challenge: c.id, expires_in: 300 }
+}
+const tfTrusted = (req) => (req.headers.cookie || '').split(/;\s*/).includes(`mx_device=${tfState().deviceKey}`)
+const tfDeviceCookie = () => `mx_device=${tfState().deviceKey}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=2592000`
+R('POST', '/api/auth/two-factor', ({ req, res, body, authed }) => {
+  const c = tfState().challenges[body.challenge]
+  if (!c || c.status === 'expired' || now() - c.at > 360) fail(410, 'expired', 'This sign-in request expired: sign in again')
+  if (c.kind === 'enable' && !authed) fail(401, 'auth_required', 'Please log in')
+  if (body.code !== undefined && body.code !== null && c.status === 'pending') {
+    if (body.code !== TF_CODE) {
+      c.tries += 1
+      if (c.tries >= 5) { c.status = 'expired'; fail(410, 'expired', 'Too many wrong codes: sign in again') }
+      sendJson(res, 400, { error: 'bad_code', message: 'Wrong code', tries_left: 5 - c.tries })
+      return RAW
+    }
+    c.status = 'approved'
+  }
+  if (c.status === 'pending') return { ok: false, status: 'pending', expires_in: Math.max(0, Math.round(300 - (now() - c.at))) }
+  delete tfState().challenges[c.id] // once only
+  const trust = body.trust !== false || c.kind === 'enable'
+  if (c.kind === 'enable') { S.telegram.settings.two_factor = true; bus('telegram') }
+  res.setHeader('Set-Cookie', [...(c.kind === 'login' ? [`mx_session=${newToken()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`] : []), ...(trust ? [tfDeviceCookie()] : [])])
+  return { ok: true, status: 'approved' }
+}, { public: true })
+R('PUT', '/api/auth/two-factor', ({ body }) => {
+  if (!body.enabled) { S.telegram.settings.two_factor = false; tfState().deviceKey = crypto.randomBytes(12).toString('hex'); bus('telegram'); return { ok: true, enabled: false } }
+  if (!S.telegram.chat) fail(409, 'not_linked', 'Link a Telegram chat first')
+  if (S.telegram.settings.two_factor) return { ok: true, enabled: true }
+  return { ok: false, two_factor: tfChallenge('enable') }
+})
+R('POST', '/api/auth/two-factor/forget-browsers', ({ res }) => {
+  tfState().deviceKey = crypto.randomBytes(12).toString('hex')
+  res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
   return { ok: true }
 })
 
@@ -1535,12 +1582,171 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
+   sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
+const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
+  ['codex', 'Independently examine risks, alternatives and how to verify the result.']]
+const TEAM_REPORTS = {
+  claude: 'Approach in four steps: list what the change touches, make it behind a flag, migrate the existing data, then remove the old path. The first two steps fit in one afternoon.',
+  codex: 'Main risk: the data migration cannot be undone once the old path is removed. Keep a backup and a dry run that counts the rows to change; verify with the existing tests plus one end-to-end check.',
+}
+const teamsState = () => (S.teams ||= {}) // coordinator id -> { phase, goal, agents: [{ id, provider, role, stopped }] }
+const teamOf = (sid) => { findSession(sid); return teamsState()[sid] || fail(404, 'not_found', 'Team not found') }
+function teamSetPhase(sid, phase) {
+  teamsState()[sid].phase = phase
+  const s = S.sessions.find((x) => x.id === sid)
+  if (s) s.team_phase = phase
+  bus('sessions', 'workspace')
+}
+// One turn with a fixed answer (startTurn's generic answer would ignore the assignment); `done` runs when it ends.
+function teamTurn(s, text, answer, ms, done) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model
+  s.state = 'running'; s.error = null; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'team' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  if (s.team_parent) { // a worker looks around first (the team panel shows its last actions)
+    const id = `toolu_${crypto.randomBytes(6).toString('hex')}`
+    addEvents(s, { type: 'assistant', text: 'Reading the files the mission touches.', at: now() },
+      { type: 'tool_use', id, name: 'Read', input: { file_path: `${ROOT}/${s.path}/CLAUDE.md` }, summary: 'Read CLAUDE.md', at: now() },
+      { type: 'tool_result', tool_use_id: id, text: '# Topic notes', is_error: false, at: now() })
+  }
+  later(s, ms, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: answer.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: answer, at: now() },
+      { type: 'result', ok: true, cost_usd: s.provider === 'codex' ? 0 : 0.06, duration_ms: ms, model, usage: { input: 2400, output: 380, cache_read: 16000, cache_write: 400 }, at: now() })
+    bus('sessions', 'workspace')
+    done()
+  })
+  bus('sessions', 'workspace')
+}
+function teamAdvance(sid) { // like teams.advance: once no worker runs, the coordinator synthesises
+  const team = teamsState()[sid]
+  if (!team || team.phase !== 'working') return
+  const workers = team.agents.map((a) => [a, S.sessions.find((x) => x.id === a.id)])
+  if (workers.some(([, w]) => w && w.state === 'running')) return
+  const reports = workers.map(([a, w]) => `${a.provider.toUpperCase()} — ${a.role}\n${a.stopped ? '[Stopped by the user; no final report.]' : w ? w.last_text || '[No final report.]' : '[Agent failed or its session is missing.]'}`)
+  const coordinator = findSession(sid)
+  teamSetPhase(sid, 'synthesizing')
+  const name = (a) => (a.provider === 'codex' ? 'Codex' : 'Claude Code')
+  const points = { claude: '- **Plan** (Claude Code): flag the change, migrate the data, then remove the old path.', codex: '- **Risks** (Codex): the migration is one-way; keep a backup and a dry run first.' }
+  const stopped = team.agents.filter((a) => a.stopped)
+  const answer = `**Synthesis of the team's analyses**\n\n${team.agents.filter((a) => !a.stopped).map((a) => points[a.provider]).join('\n')}\n\n${stopped.length ? `Note: ${stopped.map(name).join(' and ')} was stopped before reporting, so its part is missing.\n\n` : ''}Recommendation: start with a dry run, then the flagged change.`
+  teamTurn(coordinator, 'The two independent team members have finished. Synthesize their findings for the user.\n\nReports:\n' + reports.join('\n\n---\n\n'), answer, 2600,
+    () => { if (team.phase === 'synthesizing') teamSetPhase(sid, 'completed') })
+}
+const teamSession = (path, title, provider) => {
+  const t = now()
+  const s = { id: uuid(), title, path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null,
+    context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null, provider, team_phase: null, team_parent: null, team_turn: false }
+  S.sessions.push(s); S.events[s.id] = []
+  return s
+}
+// a worker's last actions and the start of its report, from its events (teams._live_view)
+const TEAM_KINDS = { Read: 'read', Grep: 'search', Glob: 'search', Bash: 'run', Write: 'edit', Edit: 'edit', WebFetch: 'web', WebSearch: 'web' }
+const teamLive = (session) => {
+  const evs = S.events[session.id] || []
+  const turn = evs.slice(evs.map((e) => e.type).lastIndexOf('user') + 1)
+  const activity = turn.flatMap((e) => e.type === 'tool_use' ? [{ kind: TEAM_KINDS[e.name] || 'other', target: String(e.input?.file_path || e.input?.pattern || e.input?.command || e.summary || e.name).replace(`${ROOT}/${session.path}/`, '') }]
+    : e.type === 'assistant' ? [{ kind: 'say', target: e.text.split('\n')[0].slice(0, 120) }] : []).slice(-3)
+  const last = [...turn].reverse().find((e) => e.type === 'assistant')
+  return { activity, report: session.state !== 'running' && last ? last.text.slice(0, 600) : null }
+}
+const teamOut = (sid) => {
+  const team = teamOf(sid)
+  return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
+    const session = S.sessions.find((x) => x.id === a.id) || null
+    const state = a.stopped ? 'stopped' : session ? session.state : 'missing'
+    return { ...a, state, session, started_at: team.created, finished_at: session && state !== 'running' ? session.updated : null,
+      ...(session ? teamLive(session) : { activity: [], report: null }) }
+  }) }
+}
+R('POST', '/api/teams', ({ body }) => {
+  if (typeof body.path !== 'string') fail(422, 'invalid', 'path is required')
+  const goal = String(body.message || '').trim()
+  if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
+  const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
+  addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
+  const team = { phase: 'launching', goal, agents: [], created: now() }
+  teamsState()[parent.id] = team
+  for (const [provider, role] of TEAM_ROLES) {
+    const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
+    Object.assign(child, { team_parent: parent.id, team_turn: true })
+    team.agents.push({ id: child.id, provider, role, stopped: false })
+    teamTurn(child, `You are an independent member of a mixed Claude and Codex team. Analyze the mission from your assigned perspective and report your findings to the coordinator.\n\nYour assignment: ${role}\n\nMission:\n${goal}`,
+      TEAM_REPORTS[provider], provider === 'codex' ? 5200 : 3800, () => teamAdvance(parent.id))
+  }
+  teamSetPhase(parent.id, 'working')
+  return parent
+})
+R('GET', '/api/teams/:sid', ({ params }) => teamOut(params.sid))
+R('POST', '/api/teams/:sid/agents/:agent/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  const agent = team.agents.find((a) => a.id === params.agent) || fail(404, 'not_found', 'Team agent not found')
+  if (team.phase !== 'working') fail(409, 'not_running', 'The team is not working.')
+  const child = S.sessions.find((x) => x.id === agent.id)
+  if (!child || child.state !== 'running') fail(409, 'not_running', 'The agent is not running.')
+  agent.stopped = true
+  clearTimers(child); child.state = 'idle'; child.updated = now()
+  addEvents(child, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  teamAdvance(params.sid) // the other worker may already be done
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+R('POST', '/api/teams/:sid/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  teamSetPhase(params.sid, 'stopped')
+  for (const s of [...team.agents.map((a) => S.sessions.find((x) => x.id === a.id)), S.sessions.find((x) => x.id === params.sid)]) {
+    if (!s || s.state !== 'running') continue
+    const agent = team.agents.find((a) => a.id === s.id)
+    if (agent) agent.stopped = true
+    clearTimers(s); s.state = 'idle'; s.updated = now()
+    addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  }
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+
+/* ---- discussion presets (server/maxxing/sessions/presets.py): saved roles of Claude Code + Codex conversations */
+const presetsState = () => (S.discussionPresets ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? [
+  { id: uuid(), name: 'Builder and reviewer', claude_role: 'Propose the change and write it step by step.', codex_role: 'Review each step: risks, missing tests, simpler options.' },
+  { id: uuid(), name: 'Two copywriters', claude_role: 'Write the first draft in a warm, plain tone.', codex_role: 'Tighten the draft: shorter sentences, no jargon, keep the facts.' },
+] : [])
+R('GET', '/api/discussion-presets', () => presetsState())
+R('POST', '/api/discussion-presets', ({ body }) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name || body.name.length > 80 || String(body.claude_role || '').length > 2000 || String(body.codex_role || '').length > 2000) fail(422, 'invalid', 'name: 1-80 characters, roles: 2000 at most')
+  if (presetsState().length >= 100) fail(400, 'bad_request', 'A maximum of 100 configurations can be saved.')
+  const preset = { id: uuid(), name, claude_role: String(body.claude_role || '').trim(), codex_role: String(body.codex_role || '').trim() }
+  S.discussionPresets.push(preset)
+  return preset
+})
+R('DELETE', '/api/discussion-presets/:id', ({ params }) => {
+  if (!presetsState().some((p) => p.id === params.id)) fail(404, 'not_found', 'Configuration not found')
+  S.discussionPresets = S.discussionPresets.filter((p) => p.id !== params.id)
+  return { ok: true }
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
   busClients.add(res)
   req.on('close', () => busClients.delete(res))
   return RAW
+})
+
+/* ---- space labels (server/maxxing/api/space_labels.py): the owner's personal / agents / shared marks on folders and
+   files, keyed by absolute path; `unclassified` removes the mark */
+const labelsState = () => (S.spaceLabels ||= S.scenario === 'ready' || S.scenario === 'maxxing'
+  ? { [`${ROOT}/projects/personal`]: 'personal', [`${ROOT}/projects/ops`]: 'agents' } : {})
+R('GET', '/api/space-labels', () => Object.fromEntries(Object.entries(labelsState()).filter(([p]) => S.fs.has(p))))
+R('PUT', '/api/space-labels', ({ body }) => {
+  if (!['personal', 'agents', 'shared', 'unclassified'].includes(body.label)) fail(422, 'invalid', 'label must be personal, agents, shared or unclassified')
+  const p = typeof body.path === 'string' && body.path.startsWith('/') ? path.posix.normalize(body.path).replace(/(.)\/$/, '$1') : fail(400, 'bad_path', 'An absolute path is required.')
+  const files = S.settings.files_root || ROOT
+  if (![ROOT, files].some((r) => p === r || p.startsWith(r + '/'))) fail(403, 'forbidden', 'Path is outside the workspace and files root.')
+  if (!S.fs.has(p)) fail(404, 'not_found', 'Item not found.')
+  if (body.label === 'unclassified') delete labelsState()[p]; else labelsState()[p] = body.label
+  bus('space-labels')
+  return { path: p, label: body.label }
 })
 
 /* ---- files */
@@ -1651,6 +1857,51 @@ R('GET', '/api/files/search', ({ q }) => {
   return out.sort((a, b) => a.path.length - b.path.length).slice(0, 50)
 })
 
+/* ---- trash (server/maxxing/trash.py): deleted files, folders, topics, projects and sessions, kept 30 days. The mock's
+   own delete routes still remove at once; the ready scenarios seed a few items that restore into the mock state. */
+function trashState() {
+  if (S.trash) return S.trash
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  const item = (kind, name, original, ago, size, extra = {}) => ({ id: crypto.randomBytes(8).toString('hex'), kind, name, original, at: t - ago, size, sessions: 0, restorable: true, ...extra })
+  S.trash = ready ? [
+    item('file', 'old-draft.md', 'projects/acme/topics/blog/drafts/old-draft.md', 2 * HOUR, 2140),
+    item('session', 'Try a dark hero image', topicPath('acme', 'website'), 26 * HOUR, 48200),
+    item('topic', 'newsletter', 'projects/acme/topics/newsletter', 3 * DAY, 18400, { sessions: 2 }),
+    item('previous_versions', 'Backup: previous versions', '.backup/previous', 9 * DAY, 3200000, { restorable: false }),
+  ] : []
+  return S.trash
+}
+const trashFind = (id) => trashState().find((x) => x.id === id) || fail(404, 'not_found', 'Not in the trash')
+R('GET', '/api/trash', () => ({ items: [...trashState()].sort((a, b) => b.at - a.at), keep_days: 30 }))
+R('POST', '/api/trash/:id/restore', ({ params }) => {
+  const it = trashFind(params.id)
+  if (!it.restorable) fail(409, 'not_restorable', 'Previous versions are restored from the backup, not from the trash')
+  let to = it.original, sessions = 0
+  if (it.kind === 'file' || it.kind === 'folder') {
+    if (S.fs.has(`${ROOT}/${to}`)) to = to.replace(/(\.[^./]+)?$/, ' (restored)$1')
+    if (it.kind === 'file') fsAdd(S, to, '# Old draft\n\nRestored from the trash.\n', now(), 'text/markdown'); else fsMkdirp(S, `${ROOT}/${to}`)
+  } else if (it.kind === 'topic' || it.kind === 'project') {
+    const [, project, , topic] = to.split('/')
+    const p = S.projects.find((x) => x.name === project)
+    if (it.kind === 'topic' && p) {
+      let name = topic, n = 0
+      while (p.topics.some((x) => x.name === name)) name = `${topic}-restored${++n > 1 ? '-' + n : ''}` // -restored, -restored-2…
+      p.topics.push({ name, description: '' }); to = topicPath(project, name); fsMkdirp(S, `${ROOT}/${to}`)
+      sessions = it.sessions
+    }
+  } else if (it.kind === 'session') {
+    const s = { id: uuid(), title: it.name, path: S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === to)) ? to : '', state: 'idle', queue: 0,
+      created: it.at - HOUR, updated: it.at, turns: 2, cost_usd: 0.18, model: '', real_model: S.claude.default_model, context_tokens: 24000, context_window: 1000000,
+      archived: false, notify: false, source: 'web', unread: false, last_text: 'The dark hero reads well on desktop; on mobile the text needs a stronger shadow.', error: null }
+    S.sessions.push(s); S.events[s.id] = []; to = s.path; sessions = 1
+  }
+  S.trash = S.trash.filter((x) => x !== it)
+  bus('workspace', 'sessions')
+  return { ok: true, kind: it.kind, restored_to: to, sessions }
+})
+R('DELETE', '/api/trash/:id', ({ params }) => { const it = trashFind(params.id); S.trash = S.trash.filter((x) => x !== it); return { ok: true } })
+R('DELETE', '/api/trash', () => { const deleted = trashState().length; S.trash = []; return { ok: true, deleted } })
+
 /* ---- tasks */
 const TASK_FIELDS = ['title', 'notes', 'status', 'priority', 'due', 'project_id', 'topic_path', 'labels', 'order']
 function applyTask(tk, body) {
@@ -1719,6 +1970,73 @@ R('DELETE', '/api/tasks/:id', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- voice (server/maxxing/voice.py): speech-to-text on the server (local faster-whisper or Groq / OpenAI keys). The
+   mock never decodes audio: every recording gives the same sentence. An install takes about 6 s. */
+const VOICE_MODELS = [['tiny', 75], ['base', 142], ['small', 466], ['medium', 1530]]
+function voiceState() {
+  if (S.voice) return S.voice
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.voice = { settings: { engine: ready ? 'local' : 'off', model: 'small', language: 'auto', auto_send: false, direct: true }, installed: ready,
+    present: new Set(ready ? ['small'] : []), install: { state: 'idle', step: null, progress: null, model: null, message: '', error: null, at: null } }
+  return S.voice
+}
+function voiceStatus() {
+  const v = voiceState(), st = v.settings, inst = v.install
+  if (inst.state === 'running') { // a background job: dependencies first (when missing), then the model download
+    const p = Math.min(1, (now() - inst.at) / 6)
+    if (p >= 1) { v.installed = true; v.present.add(inst.model); Object.assign(inst, { state: 'done', step: null, progress: 1, message: `Model ${inst.model} ready` }) }
+    else Object.assign(inst, v.installed || p > 0.4 ? { step: 'model', progress: p, message: `Downloading ${inst.model}…` } : { step: 'deps', progress: null, message: 'Installing faster-whisper…' })
+  }
+  const keys = { groq: S.secrets.some((s) => s.name === 'GROQ_API_KEY'), openai: S.secrets.some((s) => s.name === 'OPENAI_API_KEY') }
+  const reason = st.engine === 'off' ? 'off' : st.engine === 'local' ? (v.installed && v.present.has(st.model) ? null : 'not_installed') : keys[st.engine] ? null : 'no_key'
+  return { settings: { ...st }, ready: !reason, reason, ffmpeg: true,
+    local: { installed: v.installed, loaded: v.installed && reason === null && st.engine === 'local' ? st.model : null, recommended: 'small', ram_gb: 7.8, cpus: 4,
+      models: VOICE_MODELS.map(([id, size_mb]) => ({ id, size_mb, present: v.present.has(id) })) },
+    keys, key_names: { groq: 'GROQ_API_KEY', openai: 'OPENAI_API_KEY' }, install: { ...inst }, max_seconds: 900 }
+}
+const formField = (raw, name) => { const m = raw.toString('latin1').match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`)); return m ? Buffer.from(m[1], 'latin1').toString('utf8') : null }
+R('GET', '/api/voice', () => voiceStatus())
+R('PUT', '/api/voice/settings', ({ body }) => {
+  const st = voiceState().settings
+  if (body.engine !== undefined && !['off', 'local', 'groq', 'openai'].includes(body.engine)) fail(422, 'invalid', 'engine')
+  if (body.model !== undefined && !VOICE_MODELS.some(([id]) => id === body.model)) fail(422, 'invalid', 'model')
+  if (body.language !== undefined && body.language !== 'auto' && !/^[a-z]{2,3}$/.test(body.language)) fail(400, 'invalid_language', 'Use auto or an ISO 639-1 code')
+  for (const k of ['engine', 'model', 'language', 'auto_send', 'direct']) if (body[k] !== undefined) st[k] = body[k]
+  return { ok: true, settings: { ...st } }
+})
+R('POST', '/api/voice/install', ({ body }) => {
+  const v = voiceState()
+  if (v.install.state === 'running') fail(409, 'busy', 'An install is already running')
+  const model = body.model || v.settings.model
+  if (!VOICE_MODELS.some(([id]) => id === model)) fail(422, 'invalid', 'model')
+  v.install = { state: 'running', step: v.installed ? 'model' : 'deps', progress: v.installed ? 0 : null, model, message: '', error: null, at: now() }
+  return voiceStatus().install
+})
+R('DELETE', '/api/voice/models/:model', ({ params }) => {
+  if (!VOICE_MODELS.some(([id]) => id === params.model)) fail(422, 'invalid', 'model')
+  voiceState().present.delete(params.model)
+  return { ok: true }
+})
+R('POST', '/api/voice/transcribe', async ({ req, rawBody }) => {
+  const status = voiceStatus()
+  if (status.reason === 'off') fail(409, 'voice_off', 'Voice messages are turned off in Settings')
+  if (status.reason) fail(503, status.reason, status.reason === 'no_key' ? 'No API key for this engine in Secrets' : 'The local engine is not installed')
+  const [audio] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!audio) fail(422, 'bad_audio', 'No audio file in the request')
+  if (audio.data.length < 200) fail(422, 'empty_audio', 'Nothing was heard in this recording')
+  if (audio.data.length > 100 * 1024 * 1024) fail(413, 'too_large', 'Recordings are limited to 100 MB')
+  await sleep(900)
+  const topic = formField(rawBody, 'path'), lang = formField(rawBody, 'language') || status.settings.language
+  let audio_path = null
+  if (topic) {
+    const d = new Date(), ext = path.extname(audio.name) || '.webm'
+    audio_path = `${ROOT}/${topic}/attachments/voice/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}/voice-${Math.floor(now())}${ext}`
+    fsAdd(S, audio_path, audio.data, now(), audio.mime)
+  }
+  return { text: 'Draft a short reply thanking the client for the feedback, and propose a call next Tuesday.', language: lang === 'auto' ? 'en' : lang,
+    duration_s: Math.max(1, Math.round(audio.data.length / 4000)), engine: status.settings.engine, model: status.settings.engine === 'local' ? status.settings.model : status.settings.engine === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-4o-transcribe', ms: 900, audio_path }
+})
+
 /* ---- crons */
 const CRON_FIELDS = ['name', 'schedule', 'kind', 'command', 'topic_path', 'prompt', 'model', 'reuse_session', 'enabled', 'notify', 'timeout_s']
 function applyCron(c, body) {
@@ -1782,6 +2100,73 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- MCP servers (server/maxxing/mcp.py): Claude Code's servers per folder, checked with `claude mcp list` in the
+   background (here: 1.5 s), and the OAuth login of a server that needs one (here: any redirect with ?code= works). */
+const mcpWhere = (rel) => {
+  if (!rel) return { rel: null, project: null, topic: null, exists: true, path: null }
+  const [, project, , topic] = rel.split('/')
+  return { rel, project: project || null, topic: topic || null, exists: S.fs.has(`${ROOT}/${rel}`), path: `${ROOT}/${rel}` }
+}
+function mcpState() {
+  if (S.mcp) return S.mcp
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing', t = now()
+  const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
+    literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
+  S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
+    server('user', null, 'github', { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
+    server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
+    server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
+  ] : [] }
+  return S.mcp
+}
+function mcpCheck() {
+  const st = mcpState()
+  if (st.checking) return
+  st.checking = true
+  const g = GEN
+  setTimeout(() => { if (g !== GEN) return; st.checking = false; st.checked_at = now(); for (const x of st.servers) { x.checked_at = now(); if (x.state === 'pending') x.state = 'connected' } bus('mcp') }, 1500)
+}
+R('GET', '/api/mcp', () => { const st = mcpState(); if (st.checked_at === null) mcpCheck(); return { servers: st.servers, checking: st.checking, checked_at: st.checked_at, config_file: '/root/.claude.json', auto: st.auto } })
+R('PUT', '/api/mcp/auto', ({ body }) => { const st = mcpState(); st.auto = !!body.enabled; if (st.auto) mcpCheck(); return { ok: true, enabled: st.auto } })
+R('POST', '/api/mcp/check', () => { mcpCheck(); return { checking: true } })
+R('POST', '/api/mcp', ({ body }) => {
+  const st = mcpState(), name = String(body.name || ''), where = String(body.where || '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) fail(400, 'bad_name', 'Letters, digits, dot, dash and underscore')
+  if (!['http', 'sse', 'stdio'].includes(body.type)) fail(400, 'bad_type', 'type: http, sse or stdio')
+  if (where && !where.startsWith('projects/')) fail(400, 'bad_where', 'where: empty (all folders) or a projects/… folder')
+  if (where && !S.fs.has(`${ROOT}/${where}`)) fail(404, 'folder_missing', 'This folder does not exist')
+  if (body.type === 'stdio' ? !String(body.command || '').trim() : !/^https?:\/\/\S+$/.test(String(body.url || ''))) fail(400, body.type === 'stdio' ? 'bad_command' : 'bad_url', body.type === 'stdio' ? 'A command is required' : 'An http(s) URL is required')
+  if (JSON.stringify(body).length > 32768) fail(400, 'too_long', 'A value is too long')
+  const scope = where ? 'local' : 'user', id = `${scope}|${where}|${name}`
+  if (st.servers.some((x) => x.id === id)) fail(409, 'exists', 'A server with this name already exists here')
+  const def = { type: body.type, ...(body.type === 'stdio' ? { command: body.command.trim(), args: body.args || [] } : { url: body.url }), ...(body.headers ? { headers: body.headers } : {}), ...(body.env ? { env: body.env } : {}) }
+  const keys = [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1])
+  st.servers.push({ id, name, scope, where: mcpWhere(where || null), ...def, literal_secret: false, keys, state: 'pending', detail: '', checked_at: null })
+  mcpCheck(); bus('mcp')
+  return { id, exposed: keys.filter((k) => S.secrets.some((s) => s.name === k && !s.expose)) }
+})
+R('DELETE', '/api/mcp', ({ q }) => { const st = mcpState(); st.servers = st.servers.filter((x) => x.id !== q.get('id')); bus('mcp'); return { ok: true } })
+R('POST', '/api/mcp/login', ({ body }) => {
+  const x = mcpState().servers.find((s) => s.id === body.id) || fail(404, 'folder_missing', 'Server not found')
+  if (x.type === 'stdio') fail(400, 'no_login_url', 'This server does not offer a login')
+  const login = crypto.randomBytes(8).toString('hex')
+  S.mcp.logins[login] = { id: x.id, at: now() }
+  return { login, url: `https://mcp.example.com/oauth/authorize?client_id=claude-code&state=${login}&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback` }
+})
+R('POST', '/api/mcp/login/:login', async ({ params, body }) => {
+  const l = mcpState().logins[params.login] || fail(404, 'login_expired', 'This login expired: start it again')
+  if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(body.redirect || ''))) fail(400, 'bad_redirect', 'Paste the whole address of the page that failed to open (http://localhost:…/callback?code=…)')
+  await sleep(800)
+  if (!/[?&]code=/.test(body.redirect)) fail(400, 'login_failed', 'The address has no authorization code')
+  delete S.mcp.logins[params.login]
+  const x = S.mcp.servers.find((s) => s.id === l.id)
+  if (x) Object.assign(x, { state: 'connected', detail: '', checked_at: now() })
+  bus('mcp')
+  return { ok: true, message: `${x ? x.name : 'Server'}: authenticated` }
+})
+R('DELETE', '/api/mcp/login/:login', ({ params }) => { delete mcpState().logins[params.login]; return { ok: true } })
+
 /* ---- telegram */
 function tgStatus() {
   const tg = S.telegram
@@ -1841,6 +2226,57 @@ R('DELETE', '/api/telegram', () => {
   return { ok: true }
 })
 
+/* ---- starter packs (server/maxxing/packs.py): read from the repository's templates/packs/<id>/pack.json, so the mock
+   offers the real catalog. Installing adds the project (a free name when taken), its topics and its jobs, disabled. */
+const PACKS_DIR = path.resolve(__dirname, '../../templates/packs')
+function packList() {
+  const lang = S.settings.language === 'fr' ? 'fr' : 'en', txt = (v) => (typeof v === 'object' && v ? v[lang] || v.en : v || '')
+  let ids = []
+  try { ids = fs.readdirSync(PACKS_DIR).filter((d) => fs.existsSync(path.join(PACKS_DIR, d, 'pack.json'))).sort() } catch {}
+  const packs = ids.map((id) => {
+    const d = JSON.parse(fs.readFileSync(path.join(PACKS_DIR, id, 'pack.json'), 'utf8'))
+    const copies = S.projects.filter((p) => p.name === d.project || p.name.startsWith(d.project + '-'))
+    return { id: d.id, project: d.project, emoji: d.emoji || '', icon: d.icon || 'package', title: txt(d.title), description: txt(d.description),
+      topics: d.topics || [], crons: (d.crons || []).map((c) => c.name), installed: copies.length > 0, partial: false, project_exists: S.projects.some((p) => p.name === d.project), basics: false, def: d }
+  })
+  const missing = ['general', 'system'].filter((n) => !S.projects.some((p) => p.name === n))
+  packs.unshift({ id: 'basics', project: 'general, system', emoji: '', icon: 'house', title: lang === 'fr' ? 'Projets de base' : 'Default projects',
+    description: lang === 'fr' ? 'general/inbox et system (tutoriel, aide, Harness) : remet ceux que vous avez supprimés, sans rien écraser.' : 'general/inbox and system (tutorial, help, Harness): puts back the ones you deleted, never overwrites.',
+    topics: ['general/inbox', 'system/help', 'system/harness', 'system/tutorial'], crons: [], installed: missing.length === 0, partial: missing.length === 1, project_exists: missing.length < 2, basics: true })
+  return packs
+}
+const packOut = ({ def, ...p }) => p
+R('GET', '/api/packs', () => ({ packs: packList().map(packOut) }))
+R('POST', '/api/packs/:id/install', async ({ params }) => {
+  const pack = packList().find((p) => p.id === params.id) || fail(404, 'unknown_pack', 'Unknown pack')
+  await sleep(700)
+  let project = '', created = 0
+  const jobs = []
+  if (pack.basics) {
+    for (const [name, topics] of [['general', ['inbox']], ['system', ['help', 'harness', 'tutorial']]]) {
+      let p = S.projects.find((x) => x.name === name)
+      if (!p) { p = { name, description: '', topics: [] }; S.projects.push(p); fsAdd(S, `${projPath(name)}/CLAUDE.md`, `# Project ${name}\n\n@memory.md\n`, now()); created += 1 }
+      for (const t of topics) if (!p.topics.some((x) => x.name === t)) { p.topics.push({ name: t, description: '' }); fsAdd(S, `${topicPath(name, t)}/CLAUDE.md`, `# Topic ${t}\n`, now()); created += 1 }
+    }
+  } else {
+    project = pack.project
+    for (let n = 2; S.projects.some((p) => p.name === project); n++) project = `${pack.project}-${n}`
+    S.projects.push({ name: project, description: pack.description, topics: pack.topics.map((name) => ({ name, description: '' })) })
+    fsAdd(S, `${projPath(project)}/CLAUDE.md`, `# Project ${project}\n\n> ${pack.description}\n\n@memory.md\n`, now())
+    fsAdd(S, `${projPath(project)}/memory.md`, `# ${project} — memory\n`, now())
+    for (const t of pack.topics) fsAdd(S, `${topicPath(project, t)}/CLAUDE.md`, `# Topic ${t}\n`, now())
+    created = 2 + pack.topics.length
+    for (const c of pack.def.crons || []) {
+      const name = project === pack.project ? c.name : `${c.name} (${project})`
+      S.crons.push({ id: rid('c'), name, schedule: c.schedule, kind: 'claude', command: '', topic_path: topicPath(project, c.topic), prompt: c.prompt, model: '',
+        reuse_session: false, enabled: false, notify: c.notify || 'failure', timeout_s: 600, last_run: null })
+      jobs.push(name)
+    }
+  }
+  bus('workspace', 'crons')
+  return { ok: true, pack: packOut(packList().find((p) => p.id === pack.id)), project, created_files: created, jobs }
+})
+
 /* ---- backup */
 function backupStatus() {
   const b = S.backup
@@ -1880,6 +2316,167 @@ R('DELETE', '/api/backup', () => {
   Object.assign(S.backup, { configured: false, repo: null, private: null })
   bus('backup', 'health')
   return { ok: true }
+})
+
+/* ---- complete instance backup (server/maxxing/instance_backup.py): encrypted exports kept on the server, a verified
+   preview of an uploaded archive, restore into a separate copy whose services and integrations start paused */
+const IB_DESCRIPTION = { version: VERSION, files: 1834, bytes: 412 * 1024 * 1024, external_links: ['workspace/projects/acme/topics/website/node_modules'],
+  includes: ['settings_and_credentials', 'sessions', 'attachments', 'workspace', 'files', 'space_labels'],
+  excludes: ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets'], excluded_roots: {} }
+const ibId = () => crypto.randomBytes(16).toString('hex')
+function ibState() {
+  if (S.instanceBackup) return S.instanceBackup
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+  return S.instanceBackup
+}
+const ibRoots = () => {
+  const files = S.settings.files_root || ROOT
+  const broad = files === '/' || files === '/root' || /^\/home\/[^/]+\/?$/.test(files) // the filesystem root or a home folder
+  return { state: { source: '/var/lib/claude-maxxing', archive: 'state' }, workspace: { source: ROOT, archive: 'workspace' },
+    files: broad ? { source: files, archive: null, excluded: 'broad_root' } : { source: files, archive: 'files' } }
+}
+const ibDescription = () => {
+  const roots = ibRoots(), left = Object.entries(roots).filter(([, r]) => !r.archive)
+  return { ...clone(IB_DESCRIPTION), includes: IB_DESCRIPTION.includes.filter((x) => x !== 'files' || roots.files.archive),
+    excluded_roots: Object.fromEntries(left.map(([name, r]) => [name, { source: r.source, reason: r.excluded }])) }
+}
+const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
+const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+R('GET', '/api/backup/instance', () => {
+  const st = ibState()
+  return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+})
+R('POST', '/api/backup/instance/export', async ({ body }) => {
+  ibHeld(); ibPassphrase(body.passphrase)
+  if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
+  await sleep(2500)
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  ibState().exports.unshift(e)
+  bus('backup')
+  return e
+})
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
+  ibHeld()
+  const st = ibState()
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  st.exports = st.exports.filter((e) => e.id !== params.id)
+  return { ok: true, id: params.id }
+})
+R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  // A short stand-in for the real file: the format-2 header (magic, version, scrypt 2^15/8/1, salt, nonce) and random bytes.
+  const header = Buffer.concat([Buffer.from('PILOTBK\n'), Buffer.from([2, 1, 15, 0, 8, 0, 1]), crypto.randomBytes(28)])
+  const data = Buffer.concat([header, crypto.randomBytes(4096)])
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': data.length, 'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="pilot-${params.id.slice(0, 12)}.pilotbackup"` })
+  res.end(data)
+  return RAW
+})
+R('POST', '/api/backup/instance/preview', async ({ req, rawBody }) => {
+  ibHeld()
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  const m = rawBody.toString('latin1').match(/name="passphrase"\r\n\r\n([^\r]*)\r\n/)
+  if (!file) fail(422, 'invalid', 'file is required')
+  ibPassphrase(m ? Buffer.from(m[1], 'latin1').toString('utf8') : null)
+  if (!file.data.subarray(0, 8).equals(Buffer.from('PILOTBK\n'))) fail(400, 'format', 'This is not a supported encrypted instance backup.')
+  await sleep(1500)
+  if (/wrong/i.test(m[1])) fail(400, 'decrypt_failed', 'The passphrase is incorrect or the backup has been modified.') // try it with a passphrase containing "wrong"
+  const p = { id: ibId(), sha256: crypto.randomBytes(32).toString('hex'), created: now() - 2 * DAY, ...ibDescription() }
+  ibState().previews[p.id] = { at: now(), ...p }
+  return p
+})
+R('POST', '/api/backup/instance/restore', async ({ body }) => {
+  ibHeld()
+  const p = ibState().previews[body.id]
+  if (!/^[a-f0-9]{32}$/.test(body.id || '') || !/^[a-f0-9]{64}$/.test(body.sha256 || '')) fail(400, 'preview_required', 'Inspect the archive before restoring it.')
+  if (!p || p.sha256 !== body.sha256 || now() - p.at > HOUR) fail(409, 'changed', 'The archive changed or its preview expired. Inspect it again.')
+  await sleep(2000)
+  delete S.instanceBackup.previews[body.id]
+  const destination = `/var/lib/pilot-restored-${crypto.randomBytes(6).toString('hex')}`, { at, ...preview } = p
+  return { destination, state: `${destination}/state`, background_services_paused: true, integrations_paused: true, ...preview,
+    launch_command: `MAXXING_STATE=${destination}/state MAXXING_CRONTAB_FILE=${destination}/crontab uv run --directory /opt/harness-pilot/server python -m uvicorn maxxing.app:create_app --factory --host 127.0.0.1 --port 8790` }
+})
+// A restored copy starts held (read-only) and with its integrations paused: the scenario has none, these only answer.
+R('POST', '/api/backup/instance/activate', () => {
+  const st = ibState()
+  if (!st.restore_hold) return { ok: true, already_active: true }
+  st.restore_hold = false; bus('backup', 'health')
+  return { ok: true }
+})
+R('POST', '/api/backup/instance/resume-integrations', () => {
+  const st = ibState()
+  if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
+  st.integrations_paused = false; bus('crons', 'backup', 'telegram')
+  return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
+/* ---- Git page (server/maxxing/gitview.py): clones under the files root and the repositories of the GitHub tokens.
+   Histories are generated from a seed per repository (stable across reads): a main line, a merged feature branch,
+   a branch still open, a tag. */
+const GIT_LOCAL = [
+  { path: `${ROOT}/projects/acme/topics/website/app`, name: 'app', branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, changed: 3, untracked: 1, remote: 'git@github.com:acme/website.git', github: 'acme/website', error: null, worktrees: 1 },
+  { path: `${ROOT}/projects/ops/topics/server/scripts`, name: 'scripts', branch: 'main', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, remote: null, github: null, error: null, worktrees: 0 },
+]
+const GIT_HUB = [
+  ['acme/website', 'Marketing site and shop front', 'TypeScript', false, 'admin', 12, 4],
+  ['acme/platform', 'Back office and APIs', 'Python', true, 'push', 3, 9],
+  ['acme/blog', 'Articles and newsletter archive', 'MDX', false, 'maintain', 41, 1],
+]
+const GIT_SUBJECTS = ['Fix the hero image on small screens', 'Add the pricing page', 'Bump dependencies', 'Write the FAQ', 'Speed up the build', 'Refactor the checkout steps',
+  'Add tests for the cart', 'Update the footer links', 'Translate the about page', 'Clean up unused styles', 'Log failed payments', 'Tidy the README']
+function gitHistory(id) {
+  const r = rng([...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)), t = now()
+  const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(r() * 16)]).join('')
+  const who = () => ['Alex Martin', 'Sam Lee', 'Codex'][Math.floor(r() * 3)]
+  const main = [], out = []
+  for (let i = 0; i < 40; i++) main.push({ sha: hex(), parents: [], refs: [], author: who(), date: t - (40 - i) * 9 * HOUR - Math.floor(r() * HOUR), subject: GIT_SUBJECTS[Math.floor(r() * GIT_SUBJECTS.length)] })
+  for (let i = 1; i < main.length; i++) main[i].parents = [main[i - 1].sha]
+  const feat = [] // merged into main at 30, branched at 24
+  for (let i = 0; i < 4; i++) feat.push({ sha: hex(), parents: [i ? feat[i - 1].sha : main[24].sha], refs: [], author: 'Codex', date: main[24].date + (i + 1) * 2 * HOUR, subject: ['Checkout: one page', 'Checkout: keep Apple Pay on top', 'Checkout: tests', 'Checkout: review fixes'][i] })
+  main[30].parents.push(feat[3].sha); main[30].subject = 'Merge branch feat/one-page-checkout'
+  const open = [{ sha: hex(), parents: [main[37].sha], refs: [{ name: 'feat/dark-mode', kind: 'branch' }], author: 'Sam Lee', date: main[37].date + HOUR, subject: 'Dark mode: first pass' }]
+  main[39].refs = [{ name: 'HEAD', kind: 'head' }, { name: 'main', kind: 'branch', current: true }, { name: 'origin/main', kind: 'remote' }]
+  main[20].refs = [{ name: 'v1.2.0', kind: 'tag' }]
+  out.push(...main, ...feat, ...open)
+  return out.sort((a, b) => b.date - a.date)
+}
+function gitRepo(id) {
+  if (id.startsWith('github:')) {
+    const g = GIT_HUB.find(([full]) => `github:${full}` === id) || fail(404, 'not_found', 'Repository not found')
+    return { kind: 'github', id, name: g[0].split('/')[1], branch: 'main', github: g[0], url: `https://github.com/${g[0]}`, private: g[3], permission: g[4], description: g[1], branches: 13, branches_shown: 13 }
+  }
+  const l = GIT_LOCAL.find((x) => x.path === id) || fail(404, 'not_found', 'Not a repository')
+  return { kind: 'local', id, ...l }
+}
+R('GET', '/api/git/repos', () => ({ root: S.settings.files_root || ROOT,
+  local: GIT_LOCAL.map((l) => { const h = gitHistory(l.path)[0]; return { ...l, last_commit: h.date, last_subject: h.subject } }),
+  github: { connected: true, login: 'acme-dev', error: null, errors: [], accounts: [{ login: 'acme-dev', name: 'Acme', avatar: null, keys: ['GITHUB_TOKEN'], repos: GIT_HUB.length }],
+    repos: GIT_HUB.map(([full, description, language, priv, permission, stars, issues]) => ({ full_name: full, owner: full.split('/')[0], name: full.split('/')[1], description, private: priv, fork: false,
+      archived: false, permission, default_branch: 'main', pushed_at: new Date((now() - stars * HOUR) * 1000).toISOString(), url: `https://github.com/${full}`, language, stars, open_issues: issues,
+      keys: ['GITHUB_TOKEN'], accounts: ['acme-dev'], local_paths: GIT_LOCAL.filter((l) => l.github === full).map((l) => l.path) })) } }))
+R('GET', '/api/git/graph', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), limit = Math.min(1000, Math.max(1, Number(q.get('limit')) || 200))
+  const all = gitHistory(repo.id)
+  return { repo, commits: all.slice(0, limit), truncated: all.length > limit }
+})
+R('GET', '/api/git/commit', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), c = gitHistory(repo.id).find((x) => x.sha === q.get('sha')) || fail(404, 'no_commit', 'No such commit')
+  const r = rng(parseInt(c.sha.slice(0, 8), 16)), pool = ['src/pages/checkout.tsx', 'src/styles/hero.css', 'README.md', 'tests/cart.test.ts', 'package.json', 'src/i18n/en.ts', 'src/components/Footer.tsx']
+  const files = pool.filter(() => r() < 0.45).map((p) => ({ path: p, additions: Math.floor(r() * 60) + 1, deletions: Math.floor(r() * 25) }))
+  if (!files.length) files.push({ path: pool[0], additions: 4, deletions: 1 })
+  return { sha: c.sha, parents: c.parents, author: c.author, email: `${c.author.split(' ')[0].toLowerCase()}@example.com`, date: c.date,
+    message: `${c.subject}\n\nKeeps the change small; tested on a phone and a desktop browser.`, files, files_total: files.length, ...(repo.github ? { url: `https://github.com/${repo.github}/commit/${c.sha}` } : {}) }
+})
+R('GET', '/api/git/pulls', ({ q }) => {
+  const id = q.get('repo') || ''
+  if (!id.startsWith('github:')) fail(400, 'not_github', 'Pull requests come from GitHub repositories')
+  const repo = gitRepo(id)
+  return [[18, 'Dark mode: first pass', 'sam-lee', 'feat/dark-mode', false], [17, 'Translate the about page', 'acme-dev', 'i18n/about', true]].map(([number, title, author, head, draft], i) => ({
+    number, title, author, head, base: 'main', draft, url: `https://github.com/${repo.github}/pull/${number}`, updated: now() - (i + 1) * 5 * HOUR }))
 })
 
 /* ---- settings & secrets */
@@ -2013,6 +2610,238 @@ R('DELETE', '/api/secrets/:name', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- agent engines and resident companions (server/maxxing/companions.py: persistent roles, runs in a disposable
+   copy of the source whose proposal the owner reviews, approves or rejects, then may publish as a draft PR) */
+const AGENT_PROVIDERS = [
+  { id: 'claude', name: 'Claude Code', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+  { id: 'codex', name: 'Codex', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+]
+R('GET', '/api/agent-providers', () => AGENT_PROVIDERS)
+
+const COMPANION_ROLES = [
+  { id: 'observer', name: 'Platform observer', provider: 'codex', role: 'Inspect the platform, identify a small useful improvement, implement it in the isolated copy, run relevant tests and explain the change, evidence and limitations.' },
+  { id: 'security', name: 'Security and dependencies', provider: 'codex', role: 'Inspect the platform for security weaknesses and outdated or vulnerable dependencies. Use available evidence, prepare a narrowly scoped fix or dependency update, and run relevant tests. Report when an advisory database, network access, or further review is needed.' },
+  { id: 'architect', name: 'Application architect and router', provider: 'codex', role: 'Understand how the platform components and features connect. Use the source import map, documentation and code to identify relevant modules and guide other companions with precise file paths, dependencies and verification steps.' },
+  { id: 'reverse-engineer', name: 'Reverse engineering investigator', provider: 'codex', role: 'Investigate source, application behavior and dependencies. Keep evidence and internal maps, distinguish observations from hypotheses, and guide tested improvements.' },
+]
+// What every mock run proposes (a real run's diff comes from git in its copy): a tracked change and one new file.
+const COMPANION_PATCH = `diff --git a/server/maxxing/api/files.py b/server/maxxing/api/files.py
+index 3f2a1c4..8b9d0e7 100644
+--- a/server/maxxing/api/files.py
++++ b/server/maxxing/api/files.py
+@@ -212,5 +212,7 @@ async def rename(body: RenameIn):
+     src = _resolve(body.path)
++    if '/' in body.name or body.name in ('.', '..'):
++        raise HTTPException(400, {'error': 'bad_name', 'message': 'A name cannot contain a slash.'})
+     dst = src.with_name(body.name)
+     if dst.exists():
+         raise HTTPException(409, {'error': 'exists', 'message': 'A file with this name already exists.'})
+     src.rename(dst)
+`
+const COMPANION_NEW = [{ path: 'server/tests/test_rename_names.py', executable: false,
+  content: "def test_a_name_with_a_slash_is_refused(client, mx):\n    r = client.post('/api/files/rename', json={'path': str(mx['files'] / 'a.txt'), 'name': 'x/y'})\n    assert r.status_code == 400 and r.json()['error'] == 'bad_name'\n" }]
+const COMPANION_REPORT = 'Renaming a file to a name with a slash moved it into another folder. The rename route now refuses such names (`400 bad_name`), with a test.\n\n**Verified:** `uv run pytest tests/test_rename_names.py tests/test_files.py` (all passed).\n\n**Not verified:** the Files page message for this error.'
+const companionFingerprint = () => {
+  const h = crypto.createHash('sha256').update(COMPANION_PATCH)
+  for (const f of COMPANION_NEW) h.update(`${f.path}\0${f.content}\0${f.executable ? 'x' : '-'}`)
+  return h.digest('hex')
+}
+function companionsState() {
+  if (S.companions) return S.companions
+  S.companions = { roles: clone(COMPANION_ROLES), runs: {} } // runs: session id -> { base, decision, pull_request }
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') { // one finished run waiting for the owner's review
+    const t = now(), path = topicPath('ops', 'server')
+    const s = { id: uuid(), title: 'Platform observer — platform review', path, state: 'idle', queue: 0, created: t - 50 * MIN, updated: t - 38 * MIN,
+      turns: 1, cost_usd: 0, model: '', real_model: 'gpt-5.5-codex', context_tokens: 41000, context_window: 400000, archived: false, notify: false,
+      source: 'web', unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200), error: null, provider: 'codex',
+      companion: { id: 'observer', name: 'Platform observer', decision: null } }
+    S.sessions.push(s)
+    S.events[s.id] = [
+      { type: 'user', text: 'You are Platform observer, a resident companion. Additional mission: Find a useful, small improvement.', attachments: [], at: s.created, source: 'companion' },
+      { type: 'init', model: 'gpt-5.5-codex', cwd: `${ROOT}/${path}`, at: s.created + 1 },
+      { type: 'assistant', text: COMPANION_REPORT, at: s.updated },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 690000, model: 'gpt-5.5-codex', usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: s.updated },
+    ]
+    S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  }
+  return S.companions
+}
+// A run's turn: the agent edits its copy, runs the tests and reports (startTurn's generic answer would echo the role).
+function companionTurn(s, text) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model, tu = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  s.state = 'running'; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'companion' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, 1200, () => addEvents(s, { type: 'tool_use', id: tu, name: 'Bash', input: { command: 'uv run pytest tests/test_rename_names.py tests/test_files.py' }, summary: 'Bash: uv run pytest', at: now() }))
+  later(s, 2600, () => addEvents(s, { type: 'tool_result', tool_use_id: tu, text: '38 passed in 4.21s', is_error: false, at: now() }))
+  later(s, 3400, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: COMPANION_REPORT, at: now() },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 3400, model, usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: now() })
+    bus('companions', 'sessions', 'workspace')
+  })
+  bus('sessions', 'workspace')
+}
+const companionRun = (sid) => {
+  const s = findSession(sid), run = companionsState().runs[sid]
+  if (!run) fail(404, 'not_found', 'Companion run not found.')
+  return { s, run }
+}
+const companionReview = (sid) => {
+  const { s, run } = companionRun(sid)
+  const done = s.state !== 'running' && s.turns > 0 // the copy is unchanged until the agent worked in it
+  return { target: 'acme/platform', session: s, fingerprint: done ? companionFingerprint() : crypto.createHash('sha256').digest('hex'),
+    patch: done ? COMPANION_PATCH : '', untracked: done ? clone(COMPANION_NEW) : [], has_changes: done, base: run.base,
+    decision: run.decision, pull_request: run.pull_request }
+}
+function companionSave(body, ident) {
+  const name = String(body.name || '').trim(), role = String(body.role || '').trim()
+  if (!name || !role || name.length > 80 || role.length > 4000) fail(400, 'bad_role', 'A name and role are required.')
+  const st = companionsState()
+  const previous = ident ? st.roles.find((p) => p.id === ident) || fail(404, 'not_found', 'Companion not found.') : null
+  if (!ident && st.roles.length >= 99 + COMPANION_ROLES.length) fail(400, 'limit', 'Maximum number of companions reached.')
+  const provider = body.provider || previous?.provider || 'codex'
+  if (!AGENT_PROVIDERS.some((p) => p.id === provider && p.capabilities.includes('source-edit'))) fail(400, 'bad_provider', 'Choose an available coding agent for this companion.')
+  const item = { id: ident || uuid(), name, role, provider }
+  if (previous) Object.assign(previous, item); else st.roles.push(item)
+  bus('companions')
+  return item
+}
+R('GET', '/api/companions', () => {
+  const st = companionsState()
+  return { companions: st.roles, runs: S.sessions.filter((s) => st.runs[s.id]).sort((a, b) => b.created - a.created).slice(0, 100) }
+})
+R('POST', '/api/companions', ({ body }) => companionSave(body, null))
+R('PUT', '/api/companions/:id', ({ params, body }) => companionSave(body, params.id))
+R('POST', '/api/companions/:id/runs', ({ params, body }) => {
+  const p = companionsState().roles.find((x) => x.id === params.id) || fail(404, 'not_found', 'Companion not found.')
+  if (!S.projects.some((pr) => pr.topics.some((tp) => topicPath(pr.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const mission = String(body.mission || '')
+  if (mission.length > 6000) fail(400, 'bad_mission', 'Mission is too long.')
+  const t = now()
+  const s = { id: uuid(), title: `${p.name} — platform review`, path: body.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0,
+    model: '', real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '',
+    error: null, provider: p.provider, companion: { id: p.id, name: p.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  companionTurn(s, `You are ${p.name}, a resident companion. Your persistent role:\n${p.role}\n\nAdditional mission: ${mission.trim() || 'Find a useful, small improvement.'}`)
+  bus('companions', 'sessions', 'workspace')
+  return s
+})
+R('GET', '/api/companions/runs/:sid/review', ({ params }) => companionReview(params.sid))
+R('POST', '/api/companions/runs/:sid/decision', ({ params, body }) => {
+  if (!['approved', 'rejected'].includes(body.decision)) fail(400, 'bad_decision', 'Invalid decision.')
+  const { s, run } = companionRun(params.sid)
+  if (s.state === 'running') fail(409, 'running', 'Wait until the experiment stops.')
+  const review = companionReview(params.sid)
+  if (!review.has_changes || review.fingerprint !== body.fingerprint) fail(409, 'changed', 'The proposal changed; review it again.')
+  run.decision = { value: body.decision, fingerprint: body.fingerprint, at: now() }
+  s.companion.decision = run.decision
+  bus('companions', 'sessions')
+  return companionReview(params.sid)
+})
+R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => {
+  const { run } = companionRun(params.sid)
+  const title = String(body.title || '').trim()
+  if (!title || title.length > 180 || String(body.body || '').length > 12000) fail(400, 'bad_request', 'Invalid pull request title or body.')
+  if (run.decision?.value !== 'approved' || run.decision.fingerprint !== body.fingerprint || body.fingerprint !== companionFingerprint()) fail(409, 'not_approved', 'Approve the current finished proposal first.')
+  await sleep(1200)
+  run.pull_request ||= { url: `https://github.com/acme/platform/pull/${140 + Object.keys(S.companions.runs).length}`, fingerprint: body.fingerprint }
+  bus('companions')
+  return { url: run.pull_request.url, target: 'acme/platform' }
+})
+
+/* ---- Infra page (server/maxxing/infra): servers, sites, databases, buckets, workers and domains of this server, a
+   registered one and Cloudflare / Hostinger. infra-resources.json is the output of the real builder (infra/build.py)
+   on the fixture of server/tests/test_infra.py; the owner's annotations, servers and domains live in the mock state. */
+const INFRA_RESOURCES = JSON.parse(fs.readFileSync(path.join(__dirname, 'infra-resources.json'), 'utf8'))
+function infraState() {
+  if (S.infra) return S.infra
+  S.infra = { refreshing: false, generated_at: now() - 7 * MIN, registry: {}, domains: [], servers: [{ name: 'far', label: 'Far VPS', host: '198.51.100.9', user: 'root', port: 22, note: '' }] }
+  return S.infra
+}
+function infraView() {
+  const st = infraState(), t = now()
+  const remote = new Set(INFRA_RESOURCES.filter((r) => r.kind === 'server' && r.location !== 'local').map((r) => r.location)) // registered servers of the fixture
+  const resources = INFRA_RESOURCES.filter((r) => !remote.has(r.location) || st.servers.some((s) => s.name === r.location))
+    .concat(st.domains.map((name) => ({ id: `domain:${name}`, kind: 'domain', name, location: 'other', provider: 'rdap', urls: [`https://${name}/`], status: 'ok', status_detail: '',
+      details: { name, registrar: 'Example Registrar', expires: t + 200 * DAY, auto_renew: true, dns: [{ type: 'A', name, content: '203.0.113.5' }], name_servers: ['ns1.example.net', 'ns2.example.net'], sources: ['rdap', 'dns'] },
+      links: [], project: null, note: '', hidden: false, declared: true, missing: false })))
+    .map((r) => {
+      const out = { ...clone(r), ...(st.registry[r.id] || {}) }
+      if (r.id === 'domain:example.org') out.details.expires = t + 20 * DAY // expiring soon: the warn state
+      if (r.kind === 'server' && r.location !== 'local') { const s = st.servers.find((x) => x.name === r.location); if (s) out.name = s.label || s.name }
+      return out
+    })
+  return { enabled: true, refreshing: st.refreshing, error: null, refresh_min: 15, generated_at: st.generated_at, took_ms: 2840, harness_host: 'ui.example.com',
+    sources: { servers: Object.fromEntries([['local', { ok: true, error: null, took_ms: 410 }], ...st.servers.map((s) => [s.name, { ok: true, error: null, took_ms: 1220 }])]),
+      cloudflare: { connected: true, key: 'CLOUDFLARE_API_TOKEN', error: null, sections: { zones: 'ok', workers: 'ok', worker_domains: 'ok', pages: 'ok', r2: 'ok', d1: 'ok', registrar: 'missing_permission', dns: 'ok' } },
+      hostinger: { connected: true, key: 'HOSTINGER_API_TOKEN', sections: { domains: 'ok', vps: 'ok' } },
+      ...Object.fromEntries(['vercel', 'netlify', 'supabase', 'github'].map((p) => [p, { connected: p === 'github', key: p === 'github' ? 'GITHUB_TOKEN' : null, error: null, label: p[0].toUpperCase() + p.slice(1),
+        beta: p !== 'github', token_url: `https://${p}.example.com/account/tokens`, keys: [`${p.toUpperCase()}_TOKEN`], sections: p === 'github' ? { sites: 'ok' } : {} }])) },
+    resources, servers: clone(st.servers) }
+}
+R('GET', '/api/infra', () => infraView())
+R('POST', '/api/infra/refresh', () => {
+  const st = infraState()
+  if (st.refreshing) return { started: false, refreshing: true }
+  st.refreshing = true
+  const g = GEN
+  setTimeout(() => { if (g === GEN) { st.refreshing = false; st.generated_at = now(); bus('infra') } }, 2500).unref()
+  bus('infra')
+  return { started: true, refreshing: true }
+})
+R('POST', '/api/infra/annotate', ({ body }) => {
+  const st = infraState(), cur = { ...(st.registry[body.id] || {}) }
+  if (body.project !== undefined) cur.project = String(body.project || '').trim().replace(/^\/+|\/+$/g, '') || null
+  if (body.note !== undefined) cur.note = String(body.note || '').trim().slice(0, 500)
+  if (body.hidden !== undefined) cur.hidden = !!body.hidden
+  const kept = Object.fromEntries(Object.entries(cur).filter(([, v]) => v !== null && v !== '' && v !== false))
+  if (Object.keys(kept).length) st.registry[body.id] = kept; else delete st.registry[body.id]
+  bus('infra')
+  return kept
+})
+R('GET', '/api/infra/reserved', () => ({ names: ['api', 'ext', 'assets', 'icons', 'sessions', 'files', 'tasks', 'crons', 'settings', 'infra', 'git', 'team', 'x', 'login', 'sw.js', 'manifest', 'index.html', 'favicon'] }))
+R('POST', '/api/infra/servers/connect', async ({ body }) => {
+  const st = infraState()
+  const host = String(body.host || '').trim(), user = String(body.user || 'root'), port = Number(body.port || 22)
+  if (!host && !body.id) fail(422, 'not_found', 'Give a host or a Hostinger server')
+  if (st.servers.some((s) => s.host === host)) fail(409, 'exists', 'This server is already connected')
+  await sleep(1500)
+  if (!/^192\.0\.2\.\d+$/.test(host) && !body.id) // only the documentation range 192.0.2.0/24 "accepts" the key in the mock
+    return { connected: false, message: 'No key of this server works yet: add the Harness public key to the server, then try again.', public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com',
+      command: `mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com' >> ~/.ssh/authorized_keys` }
+  let name = (body.label || host || 'server').toLowerCase().replace(/[^a-z0-9-]+/g, '-').split('.')[0].slice(0, 36) || 'server'
+  for (let n = 2; st.servers.some((s) => s.name === name); n++) name = `${name.replace(/-\d+$/, '')}-${n}`
+  const s = { name, label: String(body.label || '').slice(0, 60), host: host || '203.0.113.40', user, port, note: '' }
+  st.servers.push(s); bus('infra')
+  return { connected: true, name: s.name, label: s.label, host: s.host, user: s.user, port: s.port, via: body.id ? 'added_key' : 'existing_key' }
+})
+R('POST', '/api/infra/servers/rename', ({ body }) => {
+  const s = infraState().servers.find((x) => x.name === body.name) || fail(404, 'not_found', `no server named ${body.name}`)
+  s.label = String(body.label || '').trim().slice(0, 60); bus('infra')
+  return { name: s.name, label: s.label }
+})
+R('POST', '/api/infra/servers/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.servers.some((x) => x.name === body.name)) fail(404, 'not_found', `no server named ${body.name}`)
+  st.servers = st.servers.filter((x) => x.name !== body.name); bus('infra')
+  return { removed: true }
+})
+R('POST', '/api/infra/domains', ({ body }) => {
+  const name = String(body.name || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name)) fail(400, 'invalid_domain', 'not a domain name (example: example.com)')
+  const st = infraState()
+  if (!st.domains.includes(name) && !INFRA_RESOURCES.some((r) => r.id === `domain:${name}`)) st.domains.push(name)
+  bus('infra')
+  return { name }
+})
+R('POST', '/api/infra/domains/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.domains.includes(body.name)) fail(404, 'not_found', 'This domain was not added by hand')
+  st.domains = st.domains.filter((x) => x !== body.name); bus('infra')
+  return { removed: true }
+})
+
 /* ---- system */
 R('GET', '/api/system/health', () => healthObj())
 R('GET', '/api/system/services', () => S.services)
@@ -2053,11 +2882,283 @@ R('GET', '/api/stats/tokens', () => {
 })
 R('GET', '/api/usage', () => ({ available: false, five_hour: null, seven_day: null, reason: 'disabled' }))
 
+/* ---- resident missions (server/maxxing/missions.py): a goal, a plan of companion steps the owner reviews, then runs
+   launched one by one as companion runs (the proposal of each waits for the owner's decision in Settings -> Companions).
+   The server's worker advances missions every 2 s; here each read does (the page polls). Cycles are not simulated. */
+const MISSION_FIELDS = ['title', 'path', 'goal', 'max_runs', 'max_seconds', 'max_tokens', 'concurrent', 'interval_seconds', 'max_cycles']
+const MISSION_PLAN = [ // what the architect proposes in the mock
+  { id: 'map', title: 'Map the keyboard paths of the Files page', role: 'architect', instruction: 'List every action of the Files page and how it is reached without a mouse. Name the components and files involved.', after: [] },
+  { id: 'focus', title: 'Fix the missing focus states', role: 'observer', instruction: 'Give every interactive element of the Files page a visible focus ring with the shared tokens, and add a test for the list.', after: ['map'] },
+  { id: 'check', title: 'Review the change for regressions', role: 'security', instruction: 'Check that the focus changes do not expose hidden actions and that the tests cover the list and the toolbar.', after: ['focus'] },
+]
+const missionStep = (s) => ({ id: s.id, title: s.title, role: s.role, instruction: s.instruction, after: [...s.after], state: 'pending', session: null })
+function missionFingerprint(m) {
+  const roles = companionsState().roles
+  const plan = Object.fromEntries(MISSION_FIELDS.map((k) => [k, m[k]]))
+  plan.steps = m.steps.map(({ id, title, role, instruction, after }) => ({ id, title, role, instruction, after }))
+  plan.roles = Object.fromEntries([...new Set(m.steps.map((s) => s.role))].sort().map((r) => { const p = roles.find((x) => x.id === r); return [r, p ? { role: p.role, engine: p.provider } : null] }))
+  return crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex')
+}
+function missionsState() {
+  if (S.missions) return S.missions
+  S.missions = []
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') S.missions.push({ ...missionNew('Keyboard-friendly Files page', topicPath('acme', 'website'),
+    'Every action of the Files page works with the keyboard alone, with a visible focus, without changing how it looks for mouse users.', 6, 90, 2000000, 1, 0, 1),
+    steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready', created: now() - 3 * HOUR })
+  return S.missions
+}
+function missionNew(title, path, goal, runs, minutes, tokens, concurrent, interval, cycles) {
+  return { id: crypto.randomBytes(16).toString('hex'), title, path, goal, steps: [], phase: 'draft', reason: '', created: now(), origin_state: '/var/lib/claude-maxxing',
+    max_runs: runs, max_seconds: minutes * 60, max_tokens: tokens, concurrent, interval_seconds: interval * 60, max_cycles: cycles,
+    cycle: 1, spent_seconds: 0, active_since: null, next_cycle: null, launches: [], tokens: 0, planner: null }
+}
+function missionValidate(steps) {
+  const roles = new Set(companionsState().roles.map((p) => p.id)), seen = new Set()
+  if (!Array.isArray(steps) || steps.length < 1 || steps.length > 8) fail(400, 'bad_plan', 'A plan needs one to eight steps.')
+  return steps.map((v) => {
+    const id = String(v?.id || ''), title = String(v?.title || '').trim(), instruction = String(v?.instruction || '').trim(), after = v?.after || []
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || seen.has(id) || !title || title.length > 120 || !roles.has(v.role) || !instruction || instruction.length > 2000
+      || !Array.isArray(after) || after.some((d) => !seen.has(d)) || new Set(after).size !== after.length) fail(400, 'bad_plan', 'Use existing roles and distinct steps with earlier prerequisites.')
+    seen.add(id)
+    return missionStep({ id, title, role: v.role, instruction, after })
+  })
+}
+const missionOut = (m) => ({ ...clone(m), plan_fingerprint: missionFingerprint(m) })
+const missionFind = (id) => missionsState().find((m) => m.id === id) || fail(404, 'not_found', 'Mission not found.')
+const missionRuns = (m) => m.launches.filter((l) => !l.aborted).length
+const missionBank = (m) => { if (m.active_since) { m.spent_seconds += Math.max(0, now() - m.active_since); m.active_since = null } }
+// A launch is an ordinary companion run (its session carries `companion`), so its proposal is reviewed in Companions.
+function missionLaunch(m, step, purpose) {
+  const role = companionsState().roles.find((p) => p.id === step.role) || companionsState().roles[0]
+  const t = now()
+  const s = { id: uuid(), title: `${role.name} — platform review`, path: m.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '',
+    real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null,
+    provider: role.provider, companion: { id: role.id, name: role.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  if (purpose === 'experiment') S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null } // a plan proposes no change
+  m.launches.push({ key: uuid(), session: s.id, purpose })
+  Object.assign(step, { state: 'running', session: s.id })
+  if (purpose === 'experiment') return companionTurn(s, `Mission goal: ${m.goal}\nYour step: ${step.title}\n${step.instruction}`)
+  const plan = JSON.stringify({ steps: MISSION_PLAN.map(({ id, title, role: r, instruction, after }) => ({ id, title, role: r, instruction, after })) }, null, 2)
+  s.state = 'running'
+  addEvents(s, { type: 'user', text: `Design a small actionable plan for this goal, using existing roles only.\n${m.goal}`, attachments: [], at: now(), source: 'companion' })
+  later(s, 3000, () => {
+    Object.assign(s, { state: 'idle', turns: 1, updated: now(), unread: true, last_text: plan.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: '```json\n' + plan + '\n```', at: now() }, { type: 'result', ok: true, cost_usd: 0, duration_ms: 3000, model: 'gpt-5.5-codex', usage: { input: 9000, output: 700, cache_read: 0, cache_write: 0 }, at: now() })
+    bus('missions', 'sessions')
+  })
+}
+function missionAdvance(m) { // like missions.advance, one pass
+  const runs = companionsState().runs
+  for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+    if (!step.session || !['running', 'review'].includes(step.state)) continue
+    const s = S.sessions.find((x) => x.id === step.session)
+    if (!s) { Object.assign(step, { state: 'failed', error: 'missing_session' }); continue }
+    if (s.state === 'running') continue
+    if (!s.turns) { Object.assign(step, { state: 'failed', error: 'agent_failed' }); continue }
+    if (step === m.planner) { step.state = 'complete'; m.tokens += 9700; continue }
+    const decision = runs[s.id]?.decision
+    if (step.state === 'running') m.tokens += 40900
+    step.state = decision?.fingerprint === companionFingerprint() ? (decision.value === 'approved' ? 'complete' : 'rejected') : 'review'
+  }
+  if (!['active', 'planning'].includes(m.phase)) return
+  const busy = [...m.steps, ...(m.planner ? [m.planner] : [])].some((s) => s.state === 'running')
+  if (busy) m.active_since ||= now(); else missionBank(m)
+  if (m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) return Object.assign(m, { phase: 'budget', reason: m.tokens >= m.max_tokens ? 'tokens' : 'time' })
+  if ([...m.steps, ...(m.phase === 'planning' && m.planner ? [m.planner] : [])].some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) return Object.assign(m, { phase: 'paused', reason: 'step_failed' })
+  if (m.phase === 'planning') {
+    if (m.planner?.state === 'complete') Object.assign(m, { steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready' })
+    else if (!m.planner) {
+      if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+      m.planner = { id: 'planner', title: 'Plan', role: 'architect', instruction: '', state: 'pending', after: [], session: null }
+      missionLaunch(m, m.planner, 'plan')
+    }
+    return
+  }
+  if (m.steps.every((s) => ['complete', 'skipped'].includes(s.state))) return Object.assign(m, { phase: 'completed', reason: 'completed' })
+  const ready = m.steps.find((s) => s.state === 'pending' && s.after.every((d) => m.steps.some((x) => x.id === d && ['complete', 'skipped'].includes(x.state))))
+  if (ready && m.steps.filter((s) => s.state === 'running').length < m.concurrent) {
+    if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+    missionLaunch(m, ready, 'experiment')
+  }
+}
+const missionsRead = () => { for (const m of missionsState()) missionAdvance(m); return missionsState() }
+R('GET', '/api/missions', () => [...missionsRead()].sort((a, b) => b.created - a.created).map(missionOut))
+R('POST', '/api/missions', ({ body }) => {
+  const title = String(body.title || '').trim(), goal = String(body.goal || '').trim()
+  if (!title || title.length > 120 || !goal || goal.length > 2000) fail(400, 'bad_mission', 'A title and bounded goal are required.')
+  if (!S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const n = (k, d) => (body[k] === undefined || body[k] === null ? d : Number(body[k]))
+  const [runs, minutes, tokens, concurrent, interval, cycles] = [n('max_runs', 8), n('max_minutes', 60), n('max_tokens', 1000000), n('concurrent', 1), n('interval_minutes', 0), n('max_cycles', 1)]
+  if (!(runs >= 1 && runs <= 32 && minutes >= 1 && minutes <= 1440 && tokens >= 1 && tokens <= 100000000 && [1, 2].includes(concurrent) && interval >= 0 && interval <= 10080 && cycles >= 1 && cycles <= 32)) fail(400, 'bad_budget', 'Mission limits are out of range.')
+  const steps = body.steps?.length ? missionValidate(body.steps) : []
+  if (missionsState().length >= 50) fail(400, 'limit', 'The mission list is full.')
+  const m = { ...missionNew(title, body.path, goal, runs, minutes, tokens, concurrent, interval, cycles), steps }
+  S.missions.push(m); bus('missions')
+  return missionOut(m)
+})
+R('GET', '/api/missions/:id', ({ params }) => { missionsRead(); return missionOut(missionFind(params.id)) })
+R('PUT', '/api/missions/:id/plan', ({ params, body }) => {
+  const m = missionFind(params.id), steps = missionValidate(body.steps)
+  if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.steps.some((s) => s.session)) fail(409, 'busy', 'A running or previously executed plan cannot be replaced.')
+  Object.assign(m, { steps, phase: 'plan_review', reason: '' }); bus('missions')
+  return missionOut(m)
+})
+R('POST', '/api/missions/:id/control', ({ params, body }) => {
+  const m = missionFind(params.id), action = body.action
+  if (!['start', 'pause', 'stop', 'plan'].includes(action)) fail(400, 'bad_action', 'Unknown mission action.')
+  if (action === 'plan') {
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.planner || m.steps.some((s) => s.session)) fail(409, 'busy', 'This mission already has a planner run.')
+    Object.assign(m, { phase: 'planning', active_since: null, reason: '' })
+  } else if (action === 'start') {
+    if (body.fingerprint !== missionFingerprint(m)) fail(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || !m.steps.length) fail(409, 'busy', 'Review a plan before starting this mission.')
+    if (missionRuns(m) >= m.max_runs || m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) fail(409, 'budget', 'The authorized mission budget is exhausted.')
+    for (const s of m.steps) if (s.state === 'interrupted' && !s.session) Object.assign(s, { state: 'pending' })
+    if (m.steps.some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) fail(409, 'unresolved', 'Retry or skip the steps that need your attention first.')
+    Object.assign(m, { phase: 'active', active_since: null, reason: '' })
+  } else {
+    if (action === 'stop' && ['completed', 'stopped', 'budget'].includes(m.phase)) fail(409, 'busy', 'A terminal mission cannot be stopped again.')
+    if (action === 'pause' && !['active', 'planning'].includes(m.phase)) fail(409, 'busy', 'Only an active mission can be paused.')
+    missionBank(m)
+    Object.assign(m, { phase: action === 'pause' ? 'paused' : 'stopped', reason: 'owner' })
+    for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+      if (!step.session || step.state !== 'running') continue
+      const s = S.sessions.find((x) => x.id === step.session)
+      if (s && s.state === 'running') { clearTimers(s); s.state = 'idle'; addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() }) }
+      step.state = 'interrupted'
+    }
+    bus('sessions')
+  }
+  missionAdvance(m) // the server's worker launches within 2 s
+  bus('missions')
+  return missionOut(m)
+})
+for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected'], 'skipped'], ['retry', ['interrupted', 'failed', 'rejected'], 'retried']]) {
+  R('POST', `/api/missions/:id/steps/:step/${what}`, ({ params }) => {
+    const m = missionFind(params.id)
+    if (m.phase !== 'paused') fail(409, 'busy', `Only a paused mission can ${what} a step.`)
+    const step = m.steps.find((s) => s.id === params.step)
+    if (!step || !states.includes(step.state)) fail(409, 'busy', `Only an interrupted, failed or rejected step can be ${verb}.`)
+    if (what === 'skip') step.state = 'skipped'; else { delete step.error; Object.assign(step, { state: 'pending', session: null }) }
+    m.reason = 'owner'; bus('missions')
+    return missionOut(m)
+  })
+}
+
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
 R('GET', '/api/docs/:slug', ({ params }) => {
   const d = DOCS.find((x) => x.slug === params.slug) || fail(404, 'not_found', 'No such doc page')
   return { slug: d.slug, title: d.title, markdown: d.markdown }
+})
+
+/* ---- pull request integration queue (server/maxxing/pr_queue.py): the owner reviews the exact diff, approves it, and
+   the worker merges approved entries in order once checks pass and prerequisites are merged. Starts paused. Here a
+   fake GitHub answers, and each read advances the queue like the worker (queued -> merging -> merged in a few s). */
+const PRQ_URL = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9_.-]{1,100})\/pull\/([1-9][0-9]{0,9})$/
+const PRQ_TITLES = { 140: 'Refuse slashes in file names', 142: 'Keyboard focus on the Files page', 143: 'Test the Files toolbar with the keyboard' }
+function prqRemote(item) { // the fake GitHub pull request, stable per entry
+  const st = prqState()
+  return (st.remote[item.url] ||= { head: sha(), base_ref: 'main', base_sha: st.base, title: PRQ_TITLES[item.number] || `Improve ${item.repo.split('/')[1]} (#${item.number})`,
+    body: 'Proposed by a resident companion and reviewed in Harness Pilot.', draft: false, open: true, merged: false })
+}
+const prqPatch = (item) => `diff --git a/docs/user/notes.md b/docs/user/notes.md
+index 1a2b3c4..5d6e7f8 100644
+--- a/docs/user/notes.md
++++ b/docs/user/notes.md
+@@ -1,3 +1,4 @@
+ # Notes
+ 
+ Short notes about the product.
++- ${prqRemote(item).title}.
+`
+function prqState() {
+  if (S.prQueue) return S.prQueue
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.prQueue = { paused: true, base: sha(), remote: {}, items: [] }
+  if (ready) {
+    const add = (number, extra) => { const it = { id: crypto.randomBytes(16).toString('hex'), repo: 'acme/platform', number, url: `https://github.com/acme/platform/pull/${number}`, method: 'merge',
+      dependencies: [], state: 'awaiting_review', reason: 'approval', approval: null, created: t - (150 - number) * HOUR, checked_at: 0, revision: 0, ...extra }; S.prQueue.items.push(it); return it }
+    const merged = add(140, { state: 'merged', reason: 'merged', checked_at: t - 20 * HOUR })
+    const r = prqRemote(merged); Object.assign(r, { merged: true, open: false })
+    Object.assign(merged, { snapshot: { ...r }, approval: { fingerprint: crypto.randomBytes(32).toString('hex'), head: r.head, base_ref: 'main', base_sha: r.base_sha, dependencies: [], at: t - 21 * HOUR } })
+    const focus = add(142, {})
+    add(143, { dependencies: [focus.id], method: 'squash' })
+  }
+  return S.prQueue
+}
+const prqOut = () => { const st = prqState(); return { paused: st.paused, github_cli_available: true, items: clone(st.items) } }
+const prqFind = (id) => prqState().items.find((i) => i.id === id) || fail(404, 'not_found', 'Pull request queue item not found.')
+const prqBindings = (item) => item.dependencies.map((id) => {
+  const dep = prqFind(id)
+  return [id, dep.state === 'merged' ? dep.snapshot?.head || null : dep.approval?.head || null]
+})
+const prqFingerprint = (item, remote) => crypto.createHash('sha256').update(JSON.stringify([item.repo.toLowerCase(), item.number, remote.head, remote.base_ref,
+  remote.base_sha, item.method, prqBindings(item), crypto.createHash('sha256').update(prqPatch(item)).digest('hex')])).digest('hex')
+function prqAdvance() { // one worker pass
+  const st = prqState(), t = now()
+  for (const item of st.items) {
+    if (!['queued', 'blocked', 'merging'].includes(item.state)) continue
+    if (st.paused && item.state !== 'merging') { Object.assign(item, { state: 'queued', reason: 'paused' }); continue }
+    const waiting = item.dependencies.some((id) => prqFind(id).state !== 'merged')
+    if (item.state === 'merging') {
+      if (t - item.checked_at < 3) continue
+      const r = prqRemote(item); Object.assign(r, { merged: true, open: false })
+      Object.assign(item, { state: 'merged', reason: 'merged', snapshot: { ...r }, checked_at: t, revision: item.revision + 1 })
+    } else if (waiting) Object.assign(item, { state: 'blocked', reason: 'dependencies', checked_at: t })
+    else if (item.reason !== 'checks' || t - item.checked_at >= 3) Object.assign(item, item.reason === 'checks' ? { state: 'merging', reason: 'github_pending', checked_at: t } : { state: 'queued', reason: 'checks', checked_at: t })
+  }
+}
+R('GET', '/api/pr-queue', () => { prqAdvance(); return prqOut() })
+R('POST', '/api/pr-queue', ({ body }) => {
+  const m = String(body.url || '').trim().match(PRQ_URL), method = body.method || 'merge', deps = body.dependencies || []
+  if (!m || ['.', '..'].includes(m[2]) || !['merge', 'squash'].includes(method)) fail(400, 'bad_request', 'Use a canonical GitHub pull request URL and merge or squash.')
+  if (!Array.isArray(deps) || deps.length > 20 || new Set(deps).size !== deps.length) fail(400, 'bad_dependencies', 'Choose up to 20 distinct existing prerequisites.')
+  const st = prqState(), repo = `${m[1]}/${m[2]}`, number = Number(m[3])
+  if (st.items.length >= 100) fail(400, 'limit', 'The integration queue is full.')
+  if (st.items.some((i) => i.repo.toLowerCase() === repo.toLowerCase() && i.number === number && i.state !== 'cancelled')) fail(409, 'duplicate', 'This pull request is already in the queue.')
+  deps.forEach(prqFind)
+  const item = { id: crypto.randomBytes(16).toString('hex'), repo, number, url: `https://github.com/${repo}/pull/${number}`, method, dependencies: deps,
+    state: 'awaiting_review', reason: 'approval', approval: null, created: now(), checked_at: 0, revision: 0 }
+  st.items.push(item)
+  return clone(item)
+})
+R('PUT', '/api/pr-queue/pause', ({ body }) => { prqState().paused = !!body.paused; prqAdvance(); return prqOut() })
+R('POST', '/api/pr-queue/refresh', async () => { // reads the three oldest unchecked entries from GitHub, never merges
+  await sleep(600)
+  for (const item of prqState().items.filter((i) => i.state === 'awaiting_review').sort((a, b) => a.checked_at - b.checked_at).slice(0, 3)) {
+    Object.assign(item, { snapshot: { ...prqRemote(item) }, checked_at: now() })
+  }
+  prqAdvance()
+  return prqOut()
+})
+R('GET', '/api/pr-queue/:id/preview', async ({ params }) => {
+  const item = prqFind(params.id), remote = prqRemote(item)
+  await sleep(400)
+  return { item: clone(item), snapshot: { ...remote }, patch: prqPatch(item), fingerprint: prqFingerprint(item, remote), dependencies: prqBindings(item) }
+})
+R('POST', '/api/pr-queue/:id/approve', ({ params, body }) => {
+  const item = prqFind(params.id), remote = prqRemote(item)
+  if (body.fingerprint !== prqFingerprint(item, remote)) fail(409, 'changed', 'The reviewed commit or dependencies changed. Review the current diff.')
+  if (remote.merged || !remote.open || remote.draft) fail(409, 'not_open', 'Only a ready, open pull request can be approved for integration.')
+  if (prqBindings(item).some(([, head]) => !head)) fail(409, 'dependencies_unreviewed', 'Review and approve the prerequisite pull requests first.')
+  if (['merging', 'merge_requested', 'cancelled', 'merged'].includes(item.state)) fail(409, 'busy', 'This item cannot receive a new approval in its current state.')
+  Object.assign(item, { approval: { fingerprint: body.fingerprint, head: remote.head, base_ref: remote.base_ref, base_sha: remote.base_sha, dependencies: prqBindings(item), at: now() },
+    snapshot: { ...remote }, state: 'queued', reason: prqState().paused ? 'paused' : 'checks', checked_at: 0, revision: item.revision + 1 })
+  return prqOut()
+})
+R('POST', '/api/pr-queue/:id/cancel', ({ params }) => {
+  const item = prqFind(params.id)
+  if (['merging', 'merge_requested', 'merged'].includes(item.state)) fail(409, 'already_sent', 'An already initiated GitHub merge cannot be cancelled here.')
+  Object.assign(item, { state: 'cancelled', reason: 'cancelled', approval: null, revision: item.revision + 1 })
+  return prqOut()
+})
+R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
+  const item = prqFind(params.id)
+  if (item.state !== 'merge_failed' || !item.approval) fail(409, 'not_retryable', 'This item has no approved merge to retry.')
+  Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
+  return prqOut()
 })
 
 /* ---- dashboard & extensions */

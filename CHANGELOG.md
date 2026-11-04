@@ -6,6 +6,19 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The Security help page now describes the local installation: who can reach the interface, where secrets are kept and how, what agents, companions and extensions can do on your computer, telemetry, and good practice.
+- The registration, feedback and license settings inherited from the original project are no longer reachable on this server: they belonged to a service this project does not run, and they now answer "not found" instead of trying to contact it.
+- On an arm64 Linux server, the headless browser used for web pages, PDFs and videos is now found once installed; `pilot deps update` reported it as failed before.
+- Troubleshooting now has a section for the local setup on macOS: where the logs are, how to restart, a port already in use, folder permissions, the missing `ffmpeg` and `pdftoppm` tools (with their `brew install` commands) and what Settings → System shows locally.
+- Long Claude Code and Codex discussions no longer stop when an agent's conversation gets full: near the limit, or when an agent refuses a reply for lack of room, Claude summarizes the exchanges so far and both agents continue in fresh conversations from that summary, marked in the thread. **Compact context** in the discussion's **…** menu does the same on demand.
+- A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
+- Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
+- On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.
+- Local setup: `bash scripts/dev-local.sh cli <command>` runs the `pilot` command with the settings of your local app, for example `bash scripts/dev-local.sh cli doctor`. The guides no longer suggest `uv run pilot` in `server/`, which looked at the folder of a server installation instead of your local one.
+- The Sessions guide and Settings → Codex now say what works with Codex and which features are still for Claude Code only (side questions, MCP servers, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota).
+- Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.
+- An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
+- Codex sessions can now use the product skills (tasks, scheduled jobs, notifications, backup…): `pilot init` and `pilot update` install them for Codex too, and `pilot doctor` reports a missing or outdated Codex copy.
 - Model Lab experiments no longer end in an error when the adapter's interpreter or program is larger than 16 MB, which was the case of the Python that uv installs on Linux.
 - Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
@@ -77,6 +90,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Find the built-in skills under clearer names starting with `pilot-`, such as `pilot-crons`, `pilot-notifications` and `pilot-widgets-pages`. An update installs the new names, removes the old copies and updates the product's own text in your workspace; your own notes and jobs are not changed.
 - `pilot doctor` warns when another program called `pilot` comes first in your terminal or for the sessions (some systems ship one), names it, and suggests `maxxing`, the same command under its earlier name.
 - The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
+- The Linux server installer was tried on a test Debian 12 server; what works, what still points to the original project and the plan to turn it back on are documented for maintainers. It stays disabled for now.
+- The Linux installer, still disabled, now takes harness-pilot from this project's repository (`main` branch), shows the harness-pilot name and `pilot` commands, and no longer offers an Enterprise license key.
 - Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
 
 ### Inherited version history

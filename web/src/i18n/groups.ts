@@ -36,9 +36,9 @@ export const GROUPS = {
   // conversation blocks (features/blocks): loaded with the first block shown, and with Settings
   blocks: ['blocks'],
   // what a conversation opens on demand: activity rows and the footer's details (convx.*), Change limits, the summary,
-  // the HUD, the agent map, the side question and the agent modes of a new session (modes.*). Loaded once the sessions
-  // page is on screen (pages/sessions), or with a new session's first card
-  convx: ['convx', 'summary', 'hud', 'swarm', 'aside', 'modes'],
+  // the HUD, the agent map, the side question, the agent modes of a new session (modes.*) and a mixed team's live
+  // panel (teamx.*). Loaded once the sessions page is on screen (pages/sessions), or with the first key asked
+  convx: ['convx', 'summary', 'hud', 'swarm', 'aside', 'modes', 'teamx'],
 } as const satisfies Record<string, readonly string[]>
 
 export type Group = keyof typeof GROUPS

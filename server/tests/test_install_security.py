@@ -110,8 +110,7 @@ def test_custom_restore_stat_changes_nothing(tmp_path, capsys):
 # ---- installer checks -----------------------------------------------------------------------------------------
 def test_installer_never_pipes_a_download_into_a_shell_nor_uses_fixed_tmp_paths():
     text = INSTALL.read_text()
-    code = "\n".join(ln for ln in text.splitlines()       # comments and our own usage text aside
-                     if not ln.lstrip().startswith("#") and "get.harness-maxxing.com" not in ln)
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))   # comments aside
     assert not re.search(r"curl[^\n|]*\|\s*(sudo\s+)?(ba)?sh\b", code.replace("tailscale.com/install.sh | sh", ""))
     assert not re.search(r"/tmp/(maxxing|claude|node|harness)[-\w.]*", code.replace("/tmp/harness-install.XXXXXXXX", ""))
     assert "umask 077" in text and "export -n LICENSE GH_TOKEN" in text
