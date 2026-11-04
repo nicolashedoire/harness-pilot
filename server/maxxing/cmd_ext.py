@@ -28,7 +28,7 @@ def _print(r: dict) -> None:
     print(f"{r['id']} ({r['kind']}) - {r['status']}")
     for s in r["steps"]:
         first, *rest = (s["detail"] or s["step"]).splitlines() or [s["step"]]
-        line(level.get(s["status"], INFO), f"{s['step']:<9} {first}")
+        line(level.get(s["status"], INFO), f"{s['step']:<11} {first}")
         for x in rest:
             print(f"      {x}")
     for fr in r.get("trace") or []:
@@ -51,6 +51,11 @@ def _handler(a) -> int:
             print(f"{a.id}: no extension with this id in {_root()}", file=sys.stderr)
             return 2
         results = [one]
+        try:                                    # run from a harness-pilot turn: the session that made / fixes it
+            from . import extfix
+            extfix.record_origin(a.id, os.environ.get("MAXXING_SESSION"))
+        except Exception:  # noqa: BLE001 - never fails the check
+            pass
     else:
         results = extcheck.check_all()
     broken = [r for r in results if r["status"] == "error"]

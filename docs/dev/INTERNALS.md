@@ -353,6 +353,18 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
   the `ID_RE` pattern) never matches `_blocks`, so the catch-all leaves `/ext/_blocks/...` to api/blocks.py, whose
   router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
 
+## maxxing.permissions - declared permissions of extensions  (owner: organisation)
+Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--extensions (Permissions).
+- `parse(raw) -> dict | None`: the manifest's `"permissions"` validated -> `{network, secrets, read}` (lists in the
+  manifest's order, duplicates dropped, hosts lowercased, read paths normalised: no trailing `/`, `./` dropped);
+  None when the key is absent; ValueError with a readable reason otherwise. `extensions._load_one` calls it for a
+  widget or page (after the agent early return) and stores `Extension.permissions`; a ValueError becomes the
+  extension's `error` (`permissions: ...`). A block plugin's `Extension.permissions` is built from its `block.json`
+  hosts (`{network, secrets: [], read: []}`); an agent keeps None.
+- `view(perms) -> {network, secrets, read, declared}`: the Atelier's `Permissions` (API.md#atelier) of a declaration.
+- `summary(perms) -> str`: one line for people and `pilot ext check` ("network: a.example.com · keys: SHOP_TOKEN ·
+  reads: projects/shop", "nothing" for an empty declaration).
+
 ## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
 Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
 inside the functions that need them), so `sessions/codex.py` could read its output without it.
@@ -401,16 +413,41 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
 - HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
   position, links); an unclosed `<script>` is detected by the parser never closing it.
-- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, card?, trace?,
-  timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
+- Permissions (widget, page): step `permissions` = OK with `permissions.summary` of what the manifest declares, WARN
+  when it has no `"permissions"` key (block plugins and agents: no step). Result key `permissions` = the declaration
+  or None.
+- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, permissions, card?,
+  trace?, timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
 - `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off. Each result
   also carries `runtime_errors` (`exterrors.recent`), printed after the steps; never part of the status.
 
+## maxxing.extfix - "Ask for a fix"  (owner: organisation)
+Reusable by any UI that shows a broken creation (dashboard card, page error state, Settings row, the Atelier):
+- `prompt(ext, seen=None) -> str`: the message (English; "Answer me in French." via `smartupdate._reply_in`): the
+  extension, its kind and folder, what broke (load `error`, the 3 newest `exterrors.recent`, `seen` = `{message,
+  stack?}` the user is looking at unless one of those already says it), the files (`_files`: manifest / block.json,
+  entry, `api.py`, `page.js`, `widget.html`, the files the stacks name, resolved inside the folder, 12 at most), the
+  skill (`pilot-blocks` for a block) and `pilot ext check <id> --json` before and after.
+- `origin(id) -> {id, title, path} | None` (the single lookup of "the session that made it": a live, not archived
+  session of `<state>/extension-origins.json`), `origins(ids)`, `record_origin(id, sid)` (kept: the first live one;
+  called by `cmd_ext` with `$MAXXING_SESSION` after `pilot ext check <id>`). A provenance record of a creation's session
+  should be read first by `origin()`.
+- `target(id) -> {"session": origin} | {"topic": smartupdate.update_topic_path()}`; `ask(ext, seen) -> {session,
+  reused}`: `service.send_message(origin)` (queued behind a running turn), else on `SessionError` or no origin
+  `service.create_session(<harness topic>, prompt, "Fix the extension <name>")`.
+- HTTP: `POST /api/extensions/{id}/fix` `{error?, dry_run?}`; `GET /api/extensions` items carry `origin`. Web:
+  `features/extensions/AskFix.tsx` (`useAskFix().run(ext, error)` = dry run -> `confirm()` with the message -> send ->
+  navigate to the session; `AskFixButton`, `FixTarget`), used by `pages/dashboard` (`BrokenWidget`, an extension card
+  whose `card()` failed, with the recorded stack), `HtmlWidget` (the frame's last error under it), `pages/ext` (load
+  error state) and `RuntimeErrors` / the load error of a Settings row.
+
 ## maxxing.exterrors - runtime errors of extensions  (owner: organisation)
 - `<state>/extension-errors.json` = `{id: [{where, message, stack, at, count, sig}]}`, newest first, `KEEP` (10) per
-  extension, written with `config.write_json` under a module lock. `record(id, dir, where, message, stack)` bumps
+  extension, written with `config.write_json` under a module lock (a stack's first line equal to the message is
+  dropped). `record(id, dir, where, message, stack)` bumps
   `count`/`at` of the newest entry when `where`, `message` and `sig` match; `sig` = `files_sig(dir)` (newest mtime of
-  the folder's files, one level down, hidden ones skipped). `recent(id, dir)` / `all_recent(exts)` return only the
+  the folder's files, one level down, hidden ones, `__pycache__` and `node_modules` skipped: importing `api.py` writes
+  its bytecode, which must not hide the errors). `recent(id, dir)` / `all_recent(exts)` return only the
   entries whose `sig` is the current one (an edit of any file hides the older errors), without `sig`; `clear(id)`.
 - Writers: `api/extensions.report_error` (browser: `where` widget / page; `allow()` = sliding windows of 60 s,
   `RATE_PER_EXT` 20 and `RATE_TOTAL` 120, in memory, before anything is written; `trim_stack()` keeps 6 lines of 240
@@ -426,6 +463,90 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   missing `mount`, a `mount()` that throws, and while mounted the window errors whose `filename` / stack is under
   `/ext/<id>/` and the rejections tagged by its `ctx.api()` (`mxExt`) or whose stack is (an `ApiError` 0 / 5xx left
   out). `features/extensions/report.ts` sends each `where` + message once per extension and page load, 10 at most.
+
+## maxxing.atelier / maxxing.api.atelier / `pilot ext draft|propose`  (owner: organisation)
+The Atelier (API.md#atelier): agents' creations staged as drafts, approved by the user, versioned, rolled back.
+Extensions first; the other kinds are listed read-only (`atelier.items()` reads themes, skills, customizations and
+cron jobs through their own modules, no copy of their data).
+
+- **Draft folders** (where an agent writes): `<session folder>/.atelier/<id>/`, the session folder being
+  `<workspace>/<session path>` of `$MAXXING_SESSION` (`<workspace>/.atelier/<id>/` without a session: the user's own
+  terminal). Both agents can write there: Claude anywhere, Codex in its session folder (workspace-write sandbox;
+  `.atelier` is not one of `codex.WORKSPACE_READ_ONLY`), whereas `<workspace>/extensions` is read-only for Codex
+  (`codex.SERVER_CODE`). `pilot ext draft <id>` creates it and prints its path: a copy of the extension's active
+  files when it exists (so a change starts from what runs), `--from-draft <did>` = the files of an earlier proposal,
+  `--reset` replaces an existing folder; otherwise an existing folder is left as it is. Hidden entries, `__pycache__`
+  and `node_modules` are never part of a draft (nor of a version).
+- **Proposing** (`pilot ext propose <id> [--summary TEXT] [--dir PATH] [--json]`, `cmd_ext`): static check of the folder
+  (`atelier.check_dir(dir, id)`, below; errors -> exit 1, nothing registered), then a request
+  `<draft folder>/.proposal.json` `{draft: "d_<12 hex>", id, summary, session, agent, at}` (`session` =
+  `$MAXXING_SESSION`, `agent` = `$MAXXING_AGENT`, both set by the runner for every turn: Claude, Codex and agent
+  plugins), then `atelier.register(folder)` in the CLI process. Registering needs to write `<state>`: it works for
+  Claude and for the user; Codex's sandbox refuses it (PermissionError), the request then stays and the server
+  registers it when that session's turn ends (`service.on_turn_end` -> `atelier.ingest_session(session)`: the
+  `.atelier/*/.proposal.json` of that session's folder only). Either way the draft id is the one the CLI printed, so
+  the agent's `proposal` block is valid before the registration. Output: the draft id, its state
+  (`pending` / `queued` - registered at the end of the turn / `active` - auto-activated), the declared network hosts
+  and secrets, and the `proposal` block to put in the answer. Exit 0 registered or queued, 1 check failed, 2 no draft
+  folder / bad id, 3 `restore_hold`.
+- **Registering** (`register(folder, request)`, under the Atelier lock): the files are copied into
+  `<state>/atelier/drafts/<did>/files/` (a frozen copy: what the user reviews is what gets installed; later edits of
+  the folder need a new proposal), the check runs again on that copy, `draft.json` is written (API.md `Draft`, plus
+  `source_dir` = the agent's folder and the file list `{path: {sha256, size}}`), the request file is removed, an older
+  pending draft of the same id becomes `superseded` (its feed event resolved), `atelier.proposed` is posted
+  (`feed.system`, group `atelier:<did>`), `rev` is touched. The origin is read from the request but checked: a
+  `session` that does not exist, or (server-side registration) whose folder is not the one scanned, becomes that
+  folder's ending session / unknown. Limits per draft: 2000 files, 64 MB (`413`-like CLI error `too_large`), ids
+  `extensions.ID_RE`, not a reserved widget id.
+- **Static check** (`check_dir(dir, id) -> {status, steps}`): never imports or runs the draft. `extensions._load_one`
+  with `load_code=False` (manifest / block.json validation, no import), `compile()` of `api.py` (syntax), and the
+  document / module steps of `extcheck` that do not run code (`_check_document`, the page's module walk with
+  `_scan_js` + `node --check`, resolved against the draft folder instead of the routes). `pilot ext check <id> --dir
+  PATH` (agent side) runs the FULL extcheck on a temporary copy (`extensions` root overridden for the process,
+  `ctx.state_dir` a temporary folder): the code runs with the agent's own rights.
+- **Approving** (`approve(did, base=None, by="user")`): Atelier lock, then `extensions.publishing()`; check again;
+  `stale` when `base` is given and differs from the active version; the live folder is snapshotted first when it
+  differs from the active version (`direct` version, `approval.by: null`); the frozen files are written to
+  `<workspace>/extensions/.atelier-new-<did>/`, the live folder renamed to `.atelier-old-<id>-<ns>` and the new one
+  renamed to `<id>` (both renames inside `publishing()`, so a scan never sees the gap; hidden folders are never
+  scanned), the old one removed; version `n = max + 1` recorded (`base`, origin, approval); `extensions.scan()`
+  in a thread (hot reload would see it too); feed resolved; `rev` touched; bus `atelier` + `extensions`. A failure
+  before the second rename leaves the live folder untouched; after it, the old folder is renamed back.
+- **Versions store** (content-addressed): `<state>/atelier/objects/<sha[:2]>/<sha256>` = file contents (0600, shared
+  by every version and draft that has them); `<state>/atelier/items/<kind>/<id>.json` = `{kind, id, active,
+  versions: [{n, at, files: {path: {sha256, size, mode}}, hash, base, origin, approval, restorable, health, error,
+  note}], history: [Event], live: {sig, hash, checked}, unreviewed_since}`. `hash` = sha256 of the sorted
+  `path\0sha256\n` lines. A rollback (`rollback(kind, id, n)`) installs version `n`'s blobs the same way as an approval
+  and moves `active`; no new version. Health: when a version stops being active, `health` = `error` when an error
+  was recorded for the extension while it was active (`exterrors` entries newer than its activation, or a load
+  error), else `ok`; the active one is `unknown` until then.
+- **Changes outside the Atelier**: `live.sig` = sha256 of the folder's `(path, size, mtime_ns)` list (same walk and
+  exclusions as a snapshot); `refresh()` (each listing, at most every 2 s) re-hashes the files of a folder whose
+  `sig` changed and compares the result with the active version: equal (a touch) -> new `sig` stored; different ->
+  `unreviewed_since` set (nothing else: it keeps running as before). `accept` makes those files a version
+  (`approval.by: "user"`); an approval or a rollback first keeps them as a `direct` version, so nothing is lost.
+- **Migration**: the first `refresh()` after the Atelier exists (`<state>/atelier/state.json` without `migrated_at`)
+  records every extension folder as v1, `approval.by: "migration"`, origin unknown; later, a folder with no record
+  (written outside the Atelier) gets v1 with `approval.by: null` and `unreviewed`. Pins written by `blocks.pin` and
+  extensions installed by packs are recorded as approved by the user (`origin.agent: "user"`).
+- **Retention** (`prune()`): versions older than config `atelier.keep_days` (90) beyond the `keep_versions` (10) newest
+  go, never the active one nor a pending draft's base; decided drafts after 30 days; then unreferenced objects.
+  After each approval and from the daily server loop.
+- **Lock**: `atelier.locked()` = thread RLock + flock on `<state>/atelier/lock` (the CLI and the server); it is
+  always taken before `extensions.publishing()`, never inside it.
+- **Bus**: `rev` (`<state>/atelier/rev`, its mtime) is touched by every write; `api/atelier` polls it every 2 s and
+  sends `invalidate atelier`, so a proposal registered by the CLI reaches open browsers.
+- **Backup**: the GitHub memory backup adds `_maxxing/atelier.json` (each item's versions and history without the
+  file lists: a few kB); a restore keeps it as metadata (`restorable: false` versions) so provenance survives a move.
+  The extension files themselves are the workspace's (`extensions/` include patterns). The complete instance backup
+  has all of `<state>/atelier/`.
+- **Other kinds** (`items()`): themes = `themes.saved()` (active = the applied palette, else `disabled`; origin from
+  the entry's `source` / `from`); skills = `<workspace>/.claude/skills/*/SKILL.md` and `<workspace>/.agents/skills`
+  (product skills excluded; `agents` = which agent reads it); customizations = `customs.list_customs()` (`review`
+  while a pending update lists it in its conflicts); cron jobs = `crons.list_jobs()` (`disabled`, `error` after a
+  failed last run). Read-only: `actions` is empty, rollback is `422 not_versioned`.
+- **Runner**: every turn's environment carries `MAXXING_SESSION` (the session id) and `MAXXING_AGENT` (`claude`,
+  `codex`, `plugin:<id>`): Claude turns, Codex turns and agent plugin turns.
 
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for

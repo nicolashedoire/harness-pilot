@@ -99,6 +99,23 @@ no operating-system isolation between harness-pilot and the agents it starts. Wh
   privileges and must enforce their own engine's permissions; harness-pilot cannot check that they do.
 - **Shell jobs** run with your privileges, like a command typed in your terminal.
 
+### What extensions can do
+
+Widgets, pages and block plugins (see [Dashboard widgets](dashboard-widgets) and [Page extensions](page-extensions))
+run in two places:
+
+- **In your browser**: an HTML widget and a block plugin are drawn in a sandboxed frame that cannot read the app,
+  its cookies or its API (a widget only calls its own `api.py`). A page's `page.js` runs inside the app itself, with
+  your session: it can do what you can do in the app.
+- **On the server**: an extension's `api.py` runs inside the harness-pilot server process, with its rights (root on a
+  Linux server installation), not in a separate sandbox.
+
+Each widget and page declares in its manifest what it uses beyond its own folder: the sites it reaches, the keys of
+Settings -> Keys it reads and the workspace files it reads (`permissions`, see
+[Dashboard widgets](dashboard-widgets#permissions)). `pilot ext check` shows the declaration. It tells you what an
+extension is meant to use; it does not turn `api.py` or `page.js` into sandboxed code. Install only extensions you
+trust, and read their declaration before you turn them on.
+
 ### Telemetry
 
 Off by default (see **Privacy defaults** above): no request telemetry or OpenTelemetry export from the server, no

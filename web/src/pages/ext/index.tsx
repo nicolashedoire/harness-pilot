@@ -13,6 +13,7 @@ import { useNavigate, useParams } from 'react-router'
 import { Pin, PinOff, Puzzle, TriangleAlert } from 'lucide-react'
 import { request, seg } from '@/lib/api'
 import { describe, reportExtensionError, serverRecorded } from '@/features/extensions/report'
+import { AskFixButton, FixTarget } from '@/features/extensions/AskFix'
 import { useExtensions, usePinExtension } from '@/lib/queries'
 import { useUI, resolveTheme } from '@/stores/ui'
 import { useLang, useT, tDyn } from '@/i18n'
@@ -205,8 +206,24 @@ export default function ExtensionPage() {
             icon={ext ? TriangleAlert : Puzzle}
             tone={ext ? 'error' : 'default'}
             title={ext ? t('ext.loadFailed') : t('ext.notFound')}
-            description={<span className="font-mono text-xs break-all">{state.error}</span>}
-            action={<Button onClick={() => setAttempt((a) => a + 1)}>{t('common.retry')}</Button>}
+            description={
+              <span className="grid justify-items-center gap-2">
+                <span className="font-mono text-xs break-all">{state.error}</span>
+                {ext && <FixTarget ext={ext} className="justify-center text-center" />}
+              </span>
+            }
+            action={
+              ext ? (
+                <span className="flex flex-wrap justify-center gap-2">
+                  <AskFixButton ext={ext} error={{ message: state.error || '' }} size="default" />
+                  <Button variant="outline" onClick={() => setAttempt((a) => a + 1)}>
+                    {t('common.retry')}
+                  </Button>
+                </span>
+              ) : (
+                <Button onClick={() => setAttempt((a) => a + 1)}>{t('common.retry')}</Button>
+              )
+            }
           />
         )}
         <div ref={host} className="mx-ext" hidden={state.status === 'error'} />

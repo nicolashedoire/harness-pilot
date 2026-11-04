@@ -37,7 +37,7 @@ def test_report_trim_and_count(client, org):
     assert r.status_code == 200, r.text
     item = r.json()["error"]
     assert item["count"] == 1 and item["where"] == "page"
-    assert item["stack"].splitlines() == ["TypeError: x.map is not a function", "at render (lib/list.js:12:5)",
+    assert item["stack"].splitlines() == ["at render (lib/list.js:12:5)",            # the message line is not repeated
                                           "at mount (page.js:40:3)", "at /assets/index-abc.js:1:200", "at f0", "at f1"]
     assert _post(client, "notes", where="page", message="TypeError: x.map is not a function").json()["error"]["count"] == 2
     _post(client, "notes", where="page", message="x" * 3000)
@@ -52,7 +52,7 @@ def test_widget_frame_lines_become_widget_html_lines(client, org):
     line = frame.splitlines().index("boom()") + 1                 # where the browser reports it in the frame
     r = _post(client, "game", where="widget", message="ReferenceError: boom is not defined",
               stack=f"ReferenceError: boom is not defined\n    at https://ui.example.com/ext/game/widget-frame:{line}:1")
-    assert r.json()["error"]["stack"].splitlines()[1] == "at widget.html:3:1"
+    assert r.json()["error"]["stack"] == "at widget.html:3:1"
 
 
 def test_errors_since_the_last_change_and_clear(client, org):
@@ -125,7 +125,7 @@ def test_the_bridge_reports_frame_errors(client, org):
 
 def test_ext_check_shows_what_broke_while_it_ran(client, org, capsys):
     from maxxing import cli
-    _ext(org, "game", {"type": "widget"}, widget_html="<p id=p></p><script>p.textContent = 'ok'</script>")
+    _ext(org, "game", {"type": "widget", "permissions": {}}, widget_html="<p id=p></p><script>p.textContent = 'ok'</script>")
     _post(client, "game", where="widget", message="ReferenceError: boom is not defined", stack="at /ext/game/widget-frame:9:1")
     assert cli.main(["ext", "check", "game", "--json"]) == 0                # the check itself passes
     [r] = json.loads(capsys.readouterr().out)["extensions"]
@@ -133,3 +133,14 @@ def test_ext_check_shows_what_broke_while_it_ran(client, org, capsys):
     assert cli.main(["ext", "check", "game"]) == 0
     out = capsys.readouterr().out
     assert "recorded while it ran (since its files last changed): 1" in out and "boom is not defined" in out
+
+
+def test_bytecode_is_no_change(client, org):
+    d = _ext(org, "w", {"type": "widget"}, widget_html="<p>x</p>")
+    _post(client, "w", where="widget", message="still here")
+    later = time.time() + 5
+    for sub in ("__pycache__", "node_modules"):
+        (d / sub).mkdir()
+        (d / sub / "x").write_text("")
+        os.utime(d / sub / "x", (later, later))                 # importing api.py writes __pycache__/api.*.pyc
+    assert [e["message"] for e in _errors(client, "w")] == ["still here"]
