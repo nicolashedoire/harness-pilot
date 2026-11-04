@@ -1905,6 +1905,73 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- MCP servers (server/maxxing/mcp.py): Claude Code's servers per folder, checked with `claude mcp list` in the
+   background (here: 1.5 s), and the OAuth login of a server that needs one (here: any redirect with ?code= works). */
+const mcpWhere = (rel) => {
+  if (!rel) return { rel: null, project: null, topic: null, exists: true, path: null }
+  const [, project, , topic] = rel.split('/')
+  return { rel, project: project || null, topic: topic || null, exists: S.fs.has(`${ROOT}/${rel}`), path: `${ROOT}/${rel}` }
+}
+function mcpState() {
+  if (S.mcp) return S.mcp
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing', t = now()
+  const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
+    literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
+  S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
+    server('user', null, 'github', { type: 'http', url: 'https://api.githubcopilot.com/mcp/', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
+    server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
+    server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
+  ] : [] }
+  return S.mcp
+}
+function mcpCheck() {
+  const st = mcpState()
+  if (st.checking) return
+  st.checking = true
+  const g = GEN
+  setTimeout(() => { if (g !== GEN) return; st.checking = false; st.checked_at = now(); for (const x of st.servers) { x.checked_at = now(); if (x.state === 'pending') x.state = 'connected' } bus('mcp') }, 1500)
+}
+R('GET', '/api/mcp', () => { const st = mcpState(); if (st.checked_at === null) mcpCheck(); return { servers: st.servers, checking: st.checking, checked_at: st.checked_at, config_file: '/root/.claude.json', auto: st.auto } })
+R('PUT', '/api/mcp/auto', ({ body }) => { const st = mcpState(); st.auto = !!body.enabled; if (st.auto) mcpCheck(); return { ok: true, enabled: st.auto } })
+R('POST', '/api/mcp/check', () => { mcpCheck(); return { checking: true } })
+R('POST', '/api/mcp', ({ body }) => {
+  const st = mcpState(), name = String(body.name || ''), where = String(body.where || '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) fail(400, 'bad_name', 'Letters, digits, dot, dash and underscore')
+  if (!['http', 'sse', 'stdio'].includes(body.type)) fail(400, 'bad_type', 'type: http, sse or stdio')
+  if (where && !where.startsWith('projects/')) fail(400, 'bad_where', 'where: empty (all folders) or a projects/… folder')
+  if (where && !S.fs.has(`${ROOT}/${where}`)) fail(404, 'folder_missing', 'This folder does not exist')
+  if (body.type === 'stdio' ? !String(body.command || '').trim() : !/^https?:\/\/\S+$/.test(String(body.url || ''))) fail(400, body.type === 'stdio' ? 'bad_command' : 'bad_url', body.type === 'stdio' ? 'A command is required' : 'An http(s) URL is required')
+  if (JSON.stringify(body).length > 32768) fail(400, 'too_long', 'A value is too long')
+  const scope = where ? 'local' : 'user', id = `${scope}|${where}|${name}`
+  if (st.servers.some((x) => x.id === id)) fail(409, 'exists', 'A server with this name already exists here')
+  const def = { type: body.type, ...(body.type === 'stdio' ? { command: body.command.trim(), args: body.args || [] } : { url: body.url }), ...(body.headers ? { headers: body.headers } : {}), ...(body.env ? { env: body.env } : {}) }
+  const keys = [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1])
+  st.servers.push({ id, name, scope, where: mcpWhere(where || null), ...def, literal_secret: false, keys, state: 'pending', detail: '', checked_at: null })
+  mcpCheck(); bus('mcp')
+  return { id, exposed: keys.filter((k) => S.secrets.some((s) => s.name === k && !s.expose)) }
+})
+R('DELETE', '/api/mcp', ({ q }) => { const st = mcpState(); st.servers = st.servers.filter((x) => x.id !== q.get('id')); bus('mcp'); return { ok: true } })
+R('POST', '/api/mcp/login', ({ body }) => {
+  const x = mcpState().servers.find((s) => s.id === body.id) || fail(404, 'folder_missing', 'Server not found')
+  if (x.type === 'stdio') fail(400, 'no_login_url', 'This server does not offer a login')
+  const login = crypto.randomBytes(8).toString('hex')
+  S.mcp.logins[login] = { id: x.id, at: now() }
+  return { login, url: `https://mcp.example.com/oauth/authorize?client_id=claude-code&state=${login}&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback` }
+})
+R('POST', '/api/mcp/login/:login', async ({ params, body }) => {
+  const l = mcpState().logins[params.login] || fail(404, 'login_expired', 'This login expired: start it again')
+  if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(body.redirect || ''))) fail(400, 'bad_redirect', 'Paste the whole address of the page that failed to open (http://localhost:…/callback?code=…)')
+  await sleep(800)
+  if (!/[?&]code=/.test(body.redirect)) fail(400, 'login_failed', 'The address has no authorization code')
+  delete S.mcp.logins[params.login]
+  const x = S.mcp.servers.find((s) => s.id === l.id)
+  if (x) Object.assign(x, { state: 'connected', detail: '', checked_at: now() })
+  bus('mcp')
+  return { ok: true, message: `${x ? x.name : 'Server'}: authenticated` }
+})
+R('DELETE', '/api/mcp/login/:login', ({ params }) => { delete mcpState().logins[params.login]; return { ok: true } })
+
 /* ---- telegram */
 function tgStatus() {
   const tg = S.telegram
