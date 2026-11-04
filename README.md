@@ -1,10 +1,10 @@
 # harness-pilot
 
-![Two luminous companions representing the agents](docs/assets/project-cover.png)
+![An abstract pilot coordinating two luminous agents](docs/assets/project-cover.png)
 
-**A self-hosted workspace for working with Claude Code and OpenAI Codex.**
+**A self-hosted control room for Claude Code and OpenAI Codex.**
 
-Create project sessions, work with either agent, or let both exchange ideas automatically while you follow along. The project is under active development; some advanced features currently work only with Claude Code.
+Organize work by project, collaborate with either agent, and follow their automatic discussions as they happen. The project is under active development; some advanced features currently work only with Claude Code.
 
 ## What you can do
 
