@@ -744,6 +744,8 @@ def _write(p: Path, content: str, expected: float | None) -> dict:
         raise _err(404, "not_found", "Parent folder not found")
     if p.exists() and expected is not None and abs(p.stat().st_mtime - expected) > 1e-3:
         raise _err(409, "conflict", "The file changed on disk since it was opened")
+    from . import space_labels
+    previous_identity = space_labels._identity(p) if p.exists() else None
     mode = p.stat().st_mode & 0o7777 if p.exists() else None
     # a fresh temp file next to it (never an existing name: a link planted there would send the text elsewhere)
     # short and fixed prefix: a long file name plus the suffix would pass the 255-byte limit
@@ -757,6 +759,7 @@ def _write(p: Path, content: str, expected: float | None) -> dict:
                 raise _err(400, "bad_content", "The text holds a character that cannot be saved") from None
         os.chmod(tmp, mode if mode is not None else 0o666 & ~config._UMASK)   # noqa: SLF001 (umask read once)
         os.replace(tmp, p)
+        space_labels.refreshed(p, previous_identity)
     finally:
         tmp.unlink(missing_ok=True)
     return {"ok": True, "mtime": p.stat().st_mtime}
@@ -809,6 +812,8 @@ def _move(src: Path, dst: Path) -> dict:
     if not dst.parent.is_dir():
         raise _err(404, "not_found", "Destination folder not found")
     shutil.move(str(src), str(dst))
+    from . import space_labels
+    space_labels.remap(src, dst)
     return {"ok": True}
 
 

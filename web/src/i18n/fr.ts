@@ -2,6 +2,12 @@ import type { en } from './en'
 
 // Dictionnaire français — doit contenir toutes les clés de en.ts (vérifié par TypeScript).
 export const fr: Record<keyof typeof en, string> = {
+  "space.label": "Espace",
+  "space.personal": "Personnel",
+  "space.agents": "Agents",
+  "space.shared": "Partagé",
+  "space.unclassified": "Non classé",
+  "space.explanation": "Ce classement sert à organiser les éléments. Il ne prouve pas leur auteur et ne limite pas les accès.",
   'common.add': 'Ajouter',
   'common.back': 'Retour',
   'common.cancel': 'Annuler',

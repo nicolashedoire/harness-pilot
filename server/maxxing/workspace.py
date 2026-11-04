@@ -510,6 +510,8 @@ def _rename(old: str, new: str) -> None:
     if dst.exists():
         raise WorkspaceError(409, "exists", f"{new} already exists")
     shutil.move(str(src), str(dst))
+    from .api import space_labels
+    space_labels.remap(src, dst)
     from .sessions import service
     service.remap_paths(old, new, sessions)
     _remap_telegram(old, new)

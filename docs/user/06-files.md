@@ -151,6 +151,16 @@ In a folder (the Files page list or grid, and the folder grid of the file viewer
   it - swipe from the left edge of the screen to come back. *Open the original* also stays in the app (Safari,
   outside the app, would not be signed in).
 
+## Space labels
+
+- Mark a file or folder as **Personal**, **Agents**, **Shared** or **Unclassified** from its menu (*Space*); the label shows
+  next to its name. Projects and topics get the same menu in the session list.
+- Labels help you organize: they do not prove who made an item and do not restrict access.
+- Existing items start unclassified, and children do not inherit their parent's label. A label follows renames and
+  moves made in the app and survives edits saved in the app; an item replaced or moved outside the app may need to be
+  labelled again.
+- Labels are kept in the app's local state and are not yet part of the memory backup.
+
 ## Tips
 
 - Attachments sent in sessions and from Telegram live in `<topic>/attachments/`.

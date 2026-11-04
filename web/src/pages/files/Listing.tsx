@@ -49,6 +49,7 @@ import {
   usePresentation,
 } from '@/components/ui'
 import { hasThumb, iconFor, iconTone } from '@/features/files/kinds'
+import { SpaceBadge, SpaceMenuItems } from '@/features/spaces/SpaceLabel'
 import { sortEntries, useFilePrefs, type SortKey, type UploadItem } from './state'
 import { downloadProps, useDownloadZip } from '@/features/files/download'
 import { EntriesMenu, SelectCheck, SelectionBar, useEntrySelection, type SelectionActions } from '@/features/files/selection'
@@ -473,6 +474,7 @@ function EntryMenu({ entry, actions, className }: { entry: FileEntry; actions: E
           <Pencil />
           {t('files.renameMove')}
         </DropdownMenuItem>
+        <SpaceMenuItems path={entry.path} />
         <DropdownMenuSeparator />
         <DropdownMenuItem destructive onSelect={() => actions.remove(entry)}>
           <Trash2 />
@@ -521,6 +523,7 @@ const Row = React.memo(function Row({ entry: e, selected, checked, dropTarget, a
         <span className={cn('min-w-0 flex-1 truncate text-sm', e.name.startsWith('.') && 'text-muted-foreground')}>
           <Sensitive length={Math.min(14, Math.max(4, e.name.length))}>{e.name}</Sensitive>
         </span>
+        <SpaceBadge path={e.path} />
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums group-hover:hidden group-focus-within:hidden max-md:hidden" title={meta.full}>
           {meta.size || meta.rel}
         </span>
@@ -557,6 +560,7 @@ const GridItem = React.memo(function GridItem({ entry: e, selected, checked, dro
           )}
           <SelectCheck checked={checked} className="absolute top-1.5 left-1.5 size-5" />
         </div>
+        <SpaceBadge path={e.path} />
         <span className="line-clamp-2 min-h-[2lh] text-xs leading-snug break-all">
           <Sensitive length={8}>{e.name}</Sensitive>
         </span>
