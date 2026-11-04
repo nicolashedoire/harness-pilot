@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Give a task a reminder (a date and a time) in its panel: you get one notification when it comes, in Notifications and as a push notification, even after a restart, and it leaves *To handle* once the task is done. Claude can set it too ("remind me Friday at 9:00").
 - A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
 - Telegram companion notifications now show the exact proposed changes and let the linked owner approve, reject or reopen the companion conversation. Older buttons cannot approve a changed proposal; decisions never apply or publish code. Large changes stay in the application review. Thread creation no longer produces a spurious unsupported-message reply during synchronization. [Show me](#show:telegram-setup)
 - The inherited license commands no longer contact the original project's license server or code repository: activating or releasing a key now stops with a clear message, and removing a key only forgets it on your computer.

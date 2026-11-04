@@ -16,13 +16,15 @@ in the UI within seconds.
   "projects": [{"id": "p_ab12", "name": "acme", "color": "#6366f1", "workspace": "acme"}],
   "tasks": [{
     "id": "t_9f3c2a", "title": "Write the launch post", "notes": "markdown",
-    "status": "todo", "priority": 2, "due": "2026-05-04",
+    "status": "todo", "priority": 2, "due": "2026-05-04", "remind_at": "2026-05-04T09:00",
     "project_id": "p_ab12", "topic_path": "projects/acme/topics/blog", "labels": ["writing"],
     "created": 1767225600.0, "updated": 1767225600.0, "done_at": null, "order": 1000.0
   }]
 }
 ```
 - `status`: `todo` | `doing` | `done`. `priority`: 0 (none) … 3 (urgent). `due`: `YYYY-MM-DD` or null.
+- `remind_at`: `YYYY-MM-DDTHH:MM` in the configured time zone, or null: harness-pilot notifies the user once at that
+  time (not for a done task). To remind again, set a new value.
 - `project_id` refers to `projects[].id`. Every workspace project has its task project, linked by
   `"workspace": "<project folder name>"` (created by harness-pilot, renamed with the project): to file a task under
   workspace project `acme`, use the id of the project whose `workspace` is `acme`. Projects without `workspace`
