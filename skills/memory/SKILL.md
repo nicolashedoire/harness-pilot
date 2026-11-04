@@ -23,7 +23,7 @@ Nothing durable (a quick question, reading a file, a failed attempt with no less
 2. **Project** - `<workspace>/projects/<project>/memory.md`: true for every topic of the project.
 3. **Global** - `<workspace>/memory.md`: rules and preferences valid everywhere. Rare.
 
-The workspace root is printed by `maxxing status` (here `{{WORKSPACE}}`).
+The workspace root is printed by `pilot status` (here `{{WORKSPACE}}`).
 
 ## How
 - Short factual bullets in the matching section; add a date when it helps: `- 2026-03-02: …`.

@@ -17,7 +17,7 @@ project or topic and move the useful notes there.
 ## Task board
 
 Changes show up on the Tasks page immediately.
-- The board is `{{WORKSPACE}}/tasks.json`. Always use the `maxxing-tasks` skill to read or change
+- The board is `{{WORKSPACE}}/tasks.json`. Always use the `pilot-tasks` skill to read or change
   it (schema, atomic write, keep unknown fields). Never rewrite the file by hand from memory.
 - Adding: infer title, due date (`YYYY-MM-DD`, resolve "Friday" / "tomorrow" with today's date),
   priority and task project from the sentence; ask only when something important is ambiguous.
@@ -46,7 +46,7 @@ Only when the user asks to track subscriptions or accounts:
   monthly cost; flag dates that are past (probably renewed: ask for the new date). Annual plans:
   cost / month = yearly price / 12, note the yearly amount.
 - Renewal reminder: no job exists by default. When the user asks for reminders, create a Claude
-  job "Renewal reminder" with the `maxxing-cron` skill: Mondays 09:30, in this topic
+  job "Renewal reminder" with the `pilot-crons` skill: Mondays 09:30, in this topic
   (`projects/general/topics/inbox`), prompt "List the subscriptions in accounts.md renewing in the
   next 30 days (date, service, amount) and the total monthly cost; flag past renewal dates", with a
   Telegram notification.

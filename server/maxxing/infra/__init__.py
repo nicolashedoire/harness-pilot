@@ -1,6 +1,6 @@
 """Infra: where every site, database, bucket, domain and server is, its status and its links (Settings -> Features ->
 Infra page). Read-only: the recipes that create things on this server are in `actions.py` / `caddy.py` (CLI
-`maxxing infra`, skill `maxxing-infra`).
+`maxxing infra`, skill `pilot-infra`).
 
 refresh() gathers, in the background (never on a page load):
   - the probe of this server (`probe.py` as a subprocess) and of each registered server (`ssh ... python3 -`),

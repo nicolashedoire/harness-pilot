@@ -15,12 +15,12 @@ so they hold on every device.
 ## Start with the doctor
 
 ```bash
-maxxing doctor            # human readable, exit code 1 if something fails
-maxxing doctor --json     # for scripts and Claude
-maxxing doctor --live     # also makes a real one-line Claude call
+pilot doctor            # human readable, exit code 1 if something fails
+pilot doctor --json     # for scripts and Claude
+pilot doctor --live     # also makes a real one-line Claude call
 ```
 
-Or open a session and say "something is wrong, use the maxxing-doctor skill": Claude reads the
+Or open a session and say "something is wrong, use the pilot-doctor skill": Claude reads the
 checks and the logs, explains, and fixes what is safe to fix.
 
 | Check | Meaning |
@@ -34,8 +34,8 @@ checks and the logs, explains, and fixes what is safe to fix.
 | service, http | `claude-maxxing` running and answering |
 | security | firewall (ufw), fail2ban and automatic security updates active - warning only; fix: `bash /opt/claude-maxxing/install.sh --secure` |
 | state_files | a damaged `config.json` / `secrets.json` was found and replaced; its copy (`*.damaged-<date>`) is kept next to it - compare, restore what is missing (keys: Settings -> Keys), delete the copy |
-| tools | Node.js, Remotion, Scrapling and the shared Chromium ready (videos, PDFs, scraping) - warning only; fix: `maxxing deps update` |
-| deps_files | external components (`maxxing deps list`): ✘ when a binary changed since it was installed or a file is not owned by root (another user could replace it), ! when one is missing or not at the version of this release; fix: `maxxing deps update` |
+| tools | Node.js, Remotion, Scrapling and the shared Chromium ready (videos, PDFs, scraping) - warning only; fix: `pilot deps update` |
+| deps_files | external components (`pilot deps list`): ✘ when a binary changed since it was installed or a file is not owned by root (another user could replace it), ! when one is missing or not at the version of this release; fix: `pilot deps update` |
 | bind | not listening on a public address |
 | public_url, caddy | your URL reachable, Caddy config valid |
 | caddy_site | the Caddy site written by an older installer: `X-Frame-Options DENY` (PDF previews in Files stay blank) or a body limit below the 2 GB uploads - the fix command edits `/etc/caddy/claude-maxxing.caddy` and reloads Caddy |
@@ -54,7 +54,7 @@ journalctl -u claude-maxxing -n 100 --no-pager     # server
 journalctl -u caddy -n 50 --no-pager               # HTTPS proxy
 systemctl list-units 'maxxing-*'                   # running Claude turns
 journalctl -u maxxing-<id8> --no-pager             # one turn
-maxxing cron list                                  # jobs and their last result
+pilot cron list                                  # jobs and their last result
 ```
 Logs are also visible in Settings -> System.
 
@@ -67,7 +67,7 @@ other sessions normally keep working (the cap is per session: several heavy sess
 RAM). Ask Claude for a lighter way (a lower resolution, a render in parts, fewer
 inputs at once). To change the cap, set `unit_memory_max` in `/var/lib/claude-maxxing/config.json`
 (`"4G"`, `"90%"`, or `""` for none): it applies to the next turns and jobs. All the scheduled jobs running at once
-also share `jobs_memory_max` (default 75 %, applied by `maxxing init`). `journalctl -k | grep -i oom`
+also share `jobs_memory_max` (default 75 %, applied by `pilot init`). `journalctl -k | grep -i oom`
 shows what was killed. If the whole turn stopped, the session says "The turn was stopped: the server ran out
 of memory".
 
@@ -79,7 +79,7 @@ or better, serve it behind Caddy on your domain.
 
 **The page does not load.**
 `systemctl status claude-maxxing`. If it is failing, read the journal. After a manual `git pull`,
-run `maxxing update` instead (it syncs the dependencies). `systemctl restart claude-maxxing` is safe:
+run `pilot update` instead (it syncs the dependencies). `systemctl restart claude-maxxing` is safe:
 running Claude turns continue in their own units.
 
 **Certificate error / domain unreachable.**
@@ -88,15 +88,15 @@ The domain's DNS record must point to the server (`getent ahosts ui.example.com`
 certificate on the first request: `journalctl -u caddy` shows why it failed. Validate the config:
 `caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
 
-**Lost password.** On the server: `maxxing password`. Or start over with a new setup link:
-`maxxing setup-link --reset`.
+**Lost password.** On the server: `pilot password`. Or start over with a new setup link:
+`pilot setup-link --reset`.
 
 **"Too many attempts".** Wait 15 minutes, or restart the service.
 
-**Lost setup link.** `maxxing setup-link`.
+**Lost setup link.** `pilot setup-link`.
 
 **Every session fails at once.** Claude is not signed in or the token expired: Settings -> Claude ->
-Test, or `maxxing doctor --live`. Renew with `claude setup-token`.
+Test, or `pilot doctor --live`. Renew with `claude setup-token`.
 
 **A session stays "running".** Press Stop. If it persists: `systemctl list-units 'maxxing-*'` and
 read that unit's journal.
@@ -104,19 +104,19 @@ read that unit's journal.
 **A note says the conversation could not be resumed.** The Claude transcript was missing; a fresh
 context was started automatically. The history stays visible.
 
-**A job did not run.** `maxxing cron list` (enabled? last result?), `crontab -l` (is its line in the
-managed block?), `maxxing cron sync`, `systemctl status cron`. Run it by hand: `maxxing cron run <id>`.
+**A job did not run.** `pilot cron list` (enabled? last result?), `crontab -l` (is its line in the
+managed block?), `pilot cron sync`, `systemctl status cron`. Run it by hand: `pilot cron run <id>`.
 
 **A job runs at the wrong hour.** The cron daemon uses the system time zone, the UI uses the one
-from Settings -> General. `maxxing doctor` shows both. On a shared server, keep the server clock
-and let jobs follow your zone: `maxxing init --system-clock keep`. Otherwise align them:
+from Settings -> General. `pilot doctor` shows both. On a shared server, keep the server clock
+and let jobs follow your zone: `pilot init --system-clock keep`. Otherwise align them:
 `timedatectl set-timezone <Zone> && systemctl restart cron`, and
-`maxxing init --timezone <Zone> && systemctl restart claude-maxxing`.
+`pilot init --timezone <Zone> && systemctl restart claude-maxxing`.
 
-**Telegram is silent.** `maxxing telegram status` shows the last error; `maxxing telegram test`.
+**Telegram is silent.** `pilot telegram status` shows the last error; `pilot telegram test`.
 See [Telegram](telegram).
 
-**Backup failed.** `maxxing backup status`. Expired token, repository made public, or a secret found
+**Backup failed.** `pilot backup status`. Expired token, repository made public, or a secret found
 in a file (the message names the file). See [Backup](backup).
 
 **Disk full.** Check `~/.claude/projects` (transcripts), attachments in topics, and the journal
@@ -127,9 +127,9 @@ server is back (if you are typing, as soon as you leave the field). Otherwise re
 app's HTML is never cached, a reload is enough.
 
 **Tailscale URL stops working after a reboot.** If the Tailscale IP changed, re-run the installer
-with `ACCESS=tailscale` (or `maxxing init --bind <ip> --public-url http://<ip>:8787` and restart).
+with `ACCESS=tailscale` (or `pilot init --bind <ip> --public-url http://<ip>:8787` and restart).
 
 ## Still stuck?
 
-Collect `maxxing doctor --json` and the last 200 lines of `journalctl -u claude-maxxing` (check that
+Collect `pilot doctor --json` and the last 200 lines of `journalctl -u claude-maxxing` (check that
 they contain no secrets) and contact support.

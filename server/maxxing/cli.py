@@ -1,8 +1,9 @@
-"""`maxxing` command line. Sub-commands are added by each domain (see docs/dev/PLAN.md).
+"""`pilot` command line (`maxxing` = the same entry point under its earlier name, a permanent alias: pyproject
+[project.scripts], /usr/local/bin links). Sub-commands are added by each domain (see docs/dev/PLAN.md).
 
-  maxxing serve                 run the web server (systemd service)
-  maxxing setup-link            print the one-time setup link, valid 1 h (first run / password lost)
-  maxxing password              set a new UI password interactively
+  pilot serve                   run the web server (systemd service)
+  pilot setup-link              print the one-time setup link, valid 1 h (first run / password lost)
+  pilot password                set a new UI password interactively
 """
 from __future__ import annotations
 
@@ -69,8 +70,18 @@ def register(name: str, help: str, configure, handler) -> None:
     COMMANDS[name] = (help, configure, handler)
 
 
+CLI_NAMES = ("pilot", "maxxing")        # the command and its permanent alias (same entry point)
+
+
+def prog_name() -> str:
+    """The name the command was called by (`pilot` or `maxxing`), `pilot` otherwise (`python -m maxxing`)."""
+    name = os.path.basename(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+    return name if name in CLI_NAMES else CLI_NAMES[0]
+
+
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="maxxing", description="harness-pilot " + __version__)
+    p = argparse.ArgumentParser(prog=prog_name(), description=f"harness-pilot {__version__} - command `pilot` "
+                                "(alias: `maxxing`, the same command under its earlier name)")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("serve", help="run the web server")
