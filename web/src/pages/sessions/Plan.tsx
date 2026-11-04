@@ -114,6 +114,7 @@ export function PlanCard({ session, onEdit }: { session: Session; onEdit: () => 
         <span className="text-xs text-muted-foreground">{t('conv.plan.mode')}</span>
       </div>
       <p className="text-[13px] text-muted-foreground">{t('conv.plan.hint')}</p>
+      {(session.provider === 'discussion' || session.provider === 'debate') && <p className="text-[13px] text-muted-foreground">{t('convx.planDuo')}</p>}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={approve} loading={approving}>
           <Check /> {t('conv.plan.approve')}
