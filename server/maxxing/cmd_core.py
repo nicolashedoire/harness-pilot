@@ -1946,6 +1946,10 @@ def cmd_update(a) -> int:
         print("--notify and --json only apply to --check", file=sys.stderr)
         return 2
     print(f"harness-pilot {__version__} - update")
+    if os.environ.get("HARNESS_PILOT_LOCAL_MODE") == "1":   # like POST /api/system/update (409 local_update_unsupported)
+        line(FAIL, "pilot update is unavailable in local mode: it updates and restarts a server installation",
+             f"update this clone with git (git -C {config.CODE} pull), then start bash scripts/dev-local.sh again")
+        return 1
     if not (config.CODE / ".git").exists():
         line(FAIL, f"{config.CODE} is not a git clone - re-run install.sh")
         return 1

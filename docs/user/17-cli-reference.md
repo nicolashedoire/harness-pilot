@@ -64,6 +64,8 @@ Restart the service after changing the port, bind address or public URL:
 | `--verify` | check that every extension loads and every widget answers, and run each customization's check. Exit `0` everything works, `1` something to fix |
 | `--smart` | used by the Update button: after the restart the server opens a `system/harness` session that applies the upgrade notes |
 
+In the local setup (`scripts/dev-local.sh`), `pilot update` refuses to run (exit code `1`), as the Update button does: it would update and restart a server installation. Update your clone with git instead (`git pull` in the repository), then start `bash scripts/dev-local.sh` again. `--check`, `--preflight` and `--verify` still work, since they change nothing.
+
 Every install fetches the new version from its git remote (a private fork or mirror: with the read token stored as
 `github_update_token`). A server installed with a key before 2.0.0a87 first moves to the public git repository by
 itself (see [License](license)). After an update, the command
