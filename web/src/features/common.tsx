@@ -81,7 +81,7 @@ export function OptionCard({
     >
       <input type="radio" name={name} value={value} checked={selected} onChange={onSelect} className="sr-only" />
       {media ? <span className={cn('flex h-8 min-w-8 shrink-0 items-center justify-center gap-0.5 rounded-lg px-1.5', selected ? 'bg-primary/10' : 'bg-muted')}>{media}</span> : mark}
-      <span className="grid min-w-0 flex-1 gap-1">
+      <span className="grid min-w-0 flex-1 content-start gap-1">
         <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
           {Icon && <Icon className="size-4 text-muted-foreground" />}
           {title}
