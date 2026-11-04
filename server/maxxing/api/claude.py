@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
 import subprocess
 import time
 from typing import Literal
@@ -27,10 +26,7 @@ _version_cache: dict[str, tuple[float, str | None]] = {}
 
 # ---- detection -----------------------------------------------------------------------------
 def _resolved_bin() -> str | None:
-    b = spawn.claude_bin()
-    if os.path.isabs(b):
-        return b if os.access(b, os.X_OK) else None
-    return shutil.which(b, path=spawn.base_env()["PATH"])
+    return claude_probe.binary()
 
 
 def claude_version() -> str | None:
@@ -64,7 +60,8 @@ def auth_status() -> dict:
 
 # ---- test call -----------------------------------------------------------------------------
 def run_test(model: str = TEST_MODEL, source: str = "test", timeout_s: int = TEST_TIMEOUT_S) -> dict:
-    """Real one-line call through the CLI -> {ok, model, ms, error?} (also remembered)."""
+    """Real one-line call through the CLI -> {ok, model, ms, error?} (also remembered); no CLI ->
+    error `claude_probe.NOT_INSTALLED` without a call."""
     return _remember(claude_probe.run(model, TEST_PROMPT, timeout_s), source)
 
 

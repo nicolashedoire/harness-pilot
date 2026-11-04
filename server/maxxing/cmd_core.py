@@ -1026,6 +1026,9 @@ def check_claude_auth(live: bool = False) -> Check:
         ca.record(True, None, "check")
         return _c("claude_auth", OK, f"Claude auth: {method} (live test {result['ms'] / 1000:.1f}s)", detail)
     out = result.get("error") or "No answer"
+    if out == claude_probe.NOT_INSTALLED:
+        return _c("claude_auth", FAIL, f"{claude_probe.NOT_INSTALLED}: no live test", detail,
+                  "install Claude Code (see the claude_cli check), then run pilot doctor --live again")
     auth_err = ca.detect(out)
     if auth_err:
         ca.record(False, auth_err, "check")

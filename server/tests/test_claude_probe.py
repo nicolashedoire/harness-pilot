@@ -68,11 +68,39 @@ def test_old_context_error_is_not_an_expired_sign_in(mx):
     assert claude_auth.needs_check()
 
 
-@pytest.mark.parametrize("stdout", ["", "invalid JSON", "[]", '{"result":"not ok"}', '{"result":"ok","is_error":true}'])
-def test_invalid_answer_is_not_a_success(mx, monkeypatch, stdout):
-    monkeypatch.setattr(claude_probe.subprocess, "run", lambda *a, **kw: SimpleNamespace(stdout=stdout, stderr="", returncode=0))
+@pytest.mark.parametrize("stdout,code", [
+    ("", 0), ("invalid JSON", 0), ("[]", 0), ('{"result":""}', 0), ('{"result":"ok","is_error":true}', 0),
+    ('{"result":"ok","subtype":"error_during_execution"}', 0), ('{"result":"ok"}', 1),
+    ('{"result":"Invalid API key · Please run /login"}', 0)])
+def test_invalid_answer_is_not_a_success(mx, monkeypatch, stdout, code):
+    monkeypatch.setattr(claude_probe.subprocess, "run", lambda *a, **kw: SimpleNamespace(stdout=stdout, stderr="", returncode=code))
     result = claude_probe.run()
     assert not result["ok"] and result["error"]
+
+
+@pytest.mark.parametrize("answer", ["ok", "OK.", "ok!", " Ok \n", "OK, ready."])
+def test_any_answer_of_a_successful_call_is_a_success(mx, monkeypatch, answer):
+    """The probe tests the sign-in, not how the model words its reply: "OK." must not fail Test or doctor --live."""
+    config.set_secret("anthropic_api_key", "sk-test-connection")
+    stdout = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": answer,
+                         "modelUsage": {"claude-haiku-4-5-20251001": {}}})
+    monkeypatch.setattr(claude_probe.subprocess, "run", lambda *a, **kw: SimpleNamespace(stdout=stdout, stderr="", returncode=0))
+    result = claude_probe.run()
+    assert result["ok"] is True and "error" not in result
+    assert cmd_core.check_claude_auth(live=True)["level"] == "ok"
+
+
+@pytest.mark.parametrize("missing", ["claude-not-installed-here", "/nonexistent/bin/claude"])
+def test_missing_cli_is_reported_as_not_installed(client, mx, monkeypatch, missing):
+    config.set_secret("anthropic_api_key", "sk-test-connection")
+    monkeypatch.setenv("MAXXING_CLAUDE_BIN", missing)
+    monkeypatch.setattr(claude_probe.subprocess, "run", lambda *a, **kw: pytest.fail("no call without Claude Code"))
+    result = client.post("/api/claude/test").json()
+    assert result["ok"] is False and result["error"] == "Claude Code is not installed"
+    assert claude_auth.last() == {}                      # not a sign-in result
+    doctor = cmd_core.check_claude_auth(live=True)
+    assert doctor["level"] == "fail" and doctor["title"].startswith("Claude Code is not installed")
+    assert "Errno" not in json.dumps(doctor)
 
 
 def test_probe_timeout_cleans_up_its_scratch_folder(mx, monkeypatch):
@@ -98,6 +126,7 @@ def test_doctor_live_uses_the_same_bounded_probe(mx):
 def test_doctor_and_web_detect_mac_keychain_without_exposing_credentials(mx, monkeypatch):
     monkeypatch.setattr(claude_auth.sys, "platform", "darwin")
     monkeypatch.setenv("HOME", str(mx["tmp"] / "home"))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)   # else claude_dir() is the caller's, not HOME's
     monkeypatch.setattr(claude_auth, "_mac_status_cache", {})
     def cli(args, **kwargs):
         assert args[1:] == ["auth", "status", "--json"]
