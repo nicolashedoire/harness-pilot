@@ -348,6 +348,15 @@ Pick a higher threshold (or Off) for a session that needs every detail of a very
 (many tool calls in a row) is compacted along the way too, near the same threshold, instead of growing up to the
 model's limit. `pilot sessions token-report` shows, on your own sessions, what each threshold would have saved.
 
+**Discussions and debates** between Claude Code and Codex are compacted too. When a reply ends near the limit
+(the automatic compaction threshold above, or 80 % of the model's context), or when an agent refuses a reply
+because its conversation is full, Claude summarizes the exchanges so far, then both agents continue in fresh
+conversations that start from that summary, and a refused reply is asked again. The thread shows a
+*Conversation summarised to continue* separator, the summary and a note; the summary does not count as a reply.
+**Compact context** in the session's **…** menu does the same on demand, also while the discussion is paused (it
+stays paused). Codex does not report how full its conversation is, so on its side the summary comes when it
+refuses a reply.
+
 **Compact when you come back** (Settings -> Claude, 200k tokens by default): Claude keeps the start of a conversation
 in a cache for a few minutes (up to an hour). When you write to a session that has been quiet for longer and holds at least that
 much context, the cache is gone and the whole history would be re-sent at full price - so harness-pilot summarizes the
