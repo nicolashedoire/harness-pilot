@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The application now uses the blue crew companion as its icon across sign-in, the sidebar, browser tabs, offline pages and installed-app icons. Its identity stays consistent when the accent colour changes.
+
 - Space labels: unclassified items (the default) no longer carry an *Unclassified* badge on every row of the session list and of Files; **Personal**, **Agents** and **Shared** still show theirs, and the *Space* menu still sets and ticks every label.
 - Settings: in a short window, the list of sections fades at the edge it can still scroll to, so the last visible section no longer looks cut off.
 - Settings -> Backup: the *What this backup covers* card is spaced like the other cards.

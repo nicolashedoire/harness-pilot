@@ -2,6 +2,8 @@
 
 ## Unreleased - 2026-11-04
 
+- App identity: export all favicons, Apple and maskable icons deterministically from the committed companion master using web/scripts/gen-icons.py (Pillow). Refresh all accent manifests, service-worker/offline paths and legacy aliases with versioned asset names. The icon no longer changes with the accent. Source master and rebuilt web/dist are committed.
+
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
 - `SettingsCard` (`pages/settings/sections/ui.tsx`): `children` optional; without them the description is the card's text (no body, the header takes the bottom padding). Backup's *What this backup covers* uses it instead of a paragraph in the body, whose top padding made a larger gap under the title than in the other cards.
