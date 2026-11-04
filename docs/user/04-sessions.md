@@ -11,7 +11,7 @@ stopped.
 
 Choose **Claude Code — agent team** when creating a session and request two to six subagents. Claude acts as coordinator and is instructed to split suitable work into independent tasks, use its native subagents in parallel, and combine their results. This is a request to Claude, not a guarantee of the number of agents or a hard concurrency limit. Each agent's work consumes the relevant account's usage allowance and follows the session's permissions.
 
-Open **Agent map** from the session menu to inspect agent calls present in the loaded conversation, their status and their reported result. Load earlier messages to include older calls. Claude's internal subagent transcripts are not always available. Stop the session to interrupt the current turn; verify the displayed statuses and resulting files afterward.
+Open **Agent map** from the session menu to inspect agent calls present in the loaded conversation, their status and their reported result. Load earlier messages to include older calls. Claude's internal subagent transcripts are not always available. Subagents cannot be stopped one by one: they run inside Claude's current turn, and Claude Code does not stop a single one of them on request. Stop the session to interrupt the coordinator and all its subagents; verify the displayed statuses and resulting files afterward.
 
 ## Mixed Claude and Codex team
 
