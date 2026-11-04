@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - **Side questions** now work in Codex sessions, discussions and debates (the agent that answered last replies), and the answer says which agent wrote it. Agent plugin sessions do not offer them.
+- Troubleshooting now has a section for the local setup on macOS: where the logs are, how to restart, a port already in use, folder permissions, the missing `ffmpeg` and `pdftoppm` tools (with their `brew install` commands) and what Settings → System shows locally.
 - Long Claude Code and Codex discussions no longer stop when an agent's conversation gets full: near the limit, or when an agent refuses a reply for lack of room, Claude summarizes the exchanges so far and both agents continue in fresh conversations from that summary, marked in the thread. **Compact context** in the discussion's **…** menu does the same on demand.
 - A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
 - Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
