@@ -7,6 +7,8 @@ The **Studio** (*Atelier* in French) is where everything your agents create for 
 widgets, pages, conversation blocks, themes, skills, customizations of the product and cron jobs. Open it from the
 sidebar, right under your extension pages (on a phone: the app menu, top right).
 
+When proposals wait for you, the Studio's entry shows how many, in violet (a dot when the sidebar is folded).
+
 Nothing an agent makes is switched on behind your back. When Claude or Codex builds a widget or a page, it writes it
 aside as a **proposal**; it only runs, and only shows on the dashboard, once you approve it. Every approved version is
 kept, so you can go back to an earlier one.

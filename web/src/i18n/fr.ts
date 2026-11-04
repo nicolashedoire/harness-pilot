@@ -293,6 +293,8 @@ export const fr: Record<keyof typeof en, string> = {
   'nav.settings': 'Réglages',
   'nav.docs': 'Docs',
 'nav.atelier': 'Atelier',
+'nav.atelierPending': '{count} à valider',
+'nav.atelierPending#one': '{count} à valider',
   'shell.account': 'Compte',
   'shell.collapse': 'Réduire la barre latérale',
   'shell.resize': "Glisser pour redimensionner (double-clic : largeur normale)",

@@ -46,13 +46,15 @@ function useBadgeMotion(count: number) {
   return { ref, shown, leaving }
 }
 
-/** unread: finished answers; running: turns in progress; attention: notifications to handle. */
-export type CountTone = 'unread' | 'running' | 'attention'
+/** unread: finished answers; running: turns in progress; attention: notifications to handle; draft: proposals of the
+ *  Atelier waiting for the user's approval (violet). */
+export type CountTone = 'unread' | 'running' | 'attention' | 'draft'
 const BADGE_TONE: Record<CountTone, string> = {
   // Finished (unread): green, see-through, with a fine ring; running: the theme color, see-through.
   unread: 'bg-success/15 text-success ring-1 ring-success/40 ring-inset',
   running: 'bg-primary/15 text-primary',
   attention: 'bg-destructive/15 text-destructive ring-1 ring-destructive/30 ring-inset',
+  draft: 'bg-draft/15 text-draft ring-1 ring-draft/30 ring-inset',
 }
 
 /** Round counter (unread answers, running turns, notifications to handle). Pulses when Settings -> Notifications ->
@@ -83,11 +85,12 @@ const DOT_TONE: Record<CountTone | 'notice', string> = {
   unread: 'bg-success/70 ring-2 ring-success/25',
   running: 'bg-primary',
   attention: 'bg-destructive ring-2 ring-destructive/25',
+  draft: 'bg-draft ring-2 ring-draft/25',
   notice: 'bg-primary',
 }
 
 /** Round dot version (collapsed sidebar, tab bar icons). `notice`: something unread that needs nothing (activity). */
 export function CountDot({ tone = 'unread', className }: { tone?: CountTone | 'notice'; className?: string }) {
-  const pulse = useUI((s) => s.badgePulse) && (tone === 'unread' || tone === 'attention' || tone === 'notice')
+  const pulse = useUI((s) => s.badgePulse) && (tone === 'unread' || tone === 'attention' || tone === 'draft' || tone === 'notice')
   return <span aria-hidden className={cn('size-2 rounded-full', DOT_TONE[tone], pulse && 'mx-badge-pulse', className)} />
 }

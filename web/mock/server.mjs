@@ -4122,8 +4122,22 @@ R('POST', '/api/extensions/:id/fix', ({ params, body }) => {
   return { session: updateSession(`Fix the extension ${e.name}`, prompt), reused: false }
 })
 installBlocks({ R, state: () => S, fail, bus })
+// like the server, a decided draft resolves its `atelier.proposed` feed row
+function atelierFeedSync() {
+  let changed = false
+  for (const e of S.feed?.events || [])
+    if (e.kind === 'atelier.proposed' && !e.resolved_at && S.atelier?.drafts?.[e.params?.draft_id]?.status !== 'pending') {
+      e.resolved_at = now()
+      changed = true
+    }
+  if (changed) bus('feed')
+}
 installAtelier({
-  R, state: () => S, fail, bus, now,
+  R, state: () => S, fail, now,
+  bus: (...topics) => {
+    bus(...topics)
+    if (topics.includes('atelier')) atelierFeedSync()
+  },
   // request-change: continue the draft's session (queued while it runs), else a new session in its topic
   sendMessage: (sid, path, text, title) => {
     const s = sid && S.sessions.find((x) => x.id === sid)
@@ -4349,6 +4363,14 @@ function seedFeed(st, t) {
   // ---- three days ago
   add({ at: t - 3 * DAY - 2 * HOUR, source: 'system', level: 'success', kind: 'claude.updated', title: 'Claude Code updated to 2.4.1', body: 'From 2.4.0, while nothing was running.',
     url: '/settings/claude', params: { version: '2.4.1', previous: '2.4.0' }, read: true })
+  // the drafts waiting in the Atelier (atelier.mjs): one `atelier.proposed` row each, resolved once decided
+  // (atelierFeedSync below); the Atelier's rail counter reads them (GET /api/feed?kind=atelier.proposed)
+  for (const d of Object.values(st.atelier?.drafts || {}))
+    if (d.status === 'pending')
+      add({ at: d.created, source: 'system', level: 'warning', kind: 'atelier.proposed', title: `To approve in the Atelier: ${d.name}`, body: d.summary || '',
+        url: `/atelier/drafts/${d.id}`, group: `atelier:${d.id}`, actions: [feedLink('review', 'Review', `/atelier/drafts/${d.id}`)],
+        params: { draft_id: d.id, kind: d.kind, id: d.target, name: d.name, type: d.type, change: d.change, agent: d.origin?.agent || 'unknown',
+          network: d.permissions?.network?.length || 0, secrets: d.permissions?.secrets?.length || 0 } })
   const down = add({ at: t - 3 * DAY - HOUR, source: 'infra', level: 'error', kind: 'infra.down', title: 'Down: www.example.com', body: 'https://www.example.com/: http_502',
     url: '/infra?id=site:local:www.example.com', group: 'down:site:local:www.example.com', params: { resource_id: 'site:local:www.example.com', name: 'www.example.com', reason: 'http_502' },
     actions: [feedLink('open', 'Open', '/infra?id=site:local:www.example.com')], read: true })

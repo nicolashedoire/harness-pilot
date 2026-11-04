@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { openPalette } from '@/commands/registry'
 import { Button, CountBadge, CountDot, Kbd, MOD, Tooltip } from '@/components/ui'
-import { ATELIER_NAV, navItemClass, navTourId, useNav, type NavItem } from './nav'
+import { ATELIER_NAV, navItemClass, navTourId, useNav } from './nav'
+import { AtelierNavItem } from './AtelierNav'
 import { Logo } from './Logo'
 import { HealthIndicator } from './HealthIndicator'
 import { UsageIndicator } from './UsageIndicator'
@@ -257,21 +258,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
-  )
-}
-
-/** The Atelier's entry, after the extension pages (nav.ts ATELIER_NAV). */
-function AtelierNavItem({ item, collapsed, active, prefetch }: { item: NavItem; collapsed: boolean; active: boolean; prefetch: React.HTMLAttributes<HTMLAnchorElement> }) {
-  const t = useT()
-  const label = t(item.label)
-  return (
-    <Tooltip content={collapsed ? label : null} side="right">
-      <NavLink to={item.to} {...prefetch} data-tour={navTourId(item)} className={navItemClass(active, collapsed)}>
-        {active && <span aria-hidden className={cn('absolute w-[3px] rounded-r-full bg-primary', collapsed ? 'top-3 bottom-3 -left-2.5' : 'top-2 bottom-2 -left-3')} />}
-        <item.icon className={cn('size-[18px] shrink-0', active && 'text-primary')} strokeWidth={active ? 2.2 : 1.9} />
-        {!collapsed && <span className="flex-1 truncate">{label}</span>}
-      </NavLink>
-    </Tooltip>
   )
 }
 
