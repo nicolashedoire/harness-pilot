@@ -45,16 +45,16 @@ Five fields: `minute hour day-of-month month day-of-week`.
 | `0 9 1 * *` | the 1st of each month at 09:00 |
 | `0 */6 * * *` | every 6 hours |
 | `@daily`, `@hourly`, `@weekly`, `@monthly` | shortcuts |
-| `@reboot` | **At startup**: each time the application starts (local mode), or when the server boots (legacy server) |
+| `@reboot` | **At startup**: each time the application starts (local mode), or when the server boots (Linux server) |
 
 An `@reboot` job has no next run: the list shows *At the next start*. Disable it to keep it from running at the
 next start; **Run now** still starts it by hand.
 
 ### Time zone
 
-In local mode, the scheduler checks jobs in the time zone configured in Settings, without changing the system clock. The page shows schedules, next runs and history in that zone, in your language and its time format (*Every day at 4:40 AM* in English, *Tous les jours à 04:40* in French). On the night clocks go back, a job set in the repeated hour runs in both passes. The remainder of this section describes the inherited Linux server setup, which is not validated for this repository.
+In local mode, the scheduler checks jobs in the time zone configured in Settings, without changing the system clock. The page shows schedules, next runs and history in that zone, in your language and its time format (*Every day at 4:40 AM* in English, *Tous les jours à 04:40* in French). On the night clocks go back, a job set in the repeated hour runs in both passes. The remainder of this section is for a [Linux server installation](installation), where root's crontab starts the jobs.
 
-On the legacy server, the cron daemon fires jobs in the **server's system time zone**, while the UI (schedule preview,
+On a Linux server, the cron daemon fires jobs in the **server's system time zone**, while the UI (schedule preview,
 next runs, history) uses the time zone of Settings -> General. Both must be the same, otherwise a
 job shown "at 07:00" runs at another hour. On a fresh server, the zone you pick in the onboarding
 (or Settings -> General) also becomes the system zone; `pilot doctor` warns if they differ.
@@ -94,7 +94,7 @@ answer of a prompt job), so a reminder arrives as a readable message.
 
 ## How it works
 
-In local mode, an in-process scheduler starts jobs while the app is open; it does not modify the system crontab. The following description applies to the inherited Linux server implementation.
+In local mode, an in-process scheduler starts jobs while the app is open; it does not modify the system crontab. The following applies to a [Linux server installation](installation): the installer writes the managed block below and `pilot uninstall` removes it.
 
 Each enabled job becomes one line in root's crontab, inside a block that harness-pilot manages:
 
