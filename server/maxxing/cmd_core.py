@@ -1367,6 +1367,16 @@ def check_tools() -> Check:
               "pilot deps update  (or: bash " + str(config.CODE) + "/install.sh --tools)")
 
 
+def check_media_tools() -> Check:
+    """ffmpeg with its WebP encoder and pdftoppm: thumbnails and previews of images, videos and PDFs (warning only)."""
+    from . import mediatools
+    st = mediatools.status()
+    if st["ok"]:
+        return _c("media_tools", OK, "media tools ready (ffmpeg with WebP, pdftoppm)", st["ffmpeg"]["path"] or "")
+    return _c("media_tools", WARN, "media tools missing: " + "; ".join(mediatools.WHAT[m] for m in st["missing"]),
+              "", " && ".join(st["install"]) + "  (then restart)")
+
+
 NODE_PARTS = ("bin/node", "bin/npm", "bin/npx", "bin/corepack", "include/node", "lib/node_modules/npm",
               "lib/node_modules/corepack", "share/doc/node")
 
@@ -1598,7 +1608,7 @@ def collect_checks(live: bool = False, fetch: bool = True, deps: bool = False) -
         check_python, check_uv, check_cli_name, check_claude_cli, lambda: check_claude_version(fetch), lambda: check_claude_auth(live),
         lambda: check_skill_listing(cfg), check_setup,
         check_service, check_hardening, lambda: check_caddy_site(cfg), check_infra_paths, lambda: check_bind(cfg), lambda: check_http(cfg), lambda: check_public_url(cfg),
-        lambda: check_caddy(cfg), check_crontab, lambda: check_timezone(cfg), lambda: check_telegram(cfg), lambda: check_backup(cfg), check_voice, check_tools, check_managed_deps, check_security, check_state_files,
+        lambda: check_caddy(cfg), check_crontab, lambda: check_timezone(cfg), lambda: check_telegram(cfg), lambda: check_backup(cfg), check_voice, check_tools, check_media_tools, check_managed_deps, check_security, check_state_files,
         lambda: check_disk(cfg), check_memory, lambda: check_workspace(cfg), check_skills, check_web,
         check_license, lambda: check_git(fetch), check_update_signature,
     ] + ([check_deps] if deps else [])

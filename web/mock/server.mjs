@@ -933,6 +933,8 @@ function healthObj() {
   const jitter = Math.sin(Date.now() / 20000)
   const disk = { total: 80e9, free: Math.round(80e9 * 0.18), pct: 82 }
   if (!(S.scenario === 'ready' || S.scenario === 'login')) { disk.free = 52e9; disk.pct = 35 }
+  const seen = S.healthSeen || {} // POST /api/system/health/seen: an issue stops counting for 24 h
+  for (const i of issues) { i.id = i.code; i.seen = now() - (seen[i.id] || 0) < DAY }
   return { ok: !issues.some((i) => i.level === 'error'), issues, cpu_pct: +(23 + jitter * 8).toFixed(1), load: [+(0.42 + jitter * 0.1).toFixed(2), 0.38, 0.31],
     mem: { total: 8e9, avail: Math.round(3.1e9 + jitter * 2e8) }, disk, uptime_s: Math.round(now() - S.bootAt),
     claude_auth: S.claude.auth.ok, backup_age_h: last ? +((now() - last.at) / HOUR).toFixed(1) : null, failed_logins_1h: fails, at: now() }
@@ -1208,7 +1210,7 @@ function R(method, pattern, handler, opts = {}) {
   const keys = []
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }).replace(/\*$/, '(.*)') + '$')
   if (pattern.endsWith('*')) keys.push('rest')
-  routes.push({ method, re, keys, handler, public: !!opts.public })
+  routes.push({ method, re, keys, handler, public: !!opts.public, csrf: opts.csrf !== false })
 }
 
 /* ---- auth */
@@ -2683,6 +2685,24 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+/* ---- profile (api/settings.py): the pseudo shown on the user's messages and in notifications. The legacy hello /
+   feedback / license routes talk to the original project's cloud: like the server by default (no MAXXING_LICENSE_PING),
+   they answer 404 not_found after sign-in, whatever the method. */
+const PROFILE_COLORS = ['clay', 'blue', 'violet', 'green', 'amber', 'rose', 'teal', 'zinc']
+const profileState = () => (S.profile ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? { name: 'Alex', color: 'blue', emoji: '' } : { name: '', color: '', emoji: '' })
+R('GET', '/api/settings/profile', () => ({ ...profileState() }))
+R('PUT', '/api/settings/profile', ({ body }) => {
+  const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').split(/\s+/).filter(Boolean).join(' ').slice(0, 32)
+  const color = String(body.color || ''), emoji = String(body.emoji || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (color && !PROFILE_COLORS.includes(color)) fail(400, 'invalid_color', `color: ${PROFILE_COLORS.join(', ')} or empty`)
+  if ([...emoji].length > 8 || /\s/.test(emoji)) fail(400, 'invalid_emoji', 'emoji: one emoji or initials (8 characters at most) or empty')
+  const next = { name, color, emoji }
+  if (JSON.stringify(next) !== JSON.stringify(profileState())) { S.profile = next; bus('profile') }
+  return { ...S.profile }
+})
+for (const what of ['register', 'feedback', 'license']) for (const method of ['GET', 'PUT', 'POST', 'DELETE'])
+  R(method, `/api/settings/${what}`, () => fail(404, 'not_found', 'Not available in this project'))
+
 // The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
 R('PUT', '/api/settings/look', ({ body }) => {
   if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
@@ -3056,7 +3076,8 @@ R('GET', '/api/system/logs', ({ q }) => {
   const n = Math.min(2000, Math.max(1, parseInt(q.get('lines') || '200', 10) || 200))
   return { lines: journal(unit, n) }
 })
-R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3 }))
+R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3,
+  auto_update: { enabled: !!S.autoUpdate, tried: null, last_check: null }, report: S.updateReport ? { at: S.updateReport.at, version: S.updateReport.version, ok: S.updateReport.ok, problems: S.updateReport.problems } : null }))
 R('POST', '/api/system/update', () => ({ ok: true }))
 R('GET', '/api/system/changelog', () => ({ version: VERSION, entries: [
   { version: VERSION, label: 'unreleased', current: true, body: '- **Bulk task actions**: select several tasks and change them at once.\n- **Notifications** when Claude finishes.' },
@@ -3242,6 +3263,111 @@ for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected
   })
 }
 
+/* ---- update checks (server/maxxing/smartupdate.py), Codex status, automatic updates, health issues marked as seen.
+   The preflight shows an update that needs adapting one customization; "Verify" finds one extension to fix. */
+const UPDATE_TOPIC = 'projects/system/topics/harness' // cmd_core.update_topic(): created on first use in the mock
+const updateTopic = () => {
+  let p = S.projects.find((x) => x.name === 'system')
+  if (!p) { p = { name: 'system', description: 'Harness itself: tutorial, help, updates.', topics: [] }; S.projects.push(p) }
+  if (!p.topics.some((x) => x.name === 'harness')) { p.topics.push({ name: 'harness', description: 'Updates and customizations of this server' }); fsAdd(S, `${UPDATE_TOPIC}/CLAUDE.md`, '# Topic harness\n', now()) }
+  return UPDATE_TOPIC
+}
+const updateReport = (ok) => ({ at: now(), version: VERSION, ok, problems: ok ? 0 : 1,
+  extensions: [{ id: 'shop-sales', name: 'Shop sales', type: 'widget', ok: true, error: '' }, { id: 'notes', name: 'Notes', type: 'page', ok: true, error: '' },
+    { id: 'broken-widget', name: 'Broken widget', type: 'widget', ok: ok, error: ok ? '' : 'SyntaxError in api.py line 12', skipped: false }],
+  checks: [{ id: 'shop-widget', title: 'Shop sales widget on the dashboard', check: 'GET /api/ext/shop-sales/summary answers 200', ok: true, output: '200 OK in 38 ms' }] })
+function updateSession(title, prompt) {
+  const t = now(), s = { id: uuid(), title, path: updateTopic(), state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null,
+    context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+  S.sessions.push(s); S.events[s.id] = []
+  startTurn(s, prompt)
+  bus('sessions', 'workspace')
+  return s
+}
+R('POST', '/api/system/health/seen', ({ body }) => {
+  if (!healthObj().issues.some((i) => i.id === body.id)) fail(404, 'not_found', 'No current issue with this id')
+  const seen = (S.healthSeen ||= {})
+  if (body.seen === false) delete seen[body.id]; else seen[body.id] = now()
+  bus('health')
+  return healthObj()
+})
+R('GET', '/api/system/codex', () => (S.scenario === 'ready' || S.scenario === 'maxxing' ? { installed: true, authenticated: true, reason: null } : { installed: true, authenticated: false, reason: 'not_authenticated' }))
+R('PUT', '/api/system/auto-update', ({ body }) => { S.autoUpdate = !!body.enabled; return { ok: true, enabled: S.autoUpdate } })
+R('GET', '/api/system/update/preflight', async ({ q }) => {
+  if (q.get('refresh')) await sleep(1500)
+  return { ok: true, verdict: 'adapt', current: VERSION, latest: '2.0.1', behind: 3,
+    customs: [{ id: 'c_7f3a', title: 'Shop sales widget on the dashboard', why: 'Shows the day’s orders next to the server card.', files: ['web/src/features/dashboard/ShopCard.tsx', 'server/maxxing/widgets.py'],
+      status: 'review', conflicts: [], overlap: ['server/maxxing/widgets.py'] }],
+    unsaved: [], web_changes: ['web/src/features/dashboard'], extensions: [{ id: 'broken-widget', name: 'Broken widget', api: 1, reason: 'Extension API 1 is no longer loaded: move it to API 2' }],
+    notes: [{ version: '2.0.1' }], changelog: '- **Bulk task actions**: select several tasks and change them at once.\n- Faster dashboard cards.' }
+})
+R('GET', '/api/system/update/report', () => ({ report: S.updateReport || null }))
+R('POST', '/api/system/update/verify', async () => { await sleep(1800); S.updateReport = updateReport(false); return { report: S.updateReport } })
+R('POST', '/api/system/update/assist', () => ({ session: updateSession('Adapt my changes, then update', 'Adapt the customizations of this server to the next version (see the preflight), then run the update.') }))
+R('POST', '/api/system/update/fix', () => {
+  if (!S.updateReport || S.updateReport.ok) fail(409, 'nothing_to_fix', 'The last verification found nothing broken')
+  return { session: updateSession(`Fix after the update to ${S.updateReport.version}`, 'The last verification found a problem: Broken widget (SyntaxError in api.py line 12). Fix it and verify again.') }
+})
+/* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
+   The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
+const IMPORT_HINTS = {
+  hermes: 'You are Hermes Agent: your memory lives in ~/.hermes/ (MEMORY.md, USER.md, memories/, skills/, sessions, cron jobs). Read all of it.',
+  'claude-code': 'You are Claude Code: read every CLAUDE.md and memory file you use (~/.claude/CLAUDE.md, the project folders, ~/.claude/projects/*/memory/), your skills (~/.claude/skills/, .claude/skills/) and anything the user keeps notes in.',
+  openclaw: 'You are OpenClaw: read your workspace (by default ~/.openclaw/workspace/: AGENTS.md, SOUL.md, USER.md, MEMORY.md, memory/*.md, skills/) and your scheduled jobs.',
+  other: 'Read every place where you keep memory, notes, instructions, skills and scheduled jobs.',
+}
+const importPrompt = (agent) => `I am moving to harness-pilot, a control room for Claude Code. Please export everything you know and keep about me and my work into ONE zip file that it can import. ${IMPORT_HINTS[agent]}
+
+Build a folder \`harness-pilot-export/\` with this layout (Markdown, UTF-8): memory.md, projects/<project>/CLAUDE.md and memory.md, projects/<project>/topics/<topic>/CLAUDE.md, memory.md and useful files, skills/<skill-name>/SKILL.md, tasks.md, crons.md, SECRETS.md (key NAMES only).
+
+NEVER write a secret value anywhere - only their names in SECRETS.md. Then zip it and give me the file.`
+const importsState = () => (S.imports ||= { uploads: {}, applying: false })
+R('GET', '/api/import/prompt', ({ q }) => {
+  const agent = Object.keys(IMPORT_HINTS).includes(q.get('agent')) ? q.get('agent') : 'other'
+  return { agent, agents: Object.keys(IMPORT_HINTS), prompt: importPrompt(agent) }
+})
+R('POST', '/api/import/upload', ({ req, rawBody }) => {
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!file || !file.data.length) fail(400, 'empty', 'The file is empty')
+  if (file.data.length > 600 * 1024 * 1024) fail(413, 'too_big', 'The archive is larger than 600 MB')
+  if (!file.data.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) fail(400, 'bad_zip', 'This is not a ZIP archive')
+  const exists = (p, t) => S.projects.some((x) => x.name === p && (!t || x.topics.some((y) => y.name === t)))
+  const plan = { id: crypto.randomBytes(12).toString('hex'), name: file.name,
+    projects: [{ name: 'freelance', exists: exists('freelance'), topics: [{ name: 'clients', source: 'projects/freelance/topics/clients', files: 6, exists: exists('freelance', 'clients') },
+      { name: 'invoices', source: 'projects/freelance/topics/invoices', files: 3, exists: exists('freelance', 'invoices') }] },
+    { name: 'acme', exists: exists('acme'), topics: [{ name: 'blog', source: 'projects/acme/topics/blog', files: 4, exists: exists('acme', 'blog') }] }],
+    skills: ['weekly-report'], aside: ['tasks.md', 'crons.md', 'SECRETS.md'], root_memory: true, files: 19, size: file.data.length,
+    skipped: [{ file: 'harness-pilot-export/.DS_Store', reason: 'hidden' }], secrets: [{ file: 'projects/freelance/topics/invoices/stripe.md', kinds: ['stripe_key'] }],
+    renamed: [{ from: 'projects/Freelance Work', to: 'projects/freelance' }] }
+  importsState().uploads[plan.id] = { plan, at: now() }
+  return plan
+})
+R('POST', '/api/import/:id/apply', async ({ params }) => {
+  const st = importsState(), up = st.uploads[params.id]
+  if (!up || now() - up.at > DAY) fail(404, 'not_found', 'This upload expired: upload the file again')
+  if (st.applying) fail(409, 'busy', 'Another import is being applied')
+  st.applying = true
+  try { await sleep(1200) } finally { st.applying = false }
+  const merged = [], topics = []
+  for (const p of up.plan.projects) {
+    let proj = S.projects.find((x) => x.name === p.name)
+    if (!proj) { proj = { name: p.name, description: '', topics: [] }; S.projects.push(proj); fsAdd(S, `${projPath(p.name)}/CLAUDE.md`, `# Project ${p.name}\n\n@memory.md\n`, now()) }
+    for (const t of p.topics) {
+      topics.push(`${p.name}/${t.name}`)
+      if (proj.topics.some((x) => x.name === t.name)) merged.push(`${topicPath(p.name, t.name)}/memory.md`)
+      else { proj.topics.push({ name: t.name, description: '' }); fsAdd(S, `${topicPath(p.name, t.name)}/memory.md`, `# ${t.name} — memory\n\n## Imported\n\nImported from the previous agent.\n`, now()) }
+    }
+  }
+  const stamp = new Date().toISOString().slice(0, 10), folder = `imports/${stamp}`, report = `${folder}/REPORT.md`
+  fsAdd(S, report, `# Import ${stamp}\n\n${up.plan.files} files from ${up.plan.name}.\n`, now(), 'text/markdown')
+  delete st.uploads[params.id]
+  bus('workspace')
+  return { ok: true, projects: up.plan.projects.map((p) => p.name), topics, files: up.plan.files - 1, merged, renamed: [{ from: 'skills/weekly-report', to: 'skills/weekly-report-imported' }],
+    skills: ['weekly-report-imported'], aside: up.plan.aside.map((a) => `${folder}/${a}`), secrets: up.plan.secrets, skipped: up.plan.skipped, folder, report,
+    finish_prompt: `An import from my previous agent was just applied. Read ${report} first, then finish it with me: merge duplicates in memory, create the open tasks from tasks.md, propose the jobs of crons.md (ask before creating any), list the keys of SECRETS.md to add in Settings -> Keys.` }
+})
+R('DELETE', '/api/import/:id', ({ params }) => { delete importsState().uploads[params.id]; return { ok: true } })
+
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
 R('GET', '/api/docs/:slug', ({ params }) => {
@@ -3265,7 +3391,7 @@ index 1a2b3c4..5d6e7f8 100644
 +++ b/docs/user/notes.md
 @@ -1,3 +1,4 @@
  # Notes
- 
+
  Short notes about the product.
 +- ${prqRemote(item).title}.
 `
@@ -3356,6 +3482,45 @@ R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
   Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
   return prqOut()
 })
+
+/* ---- small gaps: tree order, one job, backup preview, search index stats, incoming webhooks */
+const orderBy = (items, names) => { // listed names first in that order, the others A-Z (projects/.order.json, .maxxing.json)
+  const at = new Map(names.map((n, i) => [n, i]))
+  return [...items].sort((a, b) => (at.has(a.name) ? at.get(a.name) : 1e6) - (at.has(b.name) ? at.get(b.name) : 1e6) || a.name.localeCompare(b.name))
+}
+R('PUT', '/api/workspace/order', ({ body }) => {
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  S.projects = orderBy(S.projects, body.names.map(String)); bus('workspace')
+  return { projects: S.projects.map((p) => p.name) }
+})
+R('PUT', '/api/workspace/projects/:project/order', ({ params, body }) => {
+  const p = S.projects.find((x) => x.name === params.project) || fail(404, 'not_found', 'Unknown project')
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  p.topics = orderBy(p.topics, body.names.map(String)); bus('workspace')
+  return { topics: p.topics.map((t) => t.name) }
+})
+R('GET', '/api/crons/:id', ({ params }) => cronOut(S.crons.find((x) => x.id === params.id) || fail(404, 'not_found', 'Cron not found')))
+R('POST', '/api/backup/preview', async ({ body }) => {
+  if (!S.backup.configured) fail(409, 'not_configured', 'Configure the backup repository first')
+  await sleep(900)
+  const files = [...S.fs.entries()].filter(([, n]) => n.type === 'file').map(([k]) => k.slice(ROOT.length + 1)).filter((k) => /(^|\/)(CLAUDE|memory)\.md$|^tasks\.json$/.test(k)).sort()
+  const paths = { create: ['projects/acme/topics/newsletter/memory.md'], replace: files.filter((f) => f.endsWith('memory.md')).slice(0, 3), unchanged: files.filter((f) => !f.endsWith('memory.md')),
+    held: ['extensions/shop-sales/api.py'], skip: [] }
+  return { ok: true, commit: (body.ref && /^[0-9a-f]{7,40}$/.test(body.ref) ? body.ref : S.backup.history.filter((h) => h.ok).at(-1)?.commit || sha().slice(0, 7)).padEnd(40, '0'), hold: true,
+    counts: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.length])), paths, settings: true, crons: true, mcp: false }
+})
+R('GET', '/api/search/stats', () => ({ counts: { session: S.sessions.length, file: [...S.fs.values()].filter((n) => n.type === 'file').length,
+  memory: [...S.fs.keys()].filter((k) => k.endsWith('/memory.md')).length, task: S.tasks.tasks.length }, bytes: 3.4e6, refreshed_at: now() - 4 * MIN }))
+// Incoming webhook: the token is the permission. Signatures are not verified in the mock; the rules of a missing secret are.
+R('POST', '/api/hooks/:token', ({ params, body }) => {
+  const h = S.feed.hooks.find((x) => x.token === params.token) || fail(404, 'not_found', 'Unknown hook')
+  if (h.kind !== 'generic' && !h.secret) fail(401, 'secret_required', `A ${h.kind} hook needs its signing secret`)
+  if (typeof body !== 'object' || Array.isArray(body)) fail(400, 'bad_payload', 'Unexpected payload')
+  const title = h.kind === 'generic' ? String(body.title || 'Webhook') : h.kind === 'stripe' ? String(body.type || 'stripe event') : h.kind === 'github' ? 'GitHub event' : 'Shopify event'
+  const e = feedAdd(S, { source: h.name, kind: 'webhook', level: ['info', 'success', 'warning', 'error'].includes(body.level) ? body.level : 'info', title: title.slice(0, 200), body: String(body.body || '').slice(0, 2000) })
+  bus('feed')
+  return { ok: true, duplicate: false, id: e.id }
+}, { public: true, csrf: false }) // called by Stripe, GitHub…: no cookie, no CSRF header
 
 /* ---- dashboard & extensions */
 R('GET', '/api/dashboard', () => dashboard())
@@ -3846,7 +4011,7 @@ async function handleApi(req, res, url) {
   if (!candidates.length) return sendJson(res, 404, { error: 'not_found', message: `No route for ${p}` })
   const route = candidates.find((r) => r.method === req.method)
   if (!route) return sendJson(res, 405, { error: 'method_not_allowed', message: `${req.method} not allowed on ${p}` })
-  if (req.method !== 'GET' && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
+  if (req.method !== 'GET' && route.csrf && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
   const authed = isAuthed(req)
   if (!route.public && !authed) return sendJson(res, 401, { error: 'auth_required', message: 'Please log in' })
   const m = route.re.exec(p)

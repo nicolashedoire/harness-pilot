@@ -12,7 +12,7 @@ export const GROUPS = {
   // Settings -> Companions and the words of the companion notifications (`companions.kind.*`, see
   // features/notifications/text.ts): loaded with Settings, and before a companion notice is shown
   companions: ['companions'],
-  auth: ['onb', 'setup', 'login', 'pw', 'twofa'],
+  auth: ['onb', 'setup', 'login', 'pw', 'twofa', 'totp'],
   infra: ['infra'],
   git: ['git'],
   team: ['team'],

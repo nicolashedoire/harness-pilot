@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/crons", tags=["crons"], dependencies=[Depends(re
 class CronIn(BaseModel):
     name: Optional[str] = None
     schedule: Optional[str] = None
-    kind: Optional[Literal["shell", "claude"]] = None
+    kind: Optional[Literal["shell", "claude", "codex"]] = None
     command: Optional[str] = None
     topic_path: Optional[str] = None
     prompt: Optional[str] = None
@@ -151,6 +151,11 @@ async def _watch(interval: float = 2.0) -> None:
 
 async def _local_schedule() -> None:
     from .. import localcron
+    try:
+        await asyncio.to_thread(localcron.boot)          # @reboot jobs: once per start of the application
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Local startup jobs failed')
     while True:
         try:
             await asyncio.to_thread(localcron.tick)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import fcntl
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -102,3 +102,50 @@ def refreshed(path: Path, previous: list[int] | None) -> None:
             entry['identity'] = _identity(path)
             config.write_json(_file(), labels, mode=0o600)
     bus.invalidate('space-labels')
+
+
+def for_backup(root: Path, kept: set[str]) -> dict[str, str]:
+    """Valid labels of the memory backup's items -> {workspace-relative posix path: label}. Only the files the
+    backup saves (`kept`) and the folders that hold them: a label never names a file the backup leaves out."""
+    wanted = (kept | {parent.as_posix() for rel in kept for parent in PurePosixPath(rel).parents}) - {'.'}
+    out = {}
+    for raw, label in list_labels().items():
+        for base in dict.fromkeys((Path(os.path.abspath(root)), root.resolve())):
+            try:
+                rel = Path(raw).relative_to(base).as_posix()
+            except ValueError:
+                continue
+            if rel in wanted:
+                out[rel] = label
+            break
+    return dict(sorted(out.items()))
+
+
+def restore_backup(root: Path, saved: object) -> int:
+    """Labels of a memory backup -> set on the items that exist under the workspace `root` (others are skipped,
+    labels already set on other items stay). Returns how many were set."""
+    if not isinstance(saved, dict):
+        raise ValueError('space labels: a JSON object is expected')
+    base, real = Path(os.path.abspath(root)), root.resolve()
+    count = 0
+    with open(config.state_dir('space-labels') / 'labels.lock', 'a+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        labels = _read()
+        for rel, label in list(saved.items())[:100000]:
+            parts = PurePosixPath(rel).parts if isinstance(rel, str) else ()
+            if label not in VALUES or not parts or PurePosixPath(rel).is_absolute() or '..' in parts or '\0' in rel:
+                continue
+            path = Path(os.path.abspath(base / rel))
+            try:
+                target = path.resolve(strict=True)
+                if real not in target.parents:
+                    continue
+                labels[str(path)] = {'label': label, 'identity': _identity(path)}
+                count += 1
+            except (OSError, RuntimeError, ValueError):
+                continue
+        if count:
+            config.write_json(_file(), labels, mode=0o600)
+    if count:
+        bus.invalidate('space-labels')
+    return count
