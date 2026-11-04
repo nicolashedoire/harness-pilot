@@ -258,8 +258,40 @@ def fork_command(thread_id: str, model: str = "") -> list[str]:
     return args + ["fork", thread_id, "-"]
 
 
-def events(event: dict) -> list[dict]:
-    """Map completed CLI events into the existing Claude-compatible log format."""
+USAGE_KEYS = ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens")
+
+
+def usage_totals(event: dict) -> dict[str, int]:
+    """The counters of a `turn.completed` event. `codex exec --json` reports there the THREAD's running totals (every
+    model call of every turn so far, `exec resume` included), not the turn's own: checked with codex-cli 0.150.1
+    against a stub Responses API (INTERNALS.md `maxxing.sessions.codex`)."""
+    usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
+    out = {}
+    for name in USAGE_KEYS:
+        try:
+            out[name] = max(0, int(usage.get(name) or 0))
+        except (TypeError, ValueError, OverflowError):
+            out[name] = 0
+    return out
+
+
+def turn_usage(totals: dict[str, int], base: dict | None) -> dict[str, int]:
+    """The turn's own counters: the thread's running totals minus those after its previous turn (`base`; None for a
+    new thread or one never counted). A total below its base (not the same thread after all) -> the totals."""
+    if not isinstance(base, dict):
+        return dict(totals)
+    try:
+        prev = {k: int(base.get(k) or 0) for k in USAGE_KEYS}
+    except (TypeError, ValueError, OverflowError):
+        return dict(totals)
+    if any(totals[k] < prev[k] for k in USAGE_KEYS):
+        return dict(totals)
+    return {k: totals[k] - prev[k] for k in USAGE_KEYS}
+
+
+def events(event: dict, base: dict | None = None) -> list[dict]:
+    """Map completed CLI events into the existing Claude-compatible log format. `base`: the thread's running totals
+    after its previous turn (`usage_totals`), so that a `result` carries the turn's own tokens."""
     kind = event.get("type")
     if kind == "thread.started":
         return [{"type": "system", "subtype": "init"}]
@@ -279,22 +311,15 @@ def events(event: dict) -> list[dict]:
             ]
         return []
     if kind == "turn.completed":
-        usage = event.get("usage") or {}
-        if not isinstance(usage, dict):
-            usage = {}
+        usage = turn_usage(usage_totals(event), base)
         # Codex reports cached tokens within input_tokens. The common session counters expect
         # uncached input, cache reads and cache writes as separate, non-overlapping buckets.
-        def count(name: str) -> int:
-            try:
-                return max(0, int(usage.get(name) or 0))
-            except (TypeError, ValueError, OverflowError):
-                return 0
-        total_input = count("input_tokens")
-        cache_read = min(total_input, count("cached_input_tokens"))
-        cache_write = min(total_input - cache_read, count("cache_write_input_tokens"))
+        total_input = usage["input_tokens"]
+        cache_read = min(total_input, usage["cached_input_tokens"])
+        cache_write = min(total_input - cache_read, usage["cache_write_input_tokens"])
         return [{"type": "result", "subtype": "success", "usage": {
             "input_tokens": total_input - cache_read - cache_write,
-            "output_tokens": count("output_tokens"),
+            "output_tokens": usage["output_tokens"],
             "cache_read_input_tokens": cache_read,
             "cache_creation_input_tokens": cache_write}}]
     if kind == "turn.failed":
