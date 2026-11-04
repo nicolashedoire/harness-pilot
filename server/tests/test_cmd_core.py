@@ -271,6 +271,22 @@ def test_local_setup_installs_the_product_skills_beside_its_workspace():
     assert "cmd_core.install_skills()" in script
 
 
+def test_local_cli_runs_with_the_state_of_the_local_app(tmp_path):
+    """`dev-local.sh cli <args>` = `pilot <args>` with the local app's settings; a bare `uv run pilot` has no
+    MAXXING_STATE and reads /var/lib/claude-maxxing (the docs used to suggest it)."""
+    import shutil
+    if not shutil.which("uv"):
+        pytest.skip("uv not installed")
+    local = tmp_path / "local"
+    env = {k: v for k, v in os.environ.items() if k != "MAXXING_STATE"}
+    env["HARNESS_PILOT_LOCAL_DIR"] = str(local)
+    r = subprocess.run(["bash", str(config.CODE / "scripts" / "dev-local.sh"), "cli", "status", "--json"],
+                       cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stderr
+    st = json.loads(r.stdout)
+    assert st["state"] == str(local / "state") and st["workspace"] == str((local / "workspace").resolve())
+
+
 def test_init_installs_the_product_skills_for_codex_too(env, monkeypatch):
     """Codex reads personal skills from ~/.agents/skills: init installs the same rendered copies there, with its own
     record, so a same-named skill of the user is moved to the trash, an obsolete one dropped, a stale one reported."""
