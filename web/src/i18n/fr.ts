@@ -3825,6 +3825,8 @@ export const fr: Record<keyof typeof en, string> = {
   "instanceBackup.integrations.resume": "Réactiver les intégrations",
   "instanceBackup.integrations.confirmTitle": "L’instance d’origine est-elle arrêtée ?",
   "instanceBackup.integrations.confirmBody": "Réactivez-les seulement une fois l’instance d’origine arrêtée. Sinon les deux copies répondent au même bot Telegram, lancent chaque tâche planifiée deux fois et envoient leur sauvegarde dans le même dépôt GitHub.",
+  "agentProviders.fallbackName": "Agent d’extension",
+  "agentProviders.modelHint": "Facultatif : un identifiant de modèle accepté par {name}. Vide utilise son modèle par défaut.",
   "agentProviders.textOnly": "Ce moteur accepte uniquement du texte. Les pièces jointes ne sont pas prises en charge.",
   "agentProviders.unavailable": "Ce moteur est indisponible ou désactivé. Choisissez-en un autre ou vérifiez les extensions.",
 

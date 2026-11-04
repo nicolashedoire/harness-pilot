@@ -3844,6 +3844,8 @@ export const en = {
   "instanceBackup.integrations.resume": "Resume integrations",
   "instanceBackup.integrations.confirmTitle": "Is the original instance stopped?",
   "instanceBackup.integrations.confirmBody": "Resume only once the original instance is stopped. Otherwise both copies answer the same Telegram bot, run every scheduled task twice and push to the same GitHub repository.",
+  "agentProviders.fallbackName": "Extension agent",
+  "agentProviders.modelHint": "Optional: a model identifier that {name} accepts. Leave empty to use its default.",
   "agentProviders.textOnly": "This engine accepts text only. Attached files are not supported.",
   "agentProviders.unavailable": "This agent engine is unavailable or disabled. Choose another engine or check Extensions.",
 

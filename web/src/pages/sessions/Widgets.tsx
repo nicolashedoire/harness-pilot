@@ -7,7 +7,7 @@ import { Badge, confirm, DropdownMenu, DropdownMenuContent, DropdownMenuItem, Dr
 import type { Session } from '@/lib/types'
 import { contextWindow, fmtCost, fmtTokens, modelLabel } from './util'
 import { costTip, useResultLine } from './resultLine'
-import { AGENT_NAME, AgentIcon, sessionAgents } from '@/features/agents/AgentIcon'
+import { AgentIcon, agentName, sessionAgents } from '@/features/agents/AgentIcon'
 
 /** Family aliases follow resolved versions; pinned model ids still compare exactly. */
 function matchesModel(real: string, chosen: string): boolean {
@@ -184,7 +184,7 @@ export function AgentChip({ session }: { session: Session }) {
   const showCost = !useResultLine().hidden.includes('cost')
   const agents = sessionAgents(session.provider)
   const model = (session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? session.model : session.real_model || session.model || data?.default_model || ''
-  const label = agents.length > 1 ? agents.map((a) => AGENT_NAME[a]).join(' · ') : [session.provider_name || AGENT_NAME[agents[0]], model ? modelLabel(model, data?.models) : ''].filter(Boolean).join(' · ')
+  const label = agents.length > 1 ? agents.map((a) => agentName(a, t)).join(' · ') : [agentName(agents[0], t, session.provider_name), model ? modelLabel(model, data?.models) : ''].filter(Boolean).join(' · ')
   const tip = [label, session.cost_usd > 0 && showCost ? `≈ ${fmtCost(session.cost_usd)} · ${costTip(t, session.turns)}` : ''].filter(Boolean).join(' — ')
   return (
     <Tooltip content={<span className="block max-w-72 whitespace-normal">{tip}</span>}>
