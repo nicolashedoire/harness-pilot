@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Bot, Network } from 'lucide-react'
+import { Bot, Info, Network } from 'lucide-react'
 import { useT } from '@/i18n'
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Sensitive } from '@/components/ui'
 import { loadEarlier, taskStatus, useLogSelect, type Item } from './log'
@@ -18,6 +18,7 @@ export function AgentMap({ sid, running, open, onOpenChange }: { sid: string; ru
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="max-h-[85dvh] overflow-y-auto md:max-w-3xl">
       <DialogHeader><DialogTitle>{t('sessions.swarm.map')}</DialogTitle><DialogDescription>{t('swarm.mapHint')}</DialogDescription></DialogHeader>
+      {running && <p className="flex items-start gap-2 rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground"><Info className="mt-0.5 size-3.5 shrink-0" />{t('swarm.stopHint')}</p>}
       <div className="grid gap-4 md:grid-cols-[minmax(10rem,1fr)_minmax(0,2fr)] md:items-start">
         <div className="flex items-center gap-2 rounded-lg border bg-card p-3"><Network className="size-4 text-primary" /><span className="font-medium">{t('swarm.coordinator')}</span></div>
         <div className="grid gap-2 border-l-2 border-border pl-4" aria-live="polite">
