@@ -147,7 +147,7 @@ Remotion, the Whisper models, Garage). As root.
 
 | Command | Purpose |
 |---|---|
-| `maxxing feed post "Title" [--body] [--level info\|success\|warning\|error] [--source NAME] [--url] [--dedupe KEY] [--group KEY] [--quiet] [--json]` | add an event (dashboard, and Telegram per the source's rule); `--dedupe` ignores a repeat, `--group` folds repeats |
+| `maxxing feed post "Title" [--body] [--level info\|success\|warning\|error] [--source NAME] [--url] [--dedupe KEY] [--group KEY] [--quiet] [--json]` | add an event (notifications, and push / Telegram per your settings); `--dedupe` ignores a repeat, `--group` folds repeats, `--quiet` keeps it in the notifications only (no push, no Telegram) |
 | `maxxing feed list [--unread] [--source] [--limit] [--json]` | latest events |
 | `maxxing feed read-all` | mark everything read |
 | `maxxing packs list [--json]` | starter projects and whether they are installed |

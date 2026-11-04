@@ -276,8 +276,14 @@ is skipped — the tour never blocks. Keep these attributes when refactoring the
 onboarding (`mx-tour-pending` in sessionStorage, `tourDone` in the UI store) and is replayable from the Help
 group of the user menu, the palette and Settings › General. The closing card links to the
 `projects/tutorial/topics/1-first-steps` topic when it exists (else to the docs).
-- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round, sky for unread, accent for running; they
-  pulse (`.mx-badge-pulse`) only when the user turned on Settings -> Notifications -> "Pulsing badge".
+- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round; tones `unread` (finished answers, green),
+  `running` (the theme colour), `attention` (notifications to handle, red) and, for the dot only, `notice` (unread
+  activity that needs nothing). They pulse (`.mx-badge-pulse`, never the running ones) only when the user turned on
+  Settings -> Notifications -> On this device -> "Pulsing badges" (off by default).
+- Notifications: the sidebar entry (a tile in the touch menu) opens the centre (`features/notifications`), "To handle"
+  on top; the dashboard shows a "To handle" card only while something is pending - there is no permanent feed panel
+  nor header bell. A discussion paused on its limit shows `PausedBanner` above its thread (warning tokens, Change
+  limits + Resume). Colours come from the semantic tokens only (`warning`, `destructive`, `success`, `primary`).
 
 ## 11. Motion & performance
 
@@ -292,7 +298,7 @@ group of the user menu, the palette and Settings › General. The closing card l
   time order via `--i` / `--x`), `.mx-rise` on list / table rows, a count-up on numeric stats (`useCountUp`, rAF,
   text only). A card below the fold carries `.mx-wait` (`animation-play-state: paused` on it and its children) and
   the `InView` context is false until it scrolls into view (IntersectionObserver), so its entrance is seen; never
-  under reduced motion. When the grid changes (feed panel, widget shown / hidden / moved) `useGridFlip` slides the
+  under reduced motion. When the grid changes (the "To handle" card coming or going, a widget shown / hidden / moved) `useGridFlip` slides the
   cards (2-D FLIP, transform only, 340 ms). The whole build of a card stays under ~0.9 s.
 - A page is fully on screen within ~0.5 s of its data: a stagger never delays the last item by more than
   ~200 ms (cap `--i`), and an entrance does not replay when the user comes back to a page.
