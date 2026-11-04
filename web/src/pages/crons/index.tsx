@@ -301,7 +301,7 @@ function JobSheet({
   const job = listed || one.data
   const { data: ws } = useWorkspace()
   const topicLabel = React.useMemo(() => {
-    if (!job || job.kind !== 'claude') return ''
+    if (!job || job.kind === 'shell') return ''
     if (!job.topic_path) return t('crons.workspaceRoot')
     for (const p of ws?.projects || []) {
       if (p.path === job.topic_path) return p.name
@@ -365,7 +365,7 @@ function JobSheet({
                 <dd className="min-w-0">
                   <LastRun run={job.last_run} tz={tz} now={now} />
                 </dd>
-                {job.kind === 'claude' && (
+                {job.kind !== 'shell' && (
                   <>
                     <dt className="text-muted-foreground">{t('crons.field.topic')}</dt>
                     <dd className="min-w-0">
@@ -386,9 +386,9 @@ function JobSheet({
                 <dd className="tabular-nums">{fmtDuration(job.timeout_s)}</dd>
               </dl>
               <div className="grid gap-2">
-                <h3 className="text-sm font-medium">{job.kind === 'claude' ? t('crons.field.prompt') : t('crons.field.command')}</h3>
+                <h3 className="text-sm font-medium">{job.kind !== 'shell' ? t('crons.field.prompt') : t('crons.field.command')}</h3>
                 <Sensitive block className="h-16">
-                  {job.kind === 'claude' ? (
+                  {job.kind !== 'shell' ? (
                     <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-sm break-words whitespace-pre-wrap">{job.prompt}</div>
                   ) : (
                     <CodeBlock code={job.command} className="[&_pre]:break-all [&_pre]:whitespace-pre-wrap" />

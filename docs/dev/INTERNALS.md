@@ -433,8 +433,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
   unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
   when the process is gone or `ps` fails.
-- Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
-  timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
+- Claude and Codex jobs (`_run_agent`) call `sessions.service.create_session(..., provider=<kind>, source="cron", cron=True,
+  env={MAXXING_CRON_ID, MAXXING_CRON_NAME}, timeout_s)` (or `send_message` when `reuse_session`; a remembered session of
+  the other agent - the job's kind changed - is not reused), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
   starts `python -m maxxing cron run <id>` in `systemd-run --collect --unit maxxing-cron-<id> --slice=maxxing-jobs.slice`
   + `memory_properties()` + `RuntimeMaxSec=<timeout_s + KILL_GRACE_S + 120>` (backstop if the run itself dies). The

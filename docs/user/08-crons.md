@@ -3,10 +3,10 @@ section: Using harness-pilot
 ---
 # Scheduled jobs (Crons)
 
-The **Crons** page runs things on a schedule: a **shell command** or a **Claude Code prompt** in a
+The **Crons** page runs things on a schedule: a **shell command** or a **prompt** for Claude Code or Codex in a
 topic. Each run is recorded (status, duration, output) and can be reported on Telegram.
 
-In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed; `@reboot` is not supported in local mode. Scheduled prompts currently use Claude Code.
+In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed; `@reboot` is not supported in local mode.
 
 ## Creating a job
 
@@ -16,15 +16,17 @@ Click **New job** and fill in:
 |---|---|
 | Name | short label |
 | Schedule | cron expression; the editor shows it in words and lists the next runs |
-| Type | **Shell** (a command run with bash) or **Claude** (a prompt sent to a session in a topic) |
+| Type | **Shell command** (run with bash) or **harness-pilot prompt** (a prompt sent to a session in a topic) |
+| Agent | prompt: **Claude Code** or **Codex** - the session's agent. Codex must be signed in on the server (Settings → Codex) |
 | Command | shell: e.g. `projects/acme/scripts/report.sh`, relative to the workspace |
-| Topic, prompt, model | Claude: where the session runs, what to do, which model |
-| Reuse session | Claude: keep one session across runs (it accumulates context) instead of a new session each time |
+| Topic, prompt, model | prompt: where the session runs, what to do, which model (Codex: an optional model identifier, empty = the CLI's default) |
+| Reuse session | prompt: keep one session across runs (it accumulates context) instead of a new session each time; after a change of agent, the next run starts a new session |
+| Permission mode | prompt: as for sessions. Codex has no permission prompts: **Ask (strict)** runs it read-only, the other modes let it write in the topic folder |
 | Notify | Telegram report: never, on failure (default), always |
 | Timeout | maximum duration (default 1 hour) |
 
 **Run now** starts a job immediately. The history shows the last runs with their output tail; for
-Claude jobs, a link opens the session.
+prompt jobs, a link opens the session.
 
 A run killed before its end (the app or the computer stopped, out of memory) is recorded as *interrupted* by the
 next run of the job, which also stops the command it left running - on macOS as on Linux - but only when it is

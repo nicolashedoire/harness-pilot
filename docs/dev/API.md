@@ -258,13 +258,14 @@ the change is re-applied on the fresh file (3 tries), then `409 conflict`. Not v
 ## Crons
 ```
 Cron = {id, name, schedule,            // 5-field cron expression
-        kind:"shell"|"claude", command, // shell
-        topic_path, prompt, model, reuse_session:bool,  // claude
-        permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode
+        kind:"shell"|"claude"|"codex", command, // shell
+        topic_path, prompt, model, reuse_session:bool,  // claude, codex: the prompt runs as a session turn of that agent
+        permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude, codex; "" = the topic's, else the global mode
+                                                              // (Codex: read-only sandbox for "default", workspace write otherwise)
         enabled, notify:"never"|"failure"|"always", timeout_s,
         last_run:{at, ok, code, duration_s}|null, next_run:float|null, human:string,  // human: in the UI language (settings.language, en|fr), times HH:MM
         running:bool}                  // a run is in progress (flock held); overlapping runs are skipped
-Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|null}   (output_tail: a Claude job keeps the first 2048 characters of its answer, a command the last 2048 of its output)
+Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|null}   (output_tail: a Claude or Codex job keeps the first 2048 characters of its answer, a command the last 2048 of its output)
 ```
 | GET | `/api/crons` | – | `{jobs:[Cron], external:[{schedule, command, human}]}` (external = crontab lines outside the managed block, read-only) |
 | POST | `/api/crons` | Cron fields | `Cron` (validates expression; syncs crontab) · `409 damaged_jobs` (jobs.json cannot be read: nothing is written) |
