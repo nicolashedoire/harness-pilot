@@ -166,6 +166,8 @@ To disconnect: Settings -> Telegram -> **Disconnect Telegram** (forgets the toke
 A **Companion review ready** notification offers **Review proposal** and **Discuss with the companion**.
 Review shows the exact code changes as monospace diff blocks, followed by **Approve proposal** and **Reject**.
 These choices record your decision only: they never apply a patch, create a pull request or merge code.
+For a resident mission step, an approval lets the steps that depend on it start, as an approval in the
+application does.
 If the agent changes the proposal, an older notification cannot approve it. Large or binary changes must be
 reviewed in the application, where the full proposal is available.
 
