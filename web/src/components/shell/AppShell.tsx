@@ -22,6 +22,7 @@ import { checkVersion, useWhatsNew } from '@/features/whatsnew/store'
 import { useUI } from '@/stores/ui'
 import { useHotkey } from '@/commands/shortcuts'
 import { Sidebar } from './Sidebar'
+import { useSidebarFold } from './rail-store'
 import { TouchDrawers } from './TouchNav'
 import { useCompact } from '@/stores/media'
 import { useMobileViewport } from '@/lib/mobile-viewport'
@@ -209,7 +210,7 @@ function useSyncLanguage() {
 function GlobalHotkeys() {
   const navigate = useNavigate()
   const setPalette = useCommandStore((s) => s.setOpen)
-  const toggleSidebar = useUI((s) => s.toggleSidebar)
+  const { toggle: toggleSidebar } = useSidebarFold()
   const setShortcuts = useShortcutsDialog((s) => s.setOpen)
   const nav = useNav()
   useHotkey('mod+k', () => setPalette(!useCommandStore.getState().open), { allowInInput: true })
