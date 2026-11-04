@@ -21,7 +21,7 @@ web/
     lib/queries/*.ts       React Query hooks per domain, query keys in keys.ts
     lib/sse.ts             useEventSource() + global bus (/api/stream)
     stores/ui.ts           persisted UI prefs (theme, palette, density, fonts, language, sidebar, presentation, tourDone)
-    lib/theme/             the theme engine (pure: tokens, bases, accents, derive, validate, css) - see §1 "Themes"
+    lib/theme/             the theme engine (pure: tokens, bases, accents, derive, validate, css, share) - see §1 "Themes"
     pwa/                   service worker registration, update toast, install prompt / iOS dialog
     tour/                  guided tour (steps.ts = the script, Tour.tsx = overlay + card)
   sw/sw.js                 service worker source (emitted as dist/sw.js by the `maxxing-sw` plugin)
@@ -137,10 +137,36 @@ exported / imported files, the server's `look.palette`):
   (`palettePending`, sent again on the next start), at boot and live (bus topic `look` -> the auth state is
   refetched). A browser keeps its palette until the user changes one somewhere (migrated browsers start at `rev` 0).
   Theme, fonts and density stay per browser.
+- **Untrusted themes, one door** (`src/features/themes/`): a theme from a file, a pasted code, a model (the theme
+  generator) or a Team contact is always `normalizeTheme`d before it is previewed, saved or applied, shown in the
+  review dialog (`ReviewDialog.tsx`: scoped `PalettePreview` in light / dark + `ThemeChecks` = colours only / contrast /
+  automatic fixes in words) and applied only by the user's click (`setPalette`). Previews put the tokens as CSS
+  variables on the preview element's `style` (`tokenStyle`), never into a `<style>` built from strings. The server
+  validates the structure again (`themes.clean_theme`) wherever it stores, returns or relays one.
 - **Export / import** (Settings -> Appearance): export writes `<name>.theme.json` with every token of both modes
-  (`expandTheme`: the file does not depend on this version's tables); import = `parseThemeFile` -> preview of the
-  theme's tokens in a scoped `PalettePreview` -> apply. Future sources (a theme generator, a theme sent by a Team
-  contact) use the same `normalizeTheme` and `setPalette`.
+  (`expandTheme`: the file does not depend on this version's tables, `downloadTheme`); import (button or drop zone of
+  My themes) = `parseThemeFile` (16 KB) -> review dialog. **Theme code** (`lib/theme/share.ts`): `theme1:` +
+  base64url of the compact theme JSON (explicit tokens only: short enough for a chat), `themeCode()` /
+  `parseThemeText()` (also takes raw JSON; the decoded text goes through `parseThemeFile`); "Copy the theme code" in
+  the share dialog, "Paste a code" in My themes. `sameLook(a, b)` = the same derived colours in both modes (the
+  "Active" mark).
+- **My themes** (`MyThemes.tsx`): the presets + the saved themes of the server (`/api/settings/themes`, 50 at most,
+  the same on every device, bus `themes`), each with apply (click on its drawing), share, rename, delete; "Save the
+  current palette" when the palette is neither a preset nor saved. Sources: `created` (theme generator), `imported`
+  (file or code), `received` (Team, with the sender's name), `custom` (composed in the settings).
+- **Share** (`ShareDialog.tsx`): to a Team contact or group (`POST /api/team/chats/{cid}/themes`, the DM created if
+  needed; the theme normalized and named before it leaves), the file, the theme code; "Publish to the public gallery"
+  is shown disabled with a *Soon* badge. In a chat, a theme message is a card (`TeamCard.tsx`: light + dark
+  drawings, name, description, contrast line, **Install** -> the review dialog); it never applies itself.
+- **Theme generator** (`Creator.tsx`, `/settings/appearance?create=1&session=<id>`): the user's words (+ up to 3
+  images, uploaded to the topic) start a session in the topic `projects/system/topics/themes` (created on first use,
+  with its project) whose first message asks for the skill `pilot-theme` (`skills/pilot-theme`: schema, tokens,
+  rules, contrast, `check_theme.py`); refinements (chips More contrast / Neutral buttons / Cooler / Light version, or
+  free text) are follow-up messages to the same session. When the turn ends, `GET
+  /api/settings/themes/session/{id}?since=` returns the newest `*.theme.json` the session wrote (validated);
+  `since` = the shown proposal's file time (server clock), so a refinement only shows a newer file. States: empty,
+  working (skeleton + "Open the session"), proposal (`ThemeSample` with the navigation column, `SwatchStrip`, the
+  agent's summary, Apply / Save to my themes / Discard), none / refused / session error (with Ask again).
 
 ## 2. Components (`@/components/ui`)
 
@@ -163,7 +189,7 @@ exported / imported files, the server's `look.palette`):
 | `Avatar`, `NamedIcon`, `initials()` | |
 | `Sensitive`, `useMask()`, `usePresentation()` | presentation mode, see §6. |
 
-Shared feature blocks (`src/features`): `Callout` (inline result/explanation, tones success/error/warning/info),
+Shared feature blocks (`src/features`): the theme blocks of `features/themes` (§1 "Themes"), `Callout` (inline result/explanation, tones success/error/warning/info),
 `Steps` (numbered instructions), `OptionCard` (radio card), `SettingRow` (label left, control right), and the
 domain components reused by onboarding **and** settings: `ClaudeConnect`, `ClaudeDefaults`, `CreateProjectTopic`
 (+ `SlugPreview`), `TelegramSetup` (+ `ThreadList`), `BackupSetup` (+ `BackupWhy`), `RegionFields`.
