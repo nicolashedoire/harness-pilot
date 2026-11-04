@@ -403,7 +403,29 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   position, links); an unclosed `<script>` is detected by the parser never closing it.
 - Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, card?, trace?,
   timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
-- `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off.
+- `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off. Each result
+  also carries `runtime_errors` (`exterrors.recent`), printed after the steps; never part of the status.
+
+## maxxing.exterrors - runtime errors of extensions  (owner: organisation)
+- `<state>/extension-errors.json` = `{id: [{where, message, stack, at, count, sig}]}`, newest first, `KEEP` (10) per
+  extension, written with `config.write_json` under a module lock. `record(id, dir, where, message, stack)` bumps
+  `count`/`at` of the newest entry when `where`, `message` and `sig` match; `sig` = `files_sig(dir)` (newest mtime of
+  the folder's files, one level down, hidden ones skipped). `recent(id, dir)` / `all_recent(exts)` return only the
+  entries whose `sig` is the current one (an edit of any file hides the older errors), without `sig`; `clear(id)`.
+- Writers: `api/extensions.report_error` (browser: `where` widget / page; `allow()` = sliding windows of 60 s,
+  `RATE_PER_EXT` 20 and `RATE_TOTAL` 120, in memory, before anything is written; `trim_stack()` keeps 6 lines of 240
+  characters and turns `…/ext/<id>/[@v/]x.js?q:12:5` into `x.js:12:5` and `…/ext/<id>/widget-frame:L:C` into
+  `widget.html:L-offset:C`, offset = `_frame_offset()` = newlines of `WIDGET_BRIDGE` + the inlined kit),
+  `api/extensions.forward` (`where:"api"`: an exception other than ValueError / LookupError, a timeout, a non-JSON
+  value; stack = `ext_frames(exc, dir)`, the traceback frames inside the folder) and `api/dashboard._render`
+  (`where:"card"`: an exception or the 20 s timeout of an extension card, not when the extension does not load).
+  Each write sends `invalidate extensions`.
+- Browser side: `WIDGET_BRIDGE` posts `{mx:'error', message, stack}` from the frame's `error` (not a bare
+  "Script error.") and `unhandledrejection` (not a `maxxing.api()` rejection with status 0 or 5xx: the reply now
+  carries `status`); `pages/dashboard/HtmlWidget` forwards it; `pages/ext` reports a module that fails to import, a
+  missing `mount`, a `mount()` that throws, and while mounted the window errors whose `filename` / stack is under
+  `/ext/<id>/` and the rejections tagged by its `ctx.api()` (`mxExt`) or whose stack is (an `ApiError` 0 / 5xx left
+  out). `features/extensions/report.ts` sends each `where` + message once per extension and page load, 10 at most.
 
 ## maxxing.atelier / maxxing.api.atelier / `pilot ext draft|propose`  (owner: organisation)
 The Atelier (API.md#atelier): agents' creations staged as drafts, approved by the user, versioned, rolled back.

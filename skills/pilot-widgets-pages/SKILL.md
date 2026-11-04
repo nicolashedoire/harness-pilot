@@ -223,7 +223,8 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
 2. Create the folder and files; for API calls use `urllib.request` with `timeout=10`.
 3. Test it the way the server runs it, and fix until it passes:
    ```bash
-   pilot ext check <id>            # --json: steps, the first error, the card it computes, the files involved
+   pilot ext check <id>            # --json: steps, the first error, the card it computes, the files involved,
+                                   # and runtime_errors: what broke while the user used it
    ```
    It loads the manifest and `api.py` (10 s limit), runs `card(ctx)` with the dashboard's 20 s limit through the
    same cleaning (dropped blocks of an unknown type are reported), checks an HTML widget's frame and every inline
@@ -232,7 +233,10 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
    `api.py`, fix, run it again. Do not tell the user it is done while it exits `1`. To try one route of a page's API,
    call `api.handle(ctx, 'GET', 'notes', {}, None)` from `python3 -c` in the folder.
 4. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
-   Errors (bad manifest, import error, exception in card) are shown on the extension's row there.
+   Errors (bad manifest, import error, exception in card) are shown on the extension's row there, with the errors
+   recorded while it ran (an HTML widget's or a page's script errors, exceptions of `card()` / `handle()`).
+   To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the
+   user since its files last changed (they disappear once you change the files).
 5. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
 Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in

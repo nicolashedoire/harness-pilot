@@ -173,6 +173,13 @@ Then **Settings -> Extensions -> Reload**. The widget appears on the dashboard. 
 wrong (invalid manifest, import error, exception in `card`), the error is shown on the extension's
 row and on the card; the rest of the dashboard keeps working.
 
+**Errors while it runs.** What breaks once the widget is on the dashboard is kept too: an exception of `card()`, of
+`handle()` behind its API, and in an HTML widget a script error or a promise nobody handled. Settings -> Extensions
+shows the latest ones on the extension's row (where, when, how many times, the message and the lines of code it went
+through), so harness-pilot can read them when you ask it to fix the widget. They are the errors since its files last
+changed: once the widget is fixed, the old ones go away by themselves (**Clear** forgets them at once). At most 10 are
+kept per extension.
+
 Extensions live in your workspace: updates never touch them and the backup includes them.
 
 ## HTML widgets (games, custom drawings)

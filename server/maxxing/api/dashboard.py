@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import bus, config, extensions, widgets
+from .. import bus, config, exterrors, extensions, widgets
 from ..security import require_auth
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], dependencies=[Depends(require_auth)])
@@ -79,6 +79,20 @@ def _task(d: dict, force: bool) -> asyncio.Task:
     return task
 
 
+async def _record(d: dict, message: str, exc: BaseException | None = None) -> None:
+    """An extension card() that failed while it ran: kept as a runtime error of the extension (exterrors). Not for an
+    extension that does not load (its `error` is listed already) nor one turned off."""
+    ext = d.get("_ext")
+    if d["source"] != "extension" or ext is None or ext.error or ext.module is None:
+        return
+    try:
+        stack = "\n".join(exterrors.ext_frames(exc, ext.dir)) if exc is not None else ""
+        await asyncio.to_thread(exterrors.record, ext.id, ext.dir, "card", message, stack)
+        bus.invalidate("extensions")
+    except Exception:  # noqa: BLE001 - never fails the dashboard
+        log.warning("could not record the error of widget %s", d["id"], exc_info=True)
+
+
 async def _render(d: dict, force: bool = False, soft: float | None = None) -> dict:
     out = {**{k: v for k, v in d.items() if k != "_ext"}, "card": None, "error": None}
     if d["hidden"]:
@@ -91,6 +105,7 @@ async def _render(d: dict, force: bool = False, soft: float | None = None) -> di
             out["pending"] = True
         else:
             out["error"] = f"timed out after {TIMEOUT_S:.0f} s"
+            await _record(d, f"card() took more than {TIMEOUT_S:.0f} s")
     except extensions.ExtensionBusy as e:
         out["error"] = str(e)
     except ImportError as e:
@@ -98,6 +113,7 @@ async def _render(d: dict, force: bool = False, soft: float | None = None) -> di
     except Exception as e:
         log.warning("widget %s failed: %s", d["id"], e)
         out["error"] = f"{type(e).__name__}: {e}"[:500]
+        await _record(d, out["error"], e)
     return out
 
 
