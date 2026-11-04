@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Thumbnails and previews: when `ffmpeg` (with its WebP encoder) or `pdftoppm` is missing, Settings → System shows what does not work and the command that installs it, `pilot doctor` warns, and the local app says so in its terminal at start. Nothing is installed for you. On a Mac, Homebrew's plain `ffmpeg` cannot write WebP: run `brew install ffmpeg-full` (the local app uses it as soon as it is installed) and `brew install poppler`.
 - A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
 - Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
 - On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.

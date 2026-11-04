@@ -349,6 +349,15 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `services(force=False)` - GET /api/system/services: ONE `systemctl show <all units>` (blocks split on blank
   lines, matched by `Id`), cached 10 s; `invalidate_services()` after a start / stop / restart.
 
+## maxxing.mediatools  (owner: organisation)
+- `status() -> dict` - GET /api/system/media-tools: `ffmpeg` / `pdftoppm` from `shutil.which` on every call, `webp`
+  from `ffmpeg -hide_banner -encoders` listing `libwebp` (`_encodes_webp`, lru-cached per binary path and mtime);
+  `missing` in the order ffmpeg | ffmpeg_webp, pdftoppm; `install_commands(missing)`: Homebrew on `darwin`
+  (`ffmpeg-full`, keg-only, which `scripts/dev-local.sh` puts first on the PATH when installed; `poppler`), one
+  `sudo apt-get install -y` elsewhere. Never installs anything.
+- `log_missing()` - one warning per missing tool plus the commands, called by `api/system.startup()` in local mode only
+  (the terminal of dev-local.sh); `cmd_core.check_media_tools` is the doctor check `media_tools` (warn, never fail).
+
 ## maxxing.security (session cookie)
 - Cookie `mx_session` = `<issued_at>.<nonce>.<hmac_sha256(cookie_key, "<issued_at>.<nonce>")>` (legacy
   `<issued_at>.<hmac>` from <= 2.0.0a31 still accepted), lifetime `COOKIE_MAX_AGE` = 30 days.

@@ -607,6 +607,14 @@ export type Health = {
 export type Service = { name: string; label: string; active: boolean; enabled: boolean; since: number | null; state: string }
 export type ServiceAction = 'start' | 'stop' | 'restart'
 export type LogsPayload = { lines: string[] }
+/** GET /api/system/media-tools: the tools of thumbnails and previews, and the commands that install what is missing. */
+export type MediaTools = {
+  ok: boolean
+  ffmpeg: { path: string | null; webp: boolean }
+  pdftoppm: { path: string | null }
+  missing: ('ffmpeg' | 'ffmpeg_webp' | 'pdftoppm')[]
+  install: string[]
+}
 export type VersionInfo = {
   version: string
   local_mode?: boolean

@@ -846,6 +846,12 @@ export const en = {
   // health
   'health.allGood': 'No issues detected',
   'health.metricUnavailable': 'Unavailable',
+  'system.mediaTools': 'Thumbnails and previews',
+  'system.mediaToolsDesc': 'Thumbnails and previews of images, videos and PDFs are made by two programs installed next to the app.',
+  'system.mediaTools.ffmpeg': 'ffmpeg is not installed: images and videos get no thumbnails or previews, and voice messages cannot be converted.',
+  'system.mediaTools.ffmpeg_webp': 'The installed ffmpeg cannot write WebP images (no libwebp encoder): images and videos get no thumbnails or previews.',
+  'system.mediaTools.pdftoppm': 'pdftoppm is not installed: PDF files get no thumbnail.',
+  'system.mediaToolsInstall': 'Run in a terminal, then restart the app:',
   'system.localMode': 'Local installation: system service controls and automatic updates are unavailable here. See the repository instructions.',
   'health.checking': 'Checking…',
   'health.cpu': 'CPU',
