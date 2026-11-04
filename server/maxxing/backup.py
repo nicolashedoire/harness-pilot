@@ -54,7 +54,7 @@ META_DIR = "_maxxing"
 CRON_NAME = "Memory backup"
 MAX_FILE = 5 * 1024 * 1024
 HISTORY_MAX = 500
-AUTHOR = ("Harness Maxxing", "backup@localhost")
+AUTHOR = ("harness-pilot", "backup@localhost")
 
 # Directories never descended into, files never copied (matched on the base name, case-insensitive).
 PRUNE_DIRS = {".git", "node_modules", "attachments", ".venv", "venv", "__pycache__", ".cache", ".trash",
@@ -221,7 +221,7 @@ def create_repo(repo: str, tok: str) -> dict:
     if status != 200 or not isinstance(me, dict):
         raise _gh_error(status, me, "Token owner")
     body = {"name": name, "private": True, "auto_init": False,
-            "description": "Harness Maxxing memory backup (private)"}
+            "description": "harness-pilot memory backup (private)"}
     path = "/user/repos" if owner.lower() == str(me.get("login", "")).lower() else f"/orgs/{owner}/repos"
     status, data = _gh("POST", path, tok, body)
     if status not in (200, 201) or not isinstance(data, dict):
@@ -530,8 +530,8 @@ def snapshot() -> dict[str, bytes]:
             files[f"{META_DIR}/mcp.json"] = (json.dumps(servers, indent=2, ensure_ascii=False) + "\n").encode()
     except Exception as e:                                         # noqa: BLE001
         log.warning("backup: MCP servers not exported: %s", e)
-    files[f"{META_DIR}/README.md"] = (b"# Harness Maxxing memory backup\n\nPrivate backup of the workspace memory "
-                          b"(CLAUDE.md, memory.md, tasks, extensions, skills) made by Harness Maxxing.\n"
+    files[f"{META_DIR}/README.md"] = (b"# harness-pilot memory backup\n\nPrivate backup of the workspace memory "
+                          b"(CLAUDE.md, memory.md, tasks, extensions, skills) made by harness-pilot.\n"
                           b"Restore: Settings > Backup > Restore, or `maxxing backup restore`.\n")
     return files
 

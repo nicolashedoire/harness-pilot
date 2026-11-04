@@ -70,7 +70,7 @@ def register(name: str, help: str, configure, handler) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="maxxing", description="Harness Maxxing " + __version__)
+    p = argparse.ArgumentParser(prog="maxxing", description="harness-pilot " + __version__)
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("serve", help="run the web server")
