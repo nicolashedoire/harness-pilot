@@ -1,12 +1,14 @@
 // /atelier - everything the agents created for the platform (widgets, pages, conversation blocks, themes, skills,
 // customizations of the product). Nothing is active before the user validates it; every version is kept.
-//   /atelier                 the list (?kind=<kind> filter, ?q= text filter)
+//   /atelier                 the list (?show=<type group> filter, ?q= text filter)
+//   /atelier/drafts/<id>     the validation screen of a draft
 import { Link, Route, Routes } from 'react-router'
 import { SearchX } from 'lucide-react'
 import { useT } from '@/i18n'
 import { Button, EmptyState } from '@/components/ui'
 import { Page } from '@/components/shell/Page'
 import { AtelierList } from './List'
+import { DraftReview } from './Review'
 
 function Missing() {
   const t = useT()
@@ -30,6 +32,7 @@ export default function AtelierPage() {
   return (
     <Routes>
       <Route index element={<AtelierList />} />
+      <Route path="drafts/:id" element={<DraftReview />} />
       <Route path="*" element={<Missing />} />
     </Routes>
   )

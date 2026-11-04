@@ -40,6 +40,33 @@ in, with its name already written, so you only say what to change.
 **Create with an agent** (top right) opens a new session in the *system › harness* topic with the start of a request:
 say what you want (a widget, a page, a theme, a skill…) and send.
 
+## Reviewing a proposal
+
+**Review** opens the proposal on its own screen. Nothing of it is installed yet.
+
+- **Preview, with your real data** (left): a dashboard widget is run once, with your data, and drawn in a dashed frame
+  exactly as the dashboard would draw it; an HTML widget runs in its sandboxed frame. The round arrow runs it again.
+  A page is never run before you approve it (its code would run inside the app with your session), and a
+  conversation block is tried once approved: for them, read the files.
+- Under it, the result of the **check** harness-pilot ran on the files without running them (it loads like an
+  installed one, or what fails), then **What it does**, in the agent's words, and the changes you already asked for.
+- **What it asks for** (right): the sites on the internet it calls (**Network**), the **keys and secrets** it reads
+  (Settings → Keys), and the **files it reads** outside its folder. A dot turns amber when it asks for something.
+  **Not declared** in amber means it does not say what it needs: nothing limits what its code does.
+- **Files**: what the proposal adds, changes or removes compared with the version that runs now (unchanged files are
+  folded), and the changes of the file you pick, line by line.
+
+Then, at the bottom (always in sight):
+
+- **Add to the dashboard** (or **Turn the page on**, **Turn the new version on**…) installs it as a new version. If
+  another version became active while you were reading, harness-pilot says so and shows the changes again instead.
+  A proposal whose check found an error cannot be turned on.
+- **Ask for a change** sends your words to the session the proposal came from: the agent picks them up there and
+  proposes again (a new session in the same topic when that session is gone). The proposal waits meanwhile.
+- **Refuse**, with a reason if you like: nothing is installed, and its files go to the trash.
+
+After a decision, the next proposal waiting opens, until none is left.
+
 ## Where the rows come from
 
 Extensions (widgets, HTML widgets, pages, conversation blocks, agent engines and cards pinned from a conversation)

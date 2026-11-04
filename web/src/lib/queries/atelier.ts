@@ -2,7 +2,7 @@
 // refreshes every key below (keys.ts BUS_KEYS).
 import { useQuery } from '@tanstack/react-query'
 import { api, seg } from '../api'
-import type { AtelierItem, AtelierList, Extension, Ok } from '../types'
+import type { AtelierDecision, AtelierDraft, AtelierDraftDetail, AtelierItem, AtelierList, AtelierPreview, Extension, Ok, Session } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -26,4 +26,52 @@ export function useToggleCreation() {
     ],
     invalidate: [qk.atelier.all, qk.extensions, qk.dashboard.all],
   })
+}
+
+export const atelierDraftQuery = (id: string) => ({
+  queryKey: qk.atelier.draft(id),
+  queryFn: () => api.get<AtelierDraftDetail>(`/api/atelier/drafts/${seg(id)}`),
+})
+/** A draft with its files (diff against the active version), whether it went stale, and what can be previewed. */
+export function useAtelierDraft(id: string) {
+  return useQuery(atelierDraftQuery(id))
+}
+
+/** Runs the draft (the user opened its validation screen to review it: API.md "Live preview"). Never retried, never
+ *  refetched on its own: only `refetch()` (the Refresh button) runs it again. */
+export function useDraftPreview(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: qk.atelier.preview(id),
+    queryFn: () => api.post<AtelierPreview>(`/api/atelier/drafts/${seg(id)}/preview`),
+    enabled,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+}
+
+/** Approve: `base` = the active version the user reviewed the diff against (`409 stale` when another one is active now). */
+export function useApproveDraft() {
+  return useMut(({ id, base }: { id: string; base: number | null }) => api.post<AtelierDecision>(`/api/atelier/drafts/${seg(id)}/approve`, { base }), {
+    invalidate: [qk.atelier.all, qk.extensions, qk.dashboard.all, qk.feed.all],
+    errorToast: false,
+  })
+}
+
+/** Refuse: the draft's files go to the trash. */
+export function useRejectDraft() {
+  return useMut(({ id, reason }: { id: string; reason?: string }) => api.post<{ ok: boolean; draft: AtelierDraft; trash_id: string }>(`/api/atelier/drafts/${seg(id)}/reject`, reason ? { reason } : {}), {
+    invalidate: [qk.atelier.all, qk.trash, qk.feed.all],
+  })
+}
+
+/** Ask the agent for a change: sent to the session the draft came from (or a new one in its topic). */
+export function useRequestDraftChange() {
+  return useMut(
+    ({ id, message }: { id: string; message: string }) =>
+      api.post<{ ok: boolean; session: Session; created: boolean; queued: boolean }>(`/api/atelier/drafts/${seg(id)}/request-change`, { message }),
+    { invalidate: [qk.atelier.all, qk.sessions.all], errorToast: false },
+  )
 }
