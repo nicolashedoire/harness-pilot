@@ -518,6 +518,14 @@ class Runner:
 
     @staticmethod
     def _cwd(cfg: dict, meta: dict) -> str | None:
+        companion = meta.get('companion')
+        if isinstance(companion, dict) and meta.get('provider') == 'codex':
+            run_id = str(companion.get('run_id') or '')
+            if not store.is_valid_id(run_id):
+                return None
+            root = (config.STATE / 'companions' / 'runs').resolve()
+            cwd = (root / run_id / 'repo').resolve()
+            return str(cwd) if root in cwd.parents and cwd.is_dir() else None
         root = Path(cfg.get("workspace") or "/").resolve()
         cwd = (root / (meta.get("path") or "")).resolve()
         if cwd != root and root not in cwd.parents:

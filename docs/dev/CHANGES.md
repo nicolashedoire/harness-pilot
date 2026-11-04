@@ -3313,3 +3313,7 @@ Adapted at integration:
   as `models[].context_window` in `/api/claude/status`. Gauge order: model chosen for the next turn (if it
   differs) > window of the last turn > window known for that model > 200k, or 1M past 200k.
 - Browser preferences (local, `mx-ui`): `notifyDone`, `notifySound`, `badgePulse`.
+
+### Resident companion experiments
+
+Persistent Codex companion roles can be launched manually from Settings → Companions. A run clones the committed platform checkout into a private state directory, runs as a regular stoppable session, and posts a notification when it finishes. The proposal review includes the tracked diff and new UTF-8 files; approve/reject records the decision against a content fingerprint but does not apply, merge, or publish it. Notifications and sound follow the existing user preferences. This first slice requires a Git checkout and Codex; it does not yet schedule autonomous observations, provide provider plugins, or implement automatic application of approved changes. The CLI workspace sandbox is not a general-purpose security boundary against hostile code. See `docs/dev/API.md` for the API.

@@ -241,6 +241,21 @@ Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|nul
 | POST | `/api/telegram/test` | – | sends a test message and checks the receiving side → `{ok, sent, poller:{running, last_poll_ok, last_poll_age, error, error_code}, webhook:{url, pending_updates, last_error}\|null, problems:[string]}` (`ok` = sent and no problem: poller stopped or in error, no getUpdates for 5 min, webhook set) · `409 not_linked` · `502 telegram_error` (not sent; same fields) |
 | DELETE | `/api/telegram` | – | unlink + forget token, threads and the Telegram sessions map |
 
+## Resident companions
+
+Companions are persistent, editable role definitions stored in private local state. In this first version, starting a review is explicit and uses Codex in a disposable, shallow clone of the installed Git checkout. Nothing is applied, pushed, merged or scheduled automatically.
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `/api/companions` | – | `{companions:[{id,name,role,provider}], runs:[Session]}` |
+| POST | `/api/companions` | `{name,role}` | Creates a persistent Codex role definition. |
+| PUT | `/api/companions/{id}` | `{name,role}` | Updates a role; existing runs retain their original instructions. |
+| POST | `/api/companions/{id}/runs` | `{path,mission?}` | Clones the installed source at its committed HEAD into private state, starts a Codex session in that clone, and returns the session. The clone has no remote. |
+| GET | `/api/companions/runs/{sid}/review` | – | Session, bounded patch and untracked-file summaries, plus a fingerprint for the current proposal. |
+| POST | `/api/companions/runs/{sid}/decision` | `{decision:"approved"\|"rejected",fingerprint}` | Records a decision on the exact finished proposal; a changed or running proposal is refused. This does not apply or publish the patch. |
+
+On completion, a proposal is posted to the existing notifications feed with a link to its review. Sound follows the browser's notification and audio settings. Role instructions and logs are local and no background monitoring is enabled by this feature.
+
 ## Backup
 | GET | `/api/backup` | – | `{configured, repo, private:bool\|null, schedule, include:[glob], always:[glob], last:{at, ok, commit, files, error}\|null}` (`always` = CLAUDE.md/memory.md globs, always included) |
 | POST | `/api/backup/config` | `{repo:"owner/name", token, create?:bool}` | verifies access/private/push (creates the private repo if asked; token may be omitted to keep the stored one) → `{ok, private, created?, warning?, error?}`; on success creates/updates the "Memory backup" cron job; `ok:false` while a backup or restore runs |

@@ -11,6 +11,7 @@ ROUTERS = [
     "claude",
     "workspace",
     "sessions",
+    "companions",
     "trash",
     "importer",
     "files",
