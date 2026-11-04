@@ -252,7 +252,10 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
 5. A message starting with `[Atelier] The user asked for a change` is the user's review: make the change in the same
    draft folder, check it again and propose again (the new proposal replaces the old one).
 6. To fix an existing extension, start with `pilot ext check <id> --json`: `runtime_errors` holds what broke for the
-   user since its files last changed. Then `pilot ext draft <id>`, fix, check with `--dir`, propose.
+   user since its files last changed (they disappear once its files change). Then `pilot ext draft <id>` (a copy of
+   what runs), fix there, check with `--dir`, propose: a fix is a proposal too. The user's **Ask for a fix** button
+   sends you a message with the error, the extension's folder and its files: same steps, then say in two or three
+   sentences what was wrong. Later fixes come back to the session that proposed the extension.
 7. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
 Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in

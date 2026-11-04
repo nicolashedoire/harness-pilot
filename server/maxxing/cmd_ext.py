@@ -193,6 +193,11 @@ def _handler(a) -> int:
             print(f"{a.id}: no extension with this id in {_root()}", file=sys.stderr)
             return 2
         results = [one]
+        try:                                    # run from a harness-pilot turn: the session that made / fixes it
+            from . import extfix
+            extfix.record_origin(a.id, os.environ.get("MAXXING_SESSION"))
+        except Exception:  # noqa: BLE001 - never fails the check
+            pass
     else:
         results = extcheck.check_all()
     return _report(results, a, bool(a.id))

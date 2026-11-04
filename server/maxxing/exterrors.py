@@ -45,15 +45,19 @@ def _load() -> dict:
     return d if isinstance(d, dict) else {}
 
 
+SIG_SKIP = {"__pycache__", "node_modules"}       # written by imports / tools, not by whoever edits the extension
+
+
 def files_sig(ext_dir: Path) -> int:
-    """Newest mtime (ns) of the extension's files, top level and one folder down (hidden ones skipped)."""
+    """Newest mtime (ns) of the extension's files, top level and one folder down (hidden ones, `__pycache__` and
+    `node_modules` skipped: importing api.py writes its bytecode there, which is no change of the extension)."""
     newest = 0
     try:
         entries = list(ext_dir.iterdir())
     except OSError:
         return 0
     for p in entries:
-        if p.name.startswith("."):
+        if p.name.startswith(".") or p.name in SIG_SKIP:
             continue
         try:
             kids = list(p.iterdir()) if p.is_dir() else [p]
@@ -128,7 +132,10 @@ def record(eid: str, ext_dir: Path, where: str, message: object, stack: object =
     if where not in WHERE:
         raise ValueError(f"where must be one of {', '.join(WHERE)}")
     msg = _text(message, MESSAGE_MAX).strip() or "Error"
-    item = {"where": where, "message": msg, "stack": str(stack or ""), "at": time.time() if at is None else at,
+    lines = str(stack or "").splitlines()
+    if lines and lines[0].strip() == msg:               # a JS stack starts with the message: not twice
+        lines = lines[1:]
+    item = {"where": where, "message": msg, "stack": "\n".join(lines), "at": time.time() if at is None else at,
             "count": 1, "sig": files_sig(ext_dir)}
     with _lock:
         data = _load()

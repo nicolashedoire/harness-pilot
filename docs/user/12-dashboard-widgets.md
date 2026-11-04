@@ -59,6 +59,27 @@ mode, on desktop and phone. (Need free-form drawing or interaction - a game, a c
 The fastest way: ask Claude in a session, "create a dashboard widget that shows ...". The
 `pilot-widgets-pages` skill knows everything below.
 
+### Approving what harness-pilot makes (the Atelier)
+
+When Claude or Codex builds a widget, a page or a conversation block plugin, it does not add it to your dashboard by
+itself: it **proposes** it. The proposal waits for you in the **Atelier**, with a notification "… is waiting for your
+approval". There you see what it asks for (the sites it connects to, the keys of Settings -> Keys it reads), its files
+and, for a change, what changed in each file; for a card widget or an HTML widget you can try it first with your real
+data. Then you **activate** it, **ask for a change** (your message goes back to the session that made it, which
+proposes a new version) or **refuse** it (its files go to the trash). Nothing of a proposal runs before you approve
+it.
+
+Every approval is a **version**: the Atelier shows who made each one (which session, Claude or Codex, when, and
+what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. The widgets and pages you
+had before the Atelier are version 1, with an unknown origin. A file of an extension changed by hand (or by Claude
+working directly in `<workspace>/extensions/`) keeps working and is marked **changed outside the Atelier** until you
+accept it as a new version.
+
+In the Atelier settings, **Activate safe creations without asking** (off by default) activates at once a proposal
+that connects to no site and reads no key; you still get a notification. To build one yourself, the steps below still
+apply: a folder you write by hand in `<workspace>/extensions/` works at once (and shows as changed outside the
+Atelier); `pilot ext draft` and `pilot ext propose` ([CLI reference](cli-reference)) give you the same review.
+
 ### 1. Create the folder
 
 ```
@@ -179,6 +200,14 @@ shows the latest ones on the extension's row (where, when, how many times, the m
 through), so harness-pilot can read them when you ask it to fix the widget. They are the errors since its files last
 changed: once the widget is fixed, the old ones go away by themselves (**Clear** forgets them at once). At most 10 are
 kept per extension.
+
+**Ask for a fix.** A widget of yours that fails shows its error on the card, with the lines of `api.py` it went
+through, and an **Ask for a fix** button (an HTML widget shows the error of its script under the frame). So does the
+extension's row in Settings -> Extensions. The button shows you the message harness-pilot will get - the error, the
+extension and its files - then sends it to the session that created the extension, where the agent already knows what
+it built; when that session no longer exists (or none is known), a new session opens in `system › harness`. The line
+under the button says which one. The session opens, and the agent checks the extension, fixes it and tells you what
+was wrong.
 
 Extensions live in your workspace: updates never touch them and the backup includes them.
 
