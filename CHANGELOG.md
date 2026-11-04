@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A mixed team can now be coordinated by Codex instead of Claude, and each agent can use the model you choose; the defaults stay the same.
 - The README explains how to install harness-pilot on a Linux server, and the installation and tools pages say what has been verified there: the installer downloaded from this repository, then PDFs, web scraping and video rendering on Debian 12 and Ubuntu 24.04 (arm64).
 - On a Linux server, `pilot deps update` started while another update of the tools is running (the one that follows an installation or `pilot update`) now waits for it and says so, instead of both failing and leaving Node.js and Remotion missing.
 - The role of each agent of a mixed team can be changed when you create it; the default roles stay filled in.

@@ -1706,7 +1706,7 @@ const teamLive = (session) => {
 }
 const teamOut = (sid) => {
   const team = teamOf(sid)
-  return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
+  return { id: sid, phase: team.phase, created: team.created, coordinator: findSession(sid).provider === 'codex' ? 'codex' : 'claude', agents: team.agents.map((a) => {
     const session = S.sessions.find((x) => x.id === a.id) || null
     const state = a.stopped ? 'stopped' : session ? session.state : 'missing'
     return { ...a, state, session, started_at: team.created, custom_role: !TEAM_ROLES.some(([p, r]) => p === a.provider && r === a.role), finished_at: session && state !== 'running' ? session.updated : null,
@@ -1717,7 +1717,7 @@ R('POST', '/api/teams', ({ body }) => {
   if (typeof body.path !== 'string') fail(422, 'invalid', 'path is required')
   const goal = String(body.message || '').trim()
   if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
-  const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
+  const parent = teamSession(body.path, body.title || goal.slice(0, 100), body.coordinator === 'codex' ? 'codex' : 'claude')
   addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
   const team = { phase: 'launching', goal, agents: [], created: now() }
   teamsState()[parent.id] = team

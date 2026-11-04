@@ -96,19 +96,22 @@ Python modules call each other only through these functions. Keep signatures sta
 
 
 ## maxxing.sessions.teams  (owner: core) - mixed Claude + Codex teams
-API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a Claude
-coordinator (the parent, returned by `create`) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
+API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a
+coordinator (the parent, returned by `create`; Claude Code or Codex) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
 - State: coordinator meta `team: {phase, goal, attachments, agents: [{id, provider, role, stopped}], created}`, worker meta
   `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
   (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
-- `create(path, message, title=None, attachments=None, roles=None)`: mission of 1-24 000 characters (else 400
-  `bad_mission`); `roles` `{claude?, codex?}` replace `ROLES` (the defaults) for that worker when not blank;
+- `create(path, message, title=None, attachments=None, roles=None, coordinator='claude', models=None)`: mission of
+  1-24 000 characters (else 400 `bad_mission`); `roles` `{claude?, codex?}` replace `ROLES` (the defaults) for that
+  worker when not blank; `coordinator` (`claude` | `codex`, else 400 `bad_provider`) is the provider of the parent
+  session; `models` `{claude?, codex?}` (`service._check_model`, 400 `bad_model`) go to that provider's worker and
+  to the coordinator of that provider;
   attachments checked by `service._check_attachments` (400 `bad_attachment`) before anything is created. Creates the
   coordinator then the workers, logs the mission and its attachments as the coordinator's `mx_user` line, then, inside the coordinator's
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+- `get(sid)` -> `{id, phase, created, coordinator, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
   `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
   session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
   (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
