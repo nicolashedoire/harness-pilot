@@ -220,7 +220,8 @@ every Atelier screen and the conversation's proposal card share: `TypeTile` (typ
 `StatePill` (`pillState(item)`: pending violet, active / applied green, error red, review amber, disabled muted),
 `Origin` (agent mark + session link + time; unknown origins say so), `VersionTag` (`vN`); and for a draft
 `DraftPreview` (`PreviewFrame`: dashed border + diagonal hatching = not installed; the dashboard's `BlockView` or
-`HtmlWidget` inside), `CheckLine`, `PermissionRows`, `FileReview`. Its texts are the lazy group `atelier`; the rail
+`HtmlWidget` inside), `CheckLine`, `PermissionRows`, `FileReview`, and `VersionTimeline` (a node per version, the active
+one filled with `primary`, a version that broke ringed with `destructive`). Its texts are the lazy group `atelier`; the rail
 entry (`nav.atelier`, after the extension pages) stays in the core. A screen that ends with a decision keeps its
 buttons in sight (`sticky bottom-0` on the column, and on the screen in the touch layout).
 

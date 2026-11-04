@@ -81,6 +81,10 @@ export const qk = {
     all: ['atelier'] as const,
     list: ['atelier', 'list'] as const,
     draft: (id: string) => ['atelier', 'draft', id] as const,
+    drafts: (status: 'pending' | 'all') => ['atelier', 'drafts', status] as const,
+    settings: ['atelier', 'settings'] as const,
+    item: (kind: string, id: string) => ['atelier', 'item', kind, id] as const,
+    version: (kind: string, id: string, n: number) => ['atelier', 'version', kind, id, n] as const,
     /** a draft's preview RUNS its code: out of the `atelier` domain, so no bus event runs it again */
     preview: (id: string) => ['atelier-preview', id] as const,
   },
