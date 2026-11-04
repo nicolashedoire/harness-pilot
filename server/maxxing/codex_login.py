@@ -86,7 +86,15 @@ class _Flow:
             self.code = None
         self.shown.set()
         if state == "succeeded":
-            bus.invalidate("health")         # Codex signed in: the "Claude is not connected" issue may soften
+            _signed_in_changed()
+
+
+def _signed_in_changed() -> None:
+    """Another account (or none): the "Claude is not connected" health issue may soften, and the model list the CLI
+    refreshes for the account is read again (codex_models)."""
+    from . import codex_models
+    codex_models.invalidate()
+    bus.invalidate("health")
 
 
 def _sign_in_page(url: str) -> bool:
@@ -205,7 +213,7 @@ def with_api_key(key: str) -> str | None:
     except OSError as e:
         return _mask(str(e), key)[:300]
     if r.returncode == 0:
-        bus.invalidate("health")
+        _signed_in_changed()
         return None
     return _error_line(_clean(f"{r.stdout}\n{r.stderr}").splitlines(), f"Codex refused the key (exit code {r.returncode})",
                        key)
@@ -222,7 +230,7 @@ def logout() -> str | None:
                            text=True, errors="replace", timeout=KEY_TIMEOUT_S, env={**os.environ, "NO_COLOR": "1"})
     except (OSError, subprocess.TimeoutExpired) as e:
         return _mask(str(e))[:300] or "Codex did not answer"
-    bus.invalidate("health")
+    _signed_in_changed()
     if r.returncode == 0:
         return None
     text = _clean(f"{r.stdout}\n{r.stderr}")

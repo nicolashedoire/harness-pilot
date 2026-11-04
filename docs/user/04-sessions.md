@@ -25,7 +25,7 @@ When creating a session, choose **Debate** under **Several agents**, then select
 
 You can assign a different role to each agent, choose a built-in pair of roles, and save named configurations for later sessions. Roles are included in the instructions sent to the corresponding agent on every turn. Saved configurations live in the server's local state.
 
-The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
+The new-session form also accepts separate Claude and Codex models. The **Codex model** list shows the models of the Codex command where harness-pilot runs, as Codex's own picker lists them for your account; **Default** lets Codex choose, and **Other…** takes any model identifier your account has. The same list is used for a Codex session, a discussion, a mixed team and a scheduled Codex prompt; a model saved before (or typed in **Other…**) is kept as it is. In a joint conversation, the Claude model is not sent to Codex.
 
 With an agent engine installed as an extension, **Second agent** lets it take Codex's place: its role and model fields replace Codex's, and its replies carry its name. It joins only if it declares what the discussion asks of it: plan mode needs an engine that supports plan mode, and attached files an engine that accepts files; otherwise the discussion is refused with the reason.
 

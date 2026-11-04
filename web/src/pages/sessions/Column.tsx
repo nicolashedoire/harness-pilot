@@ -118,6 +118,7 @@ import { ItemContext } from './Items'
 import { AGENT_NAME, agentName, sessionAgents } from '@/features/agents/AgentIcon'
 import { AgentChip, ContextGauge, ModelPicker, StateBadge } from './Widgets'
 import { ModePanel, ModePicker } from './NewSessionModes'
+import { CodexModelField } from '@/features/codex/CodexModelField'
 import { transcribe } from '@/features/voice/api'
 import { micErrorText } from '@/features/voice/VoiceButton'
 import { absTopicDir, fileQuote, modelLabel, topicLabel } from './util'
@@ -1612,7 +1613,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               </div>}
               {(provider === 'codex' || provider === 'both' || provider === 'team' || plugin) && <div className="grid gap-1.5">
                 <Label htmlFor={`codex-model-${col.key}`}>{partnerAdapter ? t('modes.partnerModel', { name: partnerAdapter.name }) : t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
-                <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
+                {plugin || partnerAdapter ? (
+                  <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
+                ) : (
+                  <CodexModelField id={`codex-model-${col.key}`} value={codexModel} onChange={setCodexModel} />
+                )}
                 <p className="text-xs text-muted-foreground">{plugin || partnerAdapter ? t('agentProviders.modelHint', { name: agentName('plugin', t, (partnerAdapter || adapter)?.name) }) : t('sessions.codexModelHint')}</p>
               </div>}
               {provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">

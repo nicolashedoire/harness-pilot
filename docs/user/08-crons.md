@@ -19,7 +19,7 @@ Click **New job** and fill in:
 | Type | **Shell command** (run with bash) or **harness-pilot prompt** (a prompt sent to a session in a topic) |
 | Agent | prompt: **Claude Code** or **Codex** - the session's agent. Codex must be signed in on the server (Settings → Codex) |
 | Command | shell: e.g. `projects/acme/scripts/report.sh`, relative to the workspace |
-| Topic, prompt, model | prompt: where the session runs, what to do, which model (Codex: an optional model identifier, empty = the CLI's default) |
+| Topic, prompt, model | prompt: where the session runs, what to do, which model (Codex: the models of the Codex command on the server, **Default** = Codex's own choice, **Other…** = any model identifier) |
 | Reuse session | prompt: keep one session across runs (it accumulates context) instead of a new session each time; after a change of agent, the next run starts a new session |
 | Permission mode | prompt: as for sessions. Codex has no permission prompts: **Ask (strict)** runs it read-only, the other modes let it write in the topic folder |
 | Notify | Telegram report: never, on failure (default), always |
