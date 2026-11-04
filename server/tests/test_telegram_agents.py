@@ -96,8 +96,8 @@ async def test_codex_session_from_a_session_thread(api, tg, svc):
     s = svc.sessions[sid]
     assert s["provider"] == "codex" and s["path"] == TOPIC and s["source"] == "telegram"
     assert svc.sessions[first]["provider"] == "claude"
-    tid = gateway.thread_of(sid)
-    assert tid not in (None, thread) and tg.topics[tid] == "acme/blog · Review the API"
+    tid = await wait_for(lambda: gateway.thread_of(sid), what="its thread")   # mapped once Telegram made it
+    assert tid != thread and tg.topics[tid] == "acme/blog · Review the API"
     await wait_for(lambda: any(p.get("message_thread_id") == tid and p["text"] == "Codex session: write your message here."
                                for p in tg.sent()), what="ready")
     assert any(p.get("message_thread_id") == thread and "acme / blog · Codex" in p["text"] for p in tg.sent())
@@ -211,7 +211,7 @@ async def test_discussion_from_telegram_pauses_on_its_limit(api, tg, svc):
     await wait_for(lambda: any(v["title"] == "Pick a cache" for v in svc.sessions.values()), what="/discuss")
     sid = _by_title(svc, "Pick a cache")
     assert svc.sessions[sid]["provider"] == "discussion" and svc.sessions[sid]["discussion_turn_limit"] == 6
-    tid = gateway.thread_of(sid)
+    tid = await wait_for(lambda: gateway.thread_of(sid), what="its thread")
     await wait_for(lambda: any(p.get("message_thread_id") == tid and "pause after 6 replies" in p["text"]
                                for p in tg.sent()), what="ready")
     tg.message("Redis or memcached?", thread=tid)
