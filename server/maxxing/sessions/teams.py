@@ -20,7 +20,8 @@ ROLES = {'claude': 'Develop a practical approach and identify the main steps.',
 
 
 def create(path: str, message: str, title: str | None = None, attachments: list[str] | None = None,
-           roles: dict[str, str] | None = None) -> dict:
+           roles: dict[str, str] | None = None, coordinator: str = 'claude',
+           models: dict[str, str] | None = None) -> dict:
     from . import service
 
     goal = (message or '').strip()
@@ -29,14 +30,18 @@ def create(path: str, message: str, title: str | None = None, attachments: list[
     # the same files go to both workers (Claude reads them, Codex gets the images inline and the other paths) and to
     # the coordinator with the synthesis request
     files = service._check_attachments(attachments)
-    parent = service.create_session(path, title=title or goal[:100], provider='claude')
+    if coordinator not in ROLES:
+        raise service.SessionError(400, 'bad_provider', 'The coordinator is Claude Code or Codex.')
+    # a model per agent (its worker, and the coordinator when it is that agent); empty = its default
+    chosen = {p: service._check_model((models or {}).get(p)) or None for p in ROLES}
+    parent = service.create_session(path, title=title or goal[:100], provider=coordinator, model=chosen[coordinator])
     sid = parent['id']
     agents = []
     try:
         for provider, default in ROLES.items():
             role = ((roles or {}).get(provider) or '').strip() or default
             child = service.create_session(path, title=f'Team: {provider.title()}', provider=provider,
-                                           permission_mode='plan')
+                                           model=chosen[provider], permission_mode='plan')
             agents.append({'id': child['id'], 'provider': provider, 'role': role, 'stopped': False})
         with store.edit(sid) as m:
             m['team'] = {'phase': 'launching', 'goal': goal, 'attachments': files, 'agents': agents, 'created': time.time()}
@@ -90,7 +95,9 @@ def get(sid: str) -> dict:
                        'custom_role': agent.get('role') != ROLES.get(agent.get('provider')),
                        'finished_at': ended, **(_live_view(agent['id'], running) if session else
                                                 {'activity': [], 'report': None})})
-    return {'id': sid, 'phase': team.get('phase'), 'created': team.get('created'), 'agents': agents}
+    coordinator = (store.read_cached(sid) or {}).get('provider') or 'claude'
+    return {'id': sid, 'phase': team.get('phase'), 'created': team.get('created'), 'coordinator': coordinator,
+            'agents': agents}
 
 
 # ---- what the team panel shows of each worker -----------------------------------------------

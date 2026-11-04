@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A mixed team can now be coordinated by Codex instead of Claude, and each agent can use the model you choose; the defaults stay the same.
 - The role of each agent of a mixed team can be changed when you create it; the default roles stay filled in.
 - A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
 - Long Claude Code and Codex discussions no longer stop when an agent's conversation gets full: near the limit, or when an agent refuses a reply for lack of room, Claude summarizes the exchanges so far and both agents continue in fresh conversations from that summary, marked in the thread. **Compact context** in the discussion's **…** menu does the same on demand.
