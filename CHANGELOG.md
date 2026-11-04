@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Security and Code of Conduct reports now go to this repository through GitHub's private reporting, instead of the original project's repository and website; the issue form no longer links to the original project's Enterprise offer or X account, and its donation link is gone.
 - The backup skill no longer tells the agent to move a server with the original project's installer: it downloads this repository's `install.sh` and runs it with the restore variables, and says the move is not verified yet for this version.
 - `pilot update` on a copy without a git remote now suggests adding this repository as `origin`, not the original project's, and `pilot license status` no longer links to the original project's Enterprise offer.
 - Texts that still said scheduled prompts, MCP servers or summaries were for Claude Code only now say that Codex does them too: the Crons page, **Settings → MCP** and **Settings → Codex**, the README and the scheduled jobs and MCP skills. The README also says that local scheduled jobs can catch up a missed run and run `@reboot` jobs at each start, and that a mixed team can be coordinated by Codex.
