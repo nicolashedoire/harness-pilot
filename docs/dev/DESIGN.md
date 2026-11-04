@@ -322,7 +322,8 @@ buttons in sight (`sticky bottom-0` on the column, and on the screen in the touc
   invalidates. Never poll what the bus already pushes (health also refetches every 60 s as a safety net).
   For per-resource streams use `useEventSource(url | () => url, {eventName: handler}, {onReconnect})` — pass a
   function to resume from the latest offset after a reconnect.
-- **URLs are the state** for anything shareable: `/sessions?path=<topic>&session=<id>&new=1`,
+- **URLs are the state** for anything shareable: `/?widget=<id>` (the dashboard scrolls to that card and rings it ~2 s, then
+  drops the parameter), `/sessions?path=<topic>&session=<id>&new=1`,
   `/files?path=<abs path>`, `/tasks?task=<id>`, `/crons?job=<id>`, `/settings/<section>`, `/docs/<slug>`,
   `/x/<extension id>`. Built-in dashboard links use these routes.
 

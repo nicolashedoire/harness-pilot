@@ -1,6 +1,8 @@
 // Dashboard: widget cards from GET /api/dashboard rendered with native blocks.
 // Edit mode: reorder (drag handle or arrow buttons), hide/show, PUT /api/dashboard/layout.
+// /?widget=<id> (the Atelier's "Open", a creation's href): scrolls to that card and rings it for a moment.
 import * as React from 'react'
+import { useSearchParams } from 'react-router'
 import { ArrowDown, ArrowUp, Check, ExternalLink, Eye, EyeOff, GripVertical, LayoutDashboard, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
 import { useDashboard, useExtensions, useFillPendingWidgets, useRefreshWidget, useSaveLayout } from '@/lib/queries'
 import { AskFixButton, FixTarget } from '@/features/extensions/AskFix'
@@ -9,7 +11,7 @@ import { fmtRelative } from '@/lib/format'
 import type { Widget } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
-import { Button, Card, EmptyState, NamedIcon, Skeleton, SkeletonText, Spinner, StatusDot, Tooltip } from '@/components/ui'
+import { Button, Card, EmptyState, NamedIcon, Skeleton, SkeletonText, Spinner, StatusDot, Tooltip, toast } from '@/components/ui'
 import { Page } from '@/components/shell/Page'
 import { useRegisterCommands } from '@/commands/registry'
 import { BlockView, InView, SmartLink } from './blocks'
@@ -67,7 +69,7 @@ function BrokenWidget({ w, onRetry, retrying }: { w: Widget; onRetry: () => void
   )
 }
 
-const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; index: number }) {
+const WidgetCard = React.memo(function WidgetCard({ w, index, lit }: { w: Widget; index: number; lit?: boolean }) {
   const t = useT()
   const lang = useLang()
   const refresh = useRefreshWidget()
@@ -77,7 +79,9 @@ const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; ind
   return (
     <InView.Provider value={!wait}>
     {/* Widgets arrive one after the other (32 ms apart, capped so a long dashboard is complete in ~0.5 s). */}
-    <Card ref={cardRef} className={cn('mx-card-in min-w-0 gap-0 overflow-hidden', wait && 'mx-wait', spanCls(w.span))} style={{ '--i': Math.min(index, 6) } as React.CSSProperties}>
+    <Card ref={cardRef} data-widget={w.id} className={cn('mx-card-in relative min-w-0 gap-0 overflow-hidden', wait && 'mx-wait', spanCls(w.span))} style={{ '--i': Math.min(index, 6) } as React.CSSProperties}>
+      {/* reached by a link (/?widget=<id>): an accent ring for a moment */}
+      {lit && <span aria-hidden className="mx-fade pointer-events-none absolute inset-0 z-10 rounded-xl bg-primary/5 ring-2 ring-primary ring-inset" data-testid="widget-highlight" />}
       <div className="flex h-12 items-center gap-2.5 px-[var(--pad-card)] pt-1">
         <NamedIcon name={w.icon} className="size-4 text-muted-foreground" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{card?.title || w.title}</h2>
@@ -223,6 +227,41 @@ function EditList({ widgets, layout, setLayout }: { widgets: Widget[]; layout: L
 
 /** The cards slide to their new place (2-D FLIP, transform only) when the grid changes under them: the "To handle"
  *  card coming or going, a widget shown, hidden or moved. Children of `grid` = cards, in `ids` order. */
+/** /?widget=<id>: once the cards are drawn, scroll to that one and ring it ~2 s; a hidden or unknown widget is said in a
+ *  toast. The parameter then leaves the URL (a reload or Back does not play it again). */
+function useWidgetLink(ready: boolean, widgets: Widget[]): string | null {
+  const t = useT()
+  const [params, setParams] = useSearchParams()
+  const target = params.get('widget')
+  const [lit, setLit] = React.useState<string | null>(null)
+  const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  React.useEffect(() => () => clearTimeout(timer.current), [])
+  React.useEffect(() => {
+    if (!target || !ready) return
+    const drop = () =>
+      setParams(
+        (p) => {
+          const n = new URLSearchParams(p)
+          n.delete('widget')
+          return n
+        },
+        { replace: true },
+      )
+    const w = widgets.find((x) => x.id === target)
+    if (!w || w.hidden) {
+      toast.info(t(w ? 'dash.linkHidden' : 'dash.linkMissing'))
+      return drop()
+    }
+    const el = document.querySelector<HTMLElement>(`[data-widget="${CSS.escape(target)}"]`)
+    el?.scrollIntoView?.({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' })
+    setLit(target)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setLit(null), 2200)
+    drop()
+  }, [target, ready, widgets, setParams, t])
+  return lit
+}
+
 function useGridFlip(grid: React.RefObject<HTMLDivElement | null>, ids: string[], sig: string) {
   type Box = { left: number; top: number; width: number }
   const last = React.useRef(new Map<string, Box>())
@@ -282,6 +321,7 @@ export default function DashboardPage() {
   useFillPendingWidgets(data?.widgets)
   const visible = widgets.filter((w) => !w.hidden)
   const gridRef = React.useRef<HTMLDivElement>(null)
+  const lit = useWidgetLink(!isLoading && !isError && !edit, widgets)
 
   const pending = usePendingEvents()
   const withPending = pending.count > 0 && visible.length > 0
@@ -333,7 +373,7 @@ export default function DashboardPage() {
             const w = visible.find((x) => x.id === id)!
             return (
               <ErrorBoundary key={w.id} variant="card" resetKey={w.card?.updated} className={cn('rounded-xl border bg-card', spanCls(w.span))}>
-                <WidgetCard w={w} index={i} />
+                <WidgetCard w={w} index={i} lit={lit === w.id} />
               </ErrorBoundary>
             )
           })}

@@ -4321,5 +4321,7 @@ export const fr: Record<keyof typeof en, string> = {
   "atelier.card.loadFailed": "Impossible de charger la proposition",
   "atelier.card.files": "{count} fichiers",
   "atelier.card.files#one": "{count} fichier",
+  "dash.linkHidden": "Ce widget est masqué : réaffichez-le avec Modifier la disposition.",
+  "dash.linkMissing": "Ce widget n’est pas sur le tableau de bord.",
 
 }

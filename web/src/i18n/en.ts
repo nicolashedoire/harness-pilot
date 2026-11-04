@@ -4340,5 +4340,7 @@ export const en = {
   "atelier.card.loadFailed": "The proposal could not be loaded",
   "atelier.card.files": "{count} files",
   "atelier.card.files#one": "{count} file",
+  "dash.linkHidden": "This widget is hidden: show it again with Edit layout.",
+  "dash.linkMissing": "This widget is not on the dashboard.",
 
 }
