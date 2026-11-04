@@ -24,7 +24,8 @@ def handle(ctx, method, path, query, body):
         for job in jobs:
             if 'proposal' in job:
                 job['proposal'] = {'result': job['proposal']['result'], 'criteria': job['proposal']['spec']['criteria']}
-        return {'runs': jobs, 'selection': lab.read(selection) if selection.exists() else {}}
+        return {'runs': jobs, 'selection': lab.read(selection) if selection.exists() else {},
+                'skill_path': str(Path(lab.__file__).parent.parent / 'SKILL.md'), 'state_dir': str(state)}
     if method == 'POST' and path == 'runs':
         spec = body.get('spec_path')
         if not isinstance(spec, str) or not Path(spec).is_absolute():

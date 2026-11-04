@@ -8,7 +8,7 @@ export function mount(el, ctx) {
   for (const key of ['intro','run','note','start','companion']) el.querySelector(`[data-${key}]`).textContent = t[key];
   el.querySelector('label').textContent = t.spec;
   const input = el.querySelector('input'), list = el.querySelector('[data-runs]'), alert = el.querySelector('[data-error]');
-  let alive = true, busy = false, rendered = '';
+  let alive = true, busy = false, rendered = '', context = null;
   const focused = new URLSearchParams(window.location.search).get('run');
   const fmt = (x) => x === null || x === undefined ? '—' : new Intl.NumberFormat(ctx.lang, {maximumSignificantDigits:5}).format(x);
   const message = (error) => { alert.hidden = !error; alert.textContent = error ? `${t.error}: ${error.message || error}` : ''; };
@@ -16,13 +16,14 @@ export function mount(el, ctx) {
   const action = (label, fn, disabled=false) => {const b=node('button',label,'ui-btn ui-outline ui-sm'); b.type='button'; b.disabled=disabled; b.onclick=()=>perform(fn); return b;};
   async function perform(fn) { if(busy)return; busy=true; message(null); try{await fn();await refresh();}catch(e){message(e);}finally{busy=false;} }
   function render(data) {
+    context = data;
     const signature=JSON.stringify(data); if(signature===rendered)return; rendered=signature;
     list.replaceChildren();
     if(!data.runs.length){list.append(node('p',t.empty,'ui-empty'));return;}
     const runs=[...data.runs].sort((a,b)=>Number(b.id===focused)-Number(a.id===focused));
     for(const run of runs){
       const card=node('section','','ui-card ui-stack');card.style.padding='20px';if(run.id===focused)card.style.borderColor='var(--primary)';
-      card.append(node('h2',run.name,'ui-h2'),node('p',`${run.model_id} · ${run.operation} · ${run.method}`,'ui-muted ui-small'),node('p',`${t.status}: ${t.states[run.status]||run.status}`,'ui-badge'));
+      card.append(node('h2',run.name,'ui-h2'),node('p',`${run.model_id} · ${run.operation} · ${run.method}`,'ui-muted ui-small'),node('p',`${t.status}: ${data.selection[run.model_id]?.run===run.id?t.active:run.decision?(t[run.decision.value]||run.decision.value):(t.states[run.status]||run.status)}`,'ui-badge'));
       if(run.error)card.append(node('p',run.error,'ui-callout ui-error'));
       const p=run.proposal;
       if(p){
@@ -49,7 +50,7 @@ export function mount(el, ctx) {
   }
   async function refresh(){const data=await ctx.api('overview');if(alive)render(data);}
   el.querySelector('form').onsubmit=(e)=>{e.preventDefault();perform(()=>ctx.api('runs',{method:'POST',body:{spec_path:input.value.trim()}}));};
-  el.querySelector('[data-companion]').onclick=()=>ctx.navigate(`/sessions?new=1&prompt=${encodeURIComponent(t.prompt+input.value.trim())}`);
+  el.querySelector('[data-companion]').onclick=()=>ctx.navigate(`/sessions?path=&new=1&prompt=${encodeURIComponent(t.prompt+input.value.trim()+(context?`\nSkill instructions: ${context.skill_path}\nModel Lab state: ${context.state_dir}`:''))}`);
   refresh().catch(message);
   const timer=setInterval(()=>{if(!busy)refresh().catch(message);},2000);
   return ()=>{alive=false;clearInterval(timer);};

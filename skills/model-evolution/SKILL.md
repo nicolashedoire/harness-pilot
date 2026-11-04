@@ -31,7 +31,7 @@ python <skill>/scripts/lab.py start --state <lab-state> --spec <experiment.json>
 python <skill>/scripts/lab.py list --state <lab-state>
 ```
 
-A spec may be evaluated by a non-LLM adapter or prepared by any coding companion. Read the run result, logs, metrics, checks and artifact hashes. Fix execution errors separately from testing a new hypothesis. Do not retry indefinitely or weaken acceptance criteria after seeing the result. A new hypothesis or changed protocol gets a new experiment.
+A spec may be evaluated by a non-LLM adapter or prepared by any coding companion. If the companion sandbox cannot write the host extension state, prepare the spec in its own working directory and let the Model Lab page launch it; keep the existing sandbox permissions. Read the run result, logs, metrics, checks and artifact hashes. Fix execution errors separately from testing a new hypothesis. Do not retry indefinitely or weaken acceptance criteria after seeing the result. A new hypothesis or changed protocol gets a new experiment.
 
 ## Propose a version
 

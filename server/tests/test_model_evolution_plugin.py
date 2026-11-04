@@ -94,7 +94,8 @@ def test_extension_is_optional_and_uses_existing_host_contract(client, mx):
         shutil.copytree(source, target)
     result = client.get('/api/ext/model-lab/overview')
     assert result.status_code == 200, result.text
-    assert result.json() == {'runs': [], 'selection': {}}
+    assert result.json()['runs'] == [] and result.json()['selection'] == {}
+    assert Path(result.json()['skill_path']).is_file()
     assert client.post('/api/ext/model-lab/runs', json={'spec_path':'relative.json'}).status_code == 400
 
 
