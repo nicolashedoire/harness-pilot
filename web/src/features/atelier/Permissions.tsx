@@ -29,7 +29,7 @@ export function PermissionRows({ permissions: p, compact, className }: { permiss
           </span>
         </p>
       )}
-      <ul className={cn('grid', compact ? 'gap-1.5' : 'divide-y rounded-lg border')}>
+      <ul className={cn('grid', compact ? 'gap-x-4 gap-y-1.5 @lg:grid-cols-3' : 'divide-y rounded-lg border')}>
         {ROWS.map((r) => {
           const values = (p?.[r.key] ?? []) as string[]
           const some = values.length > 0

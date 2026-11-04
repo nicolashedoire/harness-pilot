@@ -18,6 +18,7 @@ export function builtinLabel(t: TFn, type: string): string {
     case 'checklist': return t('blocks.type.checklist')
     case 'app': return t('blocks.type.app')
     case 'created': return t('blocks.type.created')
+    case 'proposal': return t('blocks.type.proposal')
     default: return type
   }
 }
@@ -39,6 +40,7 @@ export function builtinDesc(t: TFn, type: string): string {
     case 'checklist': return t('blocks.desc.checklist')
     case 'app': return t('blocks.desc.app')
     case 'created': return t('blocks.desc.created')
+    case 'proposal': return t('blocks.desc.proposal')
     default: return ''
   }
 }
