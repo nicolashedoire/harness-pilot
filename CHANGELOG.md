@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - The first-run wizard has an optional **Connect Codex** step: it shows whether the Codex command is installed and signed in, how to install it and sign in, and can be skipped.
+- **Summary and actions** no longer needs Codex: without a signed-in Codex, Claude Code writes the summary, the dialog says which agent wrote it and its errors show in your language. The summary's tokens (and Claude's indicative amount) now count in the session's statistics.
 - **Summarise & restart** now works on a Claude Code and Codex discussion: a new discussion with the same objective, roles, models and limits continues from a summary of the exchanges, and a paused discussion stays paused on the reply it was waiting for.
 - Scheduled jobs can run **At startup** (`@reboot`) in the local app: they start each time the application starts. The Crons page shows *At the next start* for them.
 - Make a task repeat every day, every week on chosen days, or every month: when you mark it done, the next one is added to *To do* with its due date and reminder.
