@@ -8,7 +8,7 @@ import type { TokenCounts, TokenStats, UsageWindow } from '@/lib/types'
 import { fmtDate, fmtNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
-import { Button, EmptyState, ProgressBar, Segmented, Sensitive, Skeleton, Switch } from '@/components/ui'
+import { Badge, Button, EmptyState, ProgressBar, Segmented, Sensitive, Skeleton, Switch } from '@/components/ui'
 import { Callout, SettingRow } from '@/features/common'
 import { Chart, compact } from '@/pages/dashboard/charts'
 import { SettingsCard, SectionStack } from './ui'
@@ -42,15 +42,19 @@ function QuotaCard() {
   const usage = useUsage(on)
   const lang = useLang()
   const fmtRelativeFuture = (at: number) => new Date(at * 1000).toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' })
-  /** A sentence for why the plan usage is missing (never a bare error code). */
+  /** A sentence for why the plan usage is missing (never a bare error code: the endpoint is undocumented, a 5xx, a
+   *  timeout or an exception name is not the user's to debug). */
   const usageReason = (reason: string | undefined, retryAt: number | undefined) => {
-    if (!reason) return t('stats.quotaUnavailable')
+    if (usage.isError || !reason) return t('stats.reason.failed')
     if (reason === 'rate_limited') return t('stats.reason.rate_limited', { when: retryAt ? fmtRelativeFuture(retryAt) : '…' })
     if (reason === 'no_oauth_credentials' || reason === 'api_key' || reason === 'http_401') return t(`stats.reason.${reason}` as const)
-    return t('stats.reason.other', { code: reason })
+    return t('stats.reason.failed')
   }
   return (
-    <SettingsCard title={t('stats.quota')} description={t('stats.quotaDesc')}>
+    <SettingsCard
+      title={<span className="flex flex-wrap items-center gap-2">{t('stats.quota')}<Badge variant="warning">{t('stats.experimental')}</Badge></span>}
+      description={<>{t('stats.quotaDesc')} {t('stats.experimentalHint')}</>}
+    >
       <SettingRow label={t('stats.quotaEnable')} description={t('stats.quotaEnableDesc')} htmlFor="mx-usage">
         <Switch id="mx-usage" checked={on} disabled={!settings} onCheckedChange={(v) => save.mutate({ usage_widget: v })} />
       </SettingRow>
