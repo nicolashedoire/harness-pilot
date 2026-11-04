@@ -192,7 +192,7 @@ exported / imported files, the server's `look.palette`):
 | `Sensitive`, `useMask()`, `usePresentation()` | presentation mode, see §6. |
 
 Shared feature blocks (`src/features`): the theme blocks of `features/themes` (§1 "Themes"), `Callout` (inline result/explanation, tones success/error/warning/info),
-`Steps` (numbered instructions), `OptionCard` (radio card), `SettingRow` (label left, control right), and the
+`Steps` (numbered instructions), `OptionCard` (radio card; `media` puts a logo tile first and the radio mark last, as the new session's agent modes), `SettingRow` (label left, control right), and the
 domain components reused by onboarding **and** settings: `ClaudeConnect`, `ClaudeDefaults`, `CreateProjectTopic`
 (+ `SlugPreview`), `TelegramSetup` (+ `ThreadList`), `BackupSetup` (+ `BackupWhy`), `RegionFields`.
 

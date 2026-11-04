@@ -32,6 +32,9 @@ export const Composer = React.forwardRef<ComposerHandle, {
   immediateIntervention?: boolean
   /** Reason the composer cannot send (shown inline); null = enabled. */
   disabledReason?: string | null
+  /** Reason files cannot be attached (a mode that takes written messages only): the attach button is off and says it,
+   *  dropped / pasted files are refused, a long paste stays text. null = files accepted. */
+  attachDisabledReason?: string | null
   queueCount?: number
   queued?: Pending[]
   /** The server's view of the queue (all of it, also what another tab, Telegram or the server queued). */
@@ -67,7 +70,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
   /** Lines the text grows to before it scrolls (fewer in a small grid pane, so the conversation stays visible). */
   maxRows?: number
 }>(function Composer(props, ref) {
-  const { colKey, draftKey, topicPath, running, immediateIntervention, disabledReason, queueCount = 0, queued = [], queueItems = NO_ITEMS, onClearQueue, clearingQueue, onSteer, steering, steerPending, onTakeQueue, onAsk, asking, onSend, onStop, stopping, toolbar, toolbarEnd, hint, notice, placeholder, autoFocus, maxRows = 12 } = props
+  const { colKey, draftKey, topicPath, running, immediateIntervention, disabledReason, attachDisabledReason, queueCount = 0, queued = [], queueItems = NO_ITEMS, onClearQueue, clearingQueue, onSteer, steering, steerPending, onTakeQueue, onAsk, asking, onSend, onStop, stopping, toolbar, toolbarEnd, hint, notice, placeholder, autoFocus, maxRows = 12 } = props
   const t = useT()
   const [text, setText] = React.useState(() => loadDraft(draftKey))
   const [quotes, setQuotes] = React.useState<string[]>(() => loadQuotes(draftKey))
@@ -151,6 +154,10 @@ export const Composer = React.forwardRef<ComposerHandle, {
   const addFiles = React.useCallback(
     (files: File[]): string[] => {
       const lids: string[] = []
+      if (attachDisabledReason) {
+        if (files.length) toast.info(attachDisabledReason)
+        return lids
+      }
       for (const f of files) {
         const lid = Math.random().toString(36).slice(2)
         lids.push(lid)
@@ -174,7 +181,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
       }
       return lids
     },
-    [topicPath, t],
+    [topicPath, t, attachDisabledReason],
   )
 
   const removeAtt = (lid: string) => {
@@ -295,8 +302,10 @@ export const Composer = React.forwardRef<ComposerHandle, {
   const failedUpload = atts.find((a) => a.error)
   const ready = atts.filter((a) => a.path)
   const empty = !text.trim() && ready.length === 0 && quotes.length === 0
-  const blocked = disabledReason || uploading || !!failedUpload
-  const reason = disabledReason || (uploading ? t('sessions.composer.uploading') : failedUpload ? t('sessions.uploadFailed', { name: failedUpload.name }) : null)
+  // files attached before switching to a mode that takes none: they must be removed first
+  const attachBlocked = attachDisabledReason && atts.length ? attachDisabledReason : null
+  const blocked = disabledReason || attachBlocked || uploading || !!failedUpload
+  const reason = disabledReason || attachBlocked || (uploading ? t('sessions.composer.uploading') : failedUpload ? t('sessions.uploadFailed', { name: failedUpload.name }) : null)
 
   // Sends are chained (never dropped, never reordered) — typing the next message while the previous
   // one is still in flight is fine.
@@ -409,7 +418,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
       return
     }
     const pasted = e.clipboardData?.getData('text/plain') || ''
-    const as = Date.now() - plainPaste.current < 1000 ? null : pastedFile(pasted)
+    const as = attachDisabledReason || Date.now() - plainPaste.current < 1000 ? null : pastedFile(pasted)
     if (!as) return
     e.preventDefault()
     const el = e.currentTarget
@@ -676,8 +685,9 @@ export const Composer = React.forwardRef<ComposerHandle, {
                 e.target.value = ''
               }}
             />
-            <Tooltip content={t('sessions.composer.attach')}>
-              <Button variant="ghost" size="icon-sm" aria-label={t('sessions.composer.attach')} onClick={() => fileInput.current?.click()}>
+            <Tooltip content={attachDisabledReason || t('sessions.composer.attach')}>
+              {/* aria-disabled, not disabled: the tooltip with the reason still shows on hover and focus */}
+              <Button variant="ghost" size="icon-sm" aria-label={t('sessions.composer.attach')} aria-disabled={!!attachDisabledReason || undefined} className={cn(attachDisabledReason && 'opacity-50')} onClick={() => (attachDisabledReason ? toast.info(attachDisabledReason) : fileInput.current?.click())}>
                 <Paperclip />
               </Button>
             </Tooltip>
