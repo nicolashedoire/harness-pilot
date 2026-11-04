@@ -69,8 +69,8 @@ changing anything. The installer asks how you will reach the web interface:
 - **local** (the default without a terminal): the server listens on `127.0.0.1:8787` only. Open an SSH tunnel
   from your computer; the installer prints the exact command (`ssh -N -L 8787:127.0.0.1:8787 user@server`).
 - **tailscale**: the server listens on its Tailscale address, for your Tailscale devices only.
-- **domain**: HTTPS on your own domain with Caddy and an automatic certificate. This choice has not yet been
-  verified with a real domain.
+- **domain**: HTTPS on your own domain with Caddy and an automatic certificate (see
+  [HTTPS with your own domain](#https-with-your-own-domain) below).
 
 It then installs, without further questions: the system packages; the code of this repository (`main` branch) in
 `/opt/claude-maxxing`; uv and Claude Code at pinned versions, their checksums verified; the Python environment;
@@ -90,9 +90,34 @@ new one. Then connect Claude in **Settings → Claude**. `sudo pilot doctor` che
   commands and the skills and keeps your data; `--purge` also removes the code and the state, `--purge-workspace`
   also the workspace.
 
-Verified: Debian 12 and Ubuntu 24.04 on arm64, in systemd containers (installation, service, first sign-in,
-`pilot doctor`, `pilot update`, uninstallation). Not yet verified: x86_64, a real server (firewall, SSH
-settings, swap), a domain with HTTPS, Tailscale and restoring a memory backup during the installation. See the
+### HTTPS with your own domain
+
+Mobile push notifications, webhooks (Stripe, Shopify, GitHub, see [Feed](feed)) and [Team](team) need the server
+at a public `https://` address. Before choosing **domain**:
+
+- create a DNS `A` record (and `AAAA` for IPv6) for a name such as `ui.example.com` that points to the server,
+  with no proxy in front of it (on Cloudflare: DNS only);
+- make sure ports 80 and 443 reach the server: the installer opens them in its own firewall, but check your
+  hosting provider's firewall too.
+
+Then choose **domain** when the installer asks, or run it as root with `ACCESS=domain DOMAIN=ui.example.com bash
+install.sh`. The same command switches an existing installation to the domain and keeps everything else. Caddy is
+installed from its signed package repository and asks Let's Encrypt for a certificate, which it renews by itself.
+Plain HTTP is redirected to HTTPS, and the setup link starts with your `https://` address. `sudo pilot doctor`
+checks that the address answers. If another web server (nginx, Apache) already uses ports 80 and 443, Caddy is not
+installed: the installer saves a configuration block to add to that server in
+`/var/lib/claude-maxxing/reverse-proxy.conf`.
+
+Verified in containers with a test domain, using a local certificate authority instead of Let's Encrypt: the
+Caddy configuration, the redirect from HTTP, the security headers, sign-in with a secure cookie, live updates,
+push availability, a webhook delivered over HTTPS, switching a local installation to a domain, and uninstalling.
+Getting a real certificate from Let's Encrypt needs a real domain and has not been verified yet.
+
+### What has been verified
+
+Debian 12 and Ubuntu 24.04 on arm64, in systemd containers (installation, service, first sign-in, `pilot doctor`,
+`pilot update`, uninstallation). Not yet verified: x86_64, a real server (firewall, SSH settings, swap), a Let's
+Encrypt certificate for a real domain, Tailscale and restoring a memory backup during the installation. See the
 [installer status](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/dev/INSTALLER.md) for details
 and the [audit](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/AUDIT.md) for other known
 limitations.
