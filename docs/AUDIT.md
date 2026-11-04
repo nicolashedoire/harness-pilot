@@ -21,6 +21,8 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 ## Priorité 3 — cohérence générale et documentation
 
 - [x] **Système sur macOS** : la mémoire estimée, la charge et le temps de fonctionnement sont relevés sur le Mac. Les données indisponibles ne sont plus affichées à zéro ; les commandes systemd et les mises à jour automatiques non validées sont masquées et bloquées en mode local.
+- [x] **Tableau de bord** : la carte serveur distingue les mesures indisponibles, les textes des cartes ne désignent plus les agents par l'ancien nom et le quota Claude n'affirme plus que le compte est déconnecté.
+- [ ] **Chemins internes hérités** : certains liens utilisent encore le sujet système historique. Une migration doit préserver les projets, les sessions et les extensions existants.
 - [ ] Reprendre les pages de documentation embarquées, les textes et liens hérités, ainsi que les notifications produites par le serveur, en conservant les attributions et licences applicables.
 - [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
 - [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions.

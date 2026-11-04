@@ -25,7 +25,7 @@ _T = {
         "Due today": "Pour aujourd'hui", "Overdue": "En retard", "Nothing due - well done": "Rien d'urgent, bravo",
         "Scheduled jobs": "Tâches planifiées", "Jobs": "Tâches", "Failed (24 h)": "Échecs (24 h)",
         "No run yet": "Aucune exécution", "Success": "Succès", "Failure": "Échec", "Server": "Serveur",
-        "CPU": "CPU", "Memory": "Mémoire", "Disk": "Disque", "Memory backup": "Sauvegarde mémoire",
+        "CPU": "CPU", "Memory": "Mémoire", "Disk": "Disque", "Unavailable": "Indisponible", "Memory backup": "Sauvegarde mémoire",
         "Not configured": "Non configuré", "Last backup": "Dernière sauvegarde", "Never": "Jamais",
         "Files": "Fichiers", "Telegram": "Telegram", "Bot": "Bot", "Status": "État", "Connected": "Connecté",
         "Stopped": "Arrêté", "Claude usage": "Utilisation Claude", "5-hour window": "Fenêtre 5 h",
@@ -34,7 +34,7 @@ _T = {
         "Up": "Allumé depuis", "Runs": "Exécutions", "Today's schedule": "Planning du jour",
         "Runs today": "Exécutions du jour", "Failed today": "Échecs du jour", "Next": "Prochaine",
         "Nothing scheduled today": "Rien de planifié aujourd'hui", "more jobs": "autres tâches",
-        "Sign Claude in on this server to read the plan usage.": "Connectez Claude sur ce serveur pour lire l'utilisation du forfait.",
+        "Claude quota is unavailable; on macOS the account may still be connected through Keychain.": "Quota Claude indisponible ; sur macOS, le compte peut rester connecté via le trousseau.",
         "Plan usage exists only for a Claude subscription (this server uses an API key).":
             "L'utilisation du forfait n'existe qu'avec un abonnement Claude (ce serveur utilise une clé API).",
         "Anthropic limits how often the usage can be read - next reading at": "Anthropic limite la fréquence de lecture - prochaine lecture à",
@@ -42,17 +42,17 @@ _T = {
         "Last known values - next reading at": "Dernières valeurs connues - prochaine lecture à",
         "Start your first session": "Démarrer votre première session",
         "Ask anything: a question, a task, an idea.": "Posez une question, confiez une tâche, notez une idée.",
-        "No open task. Add one on the Tasks page, or just tell Harness \"remind me to...\".":
-            "Aucune tâche ouverte. Ajoutez-en sur la page Tâches, ou dites simplement à Harness « rappelle-moi de… ».",
+        "No open task. Add one on the Tasks page, or ask an agent to create one.":
+            "Aucune tâche ouverte. Ajoutez-en sur la page Tâches, ou demandez à un agent d'en créer une.",
         "Nothing scheduled today.": "Rien de planifié aujourd'hui.",
         "Next run": "Prochaine exécution", "No active scheduled job.": "Aucune tâche planifiée active.",
-        "Ask Harness to schedule one": "Demandez à Harness d'en programmer une",
+        "Ask an agent to schedule one": "Demandez à un agent d'en programmer une",
         "Make it yours": "À votre image", "Take the tutorial": "Suivre le tutoriel",
         "4 short lessons, at your pace": "4 courtes leçons, à votre rythme",
         "Add a starter project": "Ajouter un projet de départ",
         "Online store, creator, freelance... ready to use": "Boutique, créateur, freelance… prêts à l'emploi",
-        "Welcome! Everything starts with a session: Claude works in a topic, with its memory, on your server.":
-            "Bienvenue ! Tout commence par une session : Harness travaille dans un topic, avec sa mémoire, sur votre serveur.", "today": "aujourd'hui", "tomorrow": "demain",
+        "Welcome! Start a session with an agent in a topic, with its memory, on your server.":
+            "Bienvenue ! Démarrez une session avec un agent dans un sujet, avec sa mémoire, sur votre serveur.", "today": "aujourd'hui", "tomorrow": "demain",
     },
 }
 
@@ -126,8 +126,7 @@ def _first_steps() -> list[dict]:
                       "href": f"/sessions?path={tutorial}&new=1"})
     items.append({"icon": "folder-plus", "title": t("Add a starter project"),
                   "subtitle": t("Online store, creator, freelance... ready to use"), "href": "/settings/packs"})
-    return [{"type": "markdown", "text": t("Welcome! Everything starts with a session: Claude works in a topic, "
-                                           "with its memory, on your server.")},
+    return [{"type": "markdown", "text": t("Welcome! Start a session with an agent in a topic, with its memory, on your server.")},
             {"type": "list", "grid": True, "items": items}]
 
 
@@ -139,7 +138,7 @@ def tasks(force: bool = False) -> dict:
                 "blocks": [{"type": "markdown", "text": s["error"]}]}
     if not s["open"]:
         return {"title": t("Tasks"), "link": "/tasks", "blocks": [{"type": "markdown", "text": t(
-            "No open task. Add one on the Tasks page, or just tell Harness \"remind me to...\".")}]}
+            "No open task. Add one on the Tasks page, or ask an agent to create one.")}]}
     items = []
     for task in s["items"][:6]:
         overdue = bool(task.get("due") and task["due"] < s["today"])
@@ -270,7 +269,7 @@ def _next_run_blocks(cr: Any, zone: ZoneInfo, now: float, start: float) -> list[
         from .cmd_core import update_topic
         ask = f"/sessions?path=projects/{update_topic().replace('/', '/topics/', 1)}&new=1"
         return [{"type": "markdown", "text": f"{t('Nothing scheduled today.')} {t('No active scheduled job.')}"},
-                {"type": "list", "items": [{"title": t("Ask Harness to schedule one"), "href": ask}]}]
+                {"type": "list", "items": [{"title": t("Ask an agent to schedule one"), "href": ask}]}]
     when = dt.datetime.fromtimestamp(nxt[0], zone)
     days = (when.date() - dt.datetime.fromtimestamp(start, zone).date()).days
     day_label = t("today") if days == 0 else t("tomorrow") if days == 1 else \
@@ -288,13 +287,16 @@ def server(force: bool = False) -> dict:
     up_d = h["uptime_s"] / 86400
     levels = {i["level"] for i in h["issues"]}
     return {"title": t("Server"), "link": "/settings/system",
-            "status": "error" if "error" in levels else "warn" if levels else "ok",
+            "status": "error" if "error" in levels else "warn" if "warn" in levels else "ok",
             "blocks": [
-                {"type": "progress", "label": t("CPU"), "value": h["cpu_pct"] or 0, "max": 100, "format": "percent",
-                 "hint": f"{t('Load')} {' / '.join(f'{x:.2f}' for x in h['load'])}"},
-                {"type": "progress", "label": t("Memory"), "value": round(used / 1e9, 1),
-                 "max": round(mem["total"] / 1e9, 1) or 1, "unit": "GB",
-                 "hint": f"{_gb(mem['avail'])} available" if t("ago") == "ago" else f"{_gb(mem['avail'])} disponibles"},
+                ({"type": "progress", "label": t("CPU"), "value": h["cpu_pct"], "max": 100, "format": "percent",
+                  "hint": f"{t('Load')} {' / '.join(f'{x:.2f}' for x in h['load'])}"} if h['cpu_pct'] is not None
+                 else {"type": "stat", "label": t("CPU"), "value": t("Unavailable"),
+                       "hint": f"{t('Load')} {' / '.join(f'{x:.2f}' for x in h['load'])}"}),
+                ({"type": "progress", "label": t("Memory"), "value": round(used / 1e9, 1),
+                  "max": round(mem["total"] / 1e9, 1) or 1, "unit": "GB",
+                  "hint": f"{_gb(mem['avail'])} available (estimate)" if t("ago") == "ago" else f"{_gb(mem['avail'])} disponibles (estimation)"}
+                 if mem['total'] else {"type": "stat", "label": t("Memory"), "value": t("Unavailable")}),
                 {"type": "progress", "label": t("Disk"), "value": dsk["pct"], "max": 100, "format": "percent",
                  "hint": f"{_gb(dsk['free'])} free" if t("ago") == "ago" else f"{_gb(dsk['free'])} libres"},
                 *([{"type": "list", "items": [{"title": i["text"], "status": i["level"]} for i in h["issues"]]}]
@@ -365,7 +367,7 @@ def _usage_reason(u: dict) -> str:
     """A sentence for why the plan usage is missing (never a bare error code)."""
     reason = u.get("reason") or "?"
     if reason == "no_oauth_credentials":
-        return t("Sign Claude in on this server to read the plan usage.")
+        return t("Claude quota is unavailable; on macOS the account may still be connected through Keychain.")
     if reason == "api_key":
         return t("Plan usage exists only for a Claude subscription (this server uses an API key).")
     if reason == "rate_limited":
@@ -410,7 +412,7 @@ _EXAMPLES = {
          "Add a dashboard widget that checks every 5 minutes that my websites answer, and shows their status."),
         ("star", "My latest customer reviews", "Google, Trustpilot, app stores...",
          "Add a dashboard widget with my latest customer reviews and the average rating. Ask me where my reviews are."),
-        ("sparkles", "Something else...", "Describe it, Harness asks the right questions",
+        ("sparkles", "Something else...", "Describe it and an agent will ask the right questions",
          "I would like a new widget on my dashboard. Ask me the questions you need to build it."),
     ],
     "fr": [
@@ -425,18 +427,18 @@ _EXAMPLES = {
          "Ajoute un widget au tableau de bord qui vérifie toutes les 5 minutes que mes sites répondent et affiche leur état."),
         ("star", "Mes derniers avis clients", "Google, Trustpilot, stores d'applis…",
          "Ajoute un widget au tableau de bord avec mes derniers avis clients et la note moyenne. Demande-moi où sont mes avis."),
-        ("sparkles", "Autre chose…", "Décrivez-le, Harness pose les bonnes questions",
+        ("sparkles", "Autre chose…", "Décrivez-le, un agent pose les bonnes questions",
          "Je voudrais un nouveau widget sur mon tableau de bord. Pose-moi les questions utiles pour le créer."),
     ],
 }
 _CUSTOMIZE_TEXT = {
     "en": {"intro": "**This dashboard is built by talking.** In any session, ask \"add a widget that shows...\": "
-                    "Harness writes it in your extensions, it appears here, and updates never touch it. Try one:",
+                    "The agent writes it in your extensions and it appears here. Try one:",
            "pages": "Need more than a card? Ask for a whole page (a client list, an order tracker...): "
                     "[see how](/x/pages).",
            "hide": "Hide this card with **Edit layout**."},
     "fr": {"intro": "**Ce tableau de bord se construit en parlant.** Dans n'importe quelle session, demandez « ajoute "
-                    "un widget qui affiche… » : Harness l'écrit dans vos extensions, il apparaît ici, et les mises à "
+                    "un widget qui affiche… » : l'agent l'écrit dans vos extensions, il apparaît ici, et les mises à "
                     "jour n'y touchent jamais. Essayez :",
            "pages": "Besoin de plus qu'une carte ? Demandez une page entière (fichier clients, suivi de commandes…) : "
                     "[voir comment](/x/pages).",

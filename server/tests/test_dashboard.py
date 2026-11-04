@@ -9,6 +9,16 @@ from _org_helpers import client, org  # noqa: F401
 from maxxing import config, crons, health
 
 
+def test_server_widget_does_not_show_missing_cpu_as_zero(org, monkeypatch):
+    from maxxing import widgets
+    monkeypatch.setattr(health, 'collect', lambda force=False: {'mem': {'total': 0, 'avail': 0},
+        'disk': {'total': 100, 'free': 50, 'pct': 50}, 'uptime_s': 3600,
+        'cpu_pct': None, 'load': [1.0, 2.0, 3.0], 'issues': []})
+    blocks = widgets.server()['blocks']
+    cpu = next(b for b in blocks if b.get('label') == 'CPU')
+    assert cpu['type'] == 'stat' and cpu['value'] == 'Unavailable'
+
+
 @pytest.fixture
 def fakes(monkeypatch):
     """Fake sessions service + Telegram gateway (owned by other modules)."""
@@ -42,7 +52,8 @@ def _by_id(client, q=""):
     return {w["id"]: w for w in client.get("/api/dashboard" + q).json()["widgets"]}
 
 
-def test_builtins(client, org, fakes):
+def test_builtins(client, org, fakes, monkeypatch):
+    monkeypatch.setattr(health, 'cpu_pct', lambda: 42.0)
     client.post("/api/tasks", json={"title": "Late", "due": "2000-01-01"})
     j = crons.create_job({"name": "Nightly", "command": "false"})
     crons.run_job(j["id"])
