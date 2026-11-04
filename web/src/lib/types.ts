@@ -547,8 +547,6 @@ export type BackupRestoreResult = {
 /* ---------------------------------------------------------------- Profile (pseudo) */
 export type ProfileColor = 'clay' | 'blue' | 'violet' | 'green' | 'amber' | 'rose' | 'teal' | 'zinc'
 export type Profile = { name: string; color: ProfileColor | ''; emoji: string }
-/** Saying hello to the authors (all optional): anonymous counter, email (+ product news). */
-export type RegisterState = { count: boolean; /** MAXXING_NO_TELEMETRY / DO_NOT_TRACK set on the server: counter off whatever `count`. */ count_blocked: boolean; email: string; news: boolean; asked: boolean; registered: boolean; error: string; synced_at: number }
 
 /* ---------------------------------------------------------------- Settings & secrets */
 export type Settings = {
