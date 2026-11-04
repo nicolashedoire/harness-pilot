@@ -284,6 +284,7 @@ function useTeamOn() {
 }
 
 export function AppShell() {
+  const t = useT()
   const bus = useGlobalBus(true)
   useSyncLanguage()
   useShareLook()
@@ -302,7 +303,7 @@ export function AppShell() {
       <RouteProgress />
       <ConnectionBanner status={bus} />
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-popover focus:px-3 focus:py-2 focus:shadow-pop">
-        Skip to content
+        {t('shell.skip')}
       </a>
       {!touch && <Sidebar />}
       <main
