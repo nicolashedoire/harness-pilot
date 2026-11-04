@@ -17,6 +17,7 @@ const DEMO_DIAGRAM = `flowchart LR
 
 export const SHOWCASES: Record<string, TourStep[]> = {
   'pull-requests': [{ id: 'pull-requests', targets: [], title: 'prQueue.section', body: 'prQueue.intro', route: (c) => (c.pathname === '/settings/pull-requests' ? null : '/settings/pull-requests') }],
+  'resident-missions': [{ id: 'resident-missions', targets: [], title: 'show.residentMissions.title', body: 'show.residentMissions.body', route: (c) => (c.pathname === '/settings/missions' ? null : '/settings/missions') }],
   'backup-preview': [{ id: 'backup-preview', targets: [], title: 'show.backupPreview.title', body: 'show.backupPreview.body', route: (c) => (c.pathname === '/settings/backup' ? null : '/settings/backup') }],
   'mixed-team': [{ id: 'mixed-team', targets: [], title: 'show.mixedTeam.title', body: 'show.mixedTeam.body', route: sessionsList }],
   blocks: [{ id: 'blocks', targets: [], title: 'show.blocks.title', body: 'show.blocks.body', route: (c) => (c.pathname === '/settings/blocks' ? null : '/settings/blocks') }],

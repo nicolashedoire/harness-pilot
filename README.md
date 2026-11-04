@@ -70,6 +70,8 @@ The [Model evolution plugin](docs/user/31-model-evolution.md) pairs a companion 
 
 ## Documentation and contributions
 
+Organize bounded platform improvements with [resident missions](docs/user/33-resident-missions.md): review the architect’s plan, assign persistent roles and approve proposed patches. Missions retain progress across restarts and include finite recurrence and stop controls.
+
 Companion roles can use Claude Code, Codex or a removable external agent adapter. See the [companion guide](docs/user/companions.md) and [provider plugin contract](docs/dev/AGENT-PROVIDERS.md).
 
 Coordinate reviewed code proposals with the optional [pull request integration queue](docs/user/32-pull-requests.md). It starts paused, follows explicit prerequisites and requires approval of the exact commit before merging.

@@ -75,6 +75,8 @@ KINDS: dict[str, tuple[str, str]] = {
     "health.issue": ("system", "warning"),
     "pr_queue.merged": ("system", "success"),
     "pr_queue.review": ("system", "warning"),
+    "mission.review": ("system", "warning"),
+    "mission.completed": ("system", "info"),
     "signin.ok": ("security", "info"),
     "signin.failed": ("security", "warning"),
     "signin.denied": ("security", "warning"),

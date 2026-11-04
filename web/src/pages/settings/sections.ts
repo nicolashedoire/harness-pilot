@@ -1,9 +1,9 @@
 // Settings sub-navigation (route /settings/:section). Lightweight on purpose: also used by the palette.
 // Support (donation) stays last and in the accent colour (pages/settings/index.tsx).
-import { GitPullRequest, Building2, UserRound, BarChart3, Bell, Palette, FolderKanban, HandHeart, History, ToggleRight, Blocks, BookOpen, Shapes, Bot, Brain, DatabaseBackup, FileInput, KeyRound, Mic, Plug, Send, Server, Shield, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react'
+import { GitPullRequest, ListChecks, Building2, UserRound, BarChart3, Bell, Palette, FolderKanban, HandHeart, History, ToggleRight, Blocks, BookOpen, Shapes, Bot, Brain, DatabaseBackup, FileInput, KeyRound, Mic, Plug, Send, Server, Shield, SlidersHorizontal, Trash2, type LucideIcon } from 'lucide-react'
 import type { TKey } from '@/i18n'
 
-export type SettingsSectionId = 'general' | 'appearance' | 'profile' | 'license' | 'support' | 'packs' | 'features' | 'notifications' | 'security' | 'claude' | 'codex' | 'companions' | 'pull-requests' | 'stats' | 'memory' | 'telegram' | 'voice' | 'backup' | 'keys' | 'mcp' | 'extensions' | 'blocks' | 'import' | 'trash' | 'system' | 'updates' | 'docs'
+export type SettingsSectionId = 'general' | 'appearance' | 'profile' | 'license' | 'support' | 'packs' | 'features' | 'notifications' | 'security' | 'claude' | 'codex' | 'companions' | 'missions' | 'pull-requests' | 'stats' | 'memory' | 'telegram' | 'voice' | 'backup' | 'keys' | 'mcp' | 'extensions' | 'blocks' | 'import' | 'trash' | 'system' | 'updates' | 'docs'
 
 export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: TKey; description: TKey; icon: LucideIcon; keywords?: string }[] = [
   { id: 'general', label: 'settings.general', description: 'settings.general.desc', icon: SlidersHorizontal, keywords: 'layout language timezone server address' },
@@ -19,6 +19,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: TKey; descriptio
   { id: 'claude', label: 'settings.claude', description: 'settings.claude.desc', icon: Bot, keywords: 'model token api key permission' },
   { id: 'codex', label: 'settings.codex', description: 'settings.codex.desc', icon: Bot, keywords: 'openai codex chatgpt login agent' },
   { id: 'companions', label: 'companions.section', description: 'companions.section.desc', icon: Bot, keywords: 'agents roles review proposal' },
+  { id: 'missions', label: 'settings.missions', description: 'settings.missions.desc', icon: ListChecks, keywords: 'resident missions plans roles recurring security audit automation' },
   { id: 'pull-requests', label: 'prQueue.section', description: 'prQueue.section.desc', icon: GitPullRequest, keywords: 'pull requests git merge review dependency queue approval' },
   { id: 'memory', label: 'settings.memory', description: 'settings.memory.desc', icon: Brain, keywords: 'second brain memory.md clean compaction lines' },
   { id: 'telegram', label: 'settings.telegram', description: 'settings.telegram.desc', icon: Send, keywords: 'bot threads' },
