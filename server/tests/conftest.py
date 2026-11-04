@@ -41,7 +41,7 @@ def _never_the_real_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 @pytest.fixture(autouse=True)
 def _never_the_real_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`maxxing deps` / uninstall write commands to /usr/local/bin, remove Claude Code from root's home, a fail2ban
-    jail, a swap line of /etc/fstab...: in tests every one of those paths is under tmp_path."""
+    jail, a swap line of /etc/fstab, Codex's skills...: in tests every one of those paths is under tmp_path."""
     from maxxing import cmd_core, deps
     fake = tmp_path / "_system"
     monkeypatch.setattr(deps, "LINK_DIR", fake / "usr-local-bin")
@@ -51,6 +51,7 @@ def _never_the_real_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(cmd_core, "FSTAB", fake / "fstab")
     monkeypatch.setattr(cmd_core, "BIN_LINK", fake / "usr-local-bin" / "maxxing")    # `pilot` / `maxxing` commands
     monkeypatch.setattr(cmd_core, "PILOT_LINK", fake / "usr-local-bin" / "pilot")
+    monkeypatch.setenv("MAXXING_CODEX_SKILLS_DIR", str(fake / "agents-skills"))   # never the real ~/.agents/skills
 
 
 @pytest.fixture(autouse=True)
