@@ -125,7 +125,7 @@ def test_the_bridge_reports_frame_errors(client, org):
 
 def test_ext_check_shows_what_broke_while_it_ran(client, org, capsys):
     from maxxing import cli
-    _ext(org, "game", {"type": "widget"}, widget_html="<p id=p></p><script>p.textContent = 'ok'</script>")
+    _ext(org, "game", {"type": "widget", "permissions": {}}, widget_html="<p id=p></p><script>p.textContent = 'ok'</script>")
     _post(client, "game", where="widget", message="ReferenceError: boom is not defined", stack="at /ext/game/widget-frame:9:1")
     assert cli.main(["ext", "check", "game", "--json"]) == 0                # the check itself passes
     [r] = json.loads(capsys.readouterr().out)["extensions"]

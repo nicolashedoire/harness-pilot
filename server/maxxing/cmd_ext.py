@@ -44,7 +44,7 @@ def _print(r: dict) -> None:
     print(f"{r['id']} ({r['kind']}) - {r['status']}")
     for s in r["steps"]:
         first, *rest = (s["detail"] or s["step"]).splitlines() or [s["step"]]
-        line(level.get(s["status"], INFO), f"{s['step']:<9} {first}")
+        line(level.get(s["status"], INFO), f"{s['step']:<11} {first}")
         for x in rest:
             print(f"      {x}")
     for fr in r.get("trace") or []:

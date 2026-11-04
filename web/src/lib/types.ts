@@ -774,6 +774,16 @@ export type Widget = {
 export type DashboardPayload = { widgets: Widget[] }
 export type DashboardLayout = { order: string[]; hidden: string[] }
 
+/** Declared permissions of an extension (manifest.json `"permissions"`, docs/dev/API.md). */
+export type ExtensionPermissions = {
+  /** Hosts its HTML widget frame reaches over https. */
+  network: string[]
+  /** Keys of Settings -> Keys its api.py reads. */
+  secrets: string[]
+  /** Workspace-relative files and folders its api.py reads ("." = all of it). */
+  read: string[]
+}
+
 export type Extension = {
   id: string
   name: string
@@ -790,6 +800,9 @@ export type Extension = {
   /** Newest mtime (ms) of page.js and the modules of its folder: the version in the module URL
    *  (/ext/<id>/@<page_v>/page.js; the browser reuses the modules until one of them changes). */
   page_v?: number | null
+  /** What its manifest declares it uses beyond its own folder (`"permissions"`); null = no `"permissions"` key.
+   *  A block plugin: its block.json hosts. */
+  permissions?: ExtensionPermissions | null
   /** Errors recorded while it ran (browser and server), since its files last changed, newest first (at most 10). */
   runtime_errors?: ExtRuntimeError[]
   /** The session that made it (recorded by `pilot ext check` run from a turn): where "Ask for a fix" goes. */
