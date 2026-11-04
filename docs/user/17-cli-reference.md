@@ -5,7 +5,7 @@ section: Reference
 
 This reference describes inherited server commands. The Linux installer, service commands and update flow have not been validated for this repository. In the verified local setup, use the repository's `scripts/dev-local.sh`; the command is run from the project's Python environment rather than assumed to exist in `/usr/local/bin`. See [Local installation](installation).
 
-The command is `pilot`. `maxxing` is the same command under its earlier name and keeps working everywhere (scripts, scheduled jobs, habits): both names run the same program with the same settings. In the local setup, run it from the `server/` folder as `uv run pilot ...`; on a server installation, the installer and every `pilot init` link `/usr/local/bin/pilot` to `/usr/local/bin/maxxing` (an existing `pilot` command of another program is never replaced: use `maxxing` there).
+The command is `pilot`. `maxxing` is the same command under its earlier name and keeps working everywhere (scripts, scheduled jobs, habits): both names run the same program with the same settings. In the local setup, run it from the `server/` folder as `uv run pilot ...`; on a server installation, the installer and every `pilot init` link `/usr/local/bin/pilot` to `/usr/local/bin/maxxing` (an existing `pilot` command of another program is never replaced: use `maxxing` there). `pilot doctor` warns when another program called `pilot` comes first on the PATH.
 
 ## Server and setup
 

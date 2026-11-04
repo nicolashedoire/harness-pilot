@@ -620,6 +620,12 @@ pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog
 (so every update) runs `cmd_core.ensure_cli_alias()`: `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing`, the
 same program and state; a `pilot` that is not ours is never replaced (report: `{cli: created|ok|skipped ...}`;
 skipped with `MAXXING_SPAWN=direct` or without BIN_LINK). Uninstall removes it only when it is that link.
+Doctor check `cli` (`cmd_core.check_cli_name()`): the first `pilot` on the doctor's PATH and on the sessions' PATH
+(`sessions.spawn.base_env()`, what agents run the skills' `pilot ...` commands with) must be ours - it resolves to
+BIN_LINK or to the venv's `pilot` / `maxxing` script, or it is a small script starting `maxxing.cli` (uv's console
+script, install.sh's state-dir wrapper). Another program named `pilot` first -> WARN naming it, fix: `maxxing`, the
+same command (or a PATH order / removal of the other program). None found while BIN_LINK exists -> INFO, fix
+`maxxing init` (creates PILOT_LINK); none found in a checkout without BIN_LINK -> no check.
 The crontab lines, the default jobs' commands (`crons.maxxing_bin()`) and the Python package keep the
 `maxxing` name on purpose: an existing line never changes. User-facing text (docs, skills, templates, help)
 says `pilot`.
