@@ -36,6 +36,7 @@ import {
   Play,
   Quote,
   Rows2,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { cn, copyText } from '@/lib/utils'
 import { TouchAppButton, TouchSessionsButton } from '@/components/shell/TouchNav'
@@ -93,7 +94,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { TaskBar } from './Tasks'
 import { forgetLog, getLog, loadEarlier, loadLog, seedEmptyLog, useLogSelect, useSessionLog, useSessionStream, type LogState } from './log'
 import { PlanCard, PlanToggle } from './Plan'
-import { PausedBanner, pausedOnLimit } from './PausedBanner'
+import { PausedBanner, PauseSeparator, pausedOnLimit } from './PausedBanner'
+import { ChangeLimitsDialog } from './ChangeLimitsDialog'
+import { BlockPanel, useBlockPanel, useWideEnough } from './BlockPanel'
+import { BlockHostProvider, type BlockHost } from '@/features/blocks/host'
 import { MaxxingControls, MaxxingMeter } from './MaxxingMeter'
 import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
 import { MobileTabsSlot } from './Tabs'
@@ -444,6 +448,11 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const [dragFiles, setDragFiles] = React.useState(false)
   const [summaryOpen, setSummaryOpen] = React.useState(false)
   const [agentMapOpen, setAgentMapOpen] = React.useState(false)
+  const [limitsOpen, setLimitsOpen] = React.useState(false)
+  // "Open beside" of the thread's blocks: docked on the right of the conversation when there is room, else a sheet
+  const row = React.useRef<HTMLDivElement>(null)
+  const panel = useBlockPanel(sid)
+  const docked = useWideEnough(row) && variant !== 'mobile'
 
   const notFound = (isError && isApiError(error) && error.status === 404) || deleted
   const running = session?.state === 'running'
@@ -623,7 +632,9 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const asked = useLogSelect(sid, lastQuestion)
   const question = !running && !planReady && failed === null ? asked : null
   const agentName = session?.provider === 'codex' ? 'Codex' : 'Claude Code'
-  const tail = React.useMemo(
+  // a paused discussion ends with the date of its pause (and the limit it reached)
+  const pauseKey = duo && session?.debate_paused ? [session.discussion_paused_at, session.discussion_pause_reason, session.discussion_turns, session.discussion_turn_limit, session.discussion_duration_seconds, session.discussion_elapsed].join('|') : ''
+  const card = React.useMemo(
     () =>
       planReady && session ? (
         <PlanCard session={session} onEdit={() => composer.current?.focus()} />
@@ -634,6 +645,22 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       ) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [planReady, failed, sid, planReady && session?.id, question, agentName],
+  )
+  const tail = React.useMemo(
+    () => (pauseKey && session ? <>{<PauseSeparator session={session} />}{card}</> : card),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [card, pauseKey],
+  )
+  // The blocks of this thread answer in this session (forms, checklists, "Ask for a fix"), shown at once as sent
+  // messages, and open beside it in the column's own panel.
+  const blockHost = React.useMemo<BlockHost>(
+    () => ({
+      sessionId: sid,
+      send: (text) => sendNow.current(text, []),
+      openPanel: panel.open,
+      agent: duo ? undefined : agentName,
+    }),
+    [sid, panel.open, duo, agentName],
   )
 
   // (a picture dragged from a thread carries a file too: that is a content drag)
@@ -707,10 +734,15 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
+                {duo && (
+                  <DropdownMenuItem disabled={!session} onSelect={() => setLimitsOpen(true)} data-testid="menu-limits">
+                    <SlidersHorizontal /> {t('notifx.change')}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem disabled={!session?.turns} onSelect={() => setSummaryOpen(true)}>
-                  <ListChecks /> {t('summary.title')}
+                  <ListChecks /> {t('sessions.menu.summary')}
                 </DropdownMenuItem>
-                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</DropdownMenuItem>}
+                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('sessions.swarm.map')}</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={actions.archive}>
                   {session?.archived ? <ArchiveRestore /> : <Archive />} {session?.archived ? t('sessions.menu.unarchive') : t('sessions.menu.archive')}
                 </DropdownMenuItem>
@@ -723,7 +755,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 </DropdownMenuItem>
                 {hudOn && variant !== 'mobile' && (
                   <DropdownMenuItem onSelect={hud}>
-                    <PictureInPicture2 /> {t('hud.open')}
+                    <PictureInPicture2 /> {t('sessions.menu.hud')}
                   </DropdownMenuItem>
                 )}
                 {variant === 'column' && (
@@ -777,147 +809,155 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
         />
         <SessionSummary key={sid} sid={sid} path={path} open={summaryOpen} onOpenChange={setSummaryOpen} />
         {agentMapOpen && <AgentMap key={`agents-${sid}`} sid={sid} running={running} open onOpenChange={setAgentMapOpen} />}
-        {session?.archived && (
-          <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
-            <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
-            <Button size="sm" variant="link" className="ml-auto h-auto text-xs" onClick={actions.archive}>
-              {t('sessions.menu.unarchive')}
-            </Button>
-          </div>
-        )}
-        {session && pausedOnLimit(session) && <PausedBanner session={session} />}
-        <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
-          {notFound ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-              {t('sessions.deleted')}
-              <Button size="sm" variant="outline" onClick={() => close(col.key)}>
-                {t('sessions.closeColumn')}
-              </Button>
-            </div>
-          ) : (
-            <LiveThread ref={thread} sid={sid} session={session} pending={pending} onRetry={onRetry} onLoadEarlier={onLoadEarlier} onEdit={onEdit} onFork={path ? onFork : undefined} tail={tail} />
-          )}
-        </ItemContext.Provider>
-        {!notFound && (
-          <QuotePill
-            scope={body}
-            onQuote={(text) => {
-              composer.current?.quote(text)
-              window.getSelection()?.removeAllRanges()
-              composer.current?.focus()
-            }}
-          />
-        )}
-        {!notFound && (
-          <FileMenu
-            scope={body}
-            onQuote={(path) => {
-              composer.current?.quote(fileQuote(path))
-              composer.current?.focus()
-            }}
-          />
-        )}
-        {!notFound && aside.aside && <AsidePanel aside={aside.aside} onClose={aside.close} />}
-        {!notFound && <TaskBar sid={sid} running={running} />}
-        {!notFound && (
-          <StackedComposer colKey={col.key} stacked={!!place && place.n >= 3}>
-          <Composer
-            ref={composer}
-            colKey={col.key}
-            maxRows={place && place.row !== 'full' ? 4 : 12}
-            draftKey={sid}
-            placeholder={
-              session?.plan_mode
-                ? t(session.plan_ready ? 'plan.placeholderAdjust' : 'plan.placeholder')
-                : duo
-                  ? t('conv.composer.intervene')
-                  : session
-                    ? t('conv.composer.replyTo', { agent: session.provider === 'codex' ? 'Codex' : 'Claude Code' })
-                    : undefined
-            }
-            hint={duo ? t('conv.composer.duoHint') : t('conv.composer.hint')}
-            topicPath={path}
-            running={running}
-            immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
-            disabledReason={authReason || (!session ? t('sessions.composer.loading') : null)}
-            queueCount={session?.queue || 0}
-            queued={queuedPending}
-            queueItems={session?.queue_items}
-            onClearQueue={() => clearQueue.mutateAsync(sid).then(() => usePending.getState().clearQueued(sid))}
-            onSteer={() =>
-              steer.mutate(sid, {
-                onSuccess: (r) => {
-                  if (r.steered) {
-                    setSteerPending(true)
-                    if (!r.interrupted) toast.info(t('sessions.queue.steerAfter'))
-                  }
-                  else toast.info(t('sessions.queue.steerNothing'), t('sessions.queue.steerNothingDesc'))
-                },
-              })
-            }
-            steerPending={steerPending}
-            onTakeQueue={async () => {
-              const r = await takeQueue.mutateAsync(sid)
-              usePending.getState().clearQueued(sid)
-              return r.messages
-            }}
-            steering={steer.isPending}
-            onAsk={session?.provider === 'claude' || !session?.provider ? () => void onAsk() : undefined}
-            asking={takeQueue.isPending || aside.pending}
-            clearingQueue={clearQueue.isPending}
-            onSend={onSend}
-            checkSent={checkSent}
-            onSendVoice={onSendVoice}
-            onStop={duo ? undefined : onStop}
-            stopping={stop.isPending}
-            autoFocus={variant !== 'mobile'}
-            toolbar={
-              session ? (
-                <>
-                  {!duo && <PlanToggle session={session} />}
-                  {!!session.swarm_agents && (
-                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAgentMapOpen(true)}>
-                      <Network /> <span className="@max-[26rem]:sr-only">{t('swarm.map')}</span>
+        {duo && session && <ChangeLimitsDialog session={session} open={limitsOpen} onOpenChange={setLimitsOpen} />}
+        <BlockHostProvider value={blockHost}>
+          <div ref={row} className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-mx-session={sid}>
+              {session?.archived && (
+                <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
+                  <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
+                  <Button size="sm" variant="link" className="ml-auto h-auto text-xs" onClick={actions.archive}>
+                    {t('sessions.menu.unarchive')}
+                  </Button>
+                </div>
+              )}
+              {session && pausedOnLimit(session) && <PausedBanner session={session} />}
+              <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
+                {notFound ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
+                    {t('sessions.deleted')}
+                    <Button size="sm" variant="outline" onClick={() => close(col.key)}>
+                      {t('sessions.closeColumn')}
                     </Button>
-                  )}
-                  {duo && session.debate_paused && !pausedOnLimit(session) && <span className="truncate px-1 text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
-                  {duo && (running || session.debate_paused) && (
-                    <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2.5 text-xs max-md:h-9"
-                        loading={pauseDiscussion.isPending || resumeDiscussion.isPending}
-                        onClick={() => (session.debate_paused ? resumeDiscussion.mutate(sid) : pauseDiscussion.mutate(sid))}
-                        data-testid="duo-pause"
-                      >
-                        {session.debate_paused ? <Play /> : <Pause />}
-                        <span className="@max-[24rem]:sr-only">{t(session.debate_paused ? 'conv.duo.resume' : 'conv.duo.pause')}</span>
-                      </Button>
-                    </Tooltip>
-                  )}
-                  {duo && running && (
-                    <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs text-destructive hover:text-destructive max-md:h-9" onClick={onStop} loading={stop.isPending} data-testid="duo-stop">
-                      <Square className="size-3! fill-current" /> {t('conv.duo.stop')}
-                    </Button>
-                  )}
-                </>
-              ) : (
-                <Skeleton className="h-6 w-24" />
-              )
-            }
-            toolbarEnd={
-              session && !duo ? (
-                session.provider === 'codex' ? (
-                  <span className="truncate px-1 text-xs text-muted-foreground">{session.model || 'Codex'}</span>
+                  </div>
                 ) : (
-                  <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} compact />
-                )
-              ) : null
-            }
-          />
-          </StackedComposer>
-        )}
+                  <LiveThread ref={thread} sid={sid} session={session} pending={pending} onRetry={onRetry} onLoadEarlier={onLoadEarlier} onEdit={onEdit} onFork={path ? onFork : undefined} tail={tail} hideFailureNotes={!planReady && !!failed} />
+                )}
+              </ItemContext.Provider>
+              {!notFound && (
+                <QuotePill
+                  scope={body}
+                  onQuote={(text) => {
+                    composer.current?.quote(text)
+                    window.getSelection()?.removeAllRanges()
+                    composer.current?.focus()
+                  }}
+                />
+              )}
+              {!notFound && (
+                <FileMenu
+                  scope={body}
+                  onQuote={(path) => {
+                    composer.current?.quote(fileQuote(path))
+                    composer.current?.focus()
+                  }}
+                />
+              )}
+              {!notFound && aside.aside && <AsidePanel aside={aside.aside} onClose={aside.close} />}
+              {!notFound && <TaskBar sid={sid} running={running} />}
+              {!notFound && (
+                <StackedComposer colKey={col.key} stacked={!!place && place.n >= 3}>
+                <Composer
+                  ref={composer}
+                  colKey={col.key}
+                  maxRows={place && place.row !== 'full' ? 4 : 12}
+                  draftKey={sid}
+                  placeholder={
+                    session?.plan_mode
+                      ? t(session.plan_ready ? 'plan.placeholderAdjust' : 'plan.placeholder')
+                      : duo
+                        ? t('conv.composer.intervene')
+                        : session
+                          ? t('conv.composer.replyTo', { agent: session.provider === 'codex' ? 'Codex' : 'Claude Code' })
+                          : undefined
+                  }
+                  hint={duo ? t('conv.composer.duoHint') : t('conv.composer.hint')}
+                  topicPath={path}
+                  running={running}
+                  immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
+                  disabledReason={authReason || (!session ? t('sessions.composer.loading') : null)}
+                  queueCount={session?.queue || 0}
+                  queued={queuedPending}
+                  queueItems={session?.queue_items}
+                  onClearQueue={() => clearQueue.mutateAsync(sid).then(() => usePending.getState().clearQueued(sid))}
+                  onSteer={() =>
+                    steer.mutate(sid, {
+                      onSuccess: (r) => {
+                        if (r.steered) {
+                          setSteerPending(true)
+                          if (!r.interrupted) toast.info(t('sessions.queue.steerAfter'))
+                        }
+                        else toast.info(t('sessions.queue.steerNothing'), t('sessions.queue.steerNothingDesc'))
+                      },
+                    })
+                  }
+                  steerPending={steerPending}
+                  onTakeQueue={async () => {
+                    const r = await takeQueue.mutateAsync(sid)
+                    usePending.getState().clearQueued(sid)
+                    return r.messages
+                  }}
+                  steering={steer.isPending}
+                  onAsk={session?.provider === 'claude' || !session?.provider ? () => void onAsk() : undefined}
+                  asking={takeQueue.isPending || aside.pending}
+                  clearingQueue={clearQueue.isPending}
+                  onSend={onSend}
+                  checkSent={checkSent}
+                  onSendVoice={onSendVoice}
+                  onStop={duo ? undefined : onStop}
+                  stopping={stop.isPending}
+                  autoFocus={variant !== 'mobile'}
+                  toolbar={
+                    session ? (
+                      <>
+                        {!duo && <PlanToggle session={session} />}
+                        {!!session.swarm_agents && (
+                          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAgentMapOpen(true)}>
+                            <Network /> <span className="@max-[26rem]:sr-only">{t('sessions.swarm.map')}</span>
+                          </Button>
+                        )}
+                        {duo && session.debate_paused && !pausedOnLimit(session) && <span className="truncate px-1 text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
+                        {duo && (running || session.debate_paused) && (
+                          <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs max-md:h-9"
+                              loading={pauseDiscussion.isPending || resumeDiscussion.isPending}
+                              onClick={() => (session.debate_paused ? resumeDiscussion.mutate(sid) : pauseDiscussion.mutate(sid))}
+                              data-testid="duo-pause"
+                            >
+                              {session.debate_paused ? <Play /> : <Pause />}
+                              <span className="@max-[24rem]:sr-only">{t(session.debate_paused ? 'conv.duo.resume' : 'conv.duo.pause')}</span>
+                            </Button>
+                          </Tooltip>
+                        )}
+                        {duo && running && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs text-destructive hover:text-destructive max-md:h-9" onClick={onStop} loading={stop.isPending} data-testid="duo-stop">
+                            <Square className="size-3! fill-current" /> {t('conv.duo.stop')}
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <Skeleton className="h-6 w-24" />
+                    )
+                  }
+                  toolbarEnd={
+                    session && !duo ? (
+                      session.provider === 'codex' ? (
+                        <span className="truncate px-1 text-xs text-muted-foreground">{session.model || 'Codex'}</span>
+                      ) : (
+                        <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} compact />
+                      )
+                    ) : null
+                  }
+                />
+                </StackedComposer>
+              )}
+            </div>
+            {!notFound && panel.state && <BlockPanel {...panel} state={panel.state} docked={docked} />}
+          </div>
+        </BlockHostProvider>
         {dragFiles && (
           <div className="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary bg-background/95 text-sm font-medium">
             <Upload className="size-6 text-primary" />
@@ -1465,12 +1505,12 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('swarm.provider') }]} />
+              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('sessions.swarm.provider') }]} />
             </div>
             {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
-              <Label htmlFor={`swarm-count-${col.key}`}>{t('swarm.count')}</Label>
+              <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
               <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
-              <p className="text-xs text-muted-foreground">{t('swarm.hint')}</p>
+              <p className="text-xs text-muted-foreground">{t('sessions.swarm.hint')}</p>
             </div>}
             {provider === 'both' && <div className="grid gap-1.5">
               <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>

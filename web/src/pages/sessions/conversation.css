@@ -36,6 +36,8 @@
 .mx-answer > table td { border: 0; border-top: 1px solid var(--color-border); padding: 0.55rem 0.875rem; text-align: left; }
 .mx-answer > table thead th { border-top: 0; background: var(--color-muted); color: var(--color-muted-foreground); font-weight: 500; }
 html[data-compact] .mx-answer { line-height: 1.65; }
+/* A conversation block (features/blocks) keeps the app's body type, not the answer's reading size it sits in. */
+.mx-answer [data-mx-block] { font-size: 14px; line-height: 1.5; }
 
 /* Discussion: each agent has its lane (left border) and its name in its colour. */
 .mx-lane[data-agent='claude'] { border-color: color-mix(in oklab, var(--agent-claude) 80%, transparent); }

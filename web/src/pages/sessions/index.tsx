@@ -8,7 +8,7 @@
 import * as React from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Columns2, FolderOpen, Hash, Keyboard, LayoutGrid, MessageSquarePlus, MessagesSquare, PanelLeftOpen, Plus } from 'lucide-react'
-import { useT } from '@/i18n'
+import { loadGroups, useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { animateIn, animateOut, EASE_OUT, reducedMotion, usePresence } from '@/lib/presence'
 import { useRegisterCommands } from '@/commands/registry'
@@ -35,6 +35,18 @@ import './conversation.css'
 const FLIP_MS = 180
 
 export default function SessionsPage() {
+  // The texts of what a conversation opens on demand (i18n group `convx`: activity rows, Change limits, summary, HUD,
+  // agent map, side question) are not in the first-load dictionary: fetched once the page is on screen.
+  React.useEffect(() => {
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (h: number) => void }
+    const go = () => void loadGroups(['convx'])
+    if (w.requestIdleCallback) {
+      const h = w.requestIdleCallback(go, { timeout: 2000 })
+      return () => w.cancelIdleCallback?.(h)
+    }
+    const h = setTimeout(go, 300)
+    return () => clearTimeout(h)
+  }, [])
   return (
     <PreviewProvider>
       <Routes>
@@ -779,6 +791,9 @@ function SoloView() {
 /* ---------------------------------------------------------------- HUD popup (browsers without Document PiP) */
 function HudView() {
   const { id = '' } = useParams()
+  // the HUD window shows its texts at once (they are in the `convx` group)
+  const [texts, setTexts] = React.useState(false)
+  React.useEffect(() => void loadGroups(['convx']).then(() => setTexts(true)), [])
   const opener = window.opener as Window | null
   // A route of the app shown in the window that opened the HUD (its router follows popstate).
   const go = React.useCallback(
@@ -797,6 +812,7 @@ function HudView() {
     },
     [opener],
   )
+  if (!texts) return null
   return (
     <div className="fixed inset-0 z-[45]">
       <HudBar key={id} sid={id} win={window} onOpen={go} onOpenApp={opener ? () => opener.focus() : undefined} />

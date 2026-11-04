@@ -527,7 +527,8 @@ one JSON object, or `block:<type>` (always a block: a type no plugin draws shows
   catalogue), turned off ("Turn on"), plugin error, invalid data (the reasons + "Ask for a fix", which sends a message
   to the conversation after a confirmation), render error, network consent (block extensions).
 - Every block has a header (type icon, title, source), a body, and actions: open beside (side panel; a
-  `mx-block-open` window event, or the conversation's `BlockHostProvider.openPanel`), pin to the dashboard (pinnable
+  `mx-block-open` window event, and the conversation's `BlockHostProvider.openPanel`: the session column's panel,
+  docked beside the thread when there is room), pin to the dashboard (pinnable
   types), copy / download (JSON, CSV, PNG, text, diff, HTML).
 - Forms, checklists, "Ask for a fix" and `maxxing.send()` from a frame send **text the user sees and confirms** as
   their next message: `POST /api/sessions/{id}/messages` (session: `BlockHostProvider.sessionId`, else the nearest

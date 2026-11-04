@@ -7,6 +7,7 @@ import { useT, useLang } from '@/i18n'
 import { fmtDate } from '@/lib/format'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Sensitive, Spinner, Tooltip, usePresentation } from '@/components/ui'
 import { Markdown } from '@/components/ui/markdown'
+import { stripBlockFences } from '@/features/blocks/fence'
 import { filePreviewUrl, fileRawUrl, fileThumbUrl, knownFileStamp, prefetchImage, PREVIEW_W } from '@/lib/queries/files'
 import { Thumb } from '@/features/files/Thumb'
 import type { ClaudeModel } from '@/lib/types'
@@ -482,8 +483,10 @@ export const AssistantMessage = React.memo(function AssistantMessage({ text, onF
   const { onContextMenu, touch, menu } = useMessageMenu({ text, onFork: onFork && (() => onFork({ text: '', quotes: [text.trim()], attachments: [] })) })
   const open = useOpenPreview()
   const md = React.useMemo(() => linkifyMarkdown(text, filesRoot), [text, filesRoot])
-  const media = React.useMemo(() => mediaPaths(text, filesRoot), [text, filesRoot])
-  const audio = React.useMemo(() => audioPaths(text, filesRoot), [text, filesRoot])
+  // the paths of a block (a `file` block, a table…) are its own: no second thumbnail under the message
+  const prose = React.useMemo(() => stripBlockFences(text), [text])
+  const media = React.useMemo(() => mediaPaths(prose, filesRoot), [prose, filesRoot])
+  const audio = React.useMemo(() => audioPaths(prose, filesRoot), [prose, filesRoot])
   const onLink = React.useCallback((href: string) => (href.startsWith(FILE_HREF) ? () => open(decodeURIComponent(href.slice(FILE_HREF.length))) : null), [open])
   return (
     <div className="group/msg relative min-w-0" onContextMenu={onContextMenu} {...touch}>

@@ -25,7 +25,9 @@ preview of your files… drawn by the app in your colours, right in the conversa
 | Created items | the task, job or notification the agent made | open it where it lives |
 
 Every block has the same frame: its kind, title and source at the top, its content, and its actions. **Open beside**
-shows it larger in a side panel. The **…** menu copies the data, downloads it as JSON or shows the raw data.
+shows it larger in a panel on the right of the conversation (on a narrow window or a phone, in a sheet over it);
+each block you open beside gets a tab there, and × closes the panel. The **…** menu copies the data, downloads it as
+JSON or shows the raw data.
 
 ## Answers that come back to the agent
 

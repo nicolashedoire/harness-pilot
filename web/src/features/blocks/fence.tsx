@@ -37,14 +37,36 @@ export function fenceBlock(className: string | undefined, code: string): FenceBl
   return null
 }
 
+/** Markdown without its block fences: what the thread scans for media paths (a `file` block shows its own files). */
+export function stripBlockFences(md: string): string {
+  if (!md.includes('```') && !md.includes('~~~')) return md
+  const lines = md.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)/.exec(lines[i])
+    if (!open) {
+      out.push(lines[i])
+      continue
+    }
+    const fence = open[1]
+    const close = new RegExp(`^ {0,3}${fence[0] === '`' ? '`' : '~'}{${fence.length},}\\s*$`)
+    let j = i + 1
+    while (j < lines.length && !close.test(lines[j])) j++
+    const body = lines.slice(i + 1, j).join('\n')
+    if (!fenceBlock(open[2] ? `language-${open[2]}` : undefined, body)) out.push(...lines.slice(i, j + 1))
+    i = j
+  }
+  return out.join('\n')
+}
+
 const LazyBlockFence = React.lazy(withGroups(['blocks'], () => import('./BlockFence')))
 
 /** Where a fenced block becomes a block. `fallback` = how the fence looks as ordinary code (kept for a candidate type
- *  no plugin draws, and for a raw-text fence of a built-in that is turned off). */
-export function BlockFence({ block, code, fallback, className }: { block: FenceBlock; code: string; fallback: React.ReactNode; className?: string }) {
+ *  no plugin draws, and for a raw-text fence of a built-in that is turned off). `panel`: its large size (side panel). */
+export function BlockFence({ block, code, fallback, className, panel }: { block: FenceBlock; code: string; fallback: React.ReactNode; className?: string; panel?: boolean }) {
   return (
     <React.Suspense fallback={block.candidate ? fallback : <Skeleton className={className ? `${className} h-40 rounded-xl` : 'my-3 h-40 rounded-xl'} />}>
-      <LazyBlockFence block={block} code={code} fallback={fallback} className={className} />
+      <LazyBlockFence block={block} code={code} fallback={fallback} className={className} panel={panel} />
     </React.Suspense>
   )
 }

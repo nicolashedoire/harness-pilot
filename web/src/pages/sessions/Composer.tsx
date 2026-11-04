@@ -561,9 +561,9 @@ export const Composer = React.forwardRef<ComposerHandle, {
                   </Tooltip>
                 )}
                 {onAsk && running && (
-                  <Tooltip content={t('aside.askTip')}>
+                  <Tooltip content={t('sessions.queue.askTip')}>
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs max-md:h-8" onClick={onAsk} loading={asking} disabled={steerPending}>
-                      <MessageCircleQuestion className="size-3.5" /> <span className="max-sm:sr-only">{t('aside.ask')}</span>
+                      <MessageCircleQuestion className="size-3.5" /> <span className="max-sm:sr-only">{t('sessions.queue.ask')}</span>
                     </Button>
                   </Tooltip>
                 )}

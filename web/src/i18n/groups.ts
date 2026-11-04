@@ -32,6 +32,9 @@ export const GROUPS = {
   paste: ['paste'],
   // conversation blocks (features/blocks): loaded with the first block shown, and with Settings
   blocks: ['blocks'],
+  // what a conversation opens on demand: activity rows and the footer's details (convx.*), Change limits, the summary,
+  // the HUD, the agent map and the side question. Loaded once the sessions page is on screen (pages/sessions)
+  convx: ['convx', 'summary', 'hud', 'swarm', 'aside'],
 } as const satisfies Record<string, readonly string[]>
 
 export type Group = keyof typeof GROUPS

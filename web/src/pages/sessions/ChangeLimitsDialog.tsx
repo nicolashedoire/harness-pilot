@@ -55,8 +55,8 @@ export function ChangeLimitsDialog({ session, open, onOpenChange }: { session: S
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('notifx.limitsTitle')}</DialogTitle>
-          <DialogDescription>{t('notifx.limitsDesc', { turns: session.discussion_turns ?? 0 })}</DialogDescription>
+          <DialogTitle>{t('convx.limitsTitle')}</DialogTitle>
+          <DialogDescription>{t('convx.limitsDesc', { turns: session.discussion_turns ?? 0 })}</DialogDescription>
         </DialogHeader>
         <form
           id="mx-discussion-limits"
@@ -88,7 +88,7 @@ export function ChangeLimitsDialog({ session, open, onOpenChange }: { session: S
                 {t('common.save')}
               </Button>
               <Button type="submit" form="mx-discussion-limits" disabled={!ok || busy} loading={resume.isPending}>
-                {t('notifx.saveResume')}
+                {t('convx.saveResume')}
               </Button>
             </>
           ) : (

@@ -47,7 +47,9 @@ export const Thread = React.forwardRef<ThreadHandle, {
   onFork?: (seed: Seed) => void
   /** Shown after the last message (a plan to approve, a failed turn). */
   tail?: React.ReactNode
-}>(function Thread({ log, session, pending, onRetry, onLoadEarlier, empty, onEdit, onFork, tail }, ref) {
+  /** The tail is the failed-turn card: the error notes of the last turn say the same thing, they are not shown. */
+  hideFailureNotes?: boolean
+}>(function Thread({ log, session, pending, onRetry, onLoadEarlier, empty, onEdit, onFork, tail, hideFailureNotes }, ref) {
   const t = useT()
   const scroller = React.useRef<HTMLDivElement>(null)
   const content = React.useRef<HTMLDivElement>(null)
@@ -288,7 +290,10 @@ export const Thread = React.forwardRef<ThreadHandle, {
   const onForkItem = React.useCallback((seed: Seed) => forkRef.current?.(seed), [])
   // Items -> blocks (user messages, agent turns); only the blocks that reach into the window are shown.
   const provider = session?.provider
-  const blocks = React.useMemo(() => buildBlocks(items, provider), [items, provider])
+  const blocks = React.useMemo(() => {
+    const all = buildBlocks(items, provider)
+    return hideFailureNotes ? withoutFailureNotes(all) : all
+  }, [items, provider, hideFailureNotes])
   const shown = React.useMemo(() => (from > 0 ? blocks.filter((b) => b.last >= from) : blocks), [blocks, from])
   const lastBlock = blocks[blocks.length - 1]
   // the turn at work: the last one, unless it already has its result (the next one has not shown up yet)
@@ -403,6 +408,26 @@ function BlockRow({
   if (b.kind === 'request') return <RequestRow text={b.item.ev.text} />
   if (b.kind === 'note') return <NoteRow text={b.item.ev.text} level={b.item.ev.level} />
   return <TurnView turn={b} live={live} since={live ? since : null} background={live ? background : null} duo={duo} showReply={showReply} onFork={onFork} />
+}
+
+const isErrorNote = (it: { kind: string; ev?: unknown }) => it.kind === 'note' && (it.ev as { level?: string }).level === 'error'
+
+/** The blocks without the error notes written after the last user message ("Turn failed: …", "Runner error: …"): the
+ *  failed-turn card at the end of the thread shows that error, with Retry and the details. */
+function withoutFailureNotes(blocks: Block[]): Block[] {
+  let from = blocks.length
+  while (from > 0 && blocks[from - 1].kind !== 'user') from--
+  if (from === blocks.length) return blocks
+  const out = blocks.slice(0, from)
+  for (const b of blocks.slice(from)) {
+    if (b.kind === 'note') {
+      if (!isErrorNote(b.item)) out.push(b)
+    } else if (b.kind === 'turn' && b.items.some(isErrorNote)) {
+      const items = b.items.filter((it) => !isErrorNote(it))
+      if (items.length) out.push({ ...b, items })
+    } else out.push(b)
+  }
+  return out
 }
 
 /** Who answers next while nothing of the turn has come yet. */

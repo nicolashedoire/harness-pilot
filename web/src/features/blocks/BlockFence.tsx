@@ -92,7 +92,8 @@ function extraChecks(type: string, data: Record<string, unknown>): string[] {
   return out
 }
 
-export default function BlockFence({ block, code, fallback, className }: { block: FenceBlock; code: string; fallback: React.ReactNode; className?: string }) {
+/** `panel`: drawn at its large size, in the conversation's side panel ("Open beside" taken over by the view). */
+export default function BlockFence({ block, code, fallback, className, panel: inPanel }: { block: FenceBlock; code: string; fallback: React.ReactNode; className?: string; panel?: boolean }) {
   const t = useT()
   const lang = useLang()
   const host = useBlockHost()
@@ -210,7 +211,7 @@ export default function BlockFence({ block, code, fallback, className }: { block
   return wrap(
     <>
       <ErrorBoundary variant="card" resetKey={code}>
-        {render('in-thread')}
+        {render(inPanel ? 'panel' : 'in-thread')}
       </ErrorBoundary>
       {rawOpen && (
         <div className="relative -mt-1 mb-3">

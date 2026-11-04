@@ -188,8 +188,9 @@ export function useSendToSession() {
       })
       if (!ok) return false
       try {
-        if (host?.send) await host.send(clean)
-        else await send.mutateAsync({ id: sid, text: clean })
+        if (host?.send) {
+          if ((await host.send(clean)) === false) return false
+        } else await send.mutateAsync({ id: sid, text: clean })
         toast.success(t('blocks.send.sent'))
         return true
       } catch (e) {

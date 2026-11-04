@@ -387,8 +387,8 @@ function ToolRow({ item, live, bases, open, onToggle }: { item: ToolIt; live: bo
   const diff = React.useMemo(() => (open || ['Edit', 'MultiEdit', 'Write'].includes(use.name) ? toolDiff(use.name, input) : null), [open, use.name, input])
   const stats = diff ? diffStats(diff) : null
   const { full, short } = toolTarget(item, bases)
-  const label = st.error ? t('conv.row.failed') : cat === 'other' ? (use.name.startsWith('mcp__') ? use.name.split('__').slice(2).join('__') || use.name : use.name) : t(`conv.row.${cat}`)
-  const more = diff ? t('conv.viewDiff') : result && !st.task ? t(st.error ? 'conv.viewError' : 'conv.viewOutput') : t('conv.details')
+  const label = st.error ? t('convx.row.failed') : cat === 'other' ? (use.name.startsWith('mcp__') ? use.name.split('__').slice(2).join('__') || use.name : use.name) : t(`convx.row.${cat}`)
+  const more = diff ? t('convx.viewDiff') : result && !st.task ? t(st.error ? 'convx.viewError' : 'convx.viewOutput') : t('conv.details')
   return (
     <li className="min-w-0">
       <button type="button" onClick={onToggle} aria-expanded={open} className={rowBtn} data-testid="tool-row">
@@ -430,7 +430,7 @@ function ThinkRow({ item, open, onToggle }: { item: ThinkIt; open: boolean; onTo
   return (
     <li className="min-w-0">
       <button type="button" onClick={onToggle} aria-expanded={open} className={rowBtn}>
-        <span className="w-16 shrink-0 truncate text-xs text-muted-foreground">{t('conv.row.think')}</span>
+        <span className="w-16 shrink-0 truncate text-xs text-muted-foreground">{t('convx.row.think')}</span>
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground italic">
           <Sensitive length={20}>{line}</Sensitive>
         </span>
@@ -534,9 +534,9 @@ function TurnFooter({ ev, text, onFork }: { ev: ResultIt['ev']; text: string; on
   const share = fmtNumber(ctx > 0 ? (u?.cache_read || 0) / ctx : 0, lang, { style: 'percent', maximumFractionDigits: 0 })
   const parts = [ev.duration_ms > 0 && show('duration') ? fmtMs(ev.duration_ms) : null, ev.cost_usd > 0 && show('cost') ? `≈ ${fmtCost(ev.cost_usd)}` : null].filter(Boolean) as string[]
   const rows: [string, string][] = [
-    ...(ev.model && show('model') ? [[t('conv.detail.model'), modelLabel(ev.model, models)] as [string, string]] : []),
-    ...(ctx > 0 && show('tokens') ? [[t('conv.detail.tokens'), t('conv.detail.tokensValue', { input: fmtTokens(ctx), output: fmtTokens(u?.output || 0) })] as [string, string]] : []),
-    ...(ctx > 0 && show('cache') ? [[t('conv.detail.cache'), share] as [string, string]] : []),
+    ...(ev.model && show('model') ? [[t('convx.detail.model'), modelLabel(ev.model, models)] as [string, string]] : []),
+    ...(ctx > 0 && show('tokens') ? [[t('convx.detail.tokens'), t('convx.detail.tokensValue', { input: fmtTokens(ctx), output: fmtTokens(u?.output || 0) })] as [string, string]] : []),
+    ...(ctx > 0 && show('cache') ? [[t('convx.detail.cache'), share] as [string, string]] : []),
   ]
   const details = rows.length ? (
     <span className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-xs">
