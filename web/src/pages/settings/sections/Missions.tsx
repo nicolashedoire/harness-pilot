@@ -16,7 +16,7 @@ type Step = { id: string; title: string; role: string; instruction: string; afte
 type Mission = { id: string; title: string; path: string; goal: string; phase: string; plan_fingerprint: string; reason: string; steps: Step[]; max_runs: number; max_seconds: number; max_tokens: number; tokens: number; spent_seconds: number; active_since: number | null; launches: { session?: string; aborted?: boolean }[]; cycle: number; max_cycles: number; next_cycle: number | null; planner: Step | null }
 const initialStep = (): Step => ({ id: 'step-1', title: '', role: 'observer', instruction: '', after: [] })
 
-function PlanEditor({ mission, roles, engineOf, onSave, pending }: { mission: Mission; roles: Role[]; engineOf: (role: string) => string; onSave: (steps: Step[], start: boolean) => void; pending: boolean }) {
+function PlanEditor({ mission, roles, engineOf, onSave, pending, tooLong }: { mission: Mission; roles: Role[]; engineOf: (role: string) => string; onSave: (steps: Step[], start: boolean) => void; pending: boolean; tooLong?: { step: string; text: string } | null }) {
   const t = useT()
   const [steps, setSteps] = React.useState<Step[]>(() => mission.steps.length ? mission.steps.map((s) => ({ ...s })) : [initialStep()])
   const update = (index: number, values: Partial<Step>) => setSteps((old) => old.map((s, i) => i === index ? { ...s, ...values } : s))
@@ -25,7 +25,7 @@ function PlanEditor({ mission, roles, engineOf, onSave, pending }: { mission: Mi
     {steps.map((step, i) => <fieldset key={step.id} className="grid gap-3 rounded-lg border p-4"><legend className="px-1 font-medium">{t('resident.step', { n: i + 1 })}</legend>
       <FormField label={t('resident.stepTitle')}><Input required maxLength={120} value={step.title} onChange={(e) => update(i, { title: e.target.value })} /></FormField>
       <FormField label={t('resident.role')} hint={t('resident.engine', { name: engineOf(step.role) })}><Select value={step.role} onValueChange={(role) => update(i, { role })} options={roles.map((r) => ({ value: r.id, label: r.name }))} /></FormField>
-      <FormField label={t('resident.instruction')}><Textarea required maxLength={2000} minRows={3} value={step.instruction} onChange={(e) => update(i, { instruction: e.target.value })} /></FormField>
+      <FormField label={t('resident.instruction')} error={tooLong?.step === step.id ? tooLong.text : undefined}><Textarea required maxLength={2000} minRows={3} value={step.instruction} onChange={(e) => update(i, { instruction: e.target.value })} /></FormField>
       {i > 0 && <fieldset className="grid gap-2"><legend className="mb-2 text-muted-foreground">{t('resident.dependencies')}</legend>{steps.slice(0, i).map((dep, n) => <label className="flex min-h-10 cursor-pointer items-center gap-3" key={dep.id}><Checkbox checked={step.after.includes(dep.id)} onCheckedChange={(checked) => update(i, { after: checked ? [...step.after, dep.id] : step.after.filter((id) => id !== dep.id) })} /><span className="min-w-0 break-words">{dep.title || t('resident.step', { n: n + 1 })}</span></label>)}</fieldset>}
       {steps.length > 1 && <div><Button variant="ghost" size="sm" onClick={() => setSteps((old) => old.filter((s) => s.id !== step.id).map((s) => ({ ...s, after: s.after.filter((id) => id !== step.id) })))}>{t('resident.removeStep')}</Button></div>}
     </fieldset>)}
@@ -50,11 +50,18 @@ export function MissionsSection() {
   const engineOf = (id: string) => { const provider = roleOf(id)?.provider || 'codex'; return providers.data?.find((p) => p.id === provider)?.name || provider }
   const data = list.data?.find((m) => m.id === ident)
   const refresh = () => void qc.invalidateQueries({ queryKey: ['missions'] })
-  const message = (e: unknown) => isApiError(e) ? tDyn(t, `resident.error.${e.code}`, errorMessage(e)) : errorMessage(e)
+  const message = (e: unknown) => {
+    if (isApiError(e, 'too_long')) {
+      const excess = Number(e.details.excess) || 0
+      return e.details.step ? t('resident.error.tooLongStep', { title: String(e.details.title ?? ''), excess }) : t('resident.error.tooLongGoal', { excess })
+    }
+    return isApiError(e) ? tDyn(t, `resident.error.${e.code}`, errorMessage(e)) : errorMessage(e)
+  }
+  const [tooLong, setTooLong] = React.useState<{ step: string; text: string } | null>(null)
   const failure = (e: unknown) => { toast.error(message(e)); refresh() }
   const create = useMutation({ mutationFn: () => api.post<Mission>('/api/missions', { title, path, goal, max_runs: runs, max_minutes: minutes, max_tokens: tokens, concurrent: Number(concurrent), interval_minutes: interval, max_cycles: cycles }), onSuccess: (m) => { setParams({ mission: m.id }); setTitle(''); setGoal(''); refresh() }, onError: failure })
   const control = useMutation({ mutationFn: ({ id, action, fingerprint }: { id: string; action: 'start' | 'pause' | 'stop' | 'plan'; fingerprint?: string }) => api.post(`/api/missions/${id}/control`, { action, fingerprint }), onSuccess: refresh, onError: failure })
-  const save = useMutation({ mutationFn: async ({ steps, start }: { steps: Step[]; start: boolean }) => { const saved = await api.put<Mission>(`/api/missions/${ident}/plan`, { steps }); if (start) await api.post(`/api/missions/${ident}/control`, { action: 'start', fingerprint: saved.plan_fingerprint }) }, onSuccess: refresh, onError: failure })
+  const save = useMutation({ mutationFn: async ({ steps, start }: { steps: Step[]; start: boolean }) => { const saved = await api.put<Mission>(`/api/missions/${ident}/plan`, { steps }); if (start) await api.post(`/api/missions/${ident}/control`, { action: 'start', fingerprint: saved.plan_fingerprint }) }, onSuccess: () => { setTooLong(null); refresh() }, onError: (e) => { setTooLong(isApiError(e, 'too_long') && e.details.step ? { step: String(e.details.step), text: message(e) } : null); failure(e) } })
   const skip = useMutation({ mutationFn: (step: string) => api.post(`/api/missions/${ident}/steps/${step}/skip`), onSuccess: refresh, onError: failure })
   const retry = useMutation({ mutationFn: (step: string) => api.post(`/api/missions/${ident}/steps/${step}/retry`), onSuccess: refresh, onError: failure })
   const editable = !!data && ['draft', 'plan_review', 'paused'].includes(data.phase) && !data.steps.some((s) => s.session)
@@ -94,7 +101,7 @@ export function MissionsSection() {
         {data.planner?.session && <Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(data.planner.session)}`}>{t('resident.plannerSession')}</Link>}
         {editable && <>
           <Link className="text-primary underline" to="/settings/companions">{t('resident.adoptRole')}</Link>
-          {profiles.isError ? <p role="alert">{message(profiles.error)}</p> : <PlanEditor key={data.id + ':' + data.phase} mission={data} roles={profiles.data?.companions || []} engineOf={engineOf} onSave={(steps, start) => save.mutate({ steps, start })} pending={save.isPending} />}
+          {profiles.isError ? <p role="alert">{message(profiles.error)}</p> : <PlanEditor key={data.id + ':' + data.phase} mission={data} roles={profiles.data?.companions || []} engineOf={engineOf} onSave={(steps, start) => save.mutate({ steps, start })} pending={save.isPending} tooLong={tooLong} />}
         </>}
         {!editable && data.steps.map((s, i) => <div key={s.id} className="grid gap-2 rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-medium">{i + 1}. {s.title}</h4><span className="text-xs text-muted-foreground">{s.state === 'complete' && <Check className="mr-1 inline size-3 text-success" />}{stateText(s.state || 'pending')}</span></div>

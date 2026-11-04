@@ -139,6 +139,7 @@ def create(title, path, goal, steps, max_runs=8, max_minutes=60, max_tokens=1000
             or concurrent not in (1, 2) or not 0 <= interval_minutes <= 10080 or not 1 <= max_cycles <= 32):
         raise service.SessionError(400, 'bad_budget', 'Mission limits are out of range.')
     plan = _validate_steps(steps) if steps else []
+    _check_lengths(goal, plan)
     # Serialize the installation-wide count and publication of a new mission.
     with (_dir() / 'create.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -211,6 +212,7 @@ def save_plan(ident, steps):
             raise service.SessionError(409, 'busy', 'A running or previously executed plan cannot be replaced.')
         if any(s.get('session') for s in data['steps']):
             raise service.SessionError(409, 'busy', 'Started steps cannot be replaced.')
+        _check_lengths(data['goal'], plan)
         data.update(steps=plan, phase='plan_review', reason='')
     return get(ident)
 
@@ -224,12 +226,15 @@ def control(ident, action, fingerprint=None):
             if (data['phase'] not in ('draft', 'plan_review', 'paused') or data['planner']
                     or any(s.get('session') for s in data['steps'])):
                 raise service.SessionError(409, 'busy', 'This mission already has a planner run.')
+            if (excess := len(_planner_prompt(data, [])) - companions.MAX_MISSION) > 0:
+                raise TooLong(None, excess)
             data.update(phase='planning', active_since=None, reason='')
         elif action == 'start':
             if fingerprint != _fingerprint(data):
                 raise service.SessionError(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
             if data['phase'] not in ('draft', 'plan_review', 'paused') or not data['steps']:
                 raise service.SessionError(409, 'busy', 'Review a plan before starting this mission.')
+            _check_lengths(data['goal'], data['steps'])  # also an architect's plan, stored as proposed
             if _runs(data) >= data['max_runs'] or _elapsed(data) >= data['max_seconds'] or data['tokens'] >= data['max_tokens']:
                 raise service.SessionError(409, 'budget', 'The authorized mission budget is exhausted.')
             for step in data['steps']:
@@ -350,13 +355,47 @@ def _review(step, sid, session):
     return cached
 
 
-def _planner_prompt(data):
-    catalog = []
-    for profile in companions.roles():
-        entry = {'id': profile['id'], 'name': profile['name'], 'role': profile['role'][:100]}
-        if len(json.dumps(catalog + [entry], ensure_ascii=False)) > 2400:
-            break
-        catalog.append(entry)
+class TooLong(service.SessionError):
+    """A step's request (or the planning request) would exceed `companions.MAX_MISSION`: refused when the plan is
+    reviewed, naming the step and the excess, instead of failing at launch."""
+
+    def __init__(self, step, excess):
+        what = f'Step "{step["title"]}"' if step else 'The goal'
+        super().__init__(400, 'too_long', f'{what} is {excess} characters too long for one agent request. '
+                                          'Shorten the goal, the step instruction or the titles of its prerequisites.')
+        self.details = {'step': step['id'] if step else None, 'title': step['title'] if step else None, 'excess': excess}
+
+
+_SESSION_ID = '0' * 36  # a session id's length, for the size of a prerequisite's report entry
+
+
+def _step_text(goal, step, reports):
+    """The mission text of an experiment step; `reports`: one {step, session, report, state} per finished prerequisite."""
+    return (f"Mission goal: {goal}\nYour step: {step['title']}\n{step['instruction']}\n"
+            "Predecessor reports are advisory. Their patches are NOT applied in this clone. "
+            "Do not assume or duplicate a predecessor's code changes. If integration is needed, stop and explain it.\n"
+            + json.dumps(reports, ensure_ascii=False))
+
+
+def _check_lengths(goal, steps):
+    """Every step must fit one agent request with all its prerequisites (their reports are trimmed to fit at launch)."""
+    titles = {s['id']: s['title'] for s in steps}
+    for step in steps:
+        reports = [{'step': titles[dep], 'session': _SESSION_ID, 'report': '', 'state': 'complete'} for dep in step['after']]
+        excess = len(_step_text(goal, step, reports)) - companions.MAX_MISSION
+        if excess > 0:
+            raise TooLong(step, excess)
+
+
+def _planner_prompt(data, catalog=None):
+    if catalog is None:
+        catalog = []
+        for profile in companions.roles():
+            entry = {'id': profile['id'], 'name': profile['name'], 'role': profile['role'][:100]}
+            if (len(json.dumps(catalog + [entry], ensure_ascii=False)) > 2400
+                    or len(_planner_prompt(data, catalog + [entry])) > companions.MAX_MISSION):
+                break
+            catalog.append(entry)
     return ("Design a small actionable plan for this goal, using existing roles only. Do not implement it. "
             "Return ONLY a JSON object with a steps array (one to eight steps). Each step has id "
             "(lowercase letters/digits/hyphens), title, role (existing role id), instruction (at most 2000 characters), "
@@ -383,17 +422,16 @@ def _prepare(data, step, purpose):
     key = f"{data['id']}:{data['cycle']}:{step['id']}:{len(data['launches'])}"
     step.update(state='starting', key=key, started=_now(), session=None)
     data['launches'].append({'key': key, 'session': None})
-    context = []
-    for dep in data['steps']:
-        if dep['id'] in step.get('after', []) and dep.get('session'):
-            session = service.get_session(dep['session']) or {}
-            context.append({'step': dep['title'], 'session': dep['session'], 'report': service.last_assistant_text(dep['session'])[:120],
-                            'state': dep['state']})
-    mission = (_planner_prompt(data) if purpose == 'plan' else
-               f"Mission goal: {data['goal']}\nYour step: {step['title']}\n{step['instruction']}\n"
-               "Predecessor reports are advisory. Their patches are NOT applied in this clone. "
-               "Do not assume or duplicate a predecessor's code changes. If integration is needed, stop and explain it.\n"
-               + json.dumps(context, ensure_ascii=False))
+    if purpose == 'plan':
+        mission = _planner_prompt(data)
+    else:
+        deps = [(dep, service.last_assistant_text(dep['session'])) for dep in data['steps']
+                if dep['id'] in step.get('after', []) and dep.get('session')]
+        for cap in (120, 60, 20, 0):  # advisory reports shrink so the request fits (checked when the plan was reviewed)
+            mission = _step_text(data['goal'], step, [{'step': dep['title'], 'session': dep['session'], 'report': text[:cap],
+                                                       'state': dep['state']} for dep, text in deps])
+            if len(mission) <= companions.MAX_MISSION:
+                break
     return {'key': key, 'role': step['role'], 'path': data['path'], 'mission': mission, 'purpose': purpose,
             'timeout_s': max(60, min(1800, int(data['max_seconds'] - _elapsed(data))))}
 

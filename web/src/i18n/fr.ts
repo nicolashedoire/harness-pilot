@@ -171,6 +171,8 @@ export const fr: Record<keyof typeof en, string> = {
   "resident.error.budget": "Le budget autorisé de cette mission est épuisé. Créez une nouvelle mission avec des limites revues.",
   "resident.error.not_found": "Cette mission n’existe plus.",
   "resident.error.network": "Le serveur est injoignable.",
+  "resident.error.tooLongStep": "L’étape « {title} » dépasse de {excess} caractères la taille d’une requête d’agent. Raccourcissez l’objectif, cette consigne ou les titres de ses prérequis.",
+  "resident.error.tooLongGoal": "L’objectif dépasse de {excess} caractères la taille de la requête de planification. Raccourcissez-le.",
   "resident.error.limit": "Cette installation contient déjà 50 missions.",
   "resident.error.unresolved": "Relancez ou ignorez les étapes à examiner avant de reprendre.",
   "space.label": "Espace",

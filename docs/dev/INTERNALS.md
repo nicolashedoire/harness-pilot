@@ -675,7 +675,9 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 - `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,
   launch_guard=None)`: an existing session tagged with `launch_key` is returned instead of a new run; `plan` =
   `plan_mode` + `permission_mode='plan'` (the engine must declare the `plan` capability) and a read-only prompt.
-  Manual companion runs keep the defaults.
+  Manual companion runs keep the defaults. `companions.MAX_MISSION` (6000) bounds the mission text; missions check it
+  when a plan is created, saved or started (`_check_lengths`, `TooLong` with `details` {step, title, excess}, kept in the
+  error body by `api/missions._call`), trim prerequisite reports at launch, and fit the planner's role catalog.
 
 ## CLI
 Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in

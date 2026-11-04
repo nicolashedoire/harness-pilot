@@ -1,17 +1,20 @@
 // Typed fetch client for the Harness Maxxing API (docs/dev/API.md).
 // - same-origin cookies, JSON in/out
 // - every non-GET request carries `X-Maxxing: 1` (CSRF)
-// - errors throw ApiError {status, code, message}
+// - errors throw ApiError {status, code, message, details (the other fields of the error body)}
 // - 401 `auth_required` on a protected endpoint → onUnauthorized() (the app redirects to /login?next=…)
 
 export class ApiError extends Error {
   status: number
   code: string
-  constructor(status: number, code: string, message?: string) {
+  /** Extra fields of the error body (e.g. which mission step is too long). */
+  details: Record<string, unknown>
+  constructor(status: number, code: string, message?: string, details: Record<string, unknown> = {}) {
     super(message || code)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -90,8 +93,9 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     }
   }
   if (!res.ok) {
-    const d = (data && typeof data === 'object' ? data : {}) as { error?: string; message?: string }
-    const err = new ApiError(res.status, d.error || `http_${res.status}`, d.message || (typeof data === 'string' ? data.slice(0, 200) : res.statusText))
+    const d = (data && typeof data === 'object' ? data : {}) as { error?: string; message?: string } & Record<string, unknown>
+    const { error: _code, message: _message, ...details } = d
+    const err = new ApiError(res.status, d.error || `http_${res.status}`, d.message || (typeof data === 'string' ? data.slice(0, 200) : res.statusText), details)
     // Only our own sign-in check signs out (`auth_required`): a 401 relayed from elsewhere (an extension's API, a
     // service that refused a token) is an ordinary error, not a reason to leave the page.
     if (res.status === 401 && d.error === 'auth_required' && !opts.noAuthRedirect && unauthorizedHandler) unauthorizedHandler()

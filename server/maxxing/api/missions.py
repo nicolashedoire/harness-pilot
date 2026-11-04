@@ -1,12 +1,24 @@
 """Owner-reviewed plans and bounded resident mission operation."""
+import asyncio
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 
 from .. import missions
 from ..security import require_auth
-from .sessions import _Text, _call
+from ..sessions import service
+from .sessions import _Text
+
+
+async def _call(fn, *args, **kw):
+    """Like the sessions helper, keeping an error's details: a too-long step says which step and by how much
+    (`step`, `title`, `excess`)."""
+    try:
+        return await asyncio.to_thread(fn, *args, **kw)
+    except service.SessionError as e:
+        raise HTTPException(e.status, detail={'error': e.code, 'message': e.message, **getattr(e, 'details', {})}) from None
+
 
 router = APIRouter(prefix='/api/missions', tags=['missions'], dependencies=[Depends(require_auth)])
 
