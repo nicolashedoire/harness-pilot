@@ -10,8 +10,10 @@ import re
 import shutil
 import shlex
 import stat
+import struct
 import tempfile
 import time
+import unicodedata
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -21,8 +23,19 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from . import __version__, config, uploads
 
-MAGIC = b'PILOTBK1\n'
 CHUNK = 1024 * 1024
+# Encrypted file = header | AES-256-GCM ciphertext of the ZIP | 16-byte tag. The whole header is the GCM associated
+# data: its magic, format version, KDF identifier, scrypt cost (log2 N, r, p), salt and nonce are all authenticated.
+MAGIC = b'PILOTBK\n'
+FORMAT_VERSION = 2
+KDF_SCRYPT = 1
+SCRYPT_DEFAULT = (15, 8, 1)               # log2(N), r, p used for new archives
+_HEADER = struct.Struct('>8sBBBHH16s12s')  # magic, version, kdf, log2(N), r, p, salt, nonce
+# Bounds read from an archive header, checked before any key derivation: a crafted archive cannot make the preview
+# allocate or compute without limit (the defaults need 32 MiB and N·r·p = 2^18).
+KDF_LOG_N, KDF_R, KDF_P = (14, 20), (1, 16), (1, 4)
+KDF_MAX_MEMORY = 128 * CHUNK              # 128·N·r bytes
+KDF_MAX_WORK = 1 << 21                    # N·r·p
 MAX_ENTRIES = 100000
 MANIFEST_MAX = 32 * CHUNK
 PREVIEW_TTL = 24 * 60 * 60
@@ -76,14 +89,35 @@ def _lock():
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def _key(password: str, salt: bytes) -> bytes:
+def _check_kdf(log_n: int, r: int, p: int):
+    if not (KDF_LOG_N[0] <= log_n <= KDF_LOG_N[1] and KDF_R[0] <= r <= KDF_R[1] and KDF_P[0] <= p <= KDF_P[1]
+            and 128 * (1 << log_n) * r <= KDF_MAX_MEMORY and (1 << log_n) * r * p <= KDF_MAX_WORK):
+        raise SnapshotError('kdf_params', 'The archive asks for key-derivation settings outside the accepted bounds.')
+
+
+def _key(password: str, salt: bytes, log_n: int, r: int, p: int) -> bytes:
+    # NFC on export and import: an accented letter typed precomposed or as letter + combining mark is one key.
+    if isinstance(password, str):
+        password = unicodedata.normalize('NFC', password)
     if not isinstance(password, str) or not 12 <= len(password) <= 1024:
         raise SnapshotError('passphrase', 'Use a backup passphrase between 12 and 1024 characters.')
+    _check_kdf(log_n, r, p)
     try:
-        return hashlib.scrypt(password.encode('utf-8'), salt=salt, n=32768, r=8, p=1,
-                              maxmem=128 * CHUNK, dklen=32)
+        return hashlib.scrypt(password.encode('utf-8'), salt=salt, n=1 << log_n, r=r, p=p,
+                              maxmem=2 * KDF_MAX_MEMORY, dklen=32)
     except UnicodeError:
         raise SnapshotError('passphrase', 'The passphrase contains an invalid character.') from None
+
+
+def _read_header(incoming) -> tuple[bytes, tuple[int, int, int], bytes, bytes]:
+    header = incoming.read(_HEADER.size)
+    if len(header) != _HEADER.size or not header.startswith(MAGIC):
+        raise SnapshotError('format', 'This is not a supported encrypted instance backup.')
+    _, version, kdf, log_n, r, p, salt, nonce = _HEADER.unpack(header)
+    if version != FORMAT_VERSION or kdf != KDF_SCRYPT:
+        raise SnapshotError('format', 'This archive format version is not supported by this application version.')
+    _check_kdf(log_n, r, p)
+    return header, (log_n, r, p), salt, nonce
 
 
 def _crypt(source: Path, destination: Path, password: str, *, decrypt: bool = False):
@@ -92,23 +126,21 @@ def _crypt(source: Path, destination: Path, password: str, *, decrypt: bool = Fa
         with source.open('rb') as incoming, destination.open('xb') as outgoing:
             os.chmod(destination, 0o600)
             if decrypt:
-                header = incoming.read(len(MAGIC) + 28)
-                if len(header) != len(MAGIC) + 28 or not header.startswith(MAGIC):
-                    raise SnapshotError('format', 'This is not a supported encrypted instance backup.')
-                salt, nonce = header[len(MAGIC):len(MAGIC) + 16], header[-12:]
+                header, cost, salt, nonce = _read_header(incoming)
                 remaining = source.stat().st_size - len(header) - 16
                 if remaining < 0:
                     raise SnapshotError('format', 'The backup is truncated.')
                 incoming.seek(-16, os.SEEK_END)
                 tag = incoming.read(16)
                 incoming.seek(len(header))
-                operation = Cipher(algorithms.AES(_key(password, salt)), modes.GCM(nonce, tag)).decryptor()
+                operation = Cipher(algorithms.AES(_key(password, salt, *cost)), modes.GCM(nonce, tag)).decryptor()
             else:
                 salt, nonce = os.urandom(16), os.urandom(12)
-                header = MAGIC + salt + nonce
+                header = _HEADER.pack(MAGIC, FORMAT_VERSION, KDF_SCRYPT, *SCRYPT_DEFAULT, salt, nonce)
+                key = _key(password, salt, *SCRYPT_DEFAULT)
                 outgoing.write(header)
                 remaining = source.stat().st_size
-                operation = Cipher(algorithms.AES(_key(password, salt)), modes.GCM(nonce)).encryptor()
+                operation = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
             operation.authenticate_additional_data(header)
             while remaining:
                 block = incoming.read(min(CHUNK, remaining))

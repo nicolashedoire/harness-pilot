@@ -342,3 +342,76 @@ def test_restored_integrations_stay_paused_after_activation_until_resumed(mx, mo
     finally:
         telegram.close()
         github.close()
+
+
+def _rewrite_header(path, **changes):
+    data = bytearray(path.read_bytes())
+    fields = dict(zip(('magic', 'version', 'kdf', 'log_n', 'r', 'p', 'salt', 'nonce'),
+                      snapshots._HEADER.unpack_from(data)))
+    fields.update(changes)
+    data[:snapshots._HEADER.size] = snapshots._HEADER.pack(*fields.values())
+    path.write_bytes(data)
+
+
+def test_archive_header_records_versioned_scrypt_parameters(mx, monkeypatch):
+    seed(mx)
+    path = snapshots.exported(snapshots.export(PASSWORD)['id'])
+    magic, version, kdf, log_n, r, p, salt, nonce = snapshots._HEADER.unpack_from(path.read_bytes())
+    assert (magic, version, kdf, (log_n, r, p)) == (b'PILOTBK\n', 2, snapshots.KDF_SCRYPT, (15, 8, 1))
+    assert len(salt) == 16 and len(nonce) == 12
+    # Decryption reads the cost from the header: an archive made with other in-bounds settings still opens.
+    monkeypatch.setattr(snapshots, 'SCRYPT_DEFAULT', (14, 4, 2))
+    other = snapshots.exported(snapshots.export(PASSWORD)['id'])
+    monkeypatch.setattr(snapshots, 'SCRYPT_DEFAULT', (15, 8, 1))
+    assert snapshots._HEADER.unpack_from(other.read_bytes())[3:6] == (14, 4, 2)
+    assert snapshots.inspect(other, PASSWORD)['files'] >= 5
+
+
+@pytest.mark.parametrize('changes, code', [
+    ({'nonce': b'\x00' * 12}, 'decrypt_failed'),       # authenticated header fields
+    ({'salt': b'\x01' * 16}, 'decrypt_failed'),
+    ({'r': 9}, 'decrypt_failed'),                       # in bounds, but not the cost the key was made with
+    ({'version': 1}, 'format'),
+    ({'version': 3}, 'format'),
+    ({'kdf': 2}, 'format'),
+    ({'magic': b'PILOTBK1'}, 'format'),
+])
+def test_tampered_archive_header_is_refused(mx, changes, code):
+    seed(mx)
+    path = snapshots.exported(snapshots.export(PASSWORD)['id'])
+    _rewrite_header(path, **changes)
+    with pytest.raises(snapshots.SnapshotError) as caught:
+        snapshots.inspect(path, PASSWORD)
+    assert caught.value.code == code
+    assert list((mx['state'] / 'instance-backups/imports').iterdir()) == []
+
+
+@pytest.mark.parametrize('cost', [
+    {'log_n': 13}, {'log_n': 21}, {'log_n': 40},        # N
+    {'r': 0}, {'r': 17}, {'r': 65535},                  # r
+    {'p': 0}, {'p': 5}, {'p': 65535},                   # p
+    {'log_n': 20, 'r': 2},                              # 256 MiB of memory
+    {'log_n': 18, 'r': 4, 'p': 4},                      # N·r·p = 2^22
+])
+def test_out_of_bounds_kdf_parameters_are_refused_before_any_derivation(mx, monkeypatch, cost):
+    seed(mx)
+    path = snapshots.exported(snapshots.export(PASSWORD)['id'])
+    _rewrite_header(path, **cost)
+    monkeypatch.setattr(snapshots.hashlib, 'scrypt', lambda *a, **k: pytest.fail('scrypt ran on absurd settings'))
+    with pytest.raises(snapshots.SnapshotError) as caught:
+        snapshots.inspect(path, PASSWORD)
+    assert caught.value.code == 'kdf_params'
+
+
+def test_passphrase_is_unicode_normalized_on_export_and_import(mx):
+    import unicodedata
+    seed(mx)
+    composed = 'Crème brûlée à côté de l’été'
+    decomposed = unicodedata.normalize('NFD', composed)
+    assert decomposed != composed and len(decomposed) > len(composed)
+    salt = b'\x07' * 16
+    assert snapshots._key(decomposed, salt, *snapshots.SCRYPT_DEFAULT) == snapshots._key(composed, salt, *snapshots.SCRYPT_DEFAULT)
+    # Typed precomposed at export, as letter + combining accent (another keyboard or system) at import - and back.
+    for exported_with, imported_with in ((composed, decomposed), (decomposed, composed)):
+        path = snapshots.exported(snapshots.export(exported_with)['id'])
+        assert snapshots.inspect(path, imported_with)['files'] >= 5

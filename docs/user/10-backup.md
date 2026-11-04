@@ -49,7 +49,11 @@ is retained, while the next agent turn starts a fresh provider conversation. Arb
 commands and prose are not rewritten: update absolute paths in custom commands if needed.
 The restore report is stored in the new directory.
 
-Archives use scrypt-derived keys and AES-256-GCM authenticated encryption. The entire encrypted
+Archives use scrypt-derived keys and AES-256-GCM authenticated encryption. Each archive starts with a
+versioned header that records its key-derivation settings, salt and nonce. That header is authenticated
+with the data, and an archive asking for unreasonable settings is refused before any work. The passphrase
+is compared in a normalised Unicode form: an accented letter gives the same key whether your keyboard or
+system typed it as one character or as a letter plus an accent. The entire encrypted
 stream must authenticate before its ZIP inventory is examined; file hashes and paths are checked
 again before extraction. The default uncompressed data limit is 2048 MiB (`instance_backup_max_mb`);
 `upload_max_mb` and available-disk reserves also apply. Large archives are streamed rather than
