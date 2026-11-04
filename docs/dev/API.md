@@ -736,7 +736,7 @@ else off). Effective rule of an event: its kind's rule unless auto, else its sou
 default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
-`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
+`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`, `review` (a companion proposal).
 
 | kind | source | level | params | actions | resolved by |
 |---|---|---|---|---|---|
@@ -755,6 +755,9 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `deps.vulnerable` | system | warning | `count` | `open` | – |
 | `deps.update_failed` | system | warning | `count, names` | `open` | – |
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `companion.ready` | system | warning | `session_id, fingerprint` (a finished companion experiment with a proposal; `fingerprint` = the exact proposal reviewed; Telegram review buttons are bound to it) | `review` | – |
+| `companion.empty` | system | info | `session_id, fingerprint` (finished without a code change) | `review` | – |
+| `companion.error` | system | warning | – (the experiment stopped with an error, or its result cannot be reviewed) | – | – |
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
