@@ -217,13 +217,26 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   and other 4xx (no right to manage topics, bot removed) drop it (a refusal is not retried at every sync).
   `mirror_web()` (opt-in: `mirror_web` and `mirror_web_chosen`): `on_turn_end` without a pending Telegram turn copies the web turn into the thread
   (`service.last_user_message` + the answer, silent unless `notify`).
+- Agent of a new session (`NEW_COMMANDS`): `/new` = Claude Code (the default, also a plain message in the main chat),
+  `/codex` = provider `codex`, `/discuss` = provider `discussion` with `discussion_turn_limit` = `DISCUSS_TURNS` (6
+  replies: the exchange pauses, a new message starts the next period). Same flows as `/new`: in a session thread a
+  sibling in the same topic with its own thread; in the main chat or a thread the user made, the "where?" question
+  (its text names the agent; the pending entry of `state/telegram/new.json` keeps `provider`, default `claude`, and a
+  later `/new` / `/codex` / `/discuss` before the answer changes it); threads off, the topic's new Telegram session.
+  `/codex` and `/discuss` first run `sessions.codex.status()` in a worker thread: `authenticated: false` -> the chat
+  is told (not installed / not signed in, with `codex login`) and nothing is created or asked; `null` (status
+  unavailable) does not block. `/model` in a session whose provider is `codex` or `plugin:<id>` shows its model and
+  changes nothing (`_set_model` refuses too: a Claude id would break its turns); `/status` adds the agent (and the
+  replies of the current period for a discussion). A discussion answered on Telegram (`debate_telegram`) that pauses
+  on its limit (`debate_paused`, reason `limit`) gets a silent notice in its thread after the reply.
 - `notify_cron(text)` - plain message in the "Crons" thread. `notify_cron_report(header, body, markdown, loud)` - a
   cron run's report: bold header + the Claude answer rendered by `fmt.render` (from its start, `fmt.head` at
   `REPORT_MAX` = 12000) or command output in `<pre>` (`fmt.code`); body packed with room for the header.
 - `status() -> dict` - the GET /api/telegram payload.
 - `start()/stop()/restart()` (async, server loop) and `install_hooks()` (registers
   `sessions.service.on_turn_end` + `workspace.on_change`), called by maxxing.api.telegram.
-- Uses from sessions.service: `create_session`, `get_session`, `list_sessions`, `send_message`, `stop`,
+- Uses from sessions.service: `create_session` (`provider` / `discussion_turn_limit` passed only for another agent
+  than Claude), `get_session`, `list_sessions`, `send_message`, `stop`,
   `update_session(sid, model=…)` (/model), `read_events` / `end_offset` (progress mode), `last_assistant_text`, `models()`.
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
 - `telegram.reviews` (companion decisions): `buttons(ev)` gives a built-in `companion.ready` event (source `system`,

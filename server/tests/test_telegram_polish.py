@@ -233,7 +233,8 @@ async def test_bot_texts_follow_the_language(api, tg, svc):
     await wait_for(lambda: any("Chaque session ouverte" in p["text"] for p in tg.sent()), what="fr help")
     menus = {p.get("language_code"): p["commands"] for p in tg.sent("setMyCommands")}
     assert {None, "en", "fr"} <= set(menus)
-    assert menus["en"][0]["description"].startswith("Start a new session")
+    assert menus["en"][0]["description"].startswith("Start a new Claude Code session")
+    assert menus["fr"][1]["description"].startswith("Démarrer une nouvelle session Codex")
     assert menus["fr"][0]["description"].startswith("Démarrer") and menus[None] == menus["fr"]
 
 

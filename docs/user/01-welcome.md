@@ -31,7 +31,7 @@ In a terminal, the `pilot` command looks after the installation: `pilot doctor` 
 
 ## Optional integrations and privacy
 
-- **Telegram:** configure a bot under **Settings → Telegram**. The inherited Claude integration is documented in [Telegram](telegram); Codex and two-agent mirroring and control still need validation.
+- **Telegram:** configure a bot under **Settings → Telegram** to talk to your sessions from your phone, and start Claude Code sessions, Codex sessions (`/codex`) or Claude Code + Codex discussions (`/discuss`) there; see [Telegram](telegram). The Codex and discussion paths have only been checked with a simulated Telegram so far.
 - **Backup:** selected workspace files and settings can be backed up to a private GitHub repository. Conversations, attachments and files outside the configured patterns are not included. See [Backup](backup) before relying on it for recovery.
 - **Notifications and voice:** configure the available options in Settings. Browser permissions and external services may be needed.
 

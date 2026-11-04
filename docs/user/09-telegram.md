@@ -6,7 +6,7 @@ section: Connectivity
 Talk to your sessions from your phone. harness-pilot includes its own Telegram gateway: no extra
 program to install.
 
-The setup and commands below describe the inherited Claude integration. Mirroring and control of Codex and two-agent discussions have not yet been validated; use the web interface to follow and stop those conversations until tested. Telegram is optional and requires a bot and a linked chat.
+Sessions started from Telegram use Claude Code, unless you start them with `/codex` (Codex) or `/discuss` (a Claude Code + Codex discussion): see [Choosing the agent](#choosing-the-agent). Codex sessions and discussions on Telegram have only been checked with a simulated Telegram so far: if one behaves differently with your bot, follow and stop it from the web interface. Telegram is optional and requires a bot and a linked chat.
 
 - One bot, linked to **your** private chat only.
 - **One thread per open session** - the Telegram chat mirrors the Sessions page - plus *Crons*
@@ -16,7 +16,8 @@ The setup and commands below describe the inherited Claude integration. Mirrorin
   your scripts… per the rules you set, posted by the bot itself, with an *Ask harness-pilot* button). A thread is named `<project>/<topic> · <session title>`, with the project's emoji in front when it has one (project **…** menu in Sessions -> *Set an emoji…*), e.g. `🛒 acme/blog · Launch plan`. Changing only the emoji does not rename existing threads (each rename posts a notice in the chat); new threads get it.
 - A thread is the session itself: what you write on the phone appears in the web UI and you can
   continue there, and the other way round.
-- Write in the **main chat** (or create a thread) to start a new session: the bot asks in which topic.
+- Write in the **main chat** (or create a thread) to start a new session: the bot asks in which topic. It is a
+  Claude Code session; send `/codex` or `/discuss` first for [another agent](#choosing-the-agent).
 
 ## Setup (Settings -> Telegram)
 
@@ -93,18 +94,42 @@ messages) it deletes.
 
 | Command | Effect |
 |---|---|
-| `/new [title]` | new session in the same topic, with its own thread (in the main chat: asks the topic) |
+| `/new [title]` | new Claude Code session in the same topic, with its own thread (in the main chat: asks the topic) |
+| `/codex [title]` | the same with Codex ([Choosing the agent](#choosing-the-agent)) |
+| `/discuss [title]` | the same with a Claude Code + Codex discussion that pauses after 6 replies ([Choosing the agent](#choosing-the-agent)) |
 | `/sessions` | list the open sessions |
 | `/stop` | stop the running turn |
 | `/close` | close this session: archived (kept in the web UI) and its thread deleted |
-| `/model [id]` | show or change the model of the session (an id, a name such as `Sonnet 5.5`, or `opus` / `sonnet` / `haiku` for the newest of that family; an unknown name lists the choices) |
-| `/status` | state, model, cost, queue, link to the web UI |
+| `/model [id]` | show or change the model of the session (an id, a name such as `Sonnet 5.5`, or `opus` / `sonnet` / `haiku` for the newest of that family; an unknown name lists the choices). In a discussion it is Claude Code's model; a Codex session only shows its model |
+| `/status` | agent (and the replies of a discussion), state, model, cost, queue |
 | `/topic` | (main chat, threads off) choose the topic |
 | `/help` | list the commands |
 
 - The **bell** of a session (web UI, next to its title): with the mirror off (default) it posts a short
   "finished" message in the session's thread when a turn ends; with the mirror on it makes the
   mirrored answers ring.
+
+## Choosing the agent
+
+New sessions use **Claude Code**. To start one with another agent, send one of these instead of `/new`:
+
+| Command | Agent |
+|---|---|
+| `/codex [title]` | **Codex** |
+| `/discuss [title]` | a **Claude Code + Codex** discussion: your message goes to Claude Code, then they answer each other in turn, each reply arriving in the thread under the name of the agent that wrote it |
+
+They work like `/new`: in a session's thread, the new session gets its own thread in the same topic; in the main chat
+(or a thread you created), the bot asks where it lives, naming the agent, and the messages you write meanwhile go to
+it. Sending `/new`, `/codex` or `/discuss` before you choose the topic changes the agent (the bot confirms). With
+threads off, the main chat talks to the new session from then on.
+
+A discussion started from Telegram pauses after **6 replies**, and the bot says so in its thread: write a message to
+continue for 6 more replies, or `/stop` while they talk. The limit can be changed in the web UI (**Change limits** in
+the session's **…** menu); for roles, the debate mode or a duration limit, start the discussion from the web UI.
+
+Codex must be installed and signed in where harness-pilot runs (Settings → Codex). If it is not, the bot says so -
+with the `codex login` command to run - and starts nothing; a plain message still starts a Claude Code session. In a
+Codex session, `/model` shows its model without changing it: Claude Code's models do not apply to it.
 
 ## Two-step sign-in
 
