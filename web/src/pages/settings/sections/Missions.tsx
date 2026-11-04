@@ -2,7 +2,7 @@ import * as React from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Check, Pause, Play, Plus, Square, TriangleAlert } from 'lucide-react'
+import { Check, Pause, Play, Plus, RotateCcw, Square, TriangleAlert } from 'lucide-react'
 import { useT, useLang, tDyn } from '@/i18n'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { fmtDate, fmtNumber } from '@/lib/format'
@@ -13,7 +13,7 @@ import { SettingsCard, SectionStack } from './ui'
 
 type Role = { id: string; name: string; role: string; provider?: string }
 type Step = { id: string; title: string; role: string; instruction: string; after: string[]; state?: string; session?: string; error?: string }
-type Mission = { id: string; title: string; path: string; goal: string; phase: string; plan_fingerprint: string; reason: string; steps: Step[]; max_runs: number; max_seconds: number; max_tokens: number; tokens: number; spent_seconds: number; active_since: number | null; launches: { session?: string }[]; cycle: number; max_cycles: number; next_cycle: number | null; planner: Step | null }
+type Mission = { id: string; title: string; path: string; goal: string; phase: string; plan_fingerprint: string; reason: string; steps: Step[]; max_runs: number; max_seconds: number; max_tokens: number; tokens: number; spent_seconds: number; active_since: number | null; launches: { session?: string; aborted?: boolean }[]; cycle: number; max_cycles: number; next_cycle: number | null; planner: Step | null }
 const initialStep = (): Step => ({ id: 'step-1', title: '', role: 'observer', instruction: '', after: [] })
 
 function PlanEditor({ mission, roles, engineOf, onSave, pending }: { mission: Mission; roles: Role[]; engineOf: (role: string) => string; onSave: (steps: Step[], start: boolean) => void; pending: boolean }) {
@@ -56,6 +56,7 @@ export function MissionsSection() {
   const control = useMutation({ mutationFn: ({ id, action, fingerprint }: { id: string; action: 'start' | 'pause' | 'stop' | 'plan'; fingerprint?: string }) => api.post(`/api/missions/${id}/control`, { action, fingerprint }), onSuccess: refresh, onError: failure })
   const save = useMutation({ mutationFn: async ({ steps, start }: { steps: Step[]; start: boolean }) => { const saved = await api.put<Mission>(`/api/missions/${ident}/plan`, { steps }); if (start) await api.post(`/api/missions/${ident}/control`, { action: 'start', fingerprint: saved.plan_fingerprint }) }, onSuccess: refresh, onError: failure })
   const skip = useMutation({ mutationFn: (step: string) => api.post(`/api/missions/${ident}/steps/${step}/skip`), onSuccess: refresh, onError: failure })
+  const retry = useMutation({ mutationFn: (step: string) => api.post(`/api/missions/${ident}/steps/${step}/retry`), onSuccess: refresh, onError: failure })
   const editable = !!data && ['draft', 'plan_review', 'paused'].includes(data.phase) && !data.steps.some((s) => s.session)
   const stateText = (state: string) => tDyn(t, `resident.state.${state}`, state)
   return <SectionStack>
@@ -80,7 +81,7 @@ export function MissionsSection() {
     </SettingsCard>
     {data && <SettingsCard title={data.title} description={data.goal} key={data.id}>
       <div className="grid gap-4 text-sm">
-        <div className="flex flex-wrap items-center gap-3"><Badge variant="outline">{stateText(data.phase)}</Badge><span className="text-xs text-muted-foreground">{t('resident.progress', { runs: data.launches.length, max: data.max_runs, cycle: data.cycle, cycles: data.max_cycles })}</span></div>
+        <div className="flex flex-wrap items-center gap-3"><Badge variant="outline">{stateText(data.phase)}</Badge><span className="text-xs text-muted-foreground">{t('resident.progress', { runs: data.launches.filter((l) => !l.aborted).length, max: data.max_runs, cycle: data.cycle, cycles: data.max_cycles })}</span></div>
         {!!data.reason && <p role="status" className="text-muted-foreground">{tDyn(t, `resident.reason.${data.reason}`, data.reason)}</p>}
         <p className="text-xs text-muted-foreground">{t('resident.usage', { count: fmtNumber(data.tokens, lang), max: fmtNumber(data.max_tokens, lang), minutes: Math.round(data.max_seconds / 60), elapsed: Math.floor((data.spent_seconds + (data.active_since ? Math.max(0, Date.now() / 1000 - data.active_since) : 0)) / 60) })}</p>
         {data.phase === 'active' && !!data.next_cycle && <p className="text-xs text-muted-foreground">{t('resident.nextCycle', { date: fmtDate(data.next_cycle, lang, settings?.timezone) })}</p>}
@@ -101,7 +102,7 @@ export function MissionsSection() {
           {!!roleOf(s.role)?.role && <details className="text-muted-foreground"><summary className="cursor-pointer text-xs">{t('resident.roleInstructions')}</summary><p className="mt-2 whitespace-pre-wrap break-words">{roleOf(s.role)?.role}</p></details>}
           {!!s.after.length && <p className="text-xs text-muted-foreground">{t('resident.after', { names: s.after.map((id) => data.steps.find((d) => d.id === id)?.title || id).join(', ') })}</p>}
           <div className="flex flex-wrap gap-3">{s.session && <><Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(s.session)}`}>{t('resident.session')}</Link><Link className="text-primary underline" to={`/settings/companions?run=${encodeURIComponent(s.session)}`}>{t('resident.review')}</Link></>}
-            {data.phase === 'paused' && ['failed', 'interrupted', 'rejected'].includes(s.state || '') && <Button variant="outline" size="sm" loading={skip.isPending} onClick={() => skip.mutate(s.id)}>{t('resident.skip')}</Button>}
+            {data.phase === 'paused' && ['failed', 'interrupted', 'rejected'].includes(s.state || '') && <><Button variant="outline" size="sm" loading={retry.isPending} onClick={() => retry.mutate(s.id)}><RotateCcw className="size-4" />{t('resident.retry')}</Button><Button variant="outline" size="sm" loading={skip.isPending} onClick={() => skip.mutate(s.id)}>{t('resident.skip')}</Button></>}
           </div>
         </div>)}
       </div>

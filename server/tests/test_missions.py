@@ -395,3 +395,81 @@ def test_planning_time_counts_as_work(client,topic,agents,monkeypatch):
     finish(agents,text=json.dumps({'steps':[step(1)]}));missions.tick()
     mission=missions.get(ident)
     assert mission['phase']=='plan_review' and mission['spent_seconds']==20 and mission['active_since'] is None
+
+
+def test_a_step_stopped_before_any_model_call_runs_again_on_resume_without_using_a_run(client,topic,agents,monkeypatch):
+    ident=create(client,topic,[step(1)],max_runs=1);start(ident)
+    def pause_first(*args,**kwargs):
+        missions.control(ident,'pause')
+        return agents[5](*args,**kwargs)
+    monkeypatch.setattr(companions,'run',pause_first)
+    missions.tick()
+    mission=missions.get(ident)
+    assert mission['phase']=='paused' and mission['steps'][0]['state']=='pending' and not agents[1]
+    assert [l.get('aborted') for l in mission['launches']]==[True]
+    monkeypatch.setattr(companions,'run',agents[5])
+    start(ident);missions.tick()
+    assert len(agents[1])==1 and missions.get(ident)['steps'][0]['state']=='running'
+
+
+def test_a_shutdown_during_preparation_keeps_the_mission_active_and_the_step_pending(client,topic,agents,monkeypatch):
+    ident=create(client,topic,[step(1)]);start(ident)
+    def shutdown_first(*args,**kwargs):
+        missions._stop.set()
+        return agents[5](*args,**kwargs)
+    monkeypatch.setattr(companions,'run',shutdown_first)
+    missions.advance(ident)
+    mission=missions.get(ident)
+    assert mission['phase']=='active' and mission['steps'][0]['state']=='pending' and not agents[1]
+    assert mission['active_since'] is None
+    missions._stop.clear();monkeypatch.setattr(companions,'run',agents[5]);missions.tick()
+    assert len(agents[1])==1
+
+
+def test_a_lost_reservation_without_any_session_is_launched_again(client,topic,agents,monkeypatch):
+    ident=create(client,topic,[step(1)]);start(ident)
+    def die(*args,**kwargs):raise SystemExit('process died before creating the session')
+    monkeypatch.setattr(companions,'run',die)
+    with pytest.raises(SystemExit):missions.tick()
+    assert missions.get(ident)['steps'][0]['state']=='starting'
+    with missions._edit(ident) as data:data['steps'][0]['started']-=181
+    monkeypatch.setattr(companions,'run',agents[5]);missions.tick()
+    mission=missions.get(ident)
+    assert len(agents[1])==1 and mission['steps'][0]['state']=='running' and mission['phase']=='active'
+    assert [bool(l.get('aborted')) for l in mission['launches']]==[True,False]
+
+
+def test_after_a_model_call_the_owner_retries_or_skips_explicitly(client,topic,agents):
+    ident=create(client,topic,[step(1)])
+    start(ident);missions.tick();first=agents[1][0]['sid']
+    missions.control(ident,'pause')
+    assert missions.get(ident)['steps'][0]['state']=='interrupted'
+    refused=client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':missions.get(ident)['plan_fingerprint']})
+    assert refused.status_code==409 and refused.json()['error']=='unresolved'
+    assert client.post('/api/missions/'+ident+'/steps/step-1/retry').status_code==200
+    assert missions.get(ident)['steps'][0]['state']=='pending' and missions.get(ident)['phase']=='paused'
+    start(ident);missions.tick()
+    assert len(agents[1])==2 and agents[1][1]['sid']!=first and missions.get(ident)['steps'][0]['session']==agents[1][1]['sid']
+
+
+def test_retry_needs_a_paused_mission_and_a_step_that_needs_attention(client,topic,agents):
+    ident=create(client,topic,[step(1),step(2)])
+    start(ident);missions.tick()
+    assert client.post('/api/missions/'+ident+'/steps/step-1/retry').status_code==409  # active
+    missions.control(ident,'stop')
+    assert client.post('/api/missions/'+ident+'/steps/step-1/retry').status_code==409  # terminal
+    other=create(client,topic,[step(1)]);start(other);missions.tick();missions.control(other,'pause')
+    assert client.post('/api/missions/'+other+'/steps/missing/retry').status_code==409
+
+
+def test_a_planner_stopped_before_its_model_call_can_be_requested_again(client,topic,agents,monkeypatch):
+    ident=create(client,topic);missions.control(ident,'plan')
+    def pause_first(*args,**kwargs):
+        missions.control(ident,'pause')
+        return agents[5](*args,**kwargs)
+    monkeypatch.setattr(companions,'run',pause_first);missions.tick()
+    mission=missions.get(ident)
+    assert mission['phase']=='paused' and mission['planner'] is None and not agents[1]
+    monkeypatch.setattr(companions,'run',agents[5])
+    missions.control(ident,'plan');missions.tick()
+    assert len(agents[1])==1 and agents[1][0]['purpose']=='plan'

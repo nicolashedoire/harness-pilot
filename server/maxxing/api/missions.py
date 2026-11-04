@@ -72,6 +72,11 @@ async def skip(ident: str, step: str):
     return await _call(missions.acknowledge, ident, step)
 
 
+@router.post('/{ident}/steps/{step}/retry')
+async def retry(ident: str, step: str):
+    return await _call(missions.retry, ident, step)
+
+
 async def startup():
     await missions.startup()
 
