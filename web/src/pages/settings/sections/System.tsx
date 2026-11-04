@@ -4,13 +4,13 @@ import { Link } from 'react-router'
 import { Play, RefreshCw, RotateCw, Sparkles, Square, Wrench, KeyRound, GitBranch } from 'lucide-react'
 import { useWhatsNew } from '@/features/whatsnew/store'
 import { applyUpdate } from '@/pwa'
-import { useCheckVersion, useHealth, useLogs, useServiceAction, useServices, useUpdate, useAutoUpdate, useVersion, useWorkspace } from '@/lib/queries'
+import { useCheckVersion, useHealth, useLogs, useMediaTools, useServiceAction, useServices, useUpdate, useAutoUpdate, useVersion, useWorkspace } from '@/lib/queries'
 import { fmtRelative } from '@/lib/format'
 import { api } from '@/lib/api'
 import type { AuthState, ServiceAction, VersionInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
-import { Badge, Button, ProgressBar, Select, Sensitive, Skeleton, Spinner, StatusDot, Switch, confirm, toast } from '@/components/ui'
+import { Badge, Button, CopyButton, ProgressBar, Select, Sensitive, Skeleton, Spinner, StatusDot, Switch, confirm, toast } from '@/components/ui'
 import { HealthSummary } from '@/components/shell/HealthIndicator'
 import { Callout, SettingRow } from '@/features/common'
 import { SettingsCard, SectionStack } from './ui'
@@ -32,6 +32,37 @@ function HealthCard() {
           </dl>
         ) : (
           <Skeleton className="h-32" />
+        )}
+      </div>
+    </SettingsCard>
+  )
+}
+
+/** Shown only while ffmpeg (with its WebP encoder) or pdftoppm is missing: what does not work and how to install it. */
+function MediaToolsCard() {
+  const t = useT()
+  const { data } = useMediaTools()
+  if (!data || data.ok) return null
+  return (
+    <SettingsCard title={t('system.mediaTools')} description={t('system.mediaToolsDesc')}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+        <Callout tone="warning">
+          <ul className="grid gap-1">
+            {data.missing.map((m) => (
+              <li key={m}>{t(`system.mediaTools.${m}`)}</li>
+            ))}
+          </ul>
+        </Callout>
+        {data.install.length > 0 && (
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+            <p className="text-[13px] text-muted-foreground">{t('system.mediaToolsInstall')}</p>
+            {data.install.map((cmd) => (
+              <div key={cmd} className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+                <code className="min-w-0 flex-1 truncate font-mono text-xs">{cmd}</code>
+                <CopyButton text={cmd} />
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </SettingsCard>
@@ -320,6 +351,7 @@ export function SystemSection() {
     <SectionStack>
       <VersionCard />
       <HealthCard />
+      <MediaToolsCard />
       {v && !v.local_mode && <ServicesCard />}
       {v && !v.local_mode && <LogsCard />}
     </SectionStack>

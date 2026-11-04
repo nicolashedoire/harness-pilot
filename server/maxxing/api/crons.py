@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/crons", tags=["crons"], dependencies=[Depends(re
 class CronIn(BaseModel):
     name: Optional[str] = None
     schedule: Optional[str] = None
-    kind: Optional[Literal["shell", "claude"]] = None
+    kind: Optional[Literal["shell", "claude", "codex"]] = None
     command: Optional[str] = None
     topic_path: Optional[str] = None
     prompt: Optional[str] = None
