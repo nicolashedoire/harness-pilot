@@ -30,6 +30,8 @@ _T = {
         "Files": "Fichiers", "Telegram": "Telegram", "Bot": "Bot", "Status": "État", "Connected": "Connecté",
         "Stopped": "Arrêté", "Claude usage": "Utilisation Claude", "5-hour window": "Fenêtre 5 h",
         "7-day window": "Fenêtre 7 jours", "5-hour window: no limit on the Ultra plan": "Fenêtre 5 h : pas de limite avec le forfait Ultra", "Usage data unavailable": "Données d'utilisation indisponibles",
+        "Experimental: the plan usage could not be read just now (undocumented Anthropic endpoint). Sessions are not affected.":
+            "Expérimental : l'utilisation du forfait n'a pas pu être lue (point d'accès Anthropic non documenté). Les sessions ne sont pas affectées.",
         "resets": "réinit.", "ago": "il y a", "Set it up": "Configurer", "Load": "Charge",
         "Up": "Allumé depuis", "Runs": "Exécutions", "Today's schedule": "Planning du jour",
         "Runs today": "Exécutions du jour", "Failed today": "Échecs du jour", "Next": "Prochaine",
@@ -375,7 +377,9 @@ def _usage_reason(u: dict) -> str:
             else t("Usage data unavailable")
     if reason == "http_401":
         return t("The Claude sign-in was refused: sign in again.")
-    return f"{t('Usage data unavailable')} ({reason})"
+    # http_5xx, a timeout, an exception name...: the endpoint is undocumented, its failures are not the user's to debug
+    return t("Experimental: the plan usage could not be read just now (undocumented Anthropic endpoint). "
+             "Sessions are not affected.")
 
 
 def usage(force: bool = False) -> dict:

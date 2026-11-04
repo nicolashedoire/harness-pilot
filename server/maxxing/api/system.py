@@ -231,6 +231,13 @@ def version_info(refresh: bool = False) -> dict:
     return out
 
 
+@router.get("/system/media-tools")
+async def media_tools():
+    """Settings -> System: ffmpeg (with WebP) and pdftoppm found or not, and the commands that install them."""
+    from .. import mediatools
+    return await asyncio.to_thread(mediatools.status)
+
+
 @router.get("/system/version")
 async def version(refresh: bool = False):
     return await asyncio.to_thread(version_info, refresh)
@@ -411,6 +418,12 @@ async def startup() -> None:
     from .. import auto_update
     if os.environ.get('HARNESS_PILOT_LOCAL_MODE') != '1':
         auto_update.start(lambda: _spawn_update(smart=False))
+    else:                                    # the terminal of scripts/dev-local.sh: say what is missing, once
+        from .. import mediatools
+        try:
+            await asyncio.to_thread(mediatools.log_missing)
+        except Exception:  # noqa: BLE001 - never keeps the server from starting
+            mediatools.log.warning("media tools check failed", exc_info=True)
 
 
 async def shutdown() -> None:
