@@ -16,6 +16,8 @@ Organize work by project, collaborate with either agent, and follow their automa
 - Work with files, tasks, schedules, and project memory from the web interface.
 - Optionally configure Telegram, voice features, and GitHub backups.
 
+Product telemetry is disabled by default; see [privacy defaults](docs/user/15-security.md#privacy-defaults) for the exact scope.
+
 Each agent uses its own CLI and account. Automatic discussions pass the other agent's latest reply to the next agent; every turn uses the corresponding account. Some features, including parts of the Claude-specific settings, are not yet available for Codex.
 
 ## Run locally on macOS
@@ -67,6 +69,8 @@ For resident runs whose shell sandbox prevents REA's process inspection, the wor
 The [Model evolution plugin](docs/user/31-model-evolution.md) pairs a companion skill with a removable Model Lab page. External adapters keep model code, weights and frameworks independent of the host. Companions can prepare bounded adaptation or architecture-design trials, compare metrics and regressions, and submit exact candidate artifacts for user review. This is an experimental workflow, not a promise of automatic model improvement.
 
 ## Documentation and contributions
+
+Companion roles can use Claude Code, Codex or a removable external agent adapter. See the [companion guide](docs/user/companions.md) and [provider plugin contract](docs/dev/AGENT-PROVIDERS.md).
 
 Coordinate reviewed code proposals with the optional [pull request integration queue](docs/user/32-pull-requests.md). It starts paused, follows explicit prerequisites and requires approval of the exact commit before merging.
 

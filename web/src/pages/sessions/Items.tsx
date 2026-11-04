@@ -22,6 +22,7 @@ import { audioPaths, baseName, FILE_HREF, fmtTokens, isAudio, isImage, isVideo, 
 
 export type ItemCtx = {
   filesRoot: string | null
+  providerName?: string
   models: ClaudeModel[] | undefined
   running: boolean
   tz?: string

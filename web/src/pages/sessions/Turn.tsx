@@ -43,7 +43,7 @@ export const isDuo = (provider: Session['provider']) => provider === 'discussion
  *  discussion) and ends with its result; notes outside a turn stand alone. */
 export function buildBlocks(items: Item[], provider: Session['provider']): Block[] {
   const duo = isDuo(provider)
-  const base: AgentId = provider === 'codex' ? 'codex' : 'claude'
+  const base: AgentId = provider?.startsWith('plugin:') ? 'plugin' : provider === 'codex' ? 'codex' : 'claude'
   const out: Block[] = []
   let turn: TurnBlock | null = null
   let users = 0
@@ -172,12 +172,12 @@ export type TurnProps = {
 export const TurnView = React.memo(function TurnView({ turn, live, since, background, duo, showReply, onFork }: TurnProps) {
   const t = useT()
   const lang = useLang()
-  const { tz } = React.useContext(ItemContext)
+  const { tz, providerName } = React.useContext(ItemContext)
   const { items, agent } = turn
   const { segs, result, texts, written, todoAfter } = React.useMemo(() => segment(items), [items])
   const first = items[0]
   const at = first ? ('ev' in first ? first.ev.at : first.use.at) : null
-  const name = AGENT_NAME[agent]
+  const name = agent === 'plugin' ? providerName || AGENT_NAME.plugin : AGENT_NAME[agent]
   const last = segs[segs.length - 1]
   // live and the last thing shown is not a group at work: a status line says what is going on
   const working = live && !(last?.kind === 'activity' && last.items.some((it) => it.kind === 'tool' && !it.result))

@@ -5,12 +5,13 @@ import { toast } from 'sonner'
 import { TriangleAlert } from 'lucide-react'
 import { useT } from '@/i18n'
 import { api, errorMessage } from '@/lib/api'
+import type { AgentProvider } from '@/lib/types'
 import { useWorkspace } from '@/lib/queries'
 import { Button, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 import { ProposalDiff } from './ProposalDiff'
 
-type Profile = { id: string; name: string; role: string }
+type Profile = { id: string; name: string; role: string; provider: string }
 type Run = { id: string; title: string; path: string; state: string; error: string | null }
 type Decision = { value: 'approved' | 'rejected'; fingerprint: string }
 type Review = { target: string | null; session: Run; patch: string; untracked: { path: string; content: string; executable: boolean }[]; fingerprint: string; has_changes: boolean; decision: Decision | null; pull_request: { url: string; fingerprint: string } | null }
@@ -22,6 +23,8 @@ export function CompanionsSection() {
   const [selected, setSelected] = React.useState('observer')
   const [name, setName] = React.useState('')
   const [role, setRole] = React.useState('')
+  const [provider, setProvider] = React.useState('codex')
+  const providers = useQuery({queryKey:['agent-providers'],queryFn:()=>api.get<AgentProvider[]>('/api/agent-providers'),refetchInterval:10000})
   const [path, setPath] = React.useState('')
   const [mission, setMission] = React.useState('')
   const [prTitle, setPrTitle] = React.useState('Improve the platform')
@@ -31,11 +34,12 @@ export function CompanionsSection() {
   const list = useQuery({ queryKey: ['companions'], queryFn: () => api.get<{ companions: Profile[]; runs: Run[] }>('/api/companions'), refetchInterval: 3000 })
   const review = useQuery({ queryKey: ['companion-review', sid], queryFn: () => api.get<Review>(`/api/companions/runs/${encodeURIComponent(sid)}/review`), enabled: !!sid, refetchInterval: 3000 })
   const profile = list.data?.companions.find((p) => p.id === selected)
-  React.useEffect(() => { setName(profile?.name || ''); setRole(profile?.role || '') }, [selected, profile?.name, profile?.role])
-  const save = useMutation({ mutationFn: () => selected === 'new' ? api.post<Profile>('/api/companions', { name, role }) : api.put<Profile>(`/api/companions/${encodeURIComponent(selected)}`, { name, role }), onSuccess: (p) => { setSelected(p.id); void qc.invalidateQueries({ queryKey: ['companions'] }); toast.success(t('companions.saved')) }, onError: (e) => toast.error(errorMessage(e)) })
+  React.useEffect(() => { setName(profile?.name || ''); setRole(profile?.role || ''); setProvider(profile?.provider || 'codex') }, [selected, profile?.name, profile?.role, profile?.provider])
+  const save = useMutation({ mutationFn: () => selected === 'new' ? api.post<Profile>('/api/companions', { name, role, provider }) : api.put<Profile>(`/api/companions/${encodeURIComponent(selected)}`, { name, role, provider }), onSuccess: (p) => { setSelected(p.id); void qc.invalidateQueries({ queryKey: ['companions'] }); toast.success(t('companions.saved')) }, onError: (e) => toast.error(errorMessage(e)) })
   const start = useMutation({ mutationFn: () => api.post<Run>(`/api/companions/${encodeURIComponent(selected)}/runs`, { path, mission }), onSuccess: (r) => { setParams({ run: r.id }); void qc.invalidateQueries({ queryKey: ['companions'] }); toast.success(t('companions.started')) }, onError: (e) => toast.error(errorMessage(e)) })
   const decide = useMutation({ mutationFn: (decision: 'approved' | 'rejected') => api.post<Review>(`/api/companions/runs/${encodeURIComponent(sid)}/decision`, { decision, fingerprint: review.data?.fingerprint }), onSuccess: (r) => { qc.setQueryData(['companion-review', sid], r); void qc.invalidateQueries({ queryKey: ['companions'] }) }, onError: (e) => { toast.error(errorMessage(e)); void review.refetch() } })
   const publish = useMutation({ mutationFn: () => api.post<{url: string}>(`/api/companions/runs/${encodeURIComponent(sid)}/pull-request`, { fingerprint: review.data?.fingerprint, title: prTitle, body: prBody }), onSuccess: () => { void review.refetch(); toast.success(t('companions.prCreated')) }, onError: (e) => toast.error(errorMessage(e)) })
+  const dirty = name !== (profile?.name || '') || role !== (profile?.role || '') || provider !== (profile?.provider || 'codex')
   const data = review.data
   // The list could not load at all: its error, translated, instead of a form that cannot work (it polls, so it comes back)
   const unavailable = list.isError && !list.data
@@ -50,10 +54,13 @@ export function CompanionsSection() {
           <FormField label={t('companions.profile')}><Select value={selected} onValueChange={setSelected} options={[...(list.data?.companions.map((p) => ({ value: p.id, label: p.name })) || []), { value: 'new', label: t('companions.new') }]} /></FormField>
           <FormField label={t('companions.name')}><Input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} /></FormField>
           <FormField label={t('companions.role')}><Textarea minRows={4} maxLength={4000} value={role} onChange={(e) => setRole(e.target.value)} /></FormField>
+          <FormField label={t('sessions.provider')} hint={t('companions.providerHint')}><Select value={provider} onValueChange={setProvider} options={(providers.data || []).filter(p => p.capabilities.includes('source-edit')).map(p => ({value:p.id,label:p.name}))} /></FormField>
           <div><Button variant="outline" disabled={!name.trim() || !role.trim()} loading={save.isPending} onClick={() => save.mutate()}>{t('companions.save')}</Button></div>
           <FormField label={t('companions.topic')}><Select value={path} onValueChange={setPath} placeholder={t('companions.selectTopic')} options={topics.map((topic) => ({ value: topic.path, label: `${topic.project} / ${topic.name}` }))} /></FormField>
           <FormField label={t('companions.mission')}><Textarea maxLength={6000} value={mission} onChange={(e) => setMission(e.target.value)} /></FormField>
-          <div><Button disabled={!path || selected === 'new'} loading={start.isPending} onClick={() => start.mutate()}>{t('companions.start')}</Button></div>
+          <div><Button disabled={!path || selected === 'new' || dirty || !providers.data?.some(p => p.id === provider)} loading={start.isPending} onClick={() => start.mutate()}>{t('companions.start')}</Button></div>
+          {providers.data && !providers.data.some(p => p.id === provider) && <p role="alert">{t('agentProviders.unavailable')}</p>}
+          {dirty && selected !== 'new' && <p role="status" className="text-muted-foreground">{t('companions.saveFirst')}</p>}
         </div>
       )}
     </SettingsCard>

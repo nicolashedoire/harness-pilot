@@ -113,7 +113,9 @@ export const en = {
   "companions.section": "Companions",
   "companions.section.desc": "Persistent roles and reviewable platform improvements.",
   "companions.intro": "Start an observer in the background. It works on a copy of the committed platform source, then notifies you. Sound follows your notification settings.",
-  "companions.manual": "Experiments are started manually. Codex is required. Approving records your decision; it does not apply or publish changes.",
+  "companions.providerHint": "The role persists independently of its engine. External engines are installed and managed in Extensions.",
+  "companions.saveFirst": "Save this profile before starting an experiment with these changes.",
+  "companions.manual": "Experiments use the coding agent saved in the companion profile. Approving records your decision; it does not apply or publish changes.",
   "companions.profile": "Companion role",
   "companions.new": "New role",
   "companions.name": "Name",
@@ -2591,7 +2593,7 @@ export const en = {
   'show.spaceLabels.title': 'Label your spaces',
   'show.spaceLabels.body': 'From the Space menu of a project, topic or file, mark it Personal, Agents or Shared (or back to Unclassified): the label shows next to its name here and in Files. Labels help you organize; they do not prove who made an item or restrict access.',
   'show.companions.title': 'Resident companions (experimental)',
-  'show.companions.body': 'Pick a role (observer, security, architect, reverse engineering) or write your own, then start a Codex companion that reviews a copy of the platform’s source. Its proposal comes back as file diffs to approve or reject: nothing is applied or merged automatically. Needs a Git checkout and the Codex CLI.',
+  'show.companions.body': 'Pick a role (observer, security, architect, reverse engineering) or write your own, choose its coding engine, then start a companion that reviews a copy of the platform’s source. Its proposal comes back as file diffs to approve or reject: nothing is applied or merged automatically. Needs a Git checkout and the selected engine (Claude Code, Codex or a trusted agent extension).',
   'show.mcp.body': 'Every MCP server (Google Ads, Notion, a database...) in one list: where it applies - every session or one topic - and whether it works. Add one, connect a service that needs a sign-in, or remove it. Claude can also do it for you: ask it in the topic.',
   'show.infraDomains.title': 'All your domains, wherever they are',
   'show.infraDomains.body': 'Every domain now shows its registrar, its expiry date, who serves its DNS and who hosts it - OVH, GoDaddy, Namecheap, Vercel, Netlify, Shopify... - without any key. Add any other domain here with Add a domain. Vercel, Netlify, Supabase and GitHub Pages can be connected too (Overview -> What harness-pilot reads).',
@@ -3649,4 +3651,7 @@ export const en = {
   "themegen.team.fwd": "Colour theme “{theme}” sent by {name} in {chat}:",
   "themegen.show.title": "Themes made for you",
   "themegen.show.body": "Describe the theme you want (and add your logo if you like): harness-pilot composes it, checks the contrast and shows it before anything changes. Save your themes, share them as a file, a code or with a Team contact.",
+  "agentProviders.textOnly": "This engine accepts text only. Attached files are not supported.",
+  "agentProviders.unavailable": "This agent engine is unavailable or disabled. Choose another engine or check Extensions.",
+
 }

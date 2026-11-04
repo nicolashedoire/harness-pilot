@@ -114,7 +114,9 @@ export const fr: Record<keyof typeof en, string> = {
   'companions.section': 'Compagnons',
   'companions.section.desc': 'Rôles permanents et propositions pour améliorer la plateforme.',
   'companions.intro': 'Lancez un observateur en arrière-plan. Il travaille sur une copie de la version enregistrée du code, puis vous prévient. Le son suit vos réglages de notifications.',
-  'companions.manual': 'Les expériences sont lancées manuellement. Codex est nécessaire. Valider enregistre votre décision sans appliquer ni publier les changements.',
+  'companions.providerHint': 'Le rôle est indépendant de son moteur. Les moteurs externes se gèrent dans Extensions.',
+  'companions.saveFirst': 'Enregistrez ce profil avant de lancer une expérience avec ces modifications.',
+  'companions.manual': 'Les expériences utilisent le moteur enregistré dans le profil du compagnon. Valider enregistre votre décision sans appliquer ni publier les changements.',
   'companions.profile': 'Rôle du compagnon',
   'companions.new': 'Nouveau rôle',
   'companions.name': 'Nom',
@@ -2573,7 +2575,7 @@ export const fr: Record<keyof typeof en, string> = {
   'show.spaceLabels.title': 'Classez vos espaces',
   'show.spaceLabels.body': 'Depuis le menu Espace d’un projet, d’un topic ou d’un fichier, marquez-le Personnel, Agents ou Partagé (ou de nouveau Non classé) : l’étiquette s’affiche à côté de son nom ici et dans Fichiers. Les étiquettes servent à vous organiser ; elles ne prouvent pas qui a créé un élément et ne limitent pas l’accès.',
   'show.companions.title': 'Compagnons résidents (expérimental)',
-  'show.companions.body': 'Choisissez un rôle (observateur, sécurité, architecte, rétro-ingénierie) ou écrivez le vôtre, puis lancez un compagnon Codex qui relit une copie du code de la plateforme. Sa proposition revient sous forme de diffs de fichiers à approuver ou refuser : rien n’est appliqué ni fusionné automatiquement. Il faut un checkout Git et la CLI Codex.',
+  'show.companions.body': 'Choisissez un rôle (observateur, sécurité, architecte, rétro-ingénierie) ou écrivez le vôtre, choisissez son moteur, puis lancez un compagnon qui relit une copie du code de la plateforme. Sa proposition revient sous forme de diffs de fichiers à approuver ou refuser : rien n’est appliqué ni fusionné automatiquement. Il faut un checkout Git et le moteur choisi (Claude Code, Codex ou une extension d’agent de confiance).',
   'show.mcp.body': 'Tous les serveurs MCP (Google Ads, Notion, une base de données…) dans une liste : où chacun s’applique - toutes les sessions ou un topic - et s’il fonctionne. Ajoute-en un, connecte un service qui demande une connexion, ou retire-le. Claude peut aussi le faire pour toi : demande-lui dans le topic.',
   'show.infraDomains.title': 'Tous tes domaines, où qu’ils soient',
   'show.infraDomains.body': 'Chaque domaine affiche maintenant son registrar, son expiration, qui gère ses DNS et qui l’héberge - OVH, GoDaddy, Namecheap, Vercel, Netlify, Shopify… - sans aucune clé. Ajoute n’importe quel autre domaine ici avec Ajouter un domaine. Vercel, Netlify, Supabase et GitHub Pages se connectent aussi (Vue d’ensemble → Ce que harness-pilot lit).',
@@ -3631,4 +3633,7 @@ export const fr: Record<keyof typeof en, string> = {
   "themegen.team.fwd": "Thème de couleurs « {theme} » envoyé par {name} dans {chat} :",
   "themegen.show.title": "Des thèmes faits pour vous",
   "themegen.show.body": "Décrivez le thème que vous voulez (et ajoutez votre logo si vous voulez) : harness-pilot le compose, vérifie le contraste et vous le montre avant tout changement. Enregistrez vos thèmes, partagez-les en fichier, en code ou avec un contact Team.",
+  "agentProviders.textOnly": "Ce moteur accepte uniquement du texte. Les pièces jointes ne sont pas prises en charge.",
+  "agentProviders.unavailable": "Ce moteur est indisponible ou désactivé. Choisissez-en un autre ou vérifiez les extensions.",
+
 }
