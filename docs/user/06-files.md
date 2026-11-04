@@ -9,6 +9,8 @@ Nothing outside that folder is reachable from the UI.
 ## Browse
 
 - Breadcrumbs at the top, folders first, then files with size and date.
+- A link may give a path relative to the workspace (`projects/acme/topics/blog/memory.md`): it opens
+  the same file as its full path.
 - Search finds files and folders by name in the workspace.
 - Drag files from your computer onto the page to **upload** them into the current folder - or
   onto a folder row to upload them straight into that folder. One upload is limited to 2 GB, and
