@@ -38,7 +38,7 @@ read, or solved.
 |---|---|
 | **Sessions** | a session finished or failed (folded per session); a Claude Code + Codex discussion paused because it reached its number of replies or its duration (**Resume** right from the notification) |
 | **Cron jobs** | every run: failures folded per job (with the latest error, **Run again**), successes folded into one row |
-| **harness-pilot** | an update is available or needs attention, Claude Code updated (or could not), a server health issue (disk full, Claude signed out, old backup...), vulnerable dependencies |
+| **harness-pilot** | an update is available or needs attention, Claude Code updated (or could not), a server health issue (disk full, Claude signed out, old backup...), vulnerable dependencies, a [task reminder](tasks) |
 | **Sign-ins** | sign-ins (folded), several wrong passwords, a webhook refused for lack of its signing secret |
 
 ## Connect a service (webhooks)
@@ -107,6 +107,12 @@ finished: browser, silent*). A webhook or a script is pushed with all its events
 (sales ring by default), and not at all once you untick it. Push needs HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is
 forgotten by itself. If the server's push key is replaced (its key file lost), each browser subscribes again by
 itself the next time the app is open there.
+
+While the browser asks for permission or sets up push, the card shows **Waiting for your browser** with a
+**Cancel** button, and the app stops waiting after 30 seconds. Answer the browser's prompt, or cancel and try again
+later: an answer given after a cancel does not turn push on (cancelling does not close the browser's prompt, and a
+permission you grant there stays granted). On a first visit the switch becomes available once the app has finished
+installing in the browser, without reloading the page.
 
 ## Good to know
 

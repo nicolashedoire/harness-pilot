@@ -65,7 +65,7 @@ const MARK: Record<Tone, React.ReactNode> = {
 }
 
 /** "What will happen" with the chosen mode: the steps, what is guaranteed, what is not possible, the accounts used. */
-export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: string; adapter?: AgentProvider; swarmAgents: string; className?: string }) {
+export function ModePanel({ mode, adapter, swarmAgents, teamRoles, className }: { mode: string; adapter?: AgentProvider; swarmAgents: string; teamRoles?: { claude: string | null; codex: string | null }; className?: string }) {
   const t = useT()
   const { data: claude } = useClaudeStatus()
   const plugin = mode.startsWith('plugin:')
@@ -107,7 +107,7 @@ export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: str
         <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{t('modes.panel')}</div>
         <h2 className="mt-1 text-[15px] font-semibold">{title}</h2>
       </div>
-      {mode === 'team' && <TeamFlow />}
+      {mode === 'team' && <TeamFlow roles={teamRoles} />}
       <ul className="grid gap-2 text-[13px]">
         {/* keyed by rank: the texts are empty while their dictionary group loads */}
         {points.map(([tone, text], i) => (
@@ -132,8 +132,8 @@ export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: str
   )
 }
 
-/** The mixed team at a glance: the mission, two analyses side by side, the synthesis. */
-function TeamFlow() {
+/** The mixed team at a glance: the mission, two analyses side by side (their role as typed, once changed), the synthesis. */
+function TeamFlow({ roles }: { roles?: { claude: string | null; codex: string | null } }) {
   const t = useT()
   const joints = (
     <div aria-hidden className="flex h-4 justify-around">
@@ -152,7 +152,7 @@ function TeamFlow() {
               <AgentIcon agent={a} size={14} label={null} />
               {a === 'claude' ? 'Claude' : 'Codex'}
             </div>
-            <div className="mt-1 text-xs leading-snug text-muted-foreground">{t(a === 'claude' ? 'mixedTeam.claudeRole' : 'mixedTeam.codexRole')}</div>
+            <div className="mt-1 line-clamp-3 text-xs leading-snug break-words text-muted-foreground">{roles?.[a]?.trim() || t(a === 'claude' ? 'mixedTeam.claudeRole' : 'mixedTeam.codexRole')}</div>
           </div>
         ))}
       </div>

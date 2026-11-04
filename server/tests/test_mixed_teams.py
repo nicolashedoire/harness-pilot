@@ -246,3 +246,22 @@ def test_team_live_view_is_bounded_and_cached(client, topic, mx, monkeypatch):
     client.get(f'/api/teams/{sid}')
     assert len([s for s, _ in reads if s == claude]) == before   # the second poll reused the first read (log unchanged)
     client.post(f'/api/teams/{sid}/stop')
+
+
+def test_team_roles_can_be_set_at_creation(client, topic, mx, monkeypatch):
+    log = recording_codex(mx, monkeypatch)
+    r = client.post('/api/teams', json={'path': topic, 'message': 'NOTOOL Plan the launch.',
+                                        'claude_role': '  Write the launch checklist.  ', 'codex_role': ''})
+    assert r.status_code == 200, r.text
+    sid = r.json()['id']
+    team = client.get(f'/api/teams/{sid}').json()
+    claude, codex = team['agents']
+    assert claude['role'] == 'Write the launch checklist.' and claude['custom_role'] is True
+    assert codex['role'].startswith('Independently examine risks') and codex['custom_role'] is False   # blank = default
+    wait_for(lambda: client.get(f'/api/teams/{sid}').json()['phase'] == 'completed')
+    worker, synthesis = [json.loads(line) for line in (mx['tmp'] / 'fake-claude' / 'calls.jsonl').read_text().splitlines()]
+    assert 'Your assignment: Write the launch checklist.' in worker['prompt']
+    assert 'Your assignment: Independently examine risks' in json.loads(log.read_text().splitlines()[0])['prompt']
+    assert 'CLAUDE — Write the launch checklist.' in synthesis['prompt']
+    too_long = client.post('/api/teams', json={'path': topic, 'message': 'x', 'codex_role': 'r' * 2001})
+    assert too_long.status_code == 422

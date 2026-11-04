@@ -8,6 +8,7 @@ import { fmtClockTimes, fmtDate, fmtDuration, fmtRelative } from '@/lib/format'
 import { useCronRuns } from '@/lib/queries'
 import type { CronKind, CronLastRun, CronRun } from '@/lib/types'
 import { Badge, Button, CodeBlock, EmptyState, Sensitive, Skeleton, StatusDot } from '@/components/ui'
+import { AGENT_NAME, AgentIcon } from '@/features/agents/AgentIcon'
 
 /** Sentence case for the server's humanised schedules. */
 export const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s)
@@ -29,8 +30,8 @@ export function KindBadge({ kind, className }: { kind: CronKind; className?: str
   const t = useT()
   return (
     <Badge variant="muted" className={cn('gap-1', className)}>
-      {kind === 'claude' ? <Bot /> : <Terminal />}
-      {kind === 'claude' ? t('crons.kind.claudeShort') : t('crons.kind.shell')}
+      {kind === 'codex' ? <AgentIcon agent="codex" size={12} label={null} /> : kind === 'claude' ? <Bot /> : <Terminal />}
+      {kind === 'codex' ? AGENT_NAME.codex : kind === 'claude' ? t('crons.kind.claudeShort') : t('crons.kind.shell')}
     </Badge>
   )
 }
