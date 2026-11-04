@@ -300,7 +300,7 @@ class Runner:
         actor = (meta.get("debate_next") or "claude") if is_debate else (meta.get("provider") or "claude")
         if is_debate:
             store.update(self.sid, turn_provider=actor)
-            self.note("Codex" if actor == "codex" else "Claude Code")
+            self.note(_agent_label(actor, meta))       # the thread shows who answers (the web maps it to its mark)
             summary = str(meta.get("discussion_summary") or "")
             fresh = not meta.get("codex_thread_id") if actor == "codex" else bool(meta.get("fresh", True))
             if summary and fresh:                      # the first reply of an agent after a compaction / a hand-off
@@ -326,7 +326,7 @@ class Runner:
         if actor == "codex":
             return self._codex_turn(item, meta, cfg, cwd, kind, is_debate)
         if actor.startswith('plugin:'):
-            return self._plugin_turn(actor, item, meta, cfg, cwd, kind)
+            return self._plugin_turn(actor, item, meta, cfg, cwd, kind, is_debate)
         mode = effective_mode(meta, cfg)
         # Plan mode: a read-only turn that ends with a plan; the user validates it (approve_plan) before
         # anything is changed. Compact / hand-off summaries run as usual.
@@ -387,8 +387,14 @@ class Runner:
             self._auto_compact(item, a, err, cfg)
         return err
 
-    def _plugin_turn(self, actor: str, item: dict, meta: dict, cfg: dict, cwd: str, kind: str) -> str | None:
+    def _plugin_turn(self, actor: str, item: dict, meta: dict, cfg: dict, cwd: str, kind: str,
+                     is_debate: bool = False) -> str | None:
+        """An agent plugin's turn (pilot-jsonl-v1). In a discussion it holds the partner seat: the partner model
+        (`codex_model`), role (`codex_role`) and a history whose other speakers are named (`_debate_history`)."""
         adapter = agent_providers.get(actor)
+        role = str(meta.get('codex_role') or '').strip() if is_debate else ''    # the partner seat's role
+        if role:
+            item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
         plan = bool(meta.get('plan_mode')) and kind not in ('compact', 'handoff')
         if meta.get('plan_ready'):                     # a new turn replaces the plan waiting for validation
             store.update(self.sid, plan_ready=False)
@@ -400,9 +406,12 @@ class Runner:
             attempt = Attempt(rc=1, stderr='The agent plugin does not support attachments.')
         else:
             request = {'protocol': agent_providers.PROTOCOL, 'session_id': self.sid, 'cwd': cwd,
-                       'model': meta.get('model') or '', 'permission_mode': 'plan' if plan else effective_mode(meta, cfg),
+                       'model': (meta.get('codex_model') if is_debate else meta.get('model')) or '',
+                       'permission_mode': 'plan' if plan else effective_mode(meta, cfg),
                        'prompt': (PLAN_PREFACE if plan else '') + build_prompt(item),
-                       'history': agent_providers.history(store.log_path(self.sid)),
+                       'history': (_debate_history(store.log_path(self.sid), _agent_label(actor, meta), _agent_names(meta),
+                                                   build_prompt(item))
+                                   if is_debate else agent_providers.history(store.log_path(self.sid))),
                        'attachments': item.get('attachments') or [],
                        'context': codex.workspace_context(Path(cfg.get('workspace') or '/'), Path(cwd))}
             env = spawn.base_env()
@@ -420,6 +429,8 @@ class Runner:
         if plan and error is None and not attempt.stopped:
             store.update(self.sid, plan_ready=True)
         self._post(item, attempt, error)
+        if is_debate:
+            self._debate_followup(attempt, error, actor)
         return error
 
     def _codex_turn(self, item: dict, meta: dict, cfg: dict, cwd: str, kind: str,
@@ -477,7 +488,8 @@ class Runner:
         runs once more after that compaction, in fresh threads, instead of ending the exchange."""
         answer = attempt.final_text.strip()
         due = None if err or attempt.stopped else _debate_due(attempt, config.load_config())
-        overflow = bool(err) and not attempt.stopped and _context_overflow(attempt, err)
+        # a plugin's thread is its own (a compaction cannot reset it): no retry for it
+        overflow = bool(err) and not attempt.stopped and not actor.startswith("plugin:") and _context_overflow(attempt, err)
         with store.edit(self.sid) as m:
             if attempt.stopped and self.interrupted and not attempt.timed_out:
                 return
@@ -497,10 +509,10 @@ class Runner:
                 return
             if not m.get("debate_active") and not m.get("debate_paused"):
                 return
-            other = "codex" if actor == "claude" else "claude"
+            other = str(m.get("discussion_partner") or "codex") if actor == "claude" else "claude"
             m["debate_next"] = other
             goal = str(m.get("debate_goal") or "")
-            name = "Claude Code" if actor == "claude" else "Codex"
+            name = _agent_label(actor, m)
             style = ("Build on their ideas, cooperate and make practical progress together."
                      if m.get("provider") == "discussion" else
                      "Challenge their reasoning constructively, examine counterarguments and evidence.")
@@ -538,7 +550,7 @@ class Runner:
         for a hand-off, the continuation's agents are (`_debate_handoff`)."""
         store.update(self.sid, turn_provider="claude")
         previous = str(meta.get("discussion_summary") or "")
-        exchanges = _debate_transcript(store.log_path(self.sid), meta.get("discussion_compacted_at"))
+        exchanges = _debate_transcript(store.log_path(self.sid), meta.get("discussion_compacted_at"), _agent_names(meta))
         if not exchanges and not previous:
             a = Attempt(rc=1, stderr="Nothing to summarize yet.")
         else:
@@ -1209,10 +1221,40 @@ def _debate_due_note(due: object) -> str:
             "here.")
 
 
-def _debate_transcript(path: Path, since: object) -> str:
-    """User messages and each agent's final answer of a discussion, oldest first, written after `since` (time of the
-    last compaction; None = from the start); summary turns are skipped. Read from the last DEBATE_LOG_TAIL bytes of
-    the log; the most recent DEBATE_TRANSCRIPT_MAX characters are kept."""
+def _agent_label(actor: str, meta: dict) -> str:
+    """Name of a discussion seat as written in the thread: Claude Code, Codex, or the plugin's name."""
+    if actor.startswith("plugin:"):
+        return str(meta.get("provider_name") or actor[7:] or "Agent plugin")[:80]
+    return "Codex" if actor == "codex" else "Claude Code"
+
+
+def _agent_names(meta: dict) -> tuple[str, ...]:
+    """The agent notes that open a reply in a discussion's log."""
+    partner = str(meta.get("discussion_partner") or "")
+    return ("Claude Code", "Codex") + ((_agent_label(partner, meta),) if partner.startswith("plugin:") else ())
+
+
+def _debate_history(path: Path, me: str, names: tuple[str, ...], prompt: str) -> list[dict]:
+    """The pilot-jsonl-v1 `history` of an agent plugin in a discussion: its own replies as `assistant`, the user's
+    messages and the other agent's replies as `user` with their speaker ("Claude Code: ..."); the last eight. What the
+    request's `prompt` already holds (the message being answered, the other agent's latest reply) is left out."""
+    turns = _debate_turns(path, None, names)
+    while turns and turns[-1][0] != me and turns[-1][1] in prompt:
+        turns.pop()
+    return [{"role": "assistant", "text": text[:16000]} if who == me else {"role": "user", "text": f"{who}: {text}"[:16000]}
+            for who, text in turns[-8:]]
+
+
+def _debate_transcript(path: Path, since: object, names: tuple[str, ...] = ("Claude Code", "Codex")) -> str:
+    """User messages and each agent's final answer of a discussion ("Codex: ..."), oldest first, written after `since`
+    (time of the last compaction; None = from the start); the most recent DEBATE_TRANSCRIPT_MAX characters are kept."""
+    text = "\n\n".join(f"{who}: {said}" for who, said in _debate_turns(path, since, names))
+    return text if len(text) <= DEBATE_TRANSCRIPT_MAX else "[...]\n" + text[-DEBATE_TRANSCRIPT_MAX:]
+
+
+def _debate_turns(path: Path, since: object, names: tuple[str, ...]) -> list[tuple[str, str]]:
+    """(speaker, text) of a discussion's user messages and agents' final answers after `since`, oldest first; summary
+    turns are skipped; `names` = the agent notes that open a reply. Read from the last DEBATE_LOG_TAIL bytes."""
     try:
         start = float(since or 0)
     except (TypeError, ValueError, OverflowError):
@@ -1223,10 +1265,10 @@ def _debate_transcript(path: Path, since: object) -> str:
             f.seek(max(0, size - DEBATE_LOG_TAIL))
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
-        return ""
+        return []
     if size > DEBATE_LOG_TAIL:
         lines = lines[1:]                              # the first line read is cut
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     actor, kind, last = "Claude Code", "user", ""
     for line in lines:
         try:
@@ -1242,8 +1284,8 @@ def _debate_transcript(path: Path, since: object) -> str:
         if t == "mx_user":                            # a user message, or the request of a summary turn (skipped)
             kind, last = str(ev.get("kind") or "user"), ""
             if kind == "user" and str(ev.get("text") or "").strip():
-                out.append("User: " + str(ev["text"]).strip())
-        elif t == "mx_note" and ev.get("text") in ("Claude Code", "Codex"):
+                out.append(("User", str(ev["text"]).strip()))
+        elif t == "mx_note" and ev.get("text") in names and ev.get("level", "info") == "info":
             actor, last = ev["text"], ""
             if kind != "user":
                 kind = "debate"                        # an automatic reply (no mx_user line)
@@ -1255,10 +1297,9 @@ def _debate_transcript(path: Path, since: object) -> str:
                     last = str(b["text"]).strip()
         elif t == "mx_done":
             if last and kind in ("user", "debate"):
-                out.append(f"{actor}: {last}")
+                out.append((actor, last))
             last = ""
-    text = "\n\n".join(out)
-    return text if len(text) <= DEBATE_TRANSCRIPT_MAX else "[...]\n" + text[-DEBATE_TRANSCRIPT_MAX:]
+    return out
 
 
 def _seed(text: str) -> dict:

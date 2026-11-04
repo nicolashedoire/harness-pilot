@@ -59,6 +59,7 @@ class CreateIn(_Text):
     discussion_duration_seconds: int | None = Field(default=None, ge=60, le=86400)
     claude_role: str = Field(default='', max_length=2000)
     codex_role: str = Field(default='', max_length=2000)
+    discussion_partner: str | None = Field(default=None, max_length=64)   # plugin:<id> instead of Codex
     attachments: list[str] = Field(default_factory=list)
     plan_mode: bool = False
     voice: str | None = None          # absolute path of a voice message sent directly (transcribed afterwards)
@@ -221,7 +222,8 @@ async def create_session(body: CreateIn):
                        discussion_duration_seconds=body.discussion_duration_seconds,
                        codex_model=body.codex_model,
                        claude_role=body.claude_role, codex_role=body.codex_role,
-                       plan_mode=body.plan_mode, voice_path=body.voice, swarm_agents=body.swarm_agents)
+                       plan_mode=body.plan_mode, voice_path=body.voice, swarm_agents=body.swarm_agents,
+                       discussion_partner=body.discussion_partner)
 
 
 @router.get("/sessions/search")

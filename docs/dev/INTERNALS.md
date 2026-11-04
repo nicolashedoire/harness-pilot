@@ -50,6 +50,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `_debate_followup`) resets the counters on resume / a new message only while `_limit_reached` is still true.
   `discussion_paused_at` (time.time()) is set by `pause_debate` (when it was running) and by the runner's limit pause,
   and dropped wherever `debate_paused` turns false (resume, `_enqueue`, `stop`, the runner on an error / empty answer).
+  A discussion's second seat (meta `discussion_partner`, default `codex`; `service._check_partner` validates a `plugin:<id>` against its capabilities): `_debate_followup` alternates Claude with it, `_agent_label` writes its note (the plugin's `provider_name`), `codex_role` / `codex_model` apply to it, and `_plugin_turn(..., is_debate)` sends `_debate_history` (from `_debate_turns`, speaker-named, minus what the prompt holds) then calls `_debate_followup` (no overflow retry for a plugin: its state is its own).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any

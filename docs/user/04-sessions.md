@@ -27,6 +27,8 @@ You can assign a different role to each agent, choose a built-in pair of roles, 
 
 The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
 
+With an agent engine installed as an extension, **Second agent** lets it take Codex's place: its role and model fields replace Codex's, and its replies carry its name. It joins only if it declares what the discussion asks of it: plan mode needs an engine that supports plan mode, and attached files an engine that accepts files; otherwise the discussion is refused with the reason.
+
 From a session's **More actions** menu, **Summary and actions** asks Codex (or Claude Code when Codex is not signed in) to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review; the dialog says which agent wrote it. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The request uses that agent's account; its tokens (and Claude's indicative amount) are added to the session's statistics, without counting as a turn.
 
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.

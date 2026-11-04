@@ -115,7 +115,7 @@ import { Composer, type ComposerHandle } from './Composer'
 import { QuotePill } from './Quote'
 import { FileMenu } from './FileMenu'
 import { ItemContext } from './Items'
-import { agentName, sessionAgents } from '@/features/agents/AgentIcon'
+import { AGENT_NAME, agentName, sessionAgents } from '@/features/agents/AgentIcon'
 import { AgentChip, ContextGauge, ModelPicker, StateBadge } from './Widgets'
 import { ModePanel, ModePicker } from './NewSessionModes'
 import { transcribe } from '@/features/voice/api'
@@ -885,6 +885,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   topicPath={path}
                   running={running}
                   immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
+                  attachDisabledReason={session?.discussion_partner?.startsWith('plugin:') && !session.provider_capabilities?.includes('attachments') ? t('agentProviders.textOnly') : null}
                   disabledReason={session?.team_phase && ['launching', 'working', 'synthesizing'].includes(session.team_phase) ? t('mixedTeam.wait') : authReason || (!session ? t('sessions.composer.loading') : null)}
                   queueCount={session?.queue || 0}
                   queued={queuedPending}
@@ -1017,7 +1018,7 @@ function ColumnHeader({
   const gauge = session && claudeTurns && <ContextGauge percent={!slim} ring={slim} tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />
   if (variant === 'mobile') {
     // phone / tablet: one bar - sessions (☰), the title over where it lives and the model, the menu, the app (⊞)
-    const model = session ? ((session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? session.model || session.provider_name || 'Codex' : duo ? 'Claude Code · Codex' : modelLabel(session.real_model || session.model || claude?.default_model || '', claude?.models)) : ''
+    const model = session ? ((session.provider === 'codex' || session.provider?.startsWith('plugin:')) ? session.model || session.provider_name || 'Codex' : duo ? `Claude Code · ${session.discussion_partner?.startsWith('plugin:') ? session.provider_name || session.discussion_partner.slice(7) : 'Codex'}` : modelLabel(session.real_model || session.model || claude?.default_model || '', claude?.models)) : ''
     return (
       <header className="relative shrink-0 border-b bg-background px-2 pt-[calc(0.25rem+var(--safe-top))] pb-1" data-col-head>
         {maxxing && <MaxxingMeter strip />}
@@ -1396,6 +1397,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const adapter = agentProviders.find(p=>p.id===provider)
   const [swarmAgents, setSwarmAgents] = React.useState('3')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
+  const [partner, setPartner] = React.useState('codex') // a discussion's second agent: Codex or an agent plugin
   const [turnLimit, setTurnLimit] = React.useState('')
   const [durationMinutes, setDurationMinutes] = React.useState('')
   // a mixed team's coordinator (writes the synthesis) and roles: null = the default one (shown, not sent)
@@ -1438,8 +1440,9 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const valid = topics.some((tp) => tp.path === col.path)
   const validLimits = (!turnLimit || (+turnLimit >= 1 && +turnLimit <= 200 && Number.isInteger(+turnLimit))) && (!durationMinutes || (+durationMinutes >= 1 && +durationMinutes <= 1440 && Number.isInteger(+durationMinutes)))
   // Modes that take written messages only: the composer's attach button is off and says why (voice is dictated).
-  const noAttach = plugin && adapter && !adapter.capabilities.includes('attachments') ? t('agentProviders.textOnly') : null
-  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined } : provider === 'swarm' ? { swarm_agents: Number(swarmAgents) } : {}
+  const partnerAdapter = provider === 'both' && partner !== 'codex' ? agentProviders.find((p) => p.id === partner) : undefined
+  const noAttach = (plugin && adapter && !adapter.capabilities.includes('attachments')) || (partnerAdapter && !partnerAdapter.capabilities.includes('attachments')) ? t('agentProviders.textOnly') : null
+  const limits = provider === 'both' ? { discussion_turn_limit: turnLimit ? +turnLimit : undefined, discussion_duration_seconds: durationMinutes ? +durationMinutes * 60 : undefined, claude_role: claudeRole, codex_role: codexRole, codex_model: codexModel.trim() || undefined, discussion_partner: partnerAdapter?.id } : provider === 'swarm' ? { swarm_agents: Number(swarmAgents) } : {}
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
@@ -1579,6 +1582,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               {provider === 'both' && <div className="grid gap-1.5">
                 <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>
                 <Select id={`conversation-mode-${col.key}`} value={conversationMode} onValueChange={(v) => setConversationMode(v as 'discussion' | 'debate')} options={[{ value: 'discussion', label: t('sessions.discussion') }, { value: 'debate', label: t('sessions.debate') }]} />
+                {agentProviders.some((p) => !p.builtin) && <>
+                  <Label htmlFor={`partner-${col.key}`}>{t('modes.partner')}</Label>
+                  <Select id={`partner-${col.key}`} value={partnerAdapter ? partner : 'codex'} onValueChange={setPartner} options={[{ value: 'codex', label: AGENT_NAME.codex }, ...agentProviders.filter((p) => !p.builtin).map((p) => ({ value: p.id, label: p.name }))]} />
+                  <p className="text-xs text-muted-foreground">{t('modes.partnerHint')}</p>
+                </>}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1.5"><Label htmlFor={`turn-limit-${col.key}`}>{t('sessions.discussionTurnLimit')}</Label><Input id={`turn-limit-${col.key}`} type="number" min={1} max={200} value={turnLimit} onChange={(e) => setTurnLimit(e.target.value)} placeholder={t('sessions.discussionUnlimited')} /></div>
                   <div className="grid gap-1.5"><Label htmlFor={`duration-limit-${col.key}`}>{t('sessions.discussionDuration')}</Label><Input id={`duration-limit-${col.key}`} type="number" min={1} max={1440} value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder={t('sessions.discussionUnlimited')} /></div>
@@ -1588,7 +1596,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
                 <Select id={`preset-${col.key}`} value={preset} onValueChange={choosePreset} options={[{ value: 'default', label: t('sessions.presetDefault') }, { value: 'review', label: t('sessions.presetReview') }, { value: 'build', label: t('sessions.presetBuild') }, ...presets.map((p) => ({ value: p.id, label: p.name }))]} />
                 <Label htmlFor={`claude-role-${col.key}`}>{t('sessions.claudeRole')}</Label>
                 <Textarea id={`claude-role-${col.key}`} value={claudeRole} maxLength={2000} onChange={(e) => setClaudeRole(e.target.value)} minRows={2} placeholder={t('sessions.rolePlaceholder')} />
-                <Label htmlFor={`codex-role-${col.key}`}>{t('sessions.codexRole')}</Label>
+                <Label htmlFor={`codex-role-${col.key}`}>{partnerAdapter ? t('modes.partnerRole', { name: partnerAdapter.name }) : t('sessions.codexRole')}</Label>
                 <Textarea id={`codex-role-${col.key}`} value={codexRole} maxLength={2000} onChange={(e) => setCodexRole(e.target.value)} minRows={2} placeholder={t('sessions.rolePlaceholder')} />
                 <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
                 {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
@@ -1600,9 +1608,9 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
                 </div>
               </div>}
               {(provider === 'codex' || provider === 'both' || provider === 'team' || plugin) && <div className="grid gap-1.5">
-                <Label htmlFor={`codex-model-${col.key}`}>{t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
+                <Label htmlFor={`codex-model-${col.key}`}>{partnerAdapter ? t('modes.partnerModel', { name: partnerAdapter.name }) : t(plugin ? 'sessions.model.label' : 'sessions.codexModel')}</Label>
                 <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
-                <p className="text-xs text-muted-foreground">{plugin ? t('agentProviders.modelHint', { name: agentName('plugin', t, adapter?.name) }) : t('sessions.codexModelHint')}</p>
+                <p className="text-xs text-muted-foreground">{plugin || partnerAdapter ? t('agentProviders.modelHint', { name: agentName('plugin', t, (partnerAdapter || adapter)?.name) }) : t('sessions.codexModelHint')}</p>
               </div>}
               {provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
                 <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
