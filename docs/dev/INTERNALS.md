@@ -283,7 +283,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - Agents: `skill_vars(ps)` -> `{{PILOT_BLOCKS_TYPES}}`, `{{PILOT_BLOCKS_ENABLED}}`, merged into `cmd_core._skill_vars()`
   (install and `skills_status` render `skills/pilot-blocks/SKILL.md` with them); `sync_agent_files()` writes
   `<state>/blocks/agents.md` (Codex: `sessions/codex.workspace_context` appends it, the only hook in session code),
-  `<state>/blocks/reference.md`, and renders the installed skill again when it exists. Idempotent (files rewritten only
+  `<state>/blocks/reference.md`, and renders the installed skill again (Claude's and Codex's copies) when it exists. Idempotent (files rewritten only
   on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `pilot init`. The
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
@@ -421,9 +421,12 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.
   The run history is parsed once per file version (`_all_runs`, keyed on path + mtime + size); `read_runs`
   returns copies.
-- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid"}`; a normal end
-  empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the orphan
-  job shell (`pgid`), records a failed Run (`code -9`, "interrupted: …") and reports it.
+- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid", "pgid_start"}`; a
+  normal end empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the
+  orphan job shell (`pgid`) when `_proc_start(pgid)` still equals `pgid_start`, records a failed Run (`code -9`,
+  "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
+  unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
+  when the process is gone or `ps` fails.
 - Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
   timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
@@ -683,7 +686,9 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 
 ## CLI
 Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in
-pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog` = the name it was called by
+pyproject `[project.scripts]`. In the local setup `bash scripts/dev-local.sh cli <args>` runs it with the
+exports and preparation of the local server (`MAXXING_STATE`, workspace, skills dirs, local crontab file), from
+the caller's folder; a bare `uv run pilot` has no `MAXXING_STATE` and reads `/var/lib/claude-maxxing`. argparse `prog` = the name it was called by
 (`cli.prog_name()`, `pilot` for `python -m maxxing`). On a server, install.sh writes `/usr/local/bin/maxxing`
 (`cmd_core.BIN_LINK`: a link to the venv's script, or a wrapper exporting `MAXXING_STATE`) and every `init`
 (so every update) runs `cmd_core.ensure_cli_alias()`: `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing`, the
@@ -712,8 +717,11 @@ default project/topic once - install.json `seeded`), `install_skills()` (copies 
 install.json `skills` lists what was installed, an obsolete listed one is deleted, an old-named folder of
 `renames.SKILL_RENAMES` that is not listed goes to `trash/skills/` - from `skills/*` to `<claude_dir>/skills`
 and renders the same placeholders in their `.md`/`.json`/`.txt` files, so shipped skills never hard-code
-`/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`; `skills_status()` compares with the rendered
-text), `default_jobs()` / `ensure_default_crons()` (install.json
+`/opt/claude-maxxing`, `/root/maxxing` or `/var/lib/claude-maxxing`. The same copy goes to Codex's user skills
+folder `codex_skills_target()` = `~/.agents/skills` (where Codex CLI reads personal skills; checked with codex-cli
+0.150.1), with its own record install.json `codex_skills` (a folder it moves away goes to `trash/skills/<name>-codex-<time>`); the result keeps `installed`/`removed`/`backed_up` for
+Claude and adds `codex: {target, installed, removed, backed_up}`. `skills_status()` compares with the rendered text:
+`[{name, state, codex}]`, `state` for Claude's copy and `codex` for Codex's, each `ok` | `missing` | `outdated`), `default_jobs()` / `ensure_default_crons()` (install.json
 `default_crons`; the morning job's prompt is `MORNING_TASKS_PROMPT`), `check_update(branch) -> {ok, current, latest, behind, available, changelog}` (no change to the
 code; `update_source()` = "license" | "git" (clone with an `origin` remote) | None - None: `{ok: true, git: false,
 message: "no license, no remote"}`, `update --check` exits 0 with "updates unavailable (no license, no remote)", and
@@ -831,6 +839,11 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
+  also read by the doctor, uninstall and `blocks.sync_agent_files`) instead of `~/.agents/skills`.
+  `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and
+  its parents up to the Git repository root (the default local dir is inside the checkout), so the personal
+  `~/.agents/skills` of the computer is never written. Tests point it to a temporary folder (`conftest.py`).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL

@@ -1,10 +1,10 @@
-# Contribuer
+# Contributing
 
-Les contributions sont bienvenues. Elles doivent pouvoir être distribuées sous la [licence MIT](LICENSE) et respecter les licences des dépendances et les droits des tiers.
+Contributions are welcome. They must be distributable under the [MIT license](LICENSE) and respect the licenses of the dependencies and the rights of third parties.
 
-Pour une correction ou une amélioration, ouvrez une issue ou une pull request dans ce dépôt. Décrivez le problème, le changement et la manière de le vérifier. Ne publiez jamais de mot de passe, jeton, donnée personnelle ou extrait de session confidentiel.
+For a fix or an improvement, open an issue or a pull request in this repository. Describe the problem, the change and how to verify it. Never publish a password, token, personal data or excerpt of a confidential session.
 
-Pour le serveur :
+For the server:
 
 ```sh
 cd server
@@ -12,7 +12,7 @@ uv sync --locked
 uv run pytest
 ```
 
-Pour l'interface (Node.js 22 ou plus récent) :
+For the interface (Node.js 22 or later):
 
 ```sh
 cd web
@@ -21,6 +21,6 @@ npm run typecheck
 npm run build
 ```
 
-Les fichiers construits de `web/dist` sont suivis par Git : incluez-les lorsque l'interface change. Actualisez la documentation utilisateur et les traductions française et anglaise lorsque nécessaire. Pour les tests, utilisez un espace isolé et des services simulés plutôt que votre crontab ou vos bots réels.
+The built files in `web/dist` are tracked by Git: include them when the interface changes. Update the user documentation and the French and English translations when needed. For tests, use an isolated workspace and simulated services rather than your real crontab or bots.
 
-Le projet conserve les avis des auteurs précédents et des composants tiers dans [LICENSE.original](LICENSE.original) et [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The project keeps the notices of the previous authors and of third-party components in [LICENSE.original](LICENSE.original) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

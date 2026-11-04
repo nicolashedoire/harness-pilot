@@ -1,0 +1,4 @@
+# Changelog entries are independent bullets added at the top of the unreleased
+# section by most pull requests; keep both sides instead of reporting a conflict.
+CHANGELOG.md merge=union
+docs/dev/CHANGES.md merge=union

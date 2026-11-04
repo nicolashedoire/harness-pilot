@@ -515,25 +515,28 @@ function cronNext(expr, n = 5, from = Date.now()) {
   }
   return out
 }
+// Like the server (crons.humanize): in the UI language (settings.language), times HH:MM
+const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 function cronHuman(expr) {
-  if (expr === '@reboot') return 'At boot'
-  if (!cronValid(expr)) return 'Invalid expression'
+  const fr = S?.settings?.language === 'fr'
+  if (expr === '@reboot') return fr ? 'Au démarrage' : 'At boot'
+  if (!cronValid(expr)) return fr ? 'Expression invalide' : 'Invalid expression'
   const [mi, h, dom, mon, dow] = expr.trim().split(/\s+/)
   const pad = (x) => String(x).padStart(2, '0')
   const num = (v) => /^\d+$/.test(v)
   const rest = dom === '*' && mon === '*' && dow === '*'
-  if (mi === '*' && h === '*' && rest) return 'Every minute'
-  if (/^\*\/\d+$/.test(mi) && h === '*' && rest) return `Every ${mi.slice(2)} minutes`
-  if (num(mi) && h === '*' && rest) return `Every hour at :${pad(mi)}`
-  if (num(mi) && /^\*\/\d+$/.test(h) && rest) return `Every ${h.slice(2)} hours at :${pad(mi)}`
+  if (mi === '*' && h === '*' && rest) return fr ? 'Toutes les minutes' : 'Every minute'
+  if (/^\*\/\d+$/.test(mi) && h === '*' && rest) return fr ? `Toutes les ${mi.slice(2)} minutes` : `Every ${mi.slice(2)} minutes`
+  if (num(mi) && h === '*' && rest) return fr ? `Toutes les heures à la minute ${+mi}` : `Every hour at :${pad(mi)}`
+  if (num(mi) && /^\*\/\d+$/.test(h) && rest) return fr ? `Toutes les ${h.slice(2)} heures à la minute ${+mi}` : `Every ${h.slice(2)} hours at :${pad(mi)}`
   if (num(mi) && num(h)) {
     const at = `${pad(h)}:${pad(mi)}`
-    if (rest) return `Every day at ${at}`
-    if (dom === '*' && mon === '*' && num(dow)) return `Every ${DOW[+dow % 7]} at ${at}`
-    if (dom === '*' && mon === '*' && dow === '1-5') return `Weekdays at ${at}`
-    if (num(dom) && mon === '*' && dow === '*') return `On day ${dom} of every month at ${at}`
+    if (rest) return fr ? `Tous les jours à ${at}` : `Every day at ${at}`
+    if (dom === '*' && mon === '*' && num(dow)) return fr ? `À ${at} le ${JOURS[+dow % 7]}` : `Every ${DOW[+dow % 7]} at ${at}`
+    if (dom === '*' && mon === '*' && dow === '1-5') return fr ? `À ${at} en semaine` : `Weekdays at ${at}`
+    if (num(dom) && mon === '*' && dow === '*') return fr ? `À ${at} le ${dom === '1' ? '1er' : dom} du mois` : `On day ${dom} of every month at ${at}`
   }
-  return `Custom schedule (${expr})`
+  return fr ? `Planification personnalisée (${expr})` : `Custom schedule (${expr})`
 }
 const cronOut = (c) => ({ ...c, next_run: c.enabled ? cronNext(c.schedule, 1)[0] ?? null : null, human: cronHuman(c.schedule), running: c.id === 'c_blog' })
 
@@ -1532,6 +1535,111 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
+   sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
+const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
+  ['codex', 'Independently examine risks, alternatives and how to verify the result.']]
+const TEAM_REPORTS = {
+  claude: 'Approach in four steps: list what the change touches, make it behind a flag, migrate the existing data, then remove the old path. The first two steps fit in one afternoon.',
+  codex: 'Main risk: the data migration cannot be undone once the old path is removed. Keep a backup and a dry run that counts the rows to change; verify with the existing tests plus one end-to-end check.',
+}
+const teamsState = () => (S.teams ||= {}) // coordinator id -> { phase, goal, agents: [{ id, provider, role, stopped }] }
+const teamOf = (sid) => { findSession(sid); return teamsState()[sid] || fail(404, 'not_found', 'Team not found') }
+function teamSetPhase(sid, phase) {
+  teamsState()[sid].phase = phase
+  const s = S.sessions.find((x) => x.id === sid)
+  if (s) s.team_phase = phase
+  bus('sessions', 'workspace')
+}
+// One turn with a fixed answer (startTurn's generic answer would ignore the assignment); `done` runs when it ends.
+function teamTurn(s, text, answer, ms, done) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model
+  s.state = 'running'; s.error = null; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'team' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, ms, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: answer.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: answer, at: now() },
+      { type: 'result', ok: true, cost_usd: s.provider === 'codex' ? 0 : 0.06, duration_ms: ms, model, usage: { input: 2400, output: 380, cache_read: 16000, cache_write: 400 }, at: now() })
+    bus('sessions', 'workspace')
+    done()
+  })
+  bus('sessions', 'workspace')
+}
+function teamAdvance(sid) { // like teams.advance: once no worker runs, the coordinator synthesises
+  const team = teamsState()[sid]
+  if (!team || team.phase !== 'working') return
+  const workers = team.agents.map((a) => [a, S.sessions.find((x) => x.id === a.id)])
+  if (workers.some(([, w]) => w && w.state === 'running')) return
+  const reports = workers.map(([a, w]) => `${a.provider.toUpperCase()} — ${a.role}\n${a.stopped ? '[Stopped by the user; no final report.]' : w ? w.last_text || '[No final report.]' : '[Agent failed or its session is missing.]'}`)
+  const coordinator = findSession(sid)
+  teamSetPhase(sid, 'synthesizing')
+  const name = (a) => (a.provider === 'codex' ? 'Codex' : 'Claude Code')
+  const points = { claude: '- **Plan** (Claude Code): flag the change, migrate the data, then remove the old path.', codex: '- **Risks** (Codex): the migration is one-way; keep a backup and a dry run first.' }
+  const stopped = team.agents.filter((a) => a.stopped)
+  const answer = `**Synthesis of the team's analyses**\n\n${team.agents.filter((a) => !a.stopped).map((a) => points[a.provider]).join('\n')}\n\n${stopped.length ? `Note: ${stopped.map(name).join(' and ')} was stopped before reporting, so its part is missing.\n\n` : ''}Recommendation: start with a dry run, then the flagged change.`
+  teamTurn(coordinator, 'The two independent team members have finished. Synthesize their findings for the user.\n\nReports:\n' + reports.join('\n\n---\n\n'), answer, 2600,
+    () => { if (team.phase === 'synthesizing') teamSetPhase(sid, 'completed') })
+}
+const teamSession = (path, title, provider) => {
+  const t = now()
+  const s = { id: uuid(), title, path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null,
+    context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null, provider, team_phase: null, team_parent: null, team_turn: false }
+  S.sessions.push(s); S.events[s.id] = []
+  return s
+}
+const teamOut = (sid) => {
+  const team = teamOf(sid)
+  return { id: sid, phase: team.phase, agents: team.agents.map((a) => {
+    const session = S.sessions.find((x) => x.id === a.id) || null
+    return { ...a, state: a.stopped ? 'stopped' : session ? session.state : 'missing', session }
+  }) }
+}
+R('POST', '/api/teams', ({ body }) => {
+  if (typeof body.path !== 'string') fail(422, 'invalid', 'path is required')
+  const goal = String(body.message || '').trim()
+  if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
+  const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
+  addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
+  const team = { phase: 'launching', goal, agents: [] }
+  teamsState()[parent.id] = team
+  for (const [provider, role] of TEAM_ROLES) {
+    const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
+    Object.assign(child, { team_parent: parent.id, team_turn: true })
+    team.agents.push({ id: child.id, provider, role, stopped: false })
+    teamTurn(child, `You are an independent member of a mixed Claude and Codex team. Analyze the mission from your assigned perspective and report your findings to the coordinator.\n\nYour assignment: ${role}\n\nMission:\n${goal}`,
+      TEAM_REPORTS[provider], provider === 'codex' ? 5200 : 3800, () => teamAdvance(parent.id))
+  }
+  teamSetPhase(parent.id, 'working')
+  return parent
+})
+R('GET', '/api/teams/:sid', ({ params }) => teamOut(params.sid))
+R('POST', '/api/teams/:sid/agents/:agent/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  const agent = team.agents.find((a) => a.id === params.agent) || fail(404, 'not_found', 'Team agent not found')
+  if (team.phase !== 'working') fail(409, 'not_running', 'The team is not working.')
+  const child = S.sessions.find((x) => x.id === agent.id)
+  if (!child || child.state !== 'running') fail(409, 'not_running', 'The agent is not running.')
+  agent.stopped = true
+  clearTimers(child); child.state = 'idle'; child.updated = now()
+  addEvents(child, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  teamAdvance(params.sid) // the other worker may already be done
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+R('POST', '/api/teams/:sid/stop', ({ params }) => {
+  const team = teamOf(params.sid)
+  teamSetPhase(params.sid, 'stopped')
+  for (const s of [...team.agents.map((a) => S.sessions.find((x) => x.id === a.id)), S.sessions.find((x) => x.id === params.sid)]) {
+    if (!s || s.state !== 'running') continue
+    const agent = team.agents.find((a) => a.id === s.id)
+    if (agent) agent.stopped = true
+    clearTimers(s); s.state = 'idle'; s.updated = now()
+    addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() })
+  }
+  bus('sessions', 'workspace')
+  return teamOut(params.sid)
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
@@ -1727,7 +1835,7 @@ function applyCron(c, body) {
   if (c.kind === 'claude' && !c.prompt) fail(422, 'invalid', 'prompt is required for Claude jobs')
   if (!['never', 'failure', 'always'].includes(c.notify)) fail(422, 'invalid', 'Unknown notify mode')
 }
-R('GET', '/api/crons', () => ({ jobs: S.crons.map(cronOut), external: S.external }))
+R('GET', '/api/crons', () => ({ jobs: S.crons.map(cronOut), external: S.external.map((e) => ({ ...e, human: cronHuman(e.schedule) })) }))
 R('GET', '/api/crons/runs', ({ q }) => {
   const cid = q.get('cron_id'), limit = Math.min(500, parseInt(q.get('limit') || '50', 10) || 50)
   return S.cronRuns.filter((r) => !cid || r.cron_id === cid).slice(0, limit)
@@ -1879,6 +1987,102 @@ R('DELETE', '/api/backup', () => {
   return { ok: true }
 })
 
+/* ---- complete instance backup (server/maxxing/instance_backup.py): encrypted exports kept on the server, a verified
+   preview of an uploaded archive, restore into a separate copy whose services and integrations start paused */
+const IB_DESCRIPTION = { version: VERSION, files: 1834, bytes: 412 * 1024 * 1024, external_links: ['workspace/projects/acme/topics/website/node_modules'],
+  includes: ['settings_and_credentials', 'sessions', 'attachments', 'workspace', 'files', 'space_labels'],
+  excludes: ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets'], excluded_roots: {} }
+const ibId = () => crypto.randomBytes(16).toString('hex')
+function ibState() {
+  if (S.instanceBackup) return S.instanceBackup
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+  return S.instanceBackup
+}
+const ibRoots = () => {
+  const files = S.settings.files_root || ROOT
+  const broad = files === '/' || files === '/root' || /^\/home\/[^/]+\/?$/.test(files) // the filesystem root or a home folder
+  return { state: { source: '/var/lib/claude-maxxing', archive: 'state' }, workspace: { source: ROOT, archive: 'workspace' },
+    files: broad ? { source: files, archive: null, excluded: 'broad_root' } : { source: files, archive: 'files' } }
+}
+const ibDescription = () => {
+  const roots = ibRoots(), left = Object.entries(roots).filter(([, r]) => !r.archive)
+  return { ...clone(IB_DESCRIPTION), includes: IB_DESCRIPTION.includes.filter((x) => x !== 'files' || roots.files.archive),
+    excluded_roots: Object.fromEntries(left.map(([name, r]) => [name, { source: r.source, reason: r.excluded }])) }
+}
+const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
+const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+R('GET', '/api/backup/instance', () => {
+  const st = ibState()
+  return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+})
+R('POST', '/api/backup/instance/export', async ({ body }) => {
+  ibHeld(); ibPassphrase(body.passphrase)
+  if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
+  await sleep(2500)
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  ibState().exports.unshift(e)
+  bus('backup')
+  return e
+})
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
+  ibHeld()
+  const st = ibState()
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  st.exports = st.exports.filter((e) => e.id !== params.id)
+  return { ok: true, id: params.id }
+})
+R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  // A short stand-in for the real file: the format-2 header (magic, version, scrypt 2^15/8/1, salt, nonce) and random bytes.
+  const header = Buffer.concat([Buffer.from('PILOTBK\n'), Buffer.from([2, 1, 15, 0, 8, 0, 1]), crypto.randomBytes(28)])
+  const data = Buffer.concat([header, crypto.randomBytes(4096)])
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': data.length, 'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="pilot-${params.id.slice(0, 12)}.pilotbackup"` })
+  res.end(data)
+  return RAW
+})
+R('POST', '/api/backup/instance/preview', async ({ req, rawBody }) => {
+  ibHeld()
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  const m = rawBody.toString('latin1').match(/name="passphrase"\r\n\r\n([^\r]*)\r\n/)
+  if (!file) fail(422, 'invalid', 'file is required')
+  ibPassphrase(m ? Buffer.from(m[1], 'latin1').toString('utf8') : null)
+  if (!file.data.subarray(0, 8).equals(Buffer.from('PILOTBK\n'))) fail(400, 'format', 'This is not a supported encrypted instance backup.')
+  await sleep(1500)
+  if (/wrong/i.test(m[1])) fail(400, 'decrypt_failed', 'The passphrase is incorrect or the backup has been modified.') // try it with a passphrase containing "wrong"
+  const p = { id: ibId(), sha256: crypto.randomBytes(32).toString('hex'), created: now() - 2 * DAY, ...ibDescription() }
+  ibState().previews[p.id] = { at: now(), ...p }
+  return p
+})
+R('POST', '/api/backup/instance/restore', async ({ body }) => {
+  ibHeld()
+  const p = ibState().previews[body.id]
+  if (!/^[a-f0-9]{32}$/.test(body.id || '') || !/^[a-f0-9]{64}$/.test(body.sha256 || '')) fail(400, 'preview_required', 'Inspect the archive before restoring it.')
+  if (!p || p.sha256 !== body.sha256 || now() - p.at > HOUR) fail(409, 'changed', 'The archive changed or its preview expired. Inspect it again.')
+  await sleep(2000)
+  delete S.instanceBackup.previews[body.id]
+  const destination = `/var/lib/pilot-restored-${crypto.randomBytes(6).toString('hex')}`, { at, ...preview } = p
+  return { destination, state: `${destination}/state`, background_services_paused: true, integrations_paused: true, ...preview,
+    launch_command: `MAXXING_STATE=${destination}/state MAXXING_CRONTAB_FILE=${destination}/crontab uv run --directory /opt/harness-pilot/server python -m uvicorn maxxing.app:create_app --factory --host 127.0.0.1 --port 8790` }
+})
+// A restored copy starts held (read-only) and with its integrations paused: the scenario has none, these only answer.
+R('POST', '/api/backup/instance/activate', () => {
+  const st = ibState()
+  if (!st.restore_hold) return { ok: true, already_active: true }
+  st.restore_hold = false; bus('backup', 'health')
+  return { ok: true }
+})
+R('POST', '/api/backup/instance/resume-integrations', () => {
+  const st = ibState()
+  if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
+  st.integrations_paused = false; bus('crons', 'backup', 'telegram')
+  return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
@@ -2010,6 +2214,146 @@ R('DELETE', '/api/secrets/:name', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- agent engines and resident companions (server/maxxing/companions.py: persistent roles, runs in a disposable
+   copy of the source whose proposal the owner reviews, approves or rejects, then may publish as a draft PR) */
+const AGENT_PROVIDERS = [
+  { id: 'claude', name: 'Claude Code', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+  { id: 'codex', name: 'Codex', builtin: true, capabilities: ['text', 'source-edit', 'plan', 'attachments'] },
+]
+R('GET', '/api/agent-providers', () => AGENT_PROVIDERS)
+
+const COMPANION_ROLES = [
+  { id: 'observer', name: 'Platform observer', provider: 'codex', role: 'Inspect the platform, identify a small useful improvement, implement it in the isolated copy, run relevant tests and explain the change, evidence and limitations.' },
+  { id: 'security', name: 'Security and dependencies', provider: 'codex', role: 'Inspect the platform for security weaknesses and outdated or vulnerable dependencies. Use available evidence, prepare a narrowly scoped fix or dependency update, and run relevant tests. Report when an advisory database, network access, or further review is needed.' },
+  { id: 'architect', name: 'Application architect and router', provider: 'codex', role: 'Understand how the platform components and features connect. Use the source import map, documentation and code to identify relevant modules and guide other companions with precise file paths, dependencies and verification steps.' },
+  { id: 'reverse-engineer', name: 'Reverse engineering investigator', provider: 'codex', role: 'Investigate source, application behavior and dependencies. Keep evidence and internal maps, distinguish observations from hypotheses, and guide tested improvements.' },
+]
+// What every mock run proposes (a real run's diff comes from git in its copy): a tracked change and one new file.
+const COMPANION_PATCH = `diff --git a/server/maxxing/api/files.py b/server/maxxing/api/files.py
+index 3f2a1c4..8b9d0e7 100644
+--- a/server/maxxing/api/files.py
++++ b/server/maxxing/api/files.py
+@@ -212,5 +212,7 @@ async def rename(body: RenameIn):
+     src = _resolve(body.path)
++    if '/' in body.name or body.name in ('.', '..'):
++        raise HTTPException(400, {'error': 'bad_name', 'message': 'A name cannot contain a slash.'})
+     dst = src.with_name(body.name)
+     if dst.exists():
+         raise HTTPException(409, {'error': 'exists', 'message': 'A file with this name already exists.'})
+     src.rename(dst)
+`
+const COMPANION_NEW = [{ path: 'server/tests/test_rename_names.py', executable: false,
+  content: "def test_a_name_with_a_slash_is_refused(client, mx):\n    r = client.post('/api/files/rename', json={'path': str(mx['files'] / 'a.txt'), 'name': 'x/y'})\n    assert r.status_code == 400 and r.json()['error'] == 'bad_name'\n" }]
+const COMPANION_REPORT = 'Renaming a file to a name with a slash moved it into another folder. The rename route now refuses such names (`400 bad_name`), with a test.\n\n**Verified:** `uv run pytest tests/test_rename_names.py tests/test_files.py` (all passed).\n\n**Not verified:** the Files page message for this error.'
+const companionFingerprint = () => {
+  const h = crypto.createHash('sha256').update(COMPANION_PATCH)
+  for (const f of COMPANION_NEW) h.update(`${f.path}\0${f.content}\0${f.executable ? 'x' : '-'}`)
+  return h.digest('hex')
+}
+function companionsState() {
+  if (S.companions) return S.companions
+  S.companions = { roles: clone(COMPANION_ROLES), runs: {} } // runs: session id -> { base, decision, pull_request }
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') { // one finished run waiting for the owner's review
+    const t = now(), path = topicPath('ops', 'server')
+    const s = { id: uuid(), title: 'Platform observer — platform review', path, state: 'idle', queue: 0, created: t - 50 * MIN, updated: t - 38 * MIN,
+      turns: 1, cost_usd: 0, model: '', real_model: 'gpt-5.5-codex', context_tokens: 41000, context_window: 400000, archived: false, notify: false,
+      source: 'web', unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200), error: null, provider: 'codex',
+      companion: { id: 'observer', name: 'Platform observer', decision: null } }
+    S.sessions.push(s)
+    S.events[s.id] = [
+      { type: 'user', text: 'You are Platform observer, a resident companion. Additional mission: Find a useful, small improvement.', attachments: [], at: s.created, source: 'companion' },
+      { type: 'init', model: 'gpt-5.5-codex', cwd: `${ROOT}/${path}`, at: s.created + 1 },
+      { type: 'assistant', text: COMPANION_REPORT, at: s.updated },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 690000, model: 'gpt-5.5-codex', usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: s.updated },
+    ]
+    S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  }
+  return S.companions
+}
+// A run's turn: the agent edits its copy, runs the tests and reports (startTurn's generic answer would echo the role).
+function companionTurn(s, text) {
+  const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model, tu = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  s.state = 'running'; s.updated = now()
+  addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'companion' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  later(s, 1200, () => addEvents(s, { type: 'tool_use', id: tu, name: 'Bash', input: { command: 'uv run pytest tests/test_rename_names.py tests/test_files.py' }, summary: 'Bash: uv run pytest', at: now() }))
+  later(s, 2600, () => addEvents(s, { type: 'tool_result', tool_use_id: tu, text: '38 passed in 4.21s', is_error: false, at: now() }))
+  later(s, 3400, () => {
+    Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: COMPANION_REPORT.replace(/[*`#]/g, '').slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: COMPANION_REPORT, at: now() },
+      { type: 'result', ok: true, cost_usd: 0, duration_ms: 3400, model, usage: { input: 38000, output: 2900, cache_read: 120000, cache_write: 0 }, at: now() })
+    bus('companions', 'sessions', 'workspace')
+  })
+  bus('sessions', 'workspace')
+}
+const companionRun = (sid) => {
+  const s = findSession(sid), run = companionsState().runs[sid]
+  if (!run) fail(404, 'not_found', 'Companion run not found.')
+  return { s, run }
+}
+const companionReview = (sid) => {
+  const { s, run } = companionRun(sid)
+  const done = s.state !== 'running' && s.turns > 0 // the copy is unchanged until the agent worked in it
+  return { target: 'acme/platform', session: s, fingerprint: done ? companionFingerprint() : crypto.createHash('sha256').digest('hex'),
+    patch: done ? COMPANION_PATCH : '', untracked: done ? clone(COMPANION_NEW) : [], has_changes: done, base: run.base,
+    decision: run.decision, pull_request: run.pull_request }
+}
+function companionSave(body, ident) {
+  const name = String(body.name || '').trim(), role = String(body.role || '').trim()
+  if (!name || !role || name.length > 80 || role.length > 4000) fail(400, 'bad_role', 'A name and role are required.')
+  const st = companionsState()
+  const previous = ident ? st.roles.find((p) => p.id === ident) || fail(404, 'not_found', 'Companion not found.') : null
+  if (!ident && st.roles.length >= 99 + COMPANION_ROLES.length) fail(400, 'limit', 'Maximum number of companions reached.')
+  const provider = body.provider || previous?.provider || 'codex'
+  if (!AGENT_PROVIDERS.some((p) => p.id === provider && p.capabilities.includes('source-edit'))) fail(400, 'bad_provider', 'Choose an available coding agent for this companion.')
+  const item = { id: ident || uuid(), name, role, provider }
+  if (previous) Object.assign(previous, item); else st.roles.push(item)
+  bus('companions')
+  return item
+}
+R('GET', '/api/companions', () => {
+  const st = companionsState()
+  return { companions: st.roles, runs: S.sessions.filter((s) => st.runs[s.id]).sort((a, b) => b.created - a.created).slice(0, 100) }
+})
+R('POST', '/api/companions', ({ body }) => companionSave(body, null))
+R('PUT', '/api/companions/:id', ({ params, body }) => companionSave(body, params.id))
+R('POST', '/api/companions/:id/runs', ({ params, body }) => {
+  const p = companionsState().roles.find((x) => x.id === params.id) || fail(404, 'not_found', 'Companion not found.')
+  if (!S.projects.some((pr) => pr.topics.some((tp) => topicPath(pr.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const mission = String(body.mission || '')
+  if (mission.length > 6000) fail(400, 'bad_mission', 'Mission is too long.')
+  const t = now()
+  const s = { id: uuid(), title: `${p.name} — platform review`, path: body.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0,
+    model: '', real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '',
+    error: null, provider: p.provider, companion: { id: p.id, name: p.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null }
+  companionTurn(s, `You are ${p.name}, a resident companion. Your persistent role:\n${p.role}\n\nAdditional mission: ${mission.trim() || 'Find a useful, small improvement.'}`)
+  bus('companions', 'sessions', 'workspace')
+  return s
+})
+R('GET', '/api/companions/runs/:sid/review', ({ params }) => companionReview(params.sid))
+R('POST', '/api/companions/runs/:sid/decision', ({ params, body }) => {
+  if (!['approved', 'rejected'].includes(body.decision)) fail(400, 'bad_decision', 'Invalid decision.')
+  const { s, run } = companionRun(params.sid)
+  if (s.state === 'running') fail(409, 'running', 'Wait until the experiment stops.')
+  const review = companionReview(params.sid)
+  if (!review.has_changes || review.fingerprint !== body.fingerprint) fail(409, 'changed', 'The proposal changed; review it again.')
+  run.decision = { value: body.decision, fingerprint: body.fingerprint, at: now() }
+  s.companion.decision = run.decision
+  bus('companions', 'sessions')
+  return companionReview(params.sid)
+})
+R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => {
+  const { run } = companionRun(params.sid)
+  const title = String(body.title || '').trim()
+  if (!title || title.length > 180 || String(body.body || '').length > 12000) fail(400, 'bad_request', 'Invalid pull request title or body.')
+  if (run.decision?.value !== 'approved' || run.decision.fingerprint !== body.fingerprint || body.fingerprint !== companionFingerprint()) fail(409, 'not_approved', 'Approve the current finished proposal first.')
+  await sleep(1200)
+  run.pull_request ||= { url: `https://github.com/acme/platform/pull/${140 + Object.keys(S.companions.runs).length}`, fingerprint: body.fingerprint }
+  bus('companions')
+  return { url: run.pull_request.url, target: 'acme/platform' }
+})
+
 /* ---- system */
 R('GET', '/api/system/health', () => healthObj())
 R('GET', '/api/system/services', () => S.services)
@@ -2050,11 +2394,283 @@ R('GET', '/api/stats/tokens', () => {
 })
 R('GET', '/api/usage', () => ({ available: false, five_hour: null, seven_day: null, reason: 'disabled' }))
 
+/* ---- resident missions (server/maxxing/missions.py): a goal, a plan of companion steps the owner reviews, then runs
+   launched one by one as companion runs (the proposal of each waits for the owner's decision in Settings -> Companions).
+   The server's worker advances missions every 2 s; here each read does (the page polls). Cycles are not simulated. */
+const MISSION_FIELDS = ['title', 'path', 'goal', 'max_runs', 'max_seconds', 'max_tokens', 'concurrent', 'interval_seconds', 'max_cycles']
+const MISSION_PLAN = [ // what the architect proposes in the mock
+  { id: 'map', title: 'Map the keyboard paths of the Files page', role: 'architect', instruction: 'List every action of the Files page and how it is reached without a mouse. Name the components and files involved.', after: [] },
+  { id: 'focus', title: 'Fix the missing focus states', role: 'observer', instruction: 'Give every interactive element of the Files page a visible focus ring with the shared tokens, and add a test for the list.', after: ['map'] },
+  { id: 'check', title: 'Review the change for regressions', role: 'security', instruction: 'Check that the focus changes do not expose hidden actions and that the tests cover the list and the toolbar.', after: ['focus'] },
+]
+const missionStep = (s) => ({ id: s.id, title: s.title, role: s.role, instruction: s.instruction, after: [...s.after], state: 'pending', session: null })
+function missionFingerprint(m) {
+  const roles = companionsState().roles
+  const plan = Object.fromEntries(MISSION_FIELDS.map((k) => [k, m[k]]))
+  plan.steps = m.steps.map(({ id, title, role, instruction, after }) => ({ id, title, role, instruction, after }))
+  plan.roles = Object.fromEntries([...new Set(m.steps.map((s) => s.role))].sort().map((r) => { const p = roles.find((x) => x.id === r); return [r, p ? { role: p.role, engine: p.provider } : null] }))
+  return crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex')
+}
+function missionsState() {
+  if (S.missions) return S.missions
+  S.missions = []
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') S.missions.push({ ...missionNew('Keyboard-friendly Files page', topicPath('acme', 'website'),
+    'Every action of the Files page works with the keyboard alone, with a visible focus, without changing how it looks for mouse users.', 6, 90, 2000000, 1, 0, 1),
+    steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready', created: now() - 3 * HOUR })
+  return S.missions
+}
+function missionNew(title, path, goal, runs, minutes, tokens, concurrent, interval, cycles) {
+  return { id: crypto.randomBytes(16).toString('hex'), title, path, goal, steps: [], phase: 'draft', reason: '', created: now(), origin_state: '/var/lib/claude-maxxing',
+    max_runs: runs, max_seconds: minutes * 60, max_tokens: tokens, concurrent, interval_seconds: interval * 60, max_cycles: cycles,
+    cycle: 1, spent_seconds: 0, active_since: null, next_cycle: null, launches: [], tokens: 0, planner: null }
+}
+function missionValidate(steps) {
+  const roles = new Set(companionsState().roles.map((p) => p.id)), seen = new Set()
+  if (!Array.isArray(steps) || steps.length < 1 || steps.length > 8) fail(400, 'bad_plan', 'A plan needs one to eight steps.')
+  return steps.map((v) => {
+    const id = String(v?.id || ''), title = String(v?.title || '').trim(), instruction = String(v?.instruction || '').trim(), after = v?.after || []
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || seen.has(id) || !title || title.length > 120 || !roles.has(v.role) || !instruction || instruction.length > 2000
+      || !Array.isArray(after) || after.some((d) => !seen.has(d)) || new Set(after).size !== after.length) fail(400, 'bad_plan', 'Use existing roles and distinct steps with earlier prerequisites.')
+    seen.add(id)
+    return missionStep({ id, title, role: v.role, instruction, after })
+  })
+}
+const missionOut = (m) => ({ ...clone(m), plan_fingerprint: missionFingerprint(m) })
+const missionFind = (id) => missionsState().find((m) => m.id === id) || fail(404, 'not_found', 'Mission not found.')
+const missionRuns = (m) => m.launches.filter((l) => !l.aborted).length
+const missionBank = (m) => { if (m.active_since) { m.spent_seconds += Math.max(0, now() - m.active_since); m.active_since = null } }
+// A launch is an ordinary companion run (its session carries `companion`), so its proposal is reviewed in Companions.
+function missionLaunch(m, step, purpose) {
+  const role = companionsState().roles.find((p) => p.id === step.role) || companionsState().roles[0]
+  const t = now()
+  const s = { id: uuid(), title: `${role.name} — platform review`, path: m.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '',
+    real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null,
+    provider: role.provider, companion: { id: role.id, name: role.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  if (purpose === 'experiment') S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null } // a plan proposes no change
+  m.launches.push({ key: uuid(), session: s.id, purpose })
+  Object.assign(step, { state: 'running', session: s.id })
+  if (purpose === 'experiment') return companionTurn(s, `Mission goal: ${m.goal}\nYour step: ${step.title}\n${step.instruction}`)
+  const plan = JSON.stringify({ steps: MISSION_PLAN.map(({ id, title, role: r, instruction, after }) => ({ id, title, role: r, instruction, after })) }, null, 2)
+  s.state = 'running'
+  addEvents(s, { type: 'user', text: `Design a small actionable plan for this goal, using existing roles only.\n${m.goal}`, attachments: [], at: now(), source: 'companion' })
+  later(s, 3000, () => {
+    Object.assign(s, { state: 'idle', turns: 1, updated: now(), unread: true, last_text: plan.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: '```json\n' + plan + '\n```', at: now() }, { type: 'result', ok: true, cost_usd: 0, duration_ms: 3000, model: 'gpt-5.5-codex', usage: { input: 9000, output: 700, cache_read: 0, cache_write: 0 }, at: now() })
+    bus('missions', 'sessions')
+  })
+}
+function missionAdvance(m) { // like missions.advance, one pass
+  const runs = companionsState().runs
+  for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+    if (!step.session || !['running', 'review'].includes(step.state)) continue
+    const s = S.sessions.find((x) => x.id === step.session)
+    if (!s) { Object.assign(step, { state: 'failed', error: 'missing_session' }); continue }
+    if (s.state === 'running') continue
+    if (!s.turns) { Object.assign(step, { state: 'failed', error: 'agent_failed' }); continue }
+    if (step === m.planner) { step.state = 'complete'; m.tokens += 9700; continue }
+    const decision = runs[s.id]?.decision
+    if (step.state === 'running') m.tokens += 40900
+    step.state = decision?.fingerprint === companionFingerprint() ? (decision.value === 'approved' ? 'complete' : 'rejected') : 'review'
+  }
+  if (!['active', 'planning'].includes(m.phase)) return
+  const busy = [...m.steps, ...(m.planner ? [m.planner] : [])].some((s) => s.state === 'running')
+  if (busy) m.active_since ||= now(); else missionBank(m)
+  if (m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) return Object.assign(m, { phase: 'budget', reason: m.tokens >= m.max_tokens ? 'tokens' : 'time' })
+  if ([...m.steps, ...(m.phase === 'planning' && m.planner ? [m.planner] : [])].some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) return Object.assign(m, { phase: 'paused', reason: 'step_failed' })
+  if (m.phase === 'planning') {
+    if (m.planner?.state === 'complete') Object.assign(m, { steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready' })
+    else if (!m.planner) {
+      if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+      m.planner = { id: 'planner', title: 'Plan', role: 'architect', instruction: '', state: 'pending', after: [], session: null }
+      missionLaunch(m, m.planner, 'plan')
+    }
+    return
+  }
+  if (m.steps.every((s) => ['complete', 'skipped'].includes(s.state))) return Object.assign(m, { phase: 'completed', reason: 'completed' })
+  const ready = m.steps.find((s) => s.state === 'pending' && s.after.every((d) => m.steps.some((x) => x.id === d && ['complete', 'skipped'].includes(x.state))))
+  if (ready && m.steps.filter((s) => s.state === 'running').length < m.concurrent) {
+    if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+    missionLaunch(m, ready, 'experiment')
+  }
+}
+const missionsRead = () => { for (const m of missionsState()) missionAdvance(m); return missionsState() }
+R('GET', '/api/missions', () => [...missionsRead()].sort((a, b) => b.created - a.created).map(missionOut))
+R('POST', '/api/missions', ({ body }) => {
+  const title = String(body.title || '').trim(), goal = String(body.goal || '').trim()
+  if (!title || title.length > 120 || !goal || goal.length > 2000) fail(400, 'bad_mission', 'A title and bounded goal are required.')
+  if (!S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const n = (k, d) => (body[k] === undefined || body[k] === null ? d : Number(body[k]))
+  const [runs, minutes, tokens, concurrent, interval, cycles] = [n('max_runs', 8), n('max_minutes', 60), n('max_tokens', 1000000), n('concurrent', 1), n('interval_minutes', 0), n('max_cycles', 1)]
+  if (!(runs >= 1 && runs <= 32 && minutes >= 1 && minutes <= 1440 && tokens >= 1 && tokens <= 100000000 && [1, 2].includes(concurrent) && interval >= 0 && interval <= 10080 && cycles >= 1 && cycles <= 32)) fail(400, 'bad_budget', 'Mission limits are out of range.')
+  const steps = body.steps?.length ? missionValidate(body.steps) : []
+  if (missionsState().length >= 50) fail(400, 'limit', 'The mission list is full.')
+  const m = { ...missionNew(title, body.path, goal, runs, minutes, tokens, concurrent, interval, cycles), steps }
+  S.missions.push(m); bus('missions')
+  return missionOut(m)
+})
+R('GET', '/api/missions/:id', ({ params }) => { missionsRead(); return missionOut(missionFind(params.id)) })
+R('PUT', '/api/missions/:id/plan', ({ params, body }) => {
+  const m = missionFind(params.id), steps = missionValidate(body.steps)
+  if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.steps.some((s) => s.session)) fail(409, 'busy', 'A running or previously executed plan cannot be replaced.')
+  Object.assign(m, { steps, phase: 'plan_review', reason: '' }); bus('missions')
+  return missionOut(m)
+})
+R('POST', '/api/missions/:id/control', ({ params, body }) => {
+  const m = missionFind(params.id), action = body.action
+  if (!['start', 'pause', 'stop', 'plan'].includes(action)) fail(400, 'bad_action', 'Unknown mission action.')
+  if (action === 'plan') {
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.planner || m.steps.some((s) => s.session)) fail(409, 'busy', 'This mission already has a planner run.')
+    Object.assign(m, { phase: 'planning', active_since: null, reason: '' })
+  } else if (action === 'start') {
+    if (body.fingerprint !== missionFingerprint(m)) fail(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || !m.steps.length) fail(409, 'busy', 'Review a plan before starting this mission.')
+    if (missionRuns(m) >= m.max_runs || m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) fail(409, 'budget', 'The authorized mission budget is exhausted.')
+    for (const s of m.steps) if (s.state === 'interrupted' && !s.session) Object.assign(s, { state: 'pending' })
+    if (m.steps.some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) fail(409, 'unresolved', 'Retry or skip the steps that need your attention first.')
+    Object.assign(m, { phase: 'active', active_since: null, reason: '' })
+  } else {
+    if (action === 'stop' && ['completed', 'stopped', 'budget'].includes(m.phase)) fail(409, 'busy', 'A terminal mission cannot be stopped again.')
+    if (action === 'pause' && !['active', 'planning'].includes(m.phase)) fail(409, 'busy', 'Only an active mission can be paused.')
+    missionBank(m)
+    Object.assign(m, { phase: action === 'pause' ? 'paused' : 'stopped', reason: 'owner' })
+    for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+      if (!step.session || step.state !== 'running') continue
+      const s = S.sessions.find((x) => x.id === step.session)
+      if (s && s.state === 'running') { clearTimers(s); s.state = 'idle'; addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() }) }
+      step.state = 'interrupted'
+    }
+    bus('sessions')
+  }
+  missionAdvance(m) // the server's worker launches within 2 s
+  bus('missions')
+  return missionOut(m)
+})
+for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected'], 'skipped'], ['retry', ['interrupted', 'failed', 'rejected'], 'retried']]) {
+  R('POST', `/api/missions/:id/steps/:step/${what}`, ({ params }) => {
+    const m = missionFind(params.id)
+    if (m.phase !== 'paused') fail(409, 'busy', `Only a paused mission can ${what} a step.`)
+    const step = m.steps.find((s) => s.id === params.step)
+    if (!step || !states.includes(step.state)) fail(409, 'busy', `Only an interrupted, failed or rejected step can be ${verb}.`)
+    if (what === 'skip') step.state = 'skipped'; else { delete step.error; Object.assign(step, { state: 'pending', session: null }) }
+    m.reason = 'owner'; bus('missions')
+    return missionOut(m)
+  })
+}
+
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
 R('GET', '/api/docs/:slug', ({ params }) => {
   const d = DOCS.find((x) => x.slug === params.slug) || fail(404, 'not_found', 'No such doc page')
   return { slug: d.slug, title: d.title, markdown: d.markdown }
+})
+
+/* ---- pull request integration queue (server/maxxing/pr_queue.py): the owner reviews the exact diff, approves it, and
+   the worker merges approved entries in order once checks pass and prerequisites are merged. Starts paused. Here a
+   fake GitHub answers, and each read advances the queue like the worker (queued -> merging -> merged in a few s). */
+const PRQ_URL = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9_.-]{1,100})\/pull\/([1-9][0-9]{0,9})$/
+const PRQ_TITLES = { 140: 'Refuse slashes in file names', 142: 'Keyboard focus on the Files page', 143: 'Test the Files toolbar with the keyboard' }
+function prqRemote(item) { // the fake GitHub pull request, stable per entry
+  const st = prqState()
+  return (st.remote[item.url] ||= { head: sha(), base_ref: 'main', base_sha: st.base, title: PRQ_TITLES[item.number] || `Improve ${item.repo.split('/')[1]} (#${item.number})`,
+    body: 'Proposed by a resident companion and reviewed in Harness Pilot.', draft: false, open: true, merged: false })
+}
+const prqPatch = (item) => `diff --git a/docs/user/notes.md b/docs/user/notes.md
+index 1a2b3c4..5d6e7f8 100644
+--- a/docs/user/notes.md
++++ b/docs/user/notes.md
+@@ -1,3 +1,4 @@
+ # Notes
+ 
+ Short notes about the product.
++- ${prqRemote(item).title}.
+`
+function prqState() {
+  if (S.prQueue) return S.prQueue
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.prQueue = { paused: true, base: sha(), remote: {}, items: [] }
+  if (ready) {
+    const add = (number, extra) => { const it = { id: crypto.randomBytes(16).toString('hex'), repo: 'acme/platform', number, url: `https://github.com/acme/platform/pull/${number}`, method: 'merge',
+      dependencies: [], state: 'awaiting_review', reason: 'approval', approval: null, created: t - (150 - number) * HOUR, checked_at: 0, revision: 0, ...extra }; S.prQueue.items.push(it); return it }
+    const merged = add(140, { state: 'merged', reason: 'merged', checked_at: t - 20 * HOUR })
+    const r = prqRemote(merged); Object.assign(r, { merged: true, open: false })
+    Object.assign(merged, { snapshot: { ...r }, approval: { fingerprint: crypto.randomBytes(32).toString('hex'), head: r.head, base_ref: 'main', base_sha: r.base_sha, dependencies: [], at: t - 21 * HOUR } })
+    const focus = add(142, {})
+    add(143, { dependencies: [focus.id], method: 'squash' })
+  }
+  return S.prQueue
+}
+const prqOut = () => { const st = prqState(); return { paused: st.paused, github_cli_available: true, items: clone(st.items) } }
+const prqFind = (id) => prqState().items.find((i) => i.id === id) || fail(404, 'not_found', 'Pull request queue item not found.')
+const prqBindings = (item) => item.dependencies.map((id) => {
+  const dep = prqFind(id)
+  return [id, dep.state === 'merged' ? dep.snapshot?.head || null : dep.approval?.head || null]
+})
+const prqFingerprint = (item, remote) => crypto.createHash('sha256').update(JSON.stringify([item.repo.toLowerCase(), item.number, remote.head, remote.base_ref,
+  remote.base_sha, item.method, prqBindings(item), crypto.createHash('sha256').update(prqPatch(item)).digest('hex')])).digest('hex')
+function prqAdvance() { // one worker pass
+  const st = prqState(), t = now()
+  for (const item of st.items) {
+    if (!['queued', 'blocked', 'merging'].includes(item.state)) continue
+    if (st.paused && item.state !== 'merging') { Object.assign(item, { state: 'queued', reason: 'paused' }); continue }
+    const waiting = item.dependencies.some((id) => prqFind(id).state !== 'merged')
+    if (item.state === 'merging') {
+      if (t - item.checked_at < 3) continue
+      const r = prqRemote(item); Object.assign(r, { merged: true, open: false })
+      Object.assign(item, { state: 'merged', reason: 'merged', snapshot: { ...r }, checked_at: t, revision: item.revision + 1 })
+    } else if (waiting) Object.assign(item, { state: 'blocked', reason: 'dependencies', checked_at: t })
+    else if (item.reason !== 'checks' || t - item.checked_at >= 3) Object.assign(item, item.reason === 'checks' ? { state: 'merging', reason: 'github_pending', checked_at: t } : { state: 'queued', reason: 'checks', checked_at: t })
+  }
+}
+R('GET', '/api/pr-queue', () => { prqAdvance(); return prqOut() })
+R('POST', '/api/pr-queue', ({ body }) => {
+  const m = String(body.url || '').trim().match(PRQ_URL), method = body.method || 'merge', deps = body.dependencies || []
+  if (!m || ['.', '..'].includes(m[2]) || !['merge', 'squash'].includes(method)) fail(400, 'bad_request', 'Use a canonical GitHub pull request URL and merge or squash.')
+  if (!Array.isArray(deps) || deps.length > 20 || new Set(deps).size !== deps.length) fail(400, 'bad_dependencies', 'Choose up to 20 distinct existing prerequisites.')
+  const st = prqState(), repo = `${m[1]}/${m[2]}`, number = Number(m[3])
+  if (st.items.length >= 100) fail(400, 'limit', 'The integration queue is full.')
+  if (st.items.some((i) => i.repo.toLowerCase() === repo.toLowerCase() && i.number === number && i.state !== 'cancelled')) fail(409, 'duplicate', 'This pull request is already in the queue.')
+  deps.forEach(prqFind)
+  const item = { id: crypto.randomBytes(16).toString('hex'), repo, number, url: `https://github.com/${repo}/pull/${number}`, method, dependencies: deps,
+    state: 'awaiting_review', reason: 'approval', approval: null, created: now(), checked_at: 0, revision: 0 }
+  st.items.push(item)
+  return clone(item)
+})
+R('PUT', '/api/pr-queue/pause', ({ body }) => { prqState().paused = !!body.paused; prqAdvance(); return prqOut() })
+R('POST', '/api/pr-queue/refresh', async () => { // reads the three oldest unchecked entries from GitHub, never merges
+  await sleep(600)
+  for (const item of prqState().items.filter((i) => i.state === 'awaiting_review').sort((a, b) => a.checked_at - b.checked_at).slice(0, 3)) {
+    Object.assign(item, { snapshot: { ...prqRemote(item) }, checked_at: now() })
+  }
+  prqAdvance()
+  return prqOut()
+})
+R('GET', '/api/pr-queue/:id/preview', async ({ params }) => {
+  const item = prqFind(params.id), remote = prqRemote(item)
+  await sleep(400)
+  return { item: clone(item), snapshot: { ...remote }, patch: prqPatch(item), fingerprint: prqFingerprint(item, remote), dependencies: prqBindings(item) }
+})
+R('POST', '/api/pr-queue/:id/approve', ({ params, body }) => {
+  const item = prqFind(params.id), remote = prqRemote(item)
+  if (body.fingerprint !== prqFingerprint(item, remote)) fail(409, 'changed', 'The reviewed commit or dependencies changed. Review the current diff.')
+  if (remote.merged || !remote.open || remote.draft) fail(409, 'not_open', 'Only a ready, open pull request can be approved for integration.')
+  if (prqBindings(item).some(([, head]) => !head)) fail(409, 'dependencies_unreviewed', 'Review and approve the prerequisite pull requests first.')
+  if (['merging', 'merge_requested', 'cancelled', 'merged'].includes(item.state)) fail(409, 'busy', 'This item cannot receive a new approval in its current state.')
+  Object.assign(item, { approval: { fingerprint: body.fingerprint, head: remote.head, base_ref: remote.base_ref, base_sha: remote.base_sha, dependencies: prqBindings(item), at: now() },
+    snapshot: { ...remote }, state: 'queued', reason: prqState().paused ? 'paused' : 'checks', checked_at: 0, revision: item.revision + 1 })
+  return prqOut()
+})
+R('POST', '/api/pr-queue/:id/cancel', ({ params }) => {
+  const item = prqFind(params.id)
+  if (['merging', 'merge_requested', 'merged'].includes(item.state)) fail(409, 'already_sent', 'An already initiated GitHub merge cannot be cancelled here.')
+  Object.assign(item, { state: 'cancelled', reason: 'cancelled', approval: null, revision: item.revision + 1 })
+  return prqOut()
+})
+R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
+  const item = prqFind(params.id)
+  if (item.state !== 'merge_failed' || !item.approval) fail(409, 'not_retryable', 'This item has no approved merge to retry.')
+  Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
+  return prqOut()
 })
 
 /* ---- dashboard & extensions */

@@ -31,7 +31,29 @@ From a session's **More actions** menu, **Summary and actions** asks Codex to su
 
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
 
-Some features described below apply to Claude sessions only; Codex support is still evolving.
+## What works with Codex
+
+A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
+are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact** and
+**Hand off** ([Compact vs hand off](#compact-vs-hand-off)). It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
+unrestricted access to the computer.
+
+These features are for Claude Code only for now:
+
+- **Side questions**: not offered for Codex sessions, discussions or debates.
+- **MCP servers** (Settings → MCP): only Claude's turns load them. Codex starts without any MCP server, yours
+  (`~/.codex/config.toml`) included.
+- **Claude swarm** and the **Agent map**.
+- The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
+  does not report its context size. Compact it yourself from the session menu.
+- **Scheduled prompts** (Crons): they run with Claude Code.
+- **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
+  follows its own sandbox, which still lets it read those files.
+- The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
+- **New sessions started from Telegram** use Claude Code.
+
+**Summary and actions** works the other way round: it needs a signed-in Codex, whatever the session's agent.
 
 ## Layout
 
@@ -142,7 +164,8 @@ Claude automatically loads the workspace, project and topic memory (see [Memory]
 extension) and **Several agents** (Claude swarm, Debate, Mixed team). Each card says in one line what it does; the
 **What will happen** panel beside them (under them on a phone or a narrow column) details the chosen mode: its steps,
 what it never does, the subscriptions it uses, and what it cannot take. The settings of the chosen mode (model, number
-of subagents, debate limits and roles, plan mode) follow the cards. A mode that takes written messages only (Mixed team,
+of subagents, debate limits and roles, plan mode) follow the cards; an extension engine's optional model is passed to
+that engine as is. A mode that takes written messages only (Mixed team,
 an engine without file support) turns the paperclip off and says why; voice is then dictated into the text.
 
 **Its title** is short: the start of the message shows at once, then a shortened title replaces it (greetings and

@@ -268,6 +268,16 @@ def test_cache_dir_is_validated(value, ok):
     assert ("fine" in r.stdout) is ok, r.stderr
 
 
+def test_installer_defaults_to_this_repository():
+    """The default source is this repository's `main` (it has no `stable` branch, tag nor release), and nothing in the
+    installer points to the original project's repository, domains or license server."""
+    r = sh('echo "$REPO $BRANCH $CACHE_DIR"')
+    assert r.stdout.split() == ["nicolashedoire/harness-pilot", "main", "/var/cache/harness-pilot"], r.stderr
+    text = INSTALL.read_text()
+    for gone in ("makushingu", "harness-maxxing.com", "LICENSE_API", "license activate", "Harness Maxxing installer"):
+        assert gone not in text, gone
+
+
 def test_a_new_install_needs_no_license_key(tmp_path):
     """Fair source: without LICENSE nor GH_TOKEN a new install clones the public git repository (no question, no
     license server); LICENSE=HM-... too since 2.0.0a88 (the Enterprise key is only recorded at the end); an existing
