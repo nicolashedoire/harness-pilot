@@ -2375,6 +2375,24 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+/* ---- profile (api/settings.py): the pseudo shown on the user's messages and in notifications. The legacy hello /
+   feedback / license routes talk to the original project's cloud: like the server by default (no MAXXING_LICENSE_PING),
+   they answer 404 not_found after sign-in, whatever the method. */
+const PROFILE_COLORS = ['clay', 'blue', 'violet', 'green', 'amber', 'rose', 'teal', 'zinc']
+const profileState = () => (S.profile ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? { name: 'Alex', color: 'blue', emoji: '' } : { name: '', color: '', emoji: '' })
+R('GET', '/api/settings/profile', () => ({ ...profileState() }))
+R('PUT', '/api/settings/profile', ({ body }) => {
+  const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').split(/\s+/).filter(Boolean).join(' ').slice(0, 32)
+  const color = String(body.color || ''), emoji = String(body.emoji || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (color && !PROFILE_COLORS.includes(color)) fail(400, 'invalid_color', `color: ${PROFILE_COLORS.join(', ')} or empty`)
+  if ([...emoji].length > 8 || /\s/.test(emoji)) fail(400, 'invalid_emoji', 'emoji: one emoji or initials (8 characters at most) or empty')
+  const next = { name, color, emoji }
+  if (JSON.stringify(next) !== JSON.stringify(profileState())) { S.profile = next; bus('profile') }
+  return { ...S.profile }
+})
+for (const what of ['register', 'feedback', 'license']) for (const method of ['GET', 'PUT', 'POST', 'DELETE'])
+  R(method, `/api/settings/${what}`, () => fail(404, 'not_found', 'Not available in this project'))
+
 // The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
 R('PUT', '/api/settings/look', ({ body }) => {
   if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
