@@ -651,6 +651,25 @@ failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stop
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
 
+## maxxing.missions  (owner: organisation) - bounded resident missions
+- State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
+  `flock` (`<id>.lock`) + atomic `config.write_json`; `create.lock` serializes the 50-mission cap; `worker.lock`
+  (non-blocking) elects the one process that runs `tick()`.
+- `create(title, path, goal, steps, max_runs, max_minutes, max_tokens, concurrent, interval_minutes, max_cycles)`,
+  `save_plan(id, steps)`, `control(id, action, fingerprint)` (`plan|start|pause|stop`), `acknowledge(id, step_id)`
+  (skip, paused missions only), `get` / `listing` (each with `plan_fingerprint` = sha256 of title, path, goal,
+  limits and steps). `start` requires the current fingerprint: the owner authorizes exactly what was shown.
+- `startup()` runs `tick()` in a thread about every 2 s (`MAXXING_MISSIONS_WORKER=0`: never); `shutdown()` sets the
+  stop flag and waits. `advance(id)`: relocated-state pause (`origin_state` != current state dir, active/planning
+  only), `_reconcile` (session states, current companion decision of each proposal, reported tokens), limits
+  (time, tokens, runs), then at most one launch, reserved under the lock (`launches[]` + step `key`) before the
+  clone, and sent through `companions.run(..., launch_key, timeout_s, launch_guard)`: the guard re-checks phase,
+  stop flag and deadline under the mission lock just before the first message.
+- `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,
+  launch_guard=None)`: an existing session tagged with `launch_key` is returned instead of a new run; `plan` =
+  `plan_mode` + `permission_mode='plan'` (the engine must declare the `plan` capability) and a read-only prompt.
+  Manual companion runs keep the defaults.
+
 ## CLI
 Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in
 pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog` = the name it was called by
@@ -807,6 +826,7 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
 - `MAXXING_LICENSE_API` license server (default `https://api.harness-maxxing.com`) · `MAXXING_GIT_URL` repository an install still on archives moves to (tests) · `MAXXING_LICENSE_PING=0` no hourly loop: no registration heartbeat, no call to the cloud (tests)
 - `MAXXING_AUTH_CHECK=0` no background Claude sign-in verification (tests) · `MAXXING_AUTH_CHECK_DELAY` seconds
   before the first one (default 5)
+- `MAXXING_MISSIONS_WORKER=0` no resident mission worker: missions never launch an agent on their own (tests call `missions.tick()`)
 - `MAXXING_CLAUDE_UPDATE=0` no background Claude Code update (tests), `=1` also on a non-default state dir · `MAXXING_CLAUDE_UPDATE_DELAY` seconds before
   the first pass (default 600)
 - `MAXXING_GROQ_API` / `MAXXING_OPENAI_API` base URLs of the speech-to-text APIs (default the providers' `/v1`)

@@ -73,6 +73,8 @@ KINDS: dict[str, tuple[str, str]] = {
     "deps.vulnerable": ("system", "warning"),
     "deps.update_failed": ("system", "warning"),
     "health.issue": ("system", "warning"),
+    "mission.review": ("system", "warning"),
+    "mission.completed": ("system", "info"),
     "signin.ok": ("security", "info"),
     "signin.failed": ("security", "warning"),
     "signin.denied": ("security", "warning"),
