@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- `pilot update` on a copy without a git remote now suggests adding this repository as `origin`, not the original project's, and `pilot license status` no longer links to the original project's Enterprise offer.
 - The server now refuses requests sent under a name that is not its own, so a website cannot reach it by pointing its domain at your computer (DNS rebinding). Addresses, `localhost`, Tailscale (`.ts.net`) and `.local` names and the configured public URL keep working; another name in front of the server can be allowed in `config.json`.
 - Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed. Outside **Full access**, Codex only uses the tools a server marks as read-only.
 - A mixed team's mission can be spoken: the recording is transcribed and its text is sent as the mission, like a voice message in the other modes.
