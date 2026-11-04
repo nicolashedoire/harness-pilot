@@ -202,7 +202,7 @@ export function BackupSection() {
     <SectionStack>
       <SettingsCard title={t('instanceBackup.title')} description={t('instanceBackup.description')}><InstanceBackupPanel /></SettingsCard>
       {!b?.configured && <BackupWhy />}
-      <SettingsCard title={t('backup.scopeTitle')}><p className="max-w-2xl text-sm text-muted-foreground">{t('backup.scopeBody')}</p></SettingsCard>
+      <SettingsCard title={t('backup.scopeTitle')} description={t('backup.scopeBody')} />
       <SettingsCard title={t('backup.repository')} description={t('backup.repositoryDesc')}>
         <BackupSetup />
       </SettingsCard>

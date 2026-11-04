@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { ArrowDown, ArrowUp, ChevronsUpDown, FileImage, Pin, Search, Sheet as SheetIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { fmtQuantity } from '@/lib/format'
 import { useLang, useT } from '@/i18n'
 import { Button, Input, ProgressBar, Segmented, Sensitive, toast } from '@/components/ui'
 import { Chart, compact, type Series } from '@/pages/dashboard/charts'
@@ -168,7 +169,7 @@ function SimpleTable({ columns, rows, lang }: { columns: string[]; rows: (string
 }
 
 /* ------------------------------------------------------------------ table */
-type Col = { label: string; type: 'text' | 'number' | 'percent' | 'delta' | 'bar'; align?: 'left' | 'right' | 'center' }
+type Col = { label: string; type: 'text' | 'number' | 'percent' | 'delta' | 'bar'; align?: 'left' | 'right' | 'center'; unit?: string }
 type Cell = string | number | boolean | null
 
 const asNumber = (c: Cell): number | null => {
@@ -184,17 +185,18 @@ function TableCell({ col, value, lang }: { col: Col; value: Cell; lang: string }
     const n = Math.max(0, Math.min(100, asNumber(value) ?? 0))
     return (
       <span className="flex items-center gap-2">
-        <ProgressBar value={n} max={100} className="h-1.5 min-w-16 flex-1" label={`${n} %`} />
+        <ProgressBar value={n} max={100} className="h-1.5 min-w-16 flex-1" label={fmtQuantity(n, lang, '%')} />
       </span>
     )
   }
   if (col.type === 'delta') {
     const n = asNumber(value)
-    const s = typeof value === 'number' ? `${value > 0 ? '+' : ''}${new Intl.NumberFormat(lang).format(value)}` : String(value)
+    const s = typeof value === 'number' ? fmtQuantity(value, lang, col.unit, true) : String(value)
     return <span className={cn('tabular-nums', n != null && n > 0 && 'text-success', n != null && n < 0 && 'text-destructive')}>{s}</span>
   }
-  if (col.type === 'percent' && typeof value === 'number') return <span className="tabular-nums">{new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(value)} %</span>
-  if (typeof value === 'number') return <span className="tabular-nums">{new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(value)}</span>
+  // numbers in the user's language (12,480 / 12 480), whatever the agent's own habits
+  if (col.type === 'percent' && typeof value === 'number') return <span className="tabular-nums">{fmtQuantity(value, lang, '%')}</span>
+  if (typeof value === 'number') return <span className="tabular-nums">{fmtQuantity(value, lang, col.unit)}</span>
   if (typeof value === 'boolean') return <span>{value ? '✓' : '—'}</span>
   return <>{value}</>
 }
@@ -208,7 +210,7 @@ export function TableBlock({ block, size, onOpenBeside, onRaw }: RendererProps) 
       d.columns.map((c, i) => {
         const col = typeof c === 'string' ? { label: c } : c
         const numeric = i > 0 && d.rows.length > 0 && d.rows.every((r) => r[i] == null || typeof r[i] === 'number')
-        return { label: String(col.label ?? ''), type: col.type ?? (numeric ? 'number' : 'text'), align: col.align }
+        return { label: String(col.label ?? ''), type: col.type ?? (numeric ? 'number' : 'text'), align: col.align, unit: col.unit || undefined }
       }),
     [d.columns, d.rows],
   )
@@ -321,7 +323,7 @@ export function TableBlock({ block, size, onOpenBeside, onRaw }: RendererProps) 
 }
 
 /* ------------------------------------------------------------------ stats */
-type StatItem = { label: string; value: string | number; delta?: string | number; hint?: string; tone?: 'ok' | 'warn' | 'error' }
+type StatItem = { label: string; value: string | number; unit?: string; delta?: string | number; hint?: string; tone?: 'ok' | 'warn' | 'error' }
 
 export function StatsBlock({ block, onRaw, onOpenBeside }: RendererProps) {
   const lang = useLang()
@@ -330,14 +332,15 @@ export function StatsBlock({ block, onRaw, onOpenBeside }: RendererProps) {
   const grid = (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))]">
       {d.items.map((it, i) => {
-        const delta = it.delta == null || it.delta === '' ? null : String(it.delta)
-        const neg = delta != null && /^\s*[-−]/.test(delta)
-        const pos = delta != null && /^\s*\+/.test(delta)
+        // a number is written in the user's language (its unit after it, a change with its sign); a text as it came
+        const delta = it.delta == null || it.delta === '' ? null : typeof it.delta === 'number' ? fmtQuantity(it.delta, lang, null, true) : String(it.delta)
+        const neg = typeof it.delta === 'number' ? it.delta < 0 : delta != null && /^\s*[-−]/.test(delta)
+        const pos = typeof it.delta === 'number' ? it.delta > 0 : delta != null && /^\s*\+/.test(delta)
         return (
           <div key={i} className="mx-rise grid min-w-0 gap-1 rounded-xl border bg-card px-4 py-3" style={{ '--i': Math.min(i, 10) } as React.CSSProperties}>
             <span className="truncate text-[13px] text-muted-foreground">{it.label}</span>
             <span className={cn('truncate text-2xl leading-8 font-semibold tracking-tight', it.tone === 'ok' && 'text-success', it.tone === 'warn' && 'text-warning', it.tone === 'error' && 'text-destructive')}>
-              <Sensitive length={4}>{typeof it.value === 'number' ? new Intl.NumberFormat(lang).format(it.value) : it.value}</Sensitive>
+              <Sensitive length={4}>{typeof it.value === 'number' ? fmtQuantity(it.value, lang, it.unit) : it.unit ? `${it.value}\u00a0${it.unit}` : it.value}</Sensitive>
             </span>
             {(delta || it.hint) && (
               <span className="flex min-w-0 flex-wrap gap-x-1.5 text-xs">

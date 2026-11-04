@@ -1,7 +1,7 @@
-"""Dependency and tooling checks for `maxxing doctor`: known vulnerabilities in the installed lockfiles (OSV),
+"""Dependency and tooling checks for `pilot doctor`: known vulnerabilities in the installed lockfiles (OSV),
 Claude Code behind its latest release, and the size of the skill listing Claude Code puts in every prompt.
 
-Network calls only on demand (`maxxing doctor --deps` for OSV; the Claude Code release check follows the doctor's
+Network calls only on demand (`pilot doctor --deps` for OSV; the Claude Code release check follows the doctor's
 `--offline`). Standard library only: the CLI stays fast.
 """
 from __future__ import annotations

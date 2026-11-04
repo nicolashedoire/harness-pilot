@@ -1,4 +1,4 @@
-"""Recipes that create things on this server, the standard way (CLI `maxxing infra`, skill `pilot-infra`):
+"""Recipes that create things on this server, the standard way (CLI `pilot infra`, skill `pilot-infra`):
 
 - PostgreSQL: `db install` (apt, listens on localhost only), `db create NAME` (one role + one database per app, its
   URL in the vault as DB_<NAME>_URL), `db backup` (pg_dump of every database + the declared SQLite files into
@@ -109,7 +109,7 @@ def pg_create(name: str, project: str | None = None) -> dict:
     if not DB_NAME_RE.match(name or ""):
         raise ActionError("database names use a-z, 0-9 and _, start with a letter (2-41 characters)", "invalid_name")
     if not pg_installed():
-        raise ActionError("PostgreSQL is not installed: run `maxxing infra db install` first", "not_installed")
+        raise ActionError("PostgreSQL is not installed: run `pilot infra db install` first", "not_installed")
     if name in pg_databases():
         raise ActionError(f"a database named {name} already exists", "exists")
     code, out, err = _psql(f"select 1 from pg_roles where rolname = '{name}';")
@@ -124,7 +124,7 @@ def pg_create(name: str, project: str | None = None) -> dict:
         _psql(f'drop role if exists "{name}";')        # else the next try stops on "a role named … exists"
         raise ActionError("cannot create the database: " + _err(out, err), "psql_failed")
     key = f"DB_{name.upper()}_URL"
-    vault.put(key, f"postgresql://{name}:{pw}@127.0.0.1:5432/{name}", note=f"PostgreSQL database {name} (maxxing infra)",
+    vault.put(key, f"postgresql://{name}:{pw}@127.0.0.1:5432/{name}", note=f"PostgreSQL database {name} (pilot infra)",
               expose=False)
     rid = f"db:local:postgres:native:{name}"
     registry.declare(rid, kind="database", name=name, server="local", project=project, vault_keys=[key],
@@ -264,7 +264,7 @@ def garage_install() -> dict:
         tmp.chmod(0o755)
         tmp.rename(GARAGE_BIN)
     if not Path(GARAGE_CONF).exists():
-        conf = f"""# Garage (S3 storage) - written by `maxxing infra bucket install`; every port listens on 127.0.0.1
+        conf = f"""# Garage (S3 storage) - written by `pilot infra bucket install`; every port listens on 127.0.0.1
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"
 db_engine = "sqlite"
@@ -296,7 +296,7 @@ admin_token = "{secrets.token_urlsafe(32)}"
         Path("/var/lib/garage", sub).mkdir(parents=True, exist_ok=True)
     unit = Path("/etc/systemd/system/garage.service")
     if not unit.exists():
-        unit.write_text("[Unit]\nDescription=Garage S3 storage (maxxing infra)\nAfter=network-online.target\n\n"
+        unit.write_text("[Unit]\nDescription=Garage S3 storage (pilot infra)\nAfter=network-online.target\n\n"
                         f"[Service]\nEnvironment=RUST_LOG=garage=warn\nExecStart={GARAGE_BIN} -c {GARAGE_CONF} server\n"
                         "Restart=always\n\n[Install]\nWantedBy=multi-user.target\n")
     _run(["systemctl", "daemon-reload"])
@@ -328,7 +328,7 @@ def bucket_create(name: str, public: bool = False, project: str | None = None) -
     if not BUCKET_RE.match(name or ""):
         raise ActionError("bucket names use a-z, 0-9 and -, 3 to 63 characters", "invalid_name")
     if not garage_installed():
-        raise ActionError("Garage is not installed: run `maxxing infra bucket install` first", "not_installed")
+        raise ActionError("Garage is not installed: run `pilot infra bucket install` first", "not_installed")
     if public:                                          # the site name is checked before anything is created
         from . import caddy
         caddy.check_name(name, project)
@@ -355,7 +355,7 @@ def bucket_create(name: str, public: bool = False, project: str | None = None) -
                 f"S3_{up}_ENDPOINT": "http://127.0.0.1:3900", f"S3_{up}_BUCKET": name, f"S3_{up}_REGION": "garage"}
         done.append("vault")
         for k, v in keys.items():
-            vault.put(k, v, note=f"Garage bucket {name} (maxxing infra)", expose=False)
+            vault.put(k, v, note=f"Garage bucket {name} (pilot infra)", expose=False)
         urls: list[str] = []
         if public:
             code, out, err = _garage("bucket", "website", "--allow", name)

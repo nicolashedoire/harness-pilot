@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `maxxing status` (first line), or the version in Settings -> System
+      description: Output of `pilot status` (first line), or the version in Settings -> System
       placeholder: 2.0.0a81
     validations:
       required: true
@@ -51,6 +51,6 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: maxxing doctor and logs
-      description: Output of `maxxing doctor`, relevant lines of `journalctl -u claude-maxxing -n 100`
+      label: pilot doctor and logs
+      description: Output of `pilot doctor`, relevant lines of `journalctl -u claude-maxxing -n 100`
       render: text

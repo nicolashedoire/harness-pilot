@@ -1,4 +1,4 @@
-"""`maxxing packs` - starter projects (e-commerce, affiliate, creator, apps, second brain, freelance) and `basics`
+"""`pilot packs` - starter projects (e-commerce, affiliate, creator, apps, second brain, freelance) and `basics`
 (puts back the default projects)."""
 from __future__ import annotations
 

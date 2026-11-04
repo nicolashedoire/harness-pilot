@@ -77,7 +77,7 @@
   "category": "data",
   "pin": true,
   "hint": "Tabular data the user can sort, filter and export as CSV.",
-  "fields": "{columns: [label | {label, type?: \"text\"|\"number\"|\"percent\"|\"delta\"|\"bar\", align?}], rows: [[cell]], title?, source?, page_size?}",
+  "fields": "{columns: [label | {label, type?: \"text\"|\"number\"|\"percent\"|\"delta\"|\"bar\", unit?, align?}], rows: [[cell]], title?, source?, page_size?}",
   "schema": {
    "type": "object",
    "required": [
@@ -125,6 +125,10 @@
            "center"
           ]
          },
+         "unit": {
+          "type": "string",
+          "maxLength": 20
+         },
          "type": {
           "enum": [
            "text",
@@ -164,7 +168,7 @@
   "category": "data",
   "pin": true,
   "hint": "A few key figures (KPIs), each with an optional change and tone.",
-  "fields": "{items: [{label, value, delta?, hint?, tone?: \"ok\"|\"warn\"|\"error\"}] (1-12), title?}",
+  "fields": "{items: [{label, value, unit?, delta?, hint?, tone?: \"ok\"|\"warn\"|\"error\"}] (1-12), title?}",
   "schema": {
    "type": "object",
    "required": [
@@ -199,6 +203,10 @@
          "number",
          "string"
         ]
+       },
+       "unit": {
+        "type": "string",
+        "maxLength": 20
        },
        "delta": {
         "type": [

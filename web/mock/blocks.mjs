@@ -141,7 +141,7 @@ const j = (type, data) => '```' + type + '\n' + JSON.stringify(data, null, 1) + 
 
 const DATA_ANSWER = (root) => [
   'October beats September on every indicator, carried by the second half of the month. Here is the detail.',
-  j('stats', { items: [{ label: 'Revenue', value: '12 480 €', delta: '+18 % vs Sept' }, { label: 'Orders', value: 312, delta: '+11 %' }, { label: 'Average basket', value: '40.00 €', delta: '+6 %' }, { label: 'Refunds', value: 7, delta: '+2', tone: 'warn' }] }),
+  j('stats', { items: [{ label: 'Revenue', value: 12480, unit: '€', delta: '+18% vs Sept' }, { label: 'Orders', value: 312, delta: '+11%' }, { label: 'Average basket', value: 40.25, unit: '€', delta: '+6%' }, { label: 'Refunds', value: 7, delta: 2, tone: 'warn' }] }),
   j('chart', {
     title: 'Revenue per day', kind: 'line', unit: '€', source: 'sales-october.csv, sales-september.csv',
     series: [
@@ -151,8 +151,8 @@ const DATA_ANSWER = (root) => [
   }),
   j('table', {
     title: 'Best products', source: 'sales-october.csv', page_size: 4,
-    columns: ['Product', { label: 'Revenue', type: 'number' }, { label: 'Sales', type: 'number' }, { label: 'Share of total', type: 'bar' }, { label: 'vs Sept', type: 'delta' }],
-    rows: [['Ceramic mug', 3120, 104, 25, '+32 %'], ['A5 notebook', 2460, 164, 20, '+9 %'], ['Canvas bag', 1980, 66, 16, '-4 %'], ['Poster 30 × 40', 1450, 58, 12, '+21 %'], ['Tea towel', 980, 49, 8, '+3 %'], ['Gift card', 760, 19, 6, '+40 %']],
+    columns: ['Product', { label: 'Revenue', type: 'number', unit: '€' }, { label: 'Sales', type: 'number' }, { label: 'Share of total', type: 'bar' }, { label: 'vs Sept', type: 'delta', unit: '%' }],
+    rows: [['Ceramic mug', 3120, 104, 25, 32], ['A5 notebook', 2460, 164, 20, 9], ['Canvas bag', 1980, 66, 16, -4], ['Poster 30 × 40', 1450, 58, 12, 21], ['Tea towel', 980, 49, 8, 3], ['Gift card', 760, 19, 6, 40]],
   }),
   'The canvas bag dips slightly: it was out of stock from 12 to 16 October.',
   j('list', { title: 'Stock to watch', items: [{ title: 'Canvas bag', subtitle: 'Back in stock on 17 Oct', status: 'warn', icon: 'shopping-bag', value: 12 }, { title: 'Ceramic mug', subtitle: 'Best seller', status: 'ok', icon: 'store', value: 86 }, { title: 'Gift card', subtitle: 'Digital', status: 'ok', icon: 'credit-card', value: '∞', href: '/tasks' }] }),

@@ -140,7 +140,7 @@ class Client:
 
 
 def call_sync(token: str, method: str, http_timeout: float = 15.0, max_wait: float = 10.0, **params: Any) -> Any:
-    """Blocking one-shot call (worker threads, `maxxing cron run`, CLI). A 429 is retried once when Telegram asks
+    """Blocking one-shot call (worker threads, `pilot cron run`, CLI). A 429 is retried once when Telegram asks
     to wait `max_wait` seconds at most."""
     for attempt in (0, 1):
         try:

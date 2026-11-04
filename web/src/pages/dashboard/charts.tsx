@@ -4,6 +4,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { useLang } from '@/i18n'
+import { fmtQuantity } from '@/lib/format'
 
 export type Series = { name: string; points: [number | string, number][] }
 
@@ -61,7 +62,7 @@ export function Chart({ kind, series, unit, height = 140 }: { kind: 'bar' | 'lin
   const xl = (i: number) => (n <= 1 ? padL + plotW / 2 : padL + (plotW * i) / (n - 1))
   const ticks = [0, max / 2, max]
   const labelEvery = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(plotW / 56))))
-  const fmtV = (v: number) => `${compact(v, lang)}${unit ? ` ${unit}` : ''}`
+  const fmtV = (v: number) => (unit === '%' ? fmtQuantity(v, lang, '%') : `${compact(v, lang)}${unit ? `\u00a0${unit}` : ''}`)
 
   const onMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!n) return

@@ -1,18 +1,18 @@
-"""`maxxing infra` - where every site, database, bucket, domain and server is, and the standard recipes to create
+"""`pilot infra` - where every site, database, bucket, domain and server is, and the standard recipes to create
 them on this server (skill `pilot-infra`, page Infra).
 
-    maxxing infra status                         sources and problems of the last snapshot
-    maxxing infra list [--kind K] [--json]       resources (site, worker, pages, database, bucket, domain, server)
-    maxxing infra refresh                        gather everything now (takes 10-60 s)
-    maxxing infra site add NAME (--dir DIR | --port PORT) [--host HOST] [--dns] [--project P] [--keep-prefix]
-    maxxing infra site remove NAME | site list | reserved
-    maxxing infra db install | db create NAME [--project P] | db sqlite PATH [--project P] | db backup
-    maxxing infra bucket install | bucket create NAME [--public] [--project P]
-    maxxing infra server connect HOST|HOSTINGER_ID [--user U] [--port N] [--label L]   (keys found or added for you)
-    maxxing infra server add NAME HOST [--user U] [--port N] [--key PATH] [--label L] [--force]
-    maxxing infra server rename NAME LABEL | server remove NAME | server list
-    maxxing infra domain add|remove NAME | domain list   domains added by hand (any registrar: public DNS + RDAP)
-    maxxing infra annotate ID [--project P] [--note TEXT] [--hide | --show]
+    pilot infra status                         sources and problems of the last snapshot
+    pilot infra list [--kind K] [--json]       resources (site, worker, pages, database, bucket, domain, server)
+    pilot infra refresh                        gather everything now (takes 10-60 s)
+    pilot infra site add NAME (--dir DIR | --port PORT) [--host HOST] [--dns] [--project P] [--keep-prefix]
+    pilot infra site remove NAME | site list | reserved
+    pilot infra db install | db create NAME [--project P] | db sqlite PATH [--project P] | db backup
+    pilot infra bucket install | bucket create NAME [--public] [--project P]
+    pilot infra server connect HOST|HOSTINGER_ID [--user U] [--port N] [--label L]   (keys found or added for you)
+    pilot infra server add NAME HOST [--user U] [--port N] [--key PATH] [--label L] [--force]
+    pilot infra server rename NAME LABEL | server remove NAME | server list
+    pilot infra domain add|remove NAME | domain list   domains added by hand (any registrar: public DNS + RDAP)
+    pilot infra annotate ID [--project P] [--note TEXT] [--hide | --show]
 
 Without --host a site is https://<Harness address>/<NAME>/ (sandboxed: no access to Harness); with --host it gets
 its own address (--dns creates the DNS record on Cloudflare when the token may).
@@ -110,7 +110,7 @@ def _print(obj) -> None:
 def _status(snap: dict | None) -> int:
     from . import infra
     if not snap:
-        print("No snapshot yet: `maxxing infra refresh` (or turn the Infra page on in Settings -> Features).")
+        print("No snapshot yet: `pilot infra refresh` (or turn the Infra page on in Settings -> Features).")
         return 1
     import time
     print(f"Snapshot {int((time.time() - snap['generated_at']) / 60)} min old, took {snap.get('took_ms', 0) / 1000:.1f} s"
@@ -161,7 +161,7 @@ def _handler(a) -> int:
                 url = r["urls"][0] if r["urls"] else ""
                 print(f"{r['status']:<7} {r['kind']:<9} {r['name'][:50]:<50} {r['location']:<12} {url}")
             if not snap:
-                print("No snapshot yet: `maxxing infra refresh`.")
+                print("No snapshot yet: `pilot infra refresh`.")
             return 0
         if a.action == "reserved":
             print(" ".join(caddy.reserved()))

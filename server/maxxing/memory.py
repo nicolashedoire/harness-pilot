@@ -1,5 +1,5 @@
 """Second-brain hygiene: the memory.md files of the workspace, their size, and the line limit the
-memory-compaction skill enforces (Settings -> Memory, `maxxing memory`). See docs/dev/API.md#memory."""
+memory-compaction skill enforces (Settings -> Memory, `pilot memory`). See docs/dev/API.md#memory."""
 from __future__ import annotations
 
 import time

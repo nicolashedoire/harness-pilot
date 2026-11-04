@@ -1,8 +1,8 @@
-"""`maxxing sessions …` sub-commands.
+"""`pilot sessions …` sub-commands.
 
-  maxxing sessions compact-logs [--dry-run]   clip the tool outputs of existing session logs and slim
+  pilot sessions compact-logs [--dry-run]   clip the tool outputs of existing session logs and slim
                                               their system lines (what the runner does at write time)
-  maxxing sessions token-report [--days N] [--json]
+  pilot sessions token-report [--days N] [--json]
                                               where the tokens go (Claude Code transcripts) + compaction simulation
 """
 from __future__ import annotations

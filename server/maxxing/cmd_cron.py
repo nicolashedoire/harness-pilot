@@ -1,11 +1,11 @@
-"""`maxxing cron …` sub-commands.
+"""`pilot cron …` sub-commands.
 
-  maxxing cron run <id>   run a job now, in this process (what the job unit of "Run now" runs)
-  maxxing cron run <id> --detach   start it in its transient systemd unit (what the crontab lines call)
-  maxxing cron sync       rewrite the managed crontab block from jobs.json
-  maxxing cron list       print the jobs, their schedule and last result
-  maxxing cron deleted    the removed jobs kept (deleted, or gone from jobs.json after a hand edit)
-  maxxing cron restore <id>   put a removed job back, with its id
+  pilot cron run <id>   run a job now, in this process (what the job unit of "Run now" runs)
+  pilot cron run <id> --detach   start it in its transient systemd unit (what the crontab lines call)
+  pilot cron sync       rewrite the managed crontab block from jobs.json
+  pilot cron list       print the jobs, their schedule and last result
+  pilot cron deleted    the removed jobs kept (deleted, or gone from jobs.json after a hand edit)
+  pilot cron restore <id>   put a removed job back, with its id
 """
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def _handler(a) -> int:
         print(f"{j['id']}  {state}  {j['schedule']:<15} {j['name']}  [{j['kind']}]  {j['human']}  - {last_txt}")
     ext = crons.external_jobs()
     if ext:
-        print(f"\n{len(ext)} other crontab line(s) not managed by Harness Maxxing")
+        print(f"\n{len(ext)} other crontab line(s) not managed by harness-pilot")
     return 0
 
 

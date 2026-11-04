@@ -1,4 +1,4 @@
-"""Sites on this server, the standard way (`maxxing infra site add|remove|list`, skill `pilot-infra`).
+"""Sites on this server, the standard way (`pilot infra site add|remove|list`, skill `pilot-infra`).
 
 Two kinds:
 - **path site** (default): `https://<Harness address>/<name>/`, no DNS needed. One file per site in
@@ -131,7 +131,7 @@ def _with_import(text: str, line: str, before_directive: str | None) -> str:
         for i, ln in enumerate(lines):
             if ln.strip().startswith(before_directive):
                 indent = ln[: len(ln) - len(ln.lstrip())]
-                lines[i:i] = [f"{indent}# sites under this address (maxxing infra site add)", indent + line.strip()]
+                lines[i:i] = [f"{indent}# sites under this address (pilot infra site add)", indent + line.strip()]
                 return "\n".join(lines) + "\n"
         raise CaddyError(f"no `{before_directive}` line in {harness_site()}", "unexpected_config")
     return text.rstrip("\n") + f"\n\n{line.strip()}\n"
@@ -173,7 +173,7 @@ def check_name(name: str, project: str | None = None) -> None:
     if not NAME_RE.match(name or ""):
         raise CaddyError("names use a-z, 0-9 and -, start with a letter or digit (max 63)", "invalid_name")
     if (paths_dir() / f"{name}.caddy").exists() or (sites_dir() / f"{name}.caddy").exists():
-        raise CaddyError(f"a site named {name} already exists (maxxing infra site remove {name} first)", "exists")
+        raise CaddyError(f"a site named {name} already exists (pilot infra site remove {name} first)", "exists")
     if project and not SAFE_PATH_RE.match(project):
         raise CaddyError("the project may only use letters, digits, '.', '_', '-' and '/'", "invalid_project")
 
@@ -214,7 +214,7 @@ def add_site(name: str, root: str | None = None, port: int | None = None, host: 
             raise CaddyError(f"https://{hh}/{name} is already served by another part of the Caddy configuration", "taken")
         f = paths_dir() / f"{name}.caddy"
         directive = "handle" if keep_prefix and port else "handle_path"
-        text = (f"{meta}\n# written by `maxxing infra site add` - remove with `maxxing infra site remove {name}`\n"
+        text = (f"{meta}\n# written by `pilot infra site add` - remove with `pilot infra site remove {name}`\n"
                 f"redir /{name} /{name}/ 308\n{directive} /{name}/* {{\n"
                 f"{_block(name, root, port, upstream_host, keep_prefix, True)}\n}}\n")
         imp = f"import {paths_dir()}/*.caddy"
@@ -231,7 +231,7 @@ def add_site(name: str, root: str | None = None, port: int | None = None, host: 
         if any(s.get("host") == host for s in _served()):
             raise CaddyError(f"{host} is already served by the Caddy configuration", "taken")
         f = sites_dir() / f"{name}.caddy"
-        text = (f"{meta}\n# written by `maxxing infra site add` - remove with `maxxing infra site remove {name}`\n"
+        text = (f"{meta}\n# written by `pilot infra site add` - remove with `pilot infra site remove {name}`\n"
                 f"{host} {{\n\tencode zstd gzip\n{_block(name, root, port, upstream_host, False, False)}\n}}\n")
         imp = f"import {sites_dir()}/*.caddy"
         cf_text = caddyfile().read_text() if caddyfile().exists() else ""
@@ -259,7 +259,7 @@ def list_sites() -> list[dict]:
 def remove_site(name: str) -> dict:
     f = next((d / f"{name}.caddy" for d in (paths_dir(), sites_dir()) if (d / f"{name}.caddy").exists()), None)
     if not NAME_RE.match(name or "") or f is None:
-        raise CaddyError(f"no site named {name} (see maxxing infra site list)", "not_found")
+        raise CaddyError(f"no site named {name} (see pilot infra site list)", "not_found")
     keep = config.state_dir("infra", "removed") / f"{name}.caddy"
     keep.write_text(f.read_text())
     _apply({f: None})
