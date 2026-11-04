@@ -67,13 +67,13 @@ export function atelierState(t, { sessions = [] } = {}) {
   // read-only kinds (themes, skills, customizations, cron jobs): listed as they are, no versions
   const ro = (kind, id, name, icon, st, extra = {}) => ({ kind, id, type: kind, name, icon, state: st, version: null, version_label: null, versions: 0, pending: null, unreviewed: false, unreviewed_since: null, origin: null, approval: null, error: null, updated: null, href: null, actions: [], ...extra })
   const others = [
-    ro('theme', 'th_2f8c1a', 'Harbour night', 'palette', 'active', { origin: origin('claude', sid(0), stitle(0), spath(0), t - 4 * DAY, 'Dark blue palette from the logo.'), updated: t - 4 * DAY, href: '/settings/appearance' }),
-    ro('theme', 'th_77b0e4', 'Paper', 'palette', 'disabled', { updated: t - 15 * DAY, href: '/settings/appearance' }),
-    ro('skill', 'invoice-reminders', 'invoice-reminders', 'sparkles', 'active', { updated: t - 6 * DAY, agents: ['claude', 'codex'] }),
-    ro('skill', 'seo-notes', 'seo-notes', 'sparkles', 'active', { updated: t - 9 * DAY, agents: ['claude'] }),
-    ro('customization', 'c-20261020-7f3a', 'Telegram: 80 threads at most', 'wrench', 'review', { updated: t - 1 * DAY, href: '/settings/updates', error: { message: 'Conflicts with the update to 2.0.0a109: server/maxxing/telegram/gateway.py', where: 'check', at: t - 1 * DAY, count: 1 } }),
-    ro('cron', 'c_nightly', 'Nightly sales report', 'clock', 'active', { origin: origin('claude', sid(0), stitle(0), spath(0), t - 8 * DAY), updated: t - 8 * DAY, href: '/crons?job=c_nightly' }),
-    ro('cron', 'c_backup_db', 'Database dump', 'clock', 'error', { updated: t - 3 * HOUR, href: '/crons?job=c_backup_db', error: { message: 'exit code 2', where: 'run', at: t - 3 * HOUR, count: 1 } }),
+    ro('theme', 'th_2f8c1a', 'Harbour night', 'palette', 'active', { origin: origin('claude', sid(0), stitle(0), spath(0), t - 4 * DAY, 'Dark blue palette from the logo.'), updated: t - 4 * DAY, href: '/settings/appearance', source: 'created' }),
+    ro('theme', 'th_77b0e4', 'Paper', 'palette', 'disabled', { updated: t - 15 * DAY, href: '/settings/appearance', source: 'imported' }),
+    ro('skill', 'invoice-reminders', 'invoice-reminders', 'sparkles', 'active', { updated: t - 6 * DAY, agents: ['claude', 'codex'], description: 'Remind clients of their unpaid invoices.', path: '/root/maxxing/.claude/skills/invoice-reminders' }),
+    ro('skill', 'seo-notes', 'seo-notes', 'sparkles', 'active', { updated: t - 9 * DAY, agents: ['claude'], description: 'SEO notes for the blog articles.', path: '/root/maxxing/.agents/skills/seo-notes' }),
+    ro('customization', 'c-20261020-7f3a', 'Telegram: 80 threads at most', 'wrench', 'review', { updated: t - 1 * DAY, href: '/settings/updates', description: 'The team needs more than 50 topics.', files_changed: ['server/maxxing/telegram/gateway.py'], error: { message: 'Conflicts with the update to 2.0.0a109: server/maxxing/telegram/gateway.py', where: 'check', at: t - 1 * DAY, count: 1 } }),
+    ro('cron', 'c_nightly', 'Nightly sales report', 'clock', 'active', { origin: origin('claude', sid(0), stitle(0), spath(0), t - 8 * DAY), updated: t - 8 * DAY, href: '/crons?job=c_nightly', description: 'Every day at 07:00', job_kind: 'claude' }),
+    ro('cron', 'c_backup_db', 'Database dump', 'clock', 'error', { updated: t - 3 * HOUR, href: '/crons?job=c_backup_db', description: 'Every day at 02:30', job_kind: 'shell', error: { message: 'exit code 2', where: 'run', at: t - 3 * HOUR, count: 1 } }),
   ]
   const draft = (id, target, extra) => ({
     id, kind: 'extension', target, status: 'pending', created: t, summary: null, decided: null, superseded_by: null, change_requests: [], auto: false,
