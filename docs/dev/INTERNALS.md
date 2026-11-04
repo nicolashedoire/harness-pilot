@@ -295,6 +295,15 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `error` -> `session.failed`; else (unless the last turn was a summary: compact / handoff / seed) resolve
   `session:<sid>` and post `session.done`. Source `sessions` (in `feed.OWN_THREAD`: Telegram off by default).
 
+### Telegram companion decisions
+
+`telegram.reviews` renders bounded complete source proposals and routes `c:<feed id>:<action>` callbacks.
+Companion kinds are reserved against external producers; notification preferences expose a companion-review row. Only the linked owner can use them. Built-in `companion.ready` events retain the session id and exact proposal
+fingerprint; current running, changed, already decided or oversized proposals cannot be approved through an old
+button. Review sends the complete bounded patch before decision buttons; large/binary proposals stay in the web
+review. Decisions use `companions.decide` and never apply, publish or merge code. Discuss reopens the same resident
+session thread without starting a model request; the next phone message follows the normal session and stop path.
+
 ## maxxing.push  (owner: organisation)
 - Web Push (RFC 8030 / 8291 aes128gcm / 8292 VAPID) with `cryptography` (ECDH, ECDSA, AES-GCM; HKDF by hmac) and httpx.
   Blocking: call through `asyncio.to_thread`. `available()` (the library imports), `public_key()` (VAPID key made on

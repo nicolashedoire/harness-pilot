@@ -22,7 +22,7 @@ The setup and commands below describe the inherited Claude integration. Mirrorin
 
 1. In Telegram, open **@BotFather**, send `/newbot`, choose a name and a username ending in `bot`.
    Copy the token it gives you (`123456789:AA...`).
-2. In BotFather, send `/mybots`, pick your bot, then **Bot Settings -> Threaded Mode -> turn it on**, so
+2. Open the **BotFather Mini App**, select your bot in **My bots**, then **Bot Settings -> Threads Settings -> Threaded Mode** and turn it on, so
    each open session gets its own thread. Without it everything works in the main chat (use
    `/topic` to choose which topic it talks to) and Settings -> Telegram shows a notice with a
    **Retry** button.
@@ -160,3 +160,20 @@ stopped, or no answer from Telegram for 5 minutes), when the token was rejected,
 sync failed. Threads being off is shown as a note, not a warning.
 
 To disconnect: Settings -> Telegram -> **Disconnect Telegram** (forgets the token, the chat and the threads).
+
+## Review a companion proposal from your phone
+
+A **Companion review ready** notification offers **Review proposal** and **Discuss with the companion**.
+Review shows the exact code changes as monospace diff blocks, followed by **Approve proposal** and **Reject**.
+These choices record your decision only: they never apply a patch, create a pull request or merge code.
+If the agent changes the proposal, an older notification cannot approve it. Large or binary changes must be
+reviewed in the application, where the full proposal is available.
+
+**Discuss** opens the same companion session in its own Telegram thread. Write your question there; it appears
+in the web conversation too. `/status` checks its state and `/stop` interrupts its current work. The button itself
+does not make an extra model call. Creating a thread while Telegram is still being synchronized no longer produces
+an unsupported-message reply. When Telegram has just accepted Threaded Mode, return to Settings -> Telegram and
+press **Retry** to synchronize it.
+
+In Settings -> Notifications -> What and where, find **Companion proposals and reviews** and choose **With sound** in its **Telegram** column. The Browser and Sound checkboxes control notifications on the current device. Your phone's Telegram
+notification and silent-mode settings still control whether an incoming notification is audible.
