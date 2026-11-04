@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The inherited license commands no longer contact the original project's license server or code repository: activating or releasing a key now stops with a clear message, and removing a key only forgets it on your computer.
 - Install harness-pilot as a service on a Linux server (Debian 12 or Ubuntu 24.04): download `install.sh` from this repository and run it with `sudo bash install.sh`. It sets up the service, a setup link for your password, security updates and the tools, and `pilot update` keeps it up to date. See Installation for the steps and what has been verified so far.
 - The Security help page now describes the local installation: who can reach the interface, where secrets are kept and how, what agents, companions and extensions can do on your computer, telemetry, and good practice.
 - The registration, feedback and license settings inherited from the original project are no longer reachable on this server: they belonged to a service this project does not run, and they now answer "not found" instead of trying to contact it.
