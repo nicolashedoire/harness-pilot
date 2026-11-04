@@ -14,6 +14,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
 
@@ -1901,6 +1902,154 @@ R('POST', '/api/trash/:id/restore', ({ params }) => {
 })
 R('DELETE', '/api/trash/:id', ({ params }) => { const it = trashFind(params.id); S.trash = S.trash.filter((x) => x !== it); return { ok: true } })
 R('DELETE', '/api/trash', () => { const deleted = trashState().length; S.trash = []; return { ok: true, deleted } })
+
+/* ---- Files page extras (api/files.py, filesite.py, videos.py): image previews, archive listings, HTML pages with
+   their assets (sandboxed, token in the URL), file mtimes, video copies, zip downloads. The zips are real (stored,
+   not compressed); archive listings read zip files only (415 for tar / gzip in the mock). */
+function zipStore(entries) { // [{name, data, mtime}] -> a ZIP buffer, method 0 (stored), UTF-8 names
+  const parts = [], central = []
+  let off = 0
+  for (const { name, data, mtime } of entries) {
+    const n = Buffer.from(name), d = new Date((mtime || now()) * 1000), crc = zlib.crc32(data)
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
+    const h = Buffer.alloc(30)
+    h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt16LE(0x0800, 6); h.writeUInt16LE(time, 10); h.writeUInt16LE(date, 12)
+    h.writeUInt32LE(crc, 14); h.writeUInt32LE(data.length, 18); h.writeUInt32LE(data.length, 22); h.writeUInt16LE(n.length, 26)
+    const c = Buffer.alloc(46)
+    c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0800, 8); c.writeUInt16LE(time, 12); c.writeUInt16LE(date, 14)
+    c.writeUInt32LE(crc, 16); c.writeUInt32LE(data.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(n.length, 28); c.writeUInt32LE(off, 42)
+    parts.push(h, n, data); central.push(c, n); off += 30 + n.length + data.length
+  }
+  const cd = Buffer.concat(central), end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16)
+  return Buffer.concat([...parts, cd, end])
+}
+function zipList(buf) { // the central directory of a ZIP file
+  const e = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  if (e < 0) return null
+  const out = []
+  let p = buf.readUInt32LE(e + 16)
+  for (let i = 0; i < buf.readUInt16LE(e + 10) && buf.readUInt32LE(p) === 0x02014b50; i++) {
+    const nl = buf.readUInt16LE(p + 28), name = buf.subarray(p + 46, p + 46 + nl).toString('utf8')
+    out.push({ name, size: buf.readUInt32LE(p + 24), dir: name.endsWith('/'), mtime: null })
+    p += 46 + nl + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32)
+  }
+  return out
+}
+const fileBytes = (n) => (Buffer.isBuffer(n.content) ? n.content : Buffer.from(String(n.content ?? '')))
+const filesUnder = (abs) => [...S.fs.entries()].filter(([k, n]) => n.type === 'file' && (k === abs || k.startsWith(abs + '/')) && !k.slice(abs.length + 1).split('/').some((x) => x.startsWith('.')))
+const sendZip = (res, name, entries) => {
+  const buf = zipStore(entries)
+  res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': buf.length, 'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename="${name}"` })
+  res.end(buf)
+  return RAW
+}
+R('GET', '/api/files/preview', ({ q, res }) => {
+  const abs = absPath(q.get('path')), n = S.fs.get(abs)
+  if (n.type !== 'file' || !String(n.mime).startsWith('image/')) fail(415, 'unsupported', 'Not an image')
+  const body = fileBytes(n), svg = body.subarray(0, 5).toString() === '<svg '
+  res.writeHead(200, { 'Content-Type': svg ? 'image/svg+xml' : n.mime, 'Content-Length': body.length, 'Cache-Control': 'private, max-age=86400' })
+  res.end(body)
+  return RAW
+})
+R('GET', '/api/files/archive', ({ q }) => {
+  const abs = absPath(q.get('path')), n = S.fs.get(abs)
+  if (n.type !== 'file') fail(404, 'not_found', 'Not a file')
+  const entries = zipList(fileBytes(n)) || fail(415, 'unsupported', 'The mock lists ZIP archives only')
+  return { path: abs, format: 'zip', entries: entries.slice(0, 5000), count: entries.length, total_size: entries.reduce((a, x) => a + x.size, 0), truncated: entries.length > 5000, size: fileBytes(n).length }
+})
+const siteTokens = new Map() // token -> { dir, file, until }
+R('GET', '/api/files/site-url', ({ q }) => {
+  const abs = absPath(q.get('path'))
+  if (!/\.html?$/i.test(abs)) fail(415, 'unsupported', 'Only .html and .htm pages')
+  const token = crypto.randomBytes(16).toString('hex')
+  siteTokens.set(token, { dir: path.posix.dirname(abs), until: now() + 2 * HOUR })
+  return { url: `/api/files/site/${token}/${encodeURIComponent(path.posix.basename(abs))}`, expires_in: 7200 }
+})
+R('GET', '/api/files/site/:token/*', ({ params, res }) => {
+  const t = siteTokens.get(params.token)
+  if (!t || t.until < now()) fail(404, 'not_found', 'This page link expired')
+  const rel = decodeURIComponent(params.rest || ''), abs = path.posix.normalize(`${t.dir}/${rel}`)
+  if (!abs.startsWith(t.dir + '/') || rel.split('/').some((x) => x.startsWith('.')) || !/\.(html?|css|m?js|wasm|woff2?|ttf|otf|eot|png|jpe?g|gif|webp|svg|avif|ico|mp3|ogg|wav|mp4|webm)$/i.test(abs)) fail(403, 'forbidden', 'Not a web asset of this page')
+  const n = S.fs.get(abs)
+  if (!n || n.type !== 'file') fail(404, 'not_found', 'No such file')
+  const body = fileBytes(n)
+  res.writeHead(200, { 'Content-Type': mimeOf(abs), 'Content-Length': body.length, 'Cache-Control': 'no-store',
+    'Content-Security-Policy': "sandbox allow-scripts allow-popups allow-forms allow-modals allow-downloads; frame-ancestors 'self'" })
+  res.end(body)
+  return RAW
+}, { public: true })
+R('POST', '/api/files/stat', ({ body }) => {
+  const paths = Array.isArray(body.paths) ? body.paths.slice(0, 500) : fail(422, 'invalid', 'paths must be a list')
+  return { mtimes: Object.fromEntries(paths.map((p) => { const n = typeof p === 'string' && p.startsWith('/') ? S.fs.get(p) : null; return [p, n && n.type === 'file' ? n.mtime : null] })) }
+})
+const videoCopies = () => (S.videoCopies ||= {}) // `${path}|${q}` -> queued at
+const VIDEO_QS = [720, 480] // below the 1080p original
+function videoInfo(abs) {
+  const n = S.fs.get(abs)
+  if (n.type !== 'file' || !String(n.mime).startsWith('video/')) fail(415, 'unsupported', 'Not a video')
+  const qualities = VIDEO_QS.map((q) => {
+    const at = videoCopies()[`${abs}|${q}`], age = at ? now() - at : -1
+    return at === undefined ? { q, state: 'none', progress: 0 } : age < 1 ? { q, state: 'queued', progress: 0 } : age < 6 ? { q, state: 'running', progress: +((age - 1) / 5).toFixed(2) } : { q, state: 'ready', progress: 1 }
+  })
+  return { width: 1920, height: 1080, codec: 'avc1.640028', bitrate: 6200000, duration: 42.5, fps: 30, has_audio: true, rotation: 0, qualities, auto: 720 }
+}
+R('GET', '/api/files/video', ({ q }) => videoInfo(absPath(q.get('path'))))
+R('POST', '/api/files/video/prepare', ({ body }) => {
+  const abs = absPath(body.path), q = Number(body.q)
+  videoInfo(abs)
+  if (!VIDEO_QS.includes(q)) fail(422, 'invalid', 'This quality is not offered for this video')
+  videoCopies()[`${abs}|${q}`] ??= now()
+  return videoInfo(abs)
+})
+R('GET', '/api/files/video/stream', ({ q, res }) => {
+  const abs = absPath(q.get('path')), info = videoInfo(abs)
+  if (info.qualities.find((x) => x.q === Number(q.get('q')))?.state !== 'ready') fail(404, 'not_ready', 'This copy is not ready yet')
+  const body = fileBytes(S.fs.get(abs))
+  res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': body.length, 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=3600' })
+  res.end(body)
+  return RAW
+})
+const zipTokens = new Map() // token -> { paths, until }
+function zipPlan(paths) {
+  const seen = new Set(), entries = []
+  for (const abs of paths) {
+    const base = path.posix.dirname(abs)
+    for (const [k, n] of filesUnder(abs)) {
+      let name = k.slice(base.length + 1)
+      if (seen.has(k)) continue
+      seen.add(k)
+      while (entries.some((e) => e.name === name)) name = name.replace(/(\.[^./]+)?$/, ' (2)$1')
+      entries.push({ name, data: fileBytes(n), mtime: n.mtime })
+    }
+  }
+  return entries
+}
+R('GET', '/api/files/zip', ({ q, res }) => {
+  if (q.get('token')) {
+    const t = zipTokens.get(q.get('token'))
+    if (!t || t.until < now()) fail(404, 'not_found', 'This download expired')
+    return sendZip(res, t.name, zipPlan(t.paths))
+  }
+  const abs = absPath(q.get('path'))
+  if (S.fs.get(abs).type !== 'dir') fail(404, 'not_found', 'Not a folder')
+  const entries = zipPlan([abs])
+  if (q.get('check') === '1') return { count: entries.length, size: entries.reduce((a, e) => a + e.data.length, 0) }
+  return sendZip(res, `${path.posix.basename(abs) || 'files'}.zip`, entries)
+})
+R('POST', '/api/files/zip', ({ body }) => {
+  if (!Array.isArray(body.paths) || !body.paths.length || body.paths.length > 1000) fail(422, 'invalid', 'paths: 1 to 1000')
+  if (body.paths.some((p) => typeof p !== 'string' || !p.startsWith('/'))) fail(400, 'bad_path', 'Absolute paths only')
+  const paths = [...new Set(body.paths.map((p) => absPath(p)))].filter((p, _, all) => !all.some((o) => o !== p && p.startsWith(o + '/')))
+  const entries = zipPlan(paths), dirs = new Set(paths.map((p) => path.posix.dirname(p)))
+  const token = crypto.randomBytes(16).toString('hex'), name = dirs.size === 1 ? `${path.posix.basename([...dirs][0]) || 'files'}.zip` : 'files.zip'
+  zipTokens.set(token, { paths, name, until: now() + 120 })
+  return { count: entries.length, size: entries.reduce((a, e) => a + e.data.length, 0), name, token, expires_in: 120 }
+})
+R('POST', '/api/telegram/webhook/remove', ({ body }) => {
+  if (!body.token && !S.telegram.token) fail(400, 'not_configured', 'No Telegram bot is configured')
+  return { ok: true }
+})
 
 /* ---- tasks */
 const TASK_FIELDS = ['title', 'notes', 'status', 'priority', 'due', 'project_id', 'topic_path', 'labels', 'order']
