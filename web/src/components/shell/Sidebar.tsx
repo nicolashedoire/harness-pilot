@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { openPalette } from '@/commands/registry'
 import { Button, CountBadge, CountDot, Kbd, MOD, Tooltip } from '@/components/ui'
-import { navItemClass, navTourId, useNav } from './nav'
+import { ATELIER_NAV, navItemClass, navTourId, useNav, type NavItem } from './nav'
 import { Logo } from './Logo'
 import { HealthIndicator } from './HealthIndicator'
 import { UsageIndicator } from './UsageIndicator'
@@ -174,7 +174,7 @@ export function Sidebar() {
       </div>
 
       <nav data-tour="nav" className={cn('grid gap-0.5 px-3 py-2', collapsed && 'px-2.5')}>
-        {nav.map((item, idx) => {
+        {nav.filter((n) => n !== ATELIER_NAV).map((item, idx) => {
           const label = t(item.label)
           // Expanded: the counters stay mounted so they can animate out when they reach 0.
           const showBadge = item.to === '/sessions' && (!collapsed || badge.unread > 0 || badge.running > 0)
@@ -227,6 +227,11 @@ export function Sidebar() {
 
       <SidebarExtensions collapsed={collapsed} />
 
+      {/* right under the extension pages (or the pages above when there is none), before the spacer */}
+      <div className={cn('grid gap-0.5 px-3 pb-2', collapsed && 'px-2.5')}>
+        <AtelierNavItem item={ATELIER_NAV} collapsed={collapsed} active={!!matchPath({ path: `${ATELIER_NAV.to}/*` }, pathname)} prefetch={prefetchLink(ATELIER_NAV.to)} />
+      </div>
+
       <div className="flex-1" />
 
       <div className={cn('grid gap-1 border-t border-sidebar-border p-3 pb-[calc(0.75rem+var(--safe-bottom))]', collapsed && 'px-2.5')}>
@@ -252,6 +257,21 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+  )
+}
+
+/** The Atelier's entry, after the extension pages (nav.ts ATELIER_NAV). */
+function AtelierNavItem({ item, collapsed, active, prefetch }: { item: NavItem; collapsed: boolean; active: boolean; prefetch: React.HTMLAttributes<HTMLAnchorElement> }) {
+  const t = useT()
+  const label = t(item.label)
+  return (
+    <Tooltip content={collapsed ? label : null} side="right">
+      <NavLink to={item.to} {...prefetch} data-tour={navTourId(item)} className={navItemClass(active, collapsed)}>
+        {active && <span aria-hidden className={cn('absolute w-[3px] rounded-r-full bg-primary', collapsed ? 'top-3 bottom-3 -left-2.5' : 'top-2 bottom-2 -left-3')} />}
+        <item.icon className={cn('size-[18px] shrink-0', active && 'text-primary')} strokeWidth={active ? 2.2 : 1.9} />
+        {!collapsed && <span className="flex-1 truncate">{label}</span>}
+      </NavLink>
+    </Tooltip>
   )
 }
 
