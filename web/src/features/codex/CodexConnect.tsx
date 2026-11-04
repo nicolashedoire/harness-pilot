@@ -30,6 +30,7 @@ function useSignedInChanged() {
       if (status && 'installed' in status) qc.setQueryData(['codex-status'], { installed: status.installed, authenticated: status.authenticated, reason: status.reason, method: status.method })
       void qc.invalidateQueries({ queryKey: ['codex-status'] })
       void qc.invalidateQueries({ queryKey: ['onboarding'] })
+      void qc.invalidateQueries({ queryKey: ['codex-models'] })   // the CLI lists the models of the account
     },
     [qc],
   )

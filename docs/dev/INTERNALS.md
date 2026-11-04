@@ -200,6 +200,21 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - Off by default (config `claude_auto_update` false). Tests monkeypatch `installed_version`, `latest_version`,
   `run_update`, `install_method` (never a real update).
 
+## maxxing.codex_models - the Codex model pickers
+`GET /api/system/codex/models` -> `codex_models.models()`, read by `features/codex/CodexModelField.tsx` (new session:
+Codex, discussion and mixed team; cron editor: Codex jobs). codex-cli 0.150.1 has no `models` command, but
+`codex debug models` prints its model catalog as JSON: `{"models": [{slug, display_name, description, visibility:
+"list"|"hide", priority, default_reasoning_level, supported_reasoning_levels, ...}]}` - refreshed for the signed-in
+account (the shipped catalog when signed out, checked with a throw-away `CODEX_HOME`), and `--bundled` gives only
+the one shipped with the binary (10 models, 5 with `visibility` "list": gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna,
+gpt-5.5, gpt-5.2). The pickers get what the CLI's own picker shows (`visibility` "list", sorted by `priority`, ids
+matching `sessions.service._MODEL_ID`, no repeats): `debug models` (15 s), else `--bundled`, else `KNOWN_MODELS` (the
+same five, to update with a Codex release that changes them). Cached 10 min per binary path + mtime, dropped by
+`invalidate()` (`codex_login` calls it when the sign-in changes; the web drops its `codex-models` query then too).
+Nothing is stored: a session or a job keeps the id it was given, and an id outside the list shows as "Other…" with its
+text. `debug` is a CLI debugging command: if a release drops or changes it, the list falls back without breaking the
+pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/components/codex-model-field.test.tsx`.
+
 ## maxxing.telegram.gateway  (owner: connectivity)
 - `alert(text, loud=False)` - sign-in alerts thread (no-op when not configured). Thread-safe.
 - `notify_topic(path, text)` - message in the main chat (topics have no thread; sessions do).
