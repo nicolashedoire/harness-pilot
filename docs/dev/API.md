@@ -572,16 +572,19 @@ Block =
     // dense: too many events to tell apart -> a band (only error/running dots drawn). A 24 h span is
     // labelled 00:00..24:00 from start (server time zone). Built-in "day" widget = today's crons.
 ```
-| GET | `/api/dashboard` | – | `{widgets:[{id, title, icon, span:1\|2\|3, source:"builtin"\|"extension", card:Card\|null, error:string\|null, hidden:bool, pending?:true}]}` — hidden widgets are listed with `card:null` so the UI can show them again; a widget still computing after 1.5 s comes as `pending:true` (fetch it with the route below, which joins that computation); the `crons` and `day` cards are reused while jobs.json, runs.jsonl, the job locks and config.json are unchanged (10 s at most); `?force=1` recomputes everything; an extension widget whose `card()` raises or times out also gets that error recorded as a runtime error of the extension (`where:"card"`, see `POST /api/extensions/{id}/errors`; not for an extension that does not load, whose `error` is already listed) |
+| GET | `/api/dashboard` | – | `{widgets:[{id, title, icon, span:1\|2\|3, source:"builtin"\|"extension", card:Card\|null, error:string\|null, hidden:bool, pending?:true}]}` — hidden widgets are listed with `card:null` so the UI can show them again; a widget still computing after 1.5 s comes as `pending:true` (fetch it with the route below, which joins that computation); the `crons` and `day` cards are reused while jobs.json, runs.jsonl, the job locks and config.json are unchanged (10 s at most); `?force=1` recomputes everything; an extension widget whose `card()` raises or times out also gets that error recorded as a runtime error of the extension (`where:"card"`, see `POST /api/extensions/{id}/errors`; not for an extension that does not load, whose `error` is already listed). A `card()` stopped by a permission (`ctx["secret"]` refused, Permissions below) gives `error` = the reason and `permission: {kind:"secret", name, reason:"undeclared"\|"not_allowed"\|"refused"}`; `not_allowed` = the user can allow it (`POST /api/extensions/{id}/consent`) |
 | GET | `/api/dashboard/widgets/{id}?force=1` | – | one widget (refresh) |
 | PUT | `/api/dashboard/layout` | `{order:[id], hidden:[id]}` | `{ok}` |
-| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?, permissions}]` (permissions: the `Permissions` its manifest declares, `null` when it has no `"permissions"` key - a block plugin: `{network: <block.json hosts>, secrets: [], read: []}`, an agent: `null`; pinned: page shown in the sidebar; page_v: newest mtime in ms of page.js and the module files of its folder (`.js .mjs .css .json`, hidden files, `node_modules` and `__pycache__` skipped, 2000 files at most), the UI imports `/ext/<id>/@<page_v>/page.js` so the page and the modules it imports relatively are reused until one of them changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks). Each also has `runtime_errors:[{where:"widget"\|"page"\|"card"\|"api", message, stack, at, count}]`: the errors recorded while it ran (below) since its files last changed, newest first, at most 10; and `origin:{id, title, path}\|null`: the session that made it, where "Ask for a fix" goes (below) |
+| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?, permissions}]` (permissions: the `Permissions` its manifest declares, `null` when it has no `"permissions"` key - a block plugin: `{network: <block.json hosts>, secrets: [], read: []}`, an agent: `null`; pinned: page shown in the sidebar; page_v: newest mtime in ms of page.js and the module files of its folder (`.js .mjs .css .json`, hidden files, `node_modules` and `__pycache__` skipped, 2000 files at most), the UI imports `/ext/<id>/@<page_v>/page.js` so the page and the modules it imports relatively are reused until one of them changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks). Each also has `runtime_errors:[{where:"widget"\|"page"\|"card"\|"api", message, stack, at, count}]`: the errors recorded while it ran (below) since its files last changed, newest first, at most 10; and `origin:{id, title, path}\|null`: the session that made it, where "Ask for a fix" goes (below), and `access`: its `Access` (Permissions below; `null` for a block plugin or an agent) |
+| GET | `/api/extensions/permissions` | – | `{since: float\|null, items: [ExtPermissionsDetail]}` - every widget and page, A-Z; `since` = when this version first scanned the extensions (the extensions found then are grandfathered) |
+| GET | `/api/extensions/{id}/permissions` | – | `ExtPermissionsDetail` · `404 not_found` (unknown, or a block plugin / agent) |
+| POST | `/api/extensions/{id}/consent` | `{decision:"always"\|"deny"\|"reset"}` | `{ok, access: Access}` - `always`: what the manifest declares is allowed (a key added to it later waits again) · `deny`: nothing it declares is allowed, not asked again · `reset`: asked again (keys granted before permissions existed stay). Auth + CSRF, `invalidate extensions` · `400 not_declared` (`always` without a `"permissions"` key) · `404 not_found` (unknown, block plugin, agent) |
 | PATCH | `/api/extensions/{id}` | `{enabled?, pinned?}` | `{ok}` (`pinned` on a widget -> 400 `not_a_page`) |
 | POST | `/api/extensions/reload` | – | rescans `<workspace>/extensions` |
 | POST | `/api/extensions/{id}/errors` | `{where:"widget"\|"page", message, stack?}` | a runtime error the browser saw, sent by the app itself: the HTML widget bridge's `error` and `unhandledrejection` events (forwarded by the dashboard), and in a page the errors whose script is under `/ext/<id>/` or that came from its `ctx.api()`, a page module that fails to load, a `mount()` that throws -> `{ok:true, error:{where, message, stack, at, count}}`, `invalidate extensions`. Auth + CSRF. `message` (1-4000 characters) is cut at 500, `stack` (8000 at most) kept to 6 lines of 240 characters, the app's addresses made relative (`https://host/ext/<id>/@1712/page.js:12:5` -> `page.js:12:5`; `…/ext/<id>/widget-frame:58:3` -> `widget.html:<58 - the lines served before widget.html>:3`). The same `where` + `message` as the newest error bumps its `count` and `at`. `404 not_found` (unknown extension) · `422` (bad `where`, empty or too long fields) · `429 rate_limited` past 20 reports of one extension or 120 in all per minute (nothing kept) |
 | DELETE | `/api/extensions/{id}/errors` | – | forget its runtime errors -> `{ok}` · `404 not_found` |
 | POST | `/api/extensions/{id}/fix` | `{error?:{message, stack?}, dry_run?:bool}` | "Ask for a fix" (`maxxing/extfix.py`): one message for the agent - the extension, its folder, what broke (its load `error`, the `error` the user is looking at unless it is one of its runtime errors, the 3 newest `runtime_errors`), the files involved (absolute paths: manifest / block.json, `api.py`, `page.js`, `widget.html`, the entry, and the files its stacks name), the skill and `pilot ext check <id> --json` before and after ("Answer me in French." when the UI is French). Sent to `origin` (the session that made it: queued behind a running turn) -> `{session, reused:true}`, else (none recorded, gone, archived, or refusing the message) a new session in the Harness topic (`system/harness`, titled "Fix the extension <name>") -> `{session, reused:false}`; `invalidate extensions`. `dry_run` -> `{prompt, target:{session:{id, title, path}}\|{topic:"projects/system/topics/harness"}}`, nothing sent. Auth + CSRF. `404 not_found` · session errors as for `POST /api/sessions` |
-| ANY | `/api/ext/{id}[/{path}]` | – | forwarded to the extension's `api.py` `handle()` (`path` = `""` without it): return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, other → 500 `extension_error` (also recorded as a runtime error `where:"api"`, with the lines of the extension's files it went through), 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
+| ANY | `/api/ext/{id}[/{path}]` | – | forwarded to the extension's `api.py` `handle()` (`path` = `""` without it): return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, `PermissionDenied` (`ctx["secret"]` refused) → 403 `permission_required` (`reason` `not_allowed`: the user can allow it) or `permission_denied` (`undeclared`, `refused`) with `permission: {kind, name, reason}` (recorded as a runtime error `where:"api"` by the refusal itself), other → 500 `extension_error` (also recorded as a runtime error `where:"api"`, with the lines of the extension's files it went through), 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
 | GET | `/ext/{id}/page.js` | – | page module (ES module) |
 | GET | `/ext/{id}/{path}` · `/ext/{id}/@{version}/{path}` | – | a module of the page's folder, `page.js` included, for its relative imports: `.js`/`.mjs` (`text/javascript`), `.css` (`text/css`), `.json` (`application/json`), in the folder or a subfolder. Every segment of `path` starts with a letter, a digit or `_` (no hidden file, no `.`/`..`), and the real path (links followed) must be such a file inside the folder. The `@{version}` segment is ignored (the UI imports `@<page_v>[-<retry>]/page.js`, so relative imports carry the version). Same checks as `page.js`: signed in (`401`), an enabled page extension without error, else `404 not_found`; `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. `{id}` only matches an extension id, so `/ext/_blocks/...` stays with Conversation blocks |
 | GET | `/ext/ui-kit.css` | – | the UI kit of extensions (`server/maxxing/assets/ui-kit.css`): `ui-*` classes scoped to `.mx-ext` (page host) and `[data-mx-kit]` (widget frame), built on the theme variables; the app adds it once when a page extension opens; `ETag` (content hash), `If-None-Match` -> `304` |
@@ -614,6 +617,43 @@ Permissions = {network: [host], secrets: [NAME], read: [path]}
   unknown key, a value that is not a list, a bad host, name or path) is the extension's `error`, like a bad manifest.
 - An agent extension ignores `"permissions"` (an external program: its engine decides). A block plugin declares its
   hosts in `block.json` (Conversation blocks); `secrets` and `read` do not apply to it (no server code).
+
+What is enforced (the rest is shown, not enforced: `api.py` runs inside the server process, see 15-security):
+- **Keys**: `ctx["secret"](name)` returns the key only when the extension may read it, else raises
+  `PermissionDenied` (a `PermissionError`; `.reason` `undeclared` | `not_allowed` | `refused`, `.name`):
+  - with `"permissions"`: `name` must be in `secrets` (else `undeclared`) and allowed by the user - Allow
+    (`POST .../consent` `always`) or the Atelier's approval of the version that declares it (`permissions.accept`) -,
+    else `not_allowed`; after Refuse (`deny`), every key is `refused`;
+  - without `"permissions"`, an extension that existed when this version first scanned the extensions
+    (**grandfathered**, `access.state: "legacy"`) reads any key, as before: the first read of each key records it as
+    *granted before permissions existed* and posts the notification `extension.legacy_secrets` listing them; an
+    extension created later reads none (`undeclared`).
+  - A refusal is recorded (Settings, the Atelier: `access.denied`; a runtime error `where` `card` / `api` of the
+    extension) and logged, even when the extension catches the exception; `pilot ext check` reports it (its own run
+    records nothing).
+- What the user allowed lives in `<state>/extension-permissions.json` (Settings -> Extensions, the Atelier), by
+  extension id, not with the extension's files: code that deletes an extension calls `permissions.forget(id)`, so a
+  new extension with the same id asks again.
+
+```
+Access = {
+  state: "declared" | "legacy" | "undeclared",
+    // declared: the manifest has "permissions" - only what it declares and the user allowed
+    // legacy: no "permissions", the extension existed before permissions - it keeps working, what it uses is recorded
+    // undeclared: no "permissions", created later - no key
+  secrets: [{name, status: "allowed"|"pending"|"refused", how: "accepted"|"legacy"|null, at: float|null}],
+    // declared: each declared key; legacy: each key recorded so far (how "legacy")
+  legacy: {secrets: [{name, at}]},     // recorded as granted before permissions existed (the "grandfathered" list)
+  pending: bool,                       // a declared key waits for the user (Allow / Refuse)
+  refused: bool,
+  denied: [{kind: "secret", name, reason: "undeclared"|"not_allowed"|"refused", at, count}]   // refusals at run
+                                       // time, newest first, 20 at most (one entry per kind + name + reason)
+}
+ExtPermissionsDetail = {id, name, type, permissions: Permissions|null (declared), access: Access,
+  suggested: Permissions}   // the declaration that keeps it working as it does today: the declared one plus the
+                            // keys recorded as granted before permissions existed (what to write in a grandfathered
+                            // extension's manifest)
+```
 
 Extension details: `ctx` (Python) = `{id, workspace, state_dir, secret(name) -> str|None, config:{timezone, language,
 public_url}}`; `state_dir` = `<state>/extensions/<id>/` (created). Extensions are rescanned automatically when a
@@ -819,7 +859,9 @@ full check (code included) in the agent's own process before proposing.
 validation screen may call it when it opens: the user went there to review it; a conversation `proposal` block never
 calls it on render - it shows a Preview button). The draft runs with the same `ctx` as once installed (its
 `state_dir`, the configured time zone and language) except `ctx.secret()`, which only answers the secrets the draft
-declares (all of them when it declares no `permissions` at all, with a warning step). A page is never previewed in
+declares (without a `permissions` declaration: any key for an extension grandfathered by the permissions contract,
+none otherwise); a key it may not read is `None`. Approving a version grants the secrets it declares
+(`permissions.accept`). A page is never previewed in
 the app (its `page.js` would run in the app's origin with the user's session): its files and diff are the review.
 
 | Method | Path | Body | Response |
@@ -975,6 +1017,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
 | `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
+| `extension.legacy_secrets` | security | info | `extension_id, name, secrets` (every key recorded so far, comma-separated): a grandfathered extension read a key for the first time (`url` = `/settings/extensions`, group `ext-legacy:<id>`) | `open` | – |
 | `atelier.proposed` | system | warning | `draft_id, kind, id, name, type, change ("new"\|"update"), agent, *session_id*, network, secrets` (counts of declared hosts / secrets; `url` = `/atelier/drafts/<draft_id>`, group `atelier:<draft_id>`) | `review` | the draft approved, rejected or replaced by a newer proposal of the same creation |
 | `atelier.activated` | system | success | `draft_id, kind, id, name, type, version, agent, *session_id*` (a proposal activated without review by config `atelier.auto_activate_safe`; `url` = `/atelier/<kind>/<id>`) | `open` | – |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |

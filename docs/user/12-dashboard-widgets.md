@@ -136,11 +136,11 @@ timeout) only blocks other extensions ("extensions are busy" until it returns), 
 | `id` | the extension id |
 | `workspace` | workspace path |
 | `state_dir` | a folder reserved for this extension (cache, data) |
-| `secret(name)` | value of a key from Settings -> Keys, or `None` |
+| `secret(name)` | value of a key from Settings -> Keys (`None` when it is missing), if the extension may read it (see [Permissions](#permissions)) |
 | `config` | `{"timezone", "language", "public_url"}` |
 
-Never hard-code a token: store it in Settings -> Keys and read it with `ctx["secret"]("MY_TOKEN")`, and declare it in
-the manifest's `permissions`.
+Never hard-code a token: store it in Settings -> Keys, declare it in the manifest's `permissions` and read it with
+`ctx["secret"]("MY_TOKEN")`.
 
 ### Permissions
 
@@ -160,6 +160,23 @@ Every key is optional and `"permissions": {}` means "none of them". The extensio
 are always its own: never list them. A mistake in this block (a host with `https://`, a path with `..`, an unknown
 key) is shown as the extension's error. `pilot ext check` prints what an extension declares, and warns when its
 manifest has no `permissions` at all.
+
+**Keys are limited to what is declared and allowed.** `ctx["secret"](name)` returns a key only when the manifest
+lists it in `secrets` and you allowed it. The first time, the card shows **This widget asks to read the key ...**
+with **Allow** and **Refuse** (also in Settings -> Extensions, on the extension's row, and in the Atelier when you
+approve it). A key the manifest does not list, or one you refused, stops `card()` with a clear error (shown on the
+card, recorded with the extension's errors, reported by `pilot ext check`). A key added to the manifest later asks
+again; **Withdraw the permission** in Settings asks again too.
+
+**Extensions you already had keep working.** An extension that existed before permissions and has no `permissions`
+block still reads the keys it uses. The first time it reads each one, harness-pilot records it as *granted before
+permissions existed* and tells you in the notifications ("... keeps reading the keys ..."); Settings -> Extensions
+lists them on its row with **Permissions not declared**. Once its manifest gets a `permissions` block, the declared
+keys it was already reading stay allowed without asking. An extension created later with no `permissions` block
+reads no key.
+
+The other permissions are shown, not enforced yet: `read` describes the files `api.py` opens, and `network` the sites
+it reaches - `api.py` runs inside the server with its rights (see [Security](security#what-extensions-can-do)).
 
 ### 4. The Card schema
 

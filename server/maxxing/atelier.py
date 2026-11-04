@@ -319,12 +319,17 @@ def permissions_of(ext: extensions.Extension) -> dict:
 
 
 def _accept_permissions(eid: str) -> None:
+    """The user approved what the installed version declares: its secrets are granted (maxxing.permissions). Nothing to
+    grant without a declaration (a grandfathered extension keeps its rule, a new one reads no key)."""
     try:
         from . import permissions as perms
-        if hasattr(perms, "accept"):
-            perms.accept(eid)
     except ImportError:
-        pass
+        return
+    if not hasattr(perms, "accept"):
+        return
+    ext = extensions._load_one(extensions.root() / eid, load_code=False)          # noqa: SLF001 - no code imported
+    if getattr(ext, "permissions", None) is not None:
+        perms.accept(eid, ext.permissions, ext)
 
 
 # ---- types ------------------------------------------------------------------------------------------------------------
@@ -1443,13 +1448,24 @@ def preview_ext(did: str) -> tuple[dict, extensions.Extension]:
 
 
 def preview_ctx(ext: extensions.Extension, rec: dict) -> dict:
-    """The installed extension's ctx, except secret(): only what the draft declares (all when it declares nothing)."""
-    ctx = extensions.make_ctx(ext)
+    """The installed extension's ctx, except secret(): the keys the draft declares (the user is reviewing it and asked
+    for the preview); without a declaration, any key for a grandfathered extension, none otherwise (the rule of
+    maxxing.permissions). A key it may not read is None. Nothing is recorded for a draft."""
+    from . import vault
+    try:
+        ctx = extensions.make_ctx(ext, record=False)
+    except TypeError:                                    # before maxxing.permissions
+        ctx = extensions.make_ctx(ext)
     perms = rec.get("permissions") or {}
-    if perms.get("declared"):
-        allowed = set(perms.get("secrets") or [])
-        get = ctx["secret"]
-        ctx["secret"] = lambda name: get(name) if name in allowed else None
+    allowed = set(perms.get("secrets") or [])
+    legacy = False
+    if not perms.get("declared"):
+        try:
+            from . import permissions
+            legacy = permissions.is_legacy(ext.id)
+        except (ImportError, AttributeError):
+            legacy = True
+    ctx["secret"] = lambda name: vault.get(str(name)) if (legacy or str(name) in allowed) else None
     return ctx
 
 
