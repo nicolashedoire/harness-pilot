@@ -908,7 +908,7 @@ message: "no license, no remote"}`, `update --check` exits 0 with "updates unava
 install.json `enable_after_onboarding`; `enable_pending_jobs()` (called by POST /api/onboarding/complete when
 `claude_auth.status().ok`) enables each listed job still disabled and never edited (`created == updated`), then
 clears the list - jobs of existing installs are never touched (their key is already in `default_crons`), `notify_update(info)` (gateway.notify_cron), `version_key(v)`, `upgrade_notes(old, new)` (docs/upgrade).
-`renames.py` (called by `do_init` after the default jobs, report `renamed: {files, jobs}`): `SKILL_RENAMES`
+`renames.py` (`migrate(ws)` called by `do_init` after the default jobs, report `renamed: {files, jobs}`): `SKILL_RENAMES`
 (old -> new skill name, keep every pair), `rename_skills(text)`, `migrate(ws)`. It rewrites only the exact old
 skill names, and only in what the product generated: a line of a workspace file copied from a template
 (`templates/workspace/**`, `templates/packs/<id>/project/**` for `projects/<project>` and `<project>-N`)
@@ -919,12 +919,23 @@ prompts written or edited by the user are left (upgrade notes ask Claude to prop
 Idempotent, runs on every init (cheap: only template-mapped files that still contain an old name are read
 twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old name back.
 
-`renames.migrate_cli_workspace(ws)` also refreshes legacy CLI references in template-owned `CLAUDE.md` lines.
-It matches the rendered current template, including the two known earlier alias-note variants, and leaves edited
-or custom lines alone. Paths, Python module names and service identifiers remain unchanged. Symlinked files or
-parents are skipped. `migrate(ws)` includes these paths in its existing `files` list after skill migration;
-local setup runs the two workspace-only migrations without changing scheduled jobs. Rewrites are atomic and
-keep permissions. Existing conversation history is not rewritten.
+`renames.refresh_cli_guidance(ws)` (`do_init` after `ensure_cli_alias()`, report `cli_guidance: [files]`; also
+`scripts/dev-local.sh` after `migrate_workspace(ws)`) gives the current CLI name to the product lines of the workspace's
+template `CLAUDE.md` files, once per workspace: install.json `cli_guidance` lists the resolved workspaces done, so a
+line the user changes back to `maxxing` afterwards stays. It does nothing, and records nothing, while
+`cmd_core.sessions_run_our_pilot()` is false: the first `pilot` on the sessions' PATH (`spawn.base_env()`, the rule of
+the doctor's `cli` check) is another program (ensure_cli_alias kept it, the agents use `maxxing`) or there is none;
+the next init or local start-up tries again. The pass, `renames.migrate_cli_workspace(ws)`: a line naming `maxxing`
+as the command becomes the current rendered template line equal to it once CLI and product names are ignored
+(`_neutral`), or, for the exact earlier lines that differ by more than the name (`_CLI_LINES`: the root and help-topic
+lines before 2.0.0a109 and the first help-topic alias note), their new version while it is a line of the template.
+A line is replaced by the template's own line, so paths (`/root/maxxing`), `python -m maxxing` and `claude-maxxing`
+stay as the template writes them; edited and custom lines are left. The templates name
+`pilot` with the alias note "`maxxing`, its earlier name, still works" (root, system project, help topic).
+Both migrations of workspace files (`migrate_workspace`, `migrate_cli_workspace`) skip a linked file or parent, a
+file over `MAX_FILE_BYTES` (1 MiB, logged) and a read-only one (no write bit, or `os.access(W_OK)` false), keep each
+line's own end (`\r\n`, but also the form feed, U+2028... that `str.splitlines` cuts on), and rewrite atomically
+keeping the permissions. Conversation history is never rewritten.
 
 ## Service sandboxing (`pilot harden`)
 - `cmd_core.HARDENING` = drop-in `/etc/systemd/system/claude-maxxing.service.d/10-hardening.conf`
