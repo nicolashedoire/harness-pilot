@@ -168,6 +168,48 @@ def test_codex_never_writes_what_the_server_runs(mx, monkeypatch, tmp_path):
     assert codex._deny('/srv/state/secrets.json') == {'/srv/state/secrets.json': 'deny'}
 
 
+def test_codex_is_not_started_where_a_secret_path_cannot_be_denied(mx, monkeypatch, tmp_path):
+    """On Linux, codex-cli 0.150.1 leaves a "deny" path holding glob characters readable (checked in Debian 12
+    containers): with Protect the secrets on, Codex is not started there, with the path and the ways out."""
+    home = tmp_path / 'home [old]'
+    (home / '.ssh').mkdir(parents=True)
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('CODEX_HOME', raising=False)
+    monkeypatch.delenv('CLAUDE_CONFIG_DIR', raising=False)
+    monkeypatch.setattr(codex, 'GLOB_DENY_WORKS', False)             # Linux
+    for build in (lambda: codex.command('', 'plan'), lambda: codex.command('t', 'bypass', cwd=str(mx['ws'])),
+                  lambda: codex.fork_command('t')):
+        with pytest.raises(codex.SandboxRefused) as e:
+            build()
+        assert str(home / '.ssh') in str(e.value) and 'Protect the secrets' in str(e.value)
+    monkeypatch.setattr(codex, 'GLOB_DENY_WORKS', True)              # macOS: the literal pattern works
+    assert codex_profile(codex.command('', 'plan'))['filesystem'] == {
+        f'{tmp_path}/home [[]old[]]/.ssh': 'deny', f'{tmp_path}/home [[]old[]]/.ssh/**': 'deny'}
+    monkeypatch.setattr(codex, 'GLOB_DENY_WORKS', False)
+    config.update_config(protect_secrets=False)                       # nothing to deny: Codex starts
+    assert codex_sandbox(codex.command('', 'plan')) == 'read-only'
+    config.update_config(protect_secrets=True)
+    (home / '.ssh').rmdir()                                           # nothing there to protect: Codex starts
+    assert codex_sandbox(codex.command('', 'plan')) == 'read-only'
+
+
+def test_a_codex_turn_refused_by_its_sandbox_says_why(client, topic, mx, monkeypatch, tmp_path):
+    home = tmp_path / 'home [old]'
+    (home / '.ssh').mkdir(parents=True)
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('MAXXING_CODEX_GLOB_DENY', '0')                # the runner process: as on Linux
+    called = tmp_path / 'called'
+    fake = tmp_path / 'codex'
+    fake.write_text(f'#!/bin/sh\ntouch "{called}"\nexit 1\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'hi'}).json()['id']
+    session = wait_idle(client, sid)
+    notes = [e['text'] for e in all_events(client, sid) if e.get('type') == 'note']
+    assert any('Codex was not started' in n and str(home / '.ssh') in n for n in notes), notes
+    assert not called.exists() and session['state'] == 'error'
+
+
 def test_codex_options_come_before_the_subcommand(mx, monkeypatch, tmp_path):
     """codex-cli 0.150.1: `-c` options after `fork` / `resume` replace every one before it (the sandbox profile, the
     privacy settings, a provider): all of them stay before the subcommand (INTERNALS.md maxxing.sessions.codex)."""

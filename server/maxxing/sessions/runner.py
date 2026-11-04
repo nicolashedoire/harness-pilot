@@ -470,7 +470,16 @@ class Runner:
             if tools == "writes":                      # once, until the mode changes
                 self.note("MCP servers: in this permission mode Codex only uses the tools a server marks as "
                           "read-only; the others are refused (Full access allows them).")
-        args = codex.command(thread, mode, str(codex_model or ''), images, mcp_args, cwd=cwd)
+        try:
+            args = codex.command(thread, mode, str(codex_model or ''), images, mcp_args, cwd=cwd)
+        except codex.SandboxRefused as e:              # a protection Codex's sandbox cannot apply here: not started
+            a = Attempt(rc=1, stderr=str(e))
+            self.note(str(e), "error")
+            store.append_log(self.sid, {"type": "mx_done", "code": 1, "stderr": str(e)[-STDERR_TAIL:],
+                                        "stopped": False, "timed_out": False, "at": time.time()})
+            err = self._record(a, item)
+            self._post(item, a, err)
+            return err
         context = codex.workspace_context(root, Path(cwd))
         context_prefix = ("[Shared workspace and topic instructions/memory]\n" + context + "\n\n") if context else ""
         prompt = context_prefix + ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)

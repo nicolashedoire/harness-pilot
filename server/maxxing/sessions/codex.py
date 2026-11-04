@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -259,9 +260,30 @@ def _glob_literal(path: str) -> str:
     return _GLOB_CHARS.sub(r"[\1]", path)
 
 
+# A "deny" written as a pattern (a path holding glob characters) works with macOS's sandbox; on Linux (bubblewrap),
+# codex-cli 0.150.1 left such a path readable in every form tried: Codex is then not started (_refuse_unprotectable).
+GLOB_DENY_WORKS = os.environ.get("MAXXING_CODEX_GLOB_DENY", "0" if sys.platform.startswith("linux") else "1") == "1"
+
+
+class SandboxRefused(RuntimeError):
+    """Codex is not started: its sandbox could not apply the protection the settings ask for (the message says
+    which path and the ways out)."""
+
+
+def _refuse_unprotectable(paths: list[str]) -> None:
+    """On Linux, a secret path Codex would read as a pattern stays readable to every command it runs: refuse."""
+    bad = [p for p in paths if _GLOB_CHARS.search(p)]
+    if bad and not GLOB_DENY_WORKS:
+        raise SandboxRefused(
+            f"Codex was not started: Protect the secrets is on, and on Linux Codex's sandbox cannot keep {bad[0]} "
+            "unreadable, because its path contains one of [ ] * ? { } (Codex reads such a path as a pattern). Rename "
+            "that folder so its path has none of these characters, or turn off Protect the secrets (Settings -> "
+            "Claude): Codex then runs without that protection, and Claude's tools lose it too.")
+
+
 def _deny(path: str) -> dict[str, str]:
     """"deny" entries for a secret path: the path itself; written as a pattern (glob characters in it), a pattern
-    of a folder does not cover what is inside, so `<folder>/**` is denied too (macOS; see INTERNALS for Linux)."""
+    of a folder does not cover what is inside, so `<folder>/**` is denied too (macOS only: GLOB_DENY_WORKS)."""
     if not _GLOB_CHARS.search(path):
         return {path: "deny"}
     lit = _glob_literal(path)
@@ -334,6 +356,7 @@ def sandbox_args(mode: str, cwd: str | None = None) -> list[str]:
         return ["--sandbox", "workspace-write" if write else "read-only"]
     paths = [os.path.abspath(p) for p in spawn.secret_paths() if os.path.lexists(p)] \
         if config.load_config().get("protect_secrets", True) else []
+    _refuse_unprotectable(paths)                       # SandboxRefused (Linux, a secret path with glob characters)
     if not paths and not write:
         return ["--sandbox", "read-only"]
     denied: dict = {}

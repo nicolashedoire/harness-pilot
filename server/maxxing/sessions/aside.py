@@ -125,7 +125,11 @@ def _run_codex(m: dict, thread: str, cwd: str, question: str) -> dict:
     env.update({str(k): str(v) for k, v in (m.get("env") or {}).items() if spawn.ENV_NAME_RE.match(str(k))})
     t0 = time.time()
     try:
-        p = subprocess.run(codex.fork_command(thread, model), input=ASK_PREFACE + question, capture_output=True,
+        argv = codex.fork_command(thread, model)
+    except codex.SandboxRefused as e:
+        raise SessionError(409, "codex_sandbox", str(e)) from None
+    try:
+        p = subprocess.run(argv, input=ASK_PREFACE + question, capture_output=True,
                            text=True, cwd=cwd, env=env, timeout=ASK_TIMEOUT_S, start_new_session=True)
     except subprocess.TimeoutExpired:
         raise SessionError(504, "timeout", f"No answer after {ASK_TIMEOUT_S} s.") from None

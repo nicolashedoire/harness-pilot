@@ -152,7 +152,10 @@ def _run_codex(prompt: str, cwd: str, temp: Path) -> tuple[str | None, dict, flo
     """-> (agent message, usage in Claude's keys, cost 0: Codex reports no amount); answer None when it failed."""
     schema = temp / 'schema.json'
     schema.write_text(json.dumps(SCHEMA), encoding='utf-8')
-    args = codex.command('', 'plan')
+    try:
+        args = codex.command('', 'plan')
+    except codex.SandboxRefused as e:
+        raise SessionError(409, 'codex_sandbox', str(e)) from None
     args = args[:-1] + ['--output-schema', str(schema), '-']
     result = subprocess.run(args, input=prompt, capture_output=True, text=True, cwd=cwd,
                             env=spawn.base_env(), timeout=180, start_new_session=True)
