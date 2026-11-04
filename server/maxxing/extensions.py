@@ -1,7 +1,8 @@
 """User extensions: `<workspace>/extensions/<id>/`.
 
-    manifest.json  {"id", "name", "type": "widget"|"page", "icon", "version", "span"?, "ttl"?, "api"?}
-                   ("name" may be {"en": ..., "fr": ...}: shown in the UI language)
+    manifest.json  {"id", "name", "type": "widget"|"page", "icon", "version", "span"?, "ttl"?, "api"?, "permissions"?}
+                   ("name" may be {"en": ..., "fr": ...}: shown in the UI language; "permissions": what it uses beyond
+                   its own folder - {"network": [hosts], "secrets": [key names], "read": [workspace paths]}, permissions.py)
     api.py         widget: def card(ctx) -> Card   ·   page / API: def handle(ctx, method, path, query, body)
     page.js        page: ES module exporting mount(el, ctx); it may import the other modules of the folder
                    (`import "./lib/chart.js"`: .js .mjs .css .json, see module_file)
@@ -78,6 +79,7 @@ class Extension:
     height: int = 260
     block: dict | None = None              # block plugins: the validated block.json (blocks.parse_manifest)
     agent: dict | None = None              # external executable contract; no Python is imported for an agent
+    permissions: dict | None = None        # declared {network, secrets, read} (permissions.parse); None = not declared
     error: str | None = None
     module: ModuleType | None = field(default=None, repr=False)
 
@@ -97,7 +99,7 @@ class Extension:
                 "version": self.version, "enabled": self.enabled, "error": self.error,
                 "api": self.api, "has_api": self.has_api, "has_page": self.has_page, "span": self.span,
                 "has_html": self.has_html, "height": self.height, "page_v": page_version(self),
-                "pinned": self.type == "page" and self.id in pinned_ids(),
+                "pinned": self.type == "page" and self.id in pinned_ids(), "permissions": self.permissions,
                 **({"renders": (self.block or {}).get("renders") or []} if self.type == "block" else {})}
 
 
@@ -244,6 +246,7 @@ def _load_one(d: Path, load_code: bool = True) -> Extension:
             ext.block = blocks.parse_manifest(d)
             ext.name, ext.names = ext.block["name"], ext.block["names"]
             ext.version, ext.icon = ext.block["version"], ext.block["icon"]
+            ext.permissions = {"network": list(ext.block["network"]), "secrets": [], "read": []}
             return ext
         try:
             m = json.loads((d / "manifest.json").read_text())
@@ -283,6 +286,8 @@ def _load_one(d: Path, load_code: bool = True) -> Extension:
             from . import agent_providers
             ext.agent = agent_providers.parse(m, d)
             return ext
+        from . import permissions
+        ext.permissions = permissions.parse(m.get("permissions"))     # ValueError: the extension's error
         ext.span = min(3, max(1, int(m.get("span") or 1)))
         ext.ttl = max(0, int(m.get("ttl", DEFAULT_TTL)))
         ext.has_api = (d / "api.py").is_file()
