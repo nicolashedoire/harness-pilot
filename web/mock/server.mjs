@@ -1658,12 +1658,48 @@ R('POST', '/api/teams/:sid/stop', ({ params }) => {
   return teamOut(params.sid)
 })
 
+/* ---- discussion presets (server/maxxing/sessions/presets.py): saved roles of Claude Code + Codex conversations */
+const presetsState = () => (S.discussionPresets ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? [
+  { id: uuid(), name: 'Builder and reviewer', claude_role: 'Propose the change and write it step by step.', codex_role: 'Review each step: risks, missing tests, simpler options.' },
+  { id: uuid(), name: 'Two copywriters', claude_role: 'Write the first draft in a warm, plain tone.', codex_role: 'Tighten the draft: shorter sentences, no jargon, keep the facts.' },
+] : [])
+R('GET', '/api/discussion-presets', () => presetsState())
+R('POST', '/api/discussion-presets', ({ body }) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  if (!name || body.name.length > 80 || String(body.claude_role || '').length > 2000 || String(body.codex_role || '').length > 2000) fail(422, 'invalid', 'name: 1-80 characters, roles: 2000 at most')
+  if (presetsState().length >= 100) fail(400, 'bad_request', 'A maximum of 100 configurations can be saved.')
+  const preset = { id: uuid(), name, claude_role: String(body.claude_role || '').trim(), codex_role: String(body.codex_role || '').trim() }
+  S.discussionPresets.push(preset)
+  return preset
+})
+R('DELETE', '/api/discussion-presets/:id', ({ params }) => {
+  if (!presetsState().some((p) => p.id === params.id)) fail(404, 'not_found', 'Configuration not found')
+  S.discussionPresets = S.discussionPresets.filter((p) => p.id !== params.id)
+  return { ok: true }
+})
+
 /* ---- global bus */
 R('GET', '/api/stream', ({ req, res }) => {
   sseOpen(req, res)
   busClients.add(res)
   req.on('close', () => busClients.delete(res))
   return RAW
+})
+
+/* ---- space labels (server/maxxing/api/space_labels.py): the owner's personal / agents / shared marks on folders and
+   files, keyed by absolute path; `unclassified` removes the mark */
+const labelsState = () => (S.spaceLabels ||= S.scenario === 'ready' || S.scenario === 'maxxing'
+  ? { [`${ROOT}/projects/personal`]: 'personal', [`${ROOT}/projects/ops`]: 'agents' } : {})
+R('GET', '/api/space-labels', () => Object.fromEntries(Object.entries(labelsState()).filter(([p]) => S.fs.has(p))))
+R('PUT', '/api/space-labels', ({ body }) => {
+  if (!['personal', 'agents', 'shared', 'unclassified'].includes(body.label)) fail(422, 'invalid', 'label must be personal, agents, shared or unclassified')
+  const p = typeof body.path === 'string' && body.path.startsWith('/') ? path.posix.normalize(body.path).replace(/(.)\/$/, '$1') : fail(400, 'bad_path', 'An absolute path is required.')
+  const files = S.settings.files_root || ROOT
+  if (![ROOT, files].some((r) => p === r || p.startsWith(r + '/'))) fail(403, 'forbidden', 'Path is outside the workspace and files root.')
+  if (!S.fs.has(p)) fail(404, 'not_found', 'Item not found.')
+  if (body.label === 'unclassified') delete labelsState()[p]; else labelsState()[p] = body.label
+  bus('space-labels')
+  return { path: p, label: body.label }
 })
 
 /* ---- files */
