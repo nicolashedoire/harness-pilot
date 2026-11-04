@@ -12,6 +12,66 @@ stays in the list, greyed): it comes back by itself when it changes - another jo
 24 hours if it is still there. The arrow next to a seen issue counts it again. Seen marks are kept on the server,
 so they hold on every device.
 
+## Local setup on macOS
+
+The local setup (`bash scripts/dev-local.sh`, see [Local installation](installation)) has no systemd, no
+`journalctl` and no service: the server is the process running in that terminal. The rest of this page, from
+**Start with the doctor** on, describes a Linux server installation. On a Mac, use the commands below instead.
+
+**Check it.** From the repository root, `bash scripts/dev-local.sh cli doctor` runs the doctor with the settings
+of your local app (a plain `uv run pilot doctor` looks at the folders of a server installation instead). Some
+lines only concern a Linux server and can be ignored locally: systemd and the service, server hardening
+(firewall, fail2ban), and components that are expected to be owned by root.
+
+**Where the logs are.**
+
+| What | Where |
+|---|---|
+| The server | the terminal that runs `bash scripts/dev-local.sh` (nothing is written to a file; to keep a copy: `bash scripts/dev-local.sh 2>&1 \| tee -a .harness-pilot-local/server.log`) |
+| Agent turns (their processes' own errors) | `.harness-pilot-local/state/logs/runner.log` |
+| One conversation | `.harness-pilot-local/state/sessions/<id>.log`; the session page shows the same events |
+| Scheduled jobs | **Crons** (last result and output) or `bash scripts/dev-local.sh cli cron list` |
+
+**Restart it.** Press `Ctrl+C` in its terminal, then run `bash scripts/dev-local.sh` again from the repository
+root. After a `git pull`, restart the same way: the script installs the new dependencies before it starts.
+`pilot update` and the Update button do not work in the local setup.
+
+**When the terminal is closed, the server stops,** and scheduled jobs, backups, resident missions and Telegram stop
+with it. While the Mac sleeps, it is paused. A job whose minute passed while the server was stopped or paused does
+not run late: the local scheduler only looks at the current minute.
+
+**"Address already in use" at start.** The local app listens on `127.0.0.1:8787`, and something else already
+holds that port, usually the app running in another terminal. `lsof -nP -iTCP:8787 -sTCP:LISTEN` names the process.
+Stop it with `Ctrl+C` in its terminal, or with `kill <PID>`. The address is only reachable from this computer.
+
+**"Operation not permitted" on a folder.** macOS asks before a program reads Desktop, Documents, Downloads,
+iCloud Drive or an external disk. The server and the agents run with the permissions of your terminal app
+(Terminal, iTerm...). Allow it in **System Settings → Privacy & Security → Files and Folders** (or **Full Disk
+Access**), then restart the local app. `.harness-pilot-local/` holds your state and secrets: keep it private
+(`chmod 700`). The microphone (voice messages) and notifications are allowed in your browser, and for
+notifications also in **System Settings → Notifications** for that browser.
+
+**Thumbnails, previews or PDF pages do not show.** Files, conversations and the file viewer make images and video
+thumbnails with `ffmpeg` and PDF thumbnails with `pdftoppm`, and the local setup does not install them:
+
+| Tool | Used for | Install |
+|---|---|---|
+| `ffmpeg` with WebP | thumbnails and previews of images and videos, lighter copies of videos, voice messages | `brew install ffmpeg-full` |
+| `pdftoppm` | the first page of a PDF as its thumbnail | `brew install poppler` |
+
+Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one but is
+not put on the PATH by Homebrew: start the local app with
+`PATH="$(brew --prefix ffmpeg-full)/bin:$PATH" bash scripts/dev-local.sh`. To check a `ffmpeg`:
+`ffmpeg -hide_banner -encoders | grep libwebp` must print a line.
+
+**What Settings → System shows locally.** The version card shows the version and commit of your clone, and
+**Check** compares the clone with its git remote. **What's new** is available too. A note says that service
+controls and automatic updates are unavailable, and there is no Update button: update with `git pull`. The health
+card shows the memory, disk and CPU gauges (on macOS the CPU gauge says it is unavailable) and the same problems
+as the dot at the bottom of the sidebar, along with the Claude connection, the last backup, failed sign-ins and
+the load. The **Services** and **Logs** cards of a server do not appear, because they read systemd and its
+journal.
+
 ## Start with the doctor
 
 ```bash
