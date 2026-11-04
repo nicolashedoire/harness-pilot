@@ -915,7 +915,7 @@ def check_skill_listing(cfg: dict) -> Check | None:
     """Every skill's name + description is in every prompt; past Claude Code's budget, descriptions are dropped."""
     from . import depcheck
     roots = [Path(str(cfg.get("workspace") or "/root/maxxing")) / ".claude" / "skills", skills_target()]
-    if config.claude_dir() / "skills" not in roots:          # MAXXING_SKILLS_DIR: the personal ones are listed too
+    if os.environ.get("MAXXING_SKILLS_DIR") and config.claude_dir() / "skills" not in roots:   # personal ones too
         roots.append(config.claude_dir() / "skills")
     st = depcheck.skill_listing(roots)
     if not st["count"]:
