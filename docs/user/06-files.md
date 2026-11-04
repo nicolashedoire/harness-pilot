@@ -163,7 +163,9 @@ In a folder (the Files page list or grid, and the folder grid of the file viewer
 - Existing items start unclassified, and children do not inherit their parent's label. A label follows renames and
   moves made in the app and survives edits saved in the app; an item replaced or moved outside the app may need to be
   labelled again.
-- Labels are kept in the app's local state and are not yet part of the memory backup.
+- Labels are kept in the app's local state. The complete instance backup keeps all of them. The GitHub memory
+  backup keeps the labels of the files it saves and of the folders that hold them, and a restore puts them back; a
+  label on a file the memory backup leaves out is not sent to GitHub (see [Backup](backup)).
 
 ## Tips
 
