@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Fixed on Linux servers: rarely, a change to a session saved twice within the same millisecond went unnoticed: a finished turn sent no Telegram reply or notification, or a message sent to a continued session waited up to 10 minutes after its summary failed.
+
 - Agents use the current `pilot` command in the workspace instructions retained from older installations, including `pilot doctor`. Startup refreshes recognized product instructions while preserving your custom text; existing conversation messages stay in the history.
 - Fixed on Linux servers: now and then, a notification for your phone or browser was only sent with the next notification, sometimes hours later, and one posted by a scheduled job or a script took up to 5 minutes to appear in the open app.
 

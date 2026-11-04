@@ -56,7 +56,10 @@ Python modules call each other only through these functions. Keep signatures sta
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
   meta change (`sessions/wake.py`: one inotify watch of the sessions folder through `watchfiles`, which also wakes
   the session SSE streams; `MAXXING_INOTIFY=0` or no inotify: the old polling, 0.25 s while a session runs) and
-  passes at least every 2 s while a session runs, every 1 s otherwise. `result` = last
+  passes at least every 2 s while a session runs, every 1 s otherwise. A pass reads a meta again when its file's
+  (inode, size, mtime_ns) changed, when it was last read less than `RACY_S` (1 s) after its mtime (two saves in one
+  timestamp tick keep the mtime and can reuse the inode number at the same size), or every `RUNNING_RECHECK_S` while
+  it runs; a digest of its content and the derived (turns, state, unread) tell whether it changed. `result` = last
   normalised `result` event of the turn (None if the turn produced none). The watcher stamps its last pass in
   `<state>/session-watcher.json` `{at}` (after its first pass, at once after reporting, and at most every
   `PASS_STAMP_S` = 5 s after passes that saw a session change; no fsync): its first pass
