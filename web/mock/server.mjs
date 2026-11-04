@@ -1207,7 +1207,7 @@ function R(method, pattern, handler, opts = {}) {
   const keys = []
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }).replace(/\*$/, '(.*)') + '$')
   if (pattern.endsWith('*')) keys.push('rest')
-  routes.push({ method, re, keys, handler, public: !!opts.public })
+  routes.push({ method, re, keys, handler, public: !!opts.public, csrf: opts.csrf !== false })
 }
 
 /* ---- auth */
@@ -2534,6 +2534,24 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+/* ---- profile (api/settings.py): the pseudo shown on the user's messages and in notifications. The legacy hello /
+   feedback / license routes talk to the original project's cloud: like the server by default (no MAXXING_LICENSE_PING),
+   they answer 404 not_found after sign-in, whatever the method. */
+const PROFILE_COLORS = ['clay', 'blue', 'violet', 'green', 'amber', 'rose', 'teal', 'zinc']
+const profileState = () => (S.profile ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? { name: 'Alex', color: 'blue', emoji: '' } : { name: '', color: '', emoji: '' })
+R('GET', '/api/settings/profile', () => ({ ...profileState() }))
+R('PUT', '/api/settings/profile', ({ body }) => {
+  const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').split(/\s+/).filter(Boolean).join(' ').slice(0, 32)
+  const color = String(body.color || ''), emoji = String(body.emoji || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (color && !PROFILE_COLORS.includes(color)) fail(400, 'invalid_color', `color: ${PROFILE_COLORS.join(', ')} or empty`)
+  if ([...emoji].length > 8 || /\s/.test(emoji)) fail(400, 'invalid_emoji', 'emoji: one emoji or initials (8 characters at most) or empty')
+  const next = { name, color, emoji }
+  if (JSON.stringify(next) !== JSON.stringify(profileState())) { S.profile = next; bus('profile') }
+  return { ...S.profile }
+})
+for (const what of ['register', 'feedback', 'license']) for (const method of ['GET', 'PUT', 'POST', 'DELETE'])
+  R(method, `/api/settings/${what}`, () => fail(404, 'not_found', 'Not available in this project'))
+
 // The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
 R('PUT', '/api/settings/look', ({ body }) => {
   if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
@@ -3176,7 +3194,7 @@ index 1a2b3c4..5d6e7f8 100644
 +++ b/docs/user/notes.md
 @@ -1,3 +1,4 @@
  # Notes
- 
+
  Short notes about the product.
 +- ${prqRemote(item).title}.
 `
@@ -3267,6 +3285,45 @@ R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
   Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
   return prqOut()
 })
+
+/* ---- small gaps: tree order, one job, backup preview, search index stats, incoming webhooks */
+const orderBy = (items, names) => { // listed names first in that order, the others A-Z (projects/.order.json, .maxxing.json)
+  const at = new Map(names.map((n, i) => [n, i]))
+  return [...items].sort((a, b) => (at.has(a.name) ? at.get(a.name) : 1e6) - (at.has(b.name) ? at.get(b.name) : 1e6) || a.name.localeCompare(b.name))
+}
+R('PUT', '/api/workspace/order', ({ body }) => {
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  S.projects = orderBy(S.projects, body.names.map(String)); bus('workspace')
+  return { projects: S.projects.map((p) => p.name) }
+})
+R('PUT', '/api/workspace/projects/:project/order', ({ params, body }) => {
+  const p = S.projects.find((x) => x.name === params.project) || fail(404, 'not_found', 'Unknown project')
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  p.topics = orderBy(p.topics, body.names.map(String)); bus('workspace')
+  return { topics: p.topics.map((t) => t.name) }
+})
+R('GET', '/api/crons/:id', ({ params }) => cronOut(S.crons.find((x) => x.id === params.id) || fail(404, 'not_found', 'Cron not found')))
+R('POST', '/api/backup/preview', async ({ body }) => {
+  if (!S.backup.configured) fail(409, 'not_configured', 'Configure the backup repository first')
+  await sleep(900)
+  const files = [...S.fs.entries()].filter(([, n]) => n.type === 'file').map(([k]) => k.slice(ROOT.length + 1)).filter((k) => /(^|\/)(CLAUDE|memory)\.md$|^tasks\.json$/.test(k)).sort()
+  const paths = { create: ['projects/acme/topics/newsletter/memory.md'], replace: files.filter((f) => f.endsWith('memory.md')).slice(0, 3), unchanged: files.filter((f) => !f.endsWith('memory.md')),
+    held: ['extensions/shop-sales/api.py'], skip: [] }
+  return { ok: true, commit: (body.ref && /^[0-9a-f]{7,40}$/.test(body.ref) ? body.ref : S.backup.history.filter((h) => h.ok).at(-1)?.commit || sha().slice(0, 7)).padEnd(40, '0'), hold: true,
+    counts: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.length])), paths, settings: true, crons: true, mcp: false }
+})
+R('GET', '/api/search/stats', () => ({ counts: { session: S.sessions.length, file: [...S.fs.values()].filter((n) => n.type === 'file').length,
+  memory: [...S.fs.keys()].filter((k) => k.endsWith('/memory.md')).length, task: S.tasks.tasks.length }, bytes: 3.4e6, refreshed_at: now() - 4 * MIN }))
+// Incoming webhook: the token is the permission. Signatures are not verified in the mock; the rules of a missing secret are.
+R('POST', '/api/hooks/:token', ({ params, body }) => {
+  const h = S.feed.hooks.find((x) => x.token === params.token) || fail(404, 'not_found', 'Unknown hook')
+  if (h.kind !== 'generic' && !h.secret) fail(401, 'secret_required', `A ${h.kind} hook needs its signing secret`)
+  if (typeof body !== 'object' || Array.isArray(body)) fail(400, 'bad_payload', 'Unexpected payload')
+  const title = h.kind === 'generic' ? String(body.title || 'Webhook') : h.kind === 'stripe' ? String(body.type || 'stripe event') : h.kind === 'github' ? 'GitHub event' : 'Shopify event'
+  const e = feedAdd(S, { source: h.name, kind: 'webhook', level: ['info', 'success', 'warning', 'error'].includes(body.level) ? body.level : 'info', title: title.slice(0, 200), body: String(body.body || '').slice(0, 2000) })
+  bus('feed')
+  return { ok: true, duplicate: false, id: e.id }
+}, { public: true, csrf: false }) // called by Stripe, GitHub…: no cookie, no CSRF header
 
 /* ---- dashboard & extensions */
 R('GET', '/api/dashboard', () => dashboard())
@@ -3757,7 +3814,7 @@ async function handleApi(req, res, url) {
   if (!candidates.length) return sendJson(res, 404, { error: 'not_found', message: `No route for ${p}` })
   const route = candidates.find((r) => r.method === req.method)
   if (!route) return sendJson(res, 405, { error: 'method_not_allowed', message: `${req.method} not allowed on ${p}` })
-  if (req.method !== 'GET' && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
+  if (req.method !== 'GET' && route.csrf && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
   const authed = isAuthed(req)
   if (!route.public && !authed) return sendJson(res, 401, { error: 'auth_required', message: 'Please log in' })
   const m = route.re.exec(p)

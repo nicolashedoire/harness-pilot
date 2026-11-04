@@ -90,7 +90,7 @@ export function ModePanel({ mode, adapter, swarmAgents, className }: { mode: str
     facts = [[t('modes.fact.subscriptions'), 'Claude + ChatGPT']]
   } else if (mode === 'team') {
     title = t('modes.team.name')
-    points = [['ok', t('modes.team.p1')], ['ok', t('modes.team.p2')], ['ok', t('modes.team.p3')], ['info', t('modes.team.p4')], ['warn', t('mixedTeam.noAttachments')]]
+    points = [['ok', t('modes.team.p1')], ['ok', t('modes.team.p2')], ['ok', t('modes.team.p3')], ['ok', t('modes.team.attach')], ['info', t('modes.team.p4')]]
     const def = claude?.default_model
     facts = [
       [t('modes.fact.subscriptions'), 'Claude + ChatGPT'],
