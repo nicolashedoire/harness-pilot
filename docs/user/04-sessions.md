@@ -63,6 +63,10 @@ true` to `config.json` (in the state folder) and restart. Codex then gets its pl
 commands still fail on such a machine, and **neither Protect the secrets nor the protection of the extensions and the
 folders' settings apply to Codex any more**. Use it only on a machine where you accept that.
 
+On Linux, Codex's sandbox cannot hide a file whose path contains `[`, `]`, `*`, `?`, `{` or `}` (a home folder named
+`me [old]`, for example). With **Protect the secrets** on, Codex is then not started, and the message names the file:
+rename that folder, or turn the protection off (Claude's tools lose it too).
+
 These features are for Claude Code only for now:
 
 - **MCP sign-ins and connectors**: Codex gets the MCP servers of Settings → MCP (see [MCP servers](28-mcp.md#codex);

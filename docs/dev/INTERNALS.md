@@ -1095,8 +1095,14 @@ deleting a folder that holds a protected file is refused. In a default (unprivil
 fails at start ("failed to load AGENTS.md instructions ...: fs sandbox helper failed"), read-only ones too when a
 secret path exists; with `codex_plain_sandbox` the turn runs and each command fails ("bwrap: No permissions to create
 new namespace"), the behaviour before.
-Also found, not changed here: on Linux a secret path holding glob characters (`<state [1]>/secrets.json`) is not
-denied, as before (`_glob_literal` fixes it on macOS only).
+On Linux a secret path holding glob characters (`<state [1]>/secrets.json`, `<home [old]>/.ssh`) stayed readable
+with the deny entry as is and `[`-bracketed (`_glob_literal`; that one works on macOS). So Codex is not started there:
+`_refuse_unprotectable` (from `sandbox_args`, so `command()` and `fork_command()`) raises `SandboxRefused` when Protect
+the secrets is on, an existing secret path holds `* ? [ ] { }` and `GLOB_DENY_WORKS` is false (Linux;
+`MAXXING_CODEX_GLOB_DENY=0|1` overrides it). The runner fails the turn with the message as an error note (Codex is not
+run); a side question (`aside`) and a summary answer `409 codex_sandbox` with it. The message names the path and the
+ways out: rename the folder, or turn Protect the secrets off (Claude's tools lose it too). A workspace path with those
+characters is not refused: its entries are relative to the turn's folder (above).
 Side questions and plan turns of a write-mode thread are read-only: `exec --ephemeral fork` with `fork_command()`'s
 profile, and `exec resume` with the plan profile, run the new turn with the profile of their own command line, not the
 one the thread started with (checked on macOS: a fork and a plan resume of a `bypass` thread refuse every write of the
@@ -1511,6 +1517,8 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_GLOB_DENY=0|1` whether Codex's sandbox denies a path holding glob characters (`codex.GLOB_DENY_WORKS`:
+  0 on Linux, 1 elsewhere; 0 refuses Codex where a secret path holds one, tests force it)
 - `MAXXING_CODEX_MCP=0` Codex turns get no MCP server (`codex.mcp_config`; tests: they never read the real
   `.claude.json`, `test_codex_provider.py` opts back in with a temporary `CLAUDE_CONFIG_DIR`)
 - `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
