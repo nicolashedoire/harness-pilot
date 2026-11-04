@@ -716,7 +716,7 @@ Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub 
   `python open()`, `cp`, `find`), through a symlink, through `/tmp` vs `/private/tmp`, inside the writable folder (it
   beats `"." = "write"`), and makes `ln` (hard link) fail; spawned sub-agents (`multi_agent_v1.spawn_agent`), `exec
   resume` (also of a thread started with `--sandbox`) and `exec --ephemeral fork` get the same profile. A missing
-  path is accepted (only existing ones are passed: Linux not checked).
+  path is accepted (only existing ones are passed anyway).
 - A profile that `extends = ":workspace"` loses the built-in's read-only `.git`, `.codex` and `.agents` (the built-in
   `:workspace` and `--sandbox workspace-write` keep them), hence the `:workspace_roots` table; with it, writes match
   `--sandbox workspace-write` (folder and below, `/tmp`, `$TMPDIR`; not the repository root above the folder, its
@@ -729,9 +729,16 @@ Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub 
   (read by the Codex process: a real image in those folders still reaches the model; a key or `secrets.json` gives
   "unsupported image data"), and `apply_patch`'s verification, done in the Codex process before the sandboxed write
   is refused: it never returns the file, but its error tells a matching context line from a wrong one.
-On Linux Codex enforces `deny` with its bundled bubblewrap (paths masked; it refuses to run a command whose deny path
-crosses a writable symlink): not exercised by these checks. Managed `requirements.toml` `deny_read` would work with
-`--sandbox` but lives in `/etc/codex` (root, every Codex run of the machine): not used.
+Linux (bubblewrap): the same checks in Debian 12 arm64 containers (codex-cli 0.150.1 from npm, bubblewrap 0.8.0), as
+root (privileged container, like the server's own root) and as uid 1000 (user namespaces): the argv of `command()` /
+`fork_command()` in every mode, resume and fork refuse both paths (`Permission denied`; the path is masked, so `ln`
+gives "Invalid cross-device link" and `mv` "Device or resource busy"), writes / `.git` / `/tmp` / network match
+`--sandbox`, and a missing deny path is accepted. Where bubblewrap cannot create namespaces (a default unprivileged
+container): with `--sandbox` the turn runs and every command fails ("No permissions to create new namespace"); with
+the profile the turn fails at start ("fs sandbox helper failed": Codex reads AGENTS.md through the sandbox). Codex
+refuses to put its `codex-linux-sandbox` helper under `/tmp`: a `CODEX_HOME` there breaks both forms. Managed
+`requirements.toml` `deny_read` would work with `--sandbox` but lives in `/etc/codex` (root, every Codex run of the
+machine): not used.
 
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),

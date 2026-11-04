@@ -62,8 +62,7 @@ websites; it does **not** protect your computer from the agents you start: they 
 - **Protect the secrets** (Settings -> Claude, on by default) makes Claude's file tools refuse `secrets.json` and
   `~/.ssh`. For Claude it is a speed bump: a command written to open the file still can. For Codex it is enforced by
   Codex's own sandbox, so the commands Codex runs, scripts included, cannot read or change them either (checked on
-  macOS; on Linux it relies on Codex's Linux sandbox and has not been checked yet). MCP servers run outside both
-  agents' rules and can read them.
+  macOS and Linux). MCP servers run outside both agents' rules and can read them.
 - The rest of the state folder is not covered, for either agent: the commands an agent runs can read the
   configuration, the session logs and the server's own SSH key for your other servers (`<state>/ssh`, see
   [Infra](infra)).
@@ -138,7 +137,8 @@ forwarded messages are the ones to put in a stricter mode.
 
 **Protect the secrets** (Settings -> Claude, on by default) makes Claude's tools refuse to read or edit
 `secrets.json` and `~/.ssh` in every mode. It is a speed bump, not a wall: a script written on purpose to open the
-file still can. Codex sessions get the same two paths denied by Codex's own sandbox (not yet checked on Linux).
+file still can. Codex sessions get the same two paths denied by Codex's own sandbox, which a script does not get
+around.
 
 ## Who can reach the UI
 
