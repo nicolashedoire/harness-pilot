@@ -932,6 +932,8 @@ function healthObj() {
   const jitter = Math.sin(Date.now() / 20000)
   const disk = { total: 80e9, free: Math.round(80e9 * 0.18), pct: 82 }
   if (!(S.scenario === 'ready' || S.scenario === 'login')) { disk.free = 52e9; disk.pct = 35 }
+  const seen = S.healthSeen || {} // POST /api/system/health/seen: an issue stops counting for 24 h
+  for (const i of issues) { i.id = i.code; i.seen = now() - (seen[i.id] || 0) < DAY }
   return { ok: !issues.some((i) => i.level === 'error'), issues, cpu_pct: +(23 + jitter * 8).toFixed(1), load: [+(0.42 + jitter * 0.1).toFixed(2), 0.38, 0.31],
     mem: { total: 8e9, avail: Math.round(3.1e9 + jitter * 2e8) }, disk, uptime_s: Math.round(now() - S.bootAt),
     claude_auth: S.claude.auth.ok, backup_age_h: last ? +((now() - last.at) / HOUR).toFixed(1) : null, failed_logins_1h: fails, at: now() }
@@ -2925,7 +2927,8 @@ R('GET', '/api/system/logs', ({ q }) => {
   const n = Math.min(2000, Math.max(1, parseInt(q.get('lines') || '200', 10) || 200))
   return { lines: journal(unit, n) }
 })
-R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3 }))
+R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3,
+  auto_update: { enabled: !!S.autoUpdate, tried: null, last_check: null }, report: S.updateReport ? { at: S.updateReport.at, version: S.updateReport.version, ok: S.updateReport.ok, problems: S.updateReport.problems } : null }))
 R('POST', '/api/system/update', () => ({ ok: true }))
 R('GET', '/api/system/changelog', () => ({ version: VERSION, entries: [
   { version: VERSION, label: 'unreleased', current: true, body: '- **Bulk task actions**: select several tasks and change them at once.\n- **Notifications** when Claude finishes.' },
@@ -3111,6 +3114,51 @@ for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected
   })
 }
 
+/* ---- update checks (server/maxxing/smartupdate.py), Codex status, automatic updates, health issues marked as seen.
+   The preflight shows an update that needs adapting one customization; "Verify" finds one extension to fix. */
+const UPDATE_TOPIC = 'projects/system/topics/harness' // cmd_core.update_topic(): created on first use in the mock
+const updateTopic = () => {
+  let p = S.projects.find((x) => x.name === 'system')
+  if (!p) { p = { name: 'system', description: 'Harness itself: tutorial, help, updates.', topics: [] }; S.projects.push(p) }
+  if (!p.topics.some((x) => x.name === 'harness')) { p.topics.push({ name: 'harness', description: 'Updates and customizations of this server' }); fsAdd(S, `${UPDATE_TOPIC}/CLAUDE.md`, '# Topic harness\n', now()) }
+  return UPDATE_TOPIC
+}
+const updateReport = (ok) => ({ at: now(), version: VERSION, ok, problems: ok ? 0 : 1,
+  extensions: [{ id: 'shop-sales', name: 'Shop sales', type: 'widget', ok: true, error: '' }, { id: 'notes', name: 'Notes', type: 'page', ok: true, error: '' },
+    { id: 'broken-widget', name: 'Broken widget', type: 'widget', ok: ok, error: ok ? '' : 'SyntaxError in api.py line 12', skipped: false }],
+  checks: [{ id: 'shop-widget', title: 'Shop sales widget on the dashboard', check: 'GET /api/ext/shop-sales/summary answers 200', ok: true, output: '200 OK in 38 ms' }] })
+function updateSession(title, prompt) {
+  const t = now(), s = { id: uuid(), title, path: updateTopic(), state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null,
+    context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+  S.sessions.push(s); S.events[s.id] = []
+  startTurn(s, prompt)
+  bus('sessions', 'workspace')
+  return s
+}
+R('POST', '/api/system/health/seen', ({ body }) => {
+  if (!healthObj().issues.some((i) => i.id === body.id)) fail(404, 'not_found', 'No current issue with this id')
+  const seen = (S.healthSeen ||= {})
+  if (body.seen === false) delete seen[body.id]; else seen[body.id] = now()
+  bus('health')
+  return healthObj()
+})
+R('GET', '/api/system/codex', () => (S.scenario === 'ready' || S.scenario === 'maxxing' ? { installed: true, authenticated: true, reason: null } : { installed: true, authenticated: false, reason: 'not_authenticated' }))
+R('PUT', '/api/system/auto-update', ({ body }) => { S.autoUpdate = !!body.enabled; return { ok: true, enabled: S.autoUpdate } })
+R('GET', '/api/system/update/preflight', async ({ q }) => {
+  if (q.get('refresh')) await sleep(1500)
+  return { ok: true, verdict: 'adapt', current: VERSION, latest: '2.0.1', behind: 3,
+    customs: [{ id: 'c_7f3a', title: 'Shop sales widget on the dashboard', why: 'Shows the day’s orders next to the server card.', files: ['web/src/features/dashboard/ShopCard.tsx', 'server/maxxing/widgets.py'],
+      status: 'review', conflicts: [], overlap: ['server/maxxing/widgets.py'] }],
+    unsaved: [], web_changes: ['web/src/features/dashboard'], extensions: [{ id: 'broken-widget', name: 'Broken widget', api: 1, reason: 'Extension API 1 is no longer loaded: move it to API 2' }],
+    notes: [{ version: '2.0.1' }], changelog: '- **Bulk task actions**: select several tasks and change them at once.\n- Faster dashboard cards.' }
+})
+R('GET', '/api/system/update/report', () => ({ report: S.updateReport || null }))
+R('POST', '/api/system/update/verify', async () => { await sleep(1800); S.updateReport = updateReport(false); return { report: S.updateReport } })
+R('POST', '/api/system/update/assist', () => ({ session: updateSession('Adapt my changes, then update', 'Adapt the customizations of this server to the next version (see the preflight), then run the update.') }))
+R('POST', '/api/system/update/fix', () => {
+  if (!S.updateReport || S.updateReport.ok) fail(409, 'nothing_to_fix', 'The last verification found nothing broken')
+  return { session: updateSession(`Fix after the update to ${S.updateReport.version}`, 'The last verification found a problem: Broken widget (SyntaxError in api.py line 12). Fix it and verify again.') }
+})
 /* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
    The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
 const IMPORT_HINTS = {

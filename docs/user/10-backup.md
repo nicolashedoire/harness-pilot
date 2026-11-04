@@ -114,8 +114,10 @@ Only a **whitelist**, relative to the workspace:
   (your changes to the product code, see [Customizing](customizing));
 - by default also: `**/NOTES.md`, `tasks.json`, `projects/*/topics/*/accounts.md` (the subscriptions inventory, kept in `general/inbox`), `extensions/**`, `.claude/skills/**`
   (editable in Settings -> Backup);
-- plus non-secret settings (time zone, language, default model, dashboard layout...) and your
-  scheduled jobs, in a `_maxxing/` folder.
+- plus non-secret settings (time zone, language, default model, dashboard layout...), your
+  scheduled jobs and the space labels (Personal, Agents, Shared) of the saved files and of the folders that hold
+  them, in a `_maxxing/` folder. A restore puts the labels back on the restored items; labels already set on other
+  items stay.
 
 Never saved, even if a pattern matches: `secrets.json`, keys, `.env` files, private keys,
 credentials, logs, `attachments/`, `.git`, `node_modules` and virtual environments. Session conversations are stored outside the workspace and are not included. Other project files are included only when a configured pattern matches them. This is a selected-file memory backup, not a complete project archive.

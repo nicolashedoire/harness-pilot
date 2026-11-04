@@ -724,6 +724,7 @@ against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 - `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,
   launch_guard=None)`: an existing session tagged with `launch_key` is returned instead of a new run; `plan` =
   `plan_mode` + `permission_mode='plan'` (the engine must declare the `plan` capability) and a read-only prompt.
+- Plan mode in a discussion (runner): its turns use `DEBATE_PLAN_PREFACE` instead of `PLAN_PREFACE` (Claude and Codex paths); a `plan_approved` item becomes `DEBATE_PLAN_APPROVED_PREFACE` + text in `turn`, and `_debate_followup` pauses the exchange after it (`discussion_pause_reason` `user`, next reply in `debate_pending`).
   Manual companion runs keep the defaults. `companions.MAX_MISSION` (6000) bounds the mission text; missions check it
   when a plan is created, saved or started (`_check_lengths`, `TooLong` with `details` {step, title, excess}, kept in the
   error body by `api/missions._call`), trim prerequisite reports at launch, and fit the planner's role catalog.
