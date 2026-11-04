@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Codex discussion, each in its own thread like `/new`, which still starts Claude Code. Sent in the main chat, they ask where the session lives, as a message does. A discussion started there pauses after 6 replies and says so: write to continue. If Codex is not installed or not signed in where harness-pilot runs, the bot says so and starts nothing. In a Codex session, `/model` shows its model without changing it, and `/status` now names the agent.
 - Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed. Outside **Full access**, Codex only uses the tools a server marks as read-only.
 - A mixed team's mission can be spoken: the recording is transcribed and its text is sent as the mission, like a voice message in the other modes.
 - **Summarise & restart** on a discussion whose second agent is an agent engine now keeps that engine in the new discussion, and the engine starts from the summary.

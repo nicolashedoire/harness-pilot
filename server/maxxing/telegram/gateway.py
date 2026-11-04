@@ -26,7 +26,9 @@ Lifecycle
   thread - the user message ("🖥 …") and the answer, silently unless the session has Notify on.
 - New sessions from the phone: write in the main chat, or create a thread yourself -> the bot asks
   where (topic buttons); the session is created there (fallback after NEW_WAIT: general/inbox) and
-  the thread becomes its thread. `/new [title]` in a session thread opens a sibling session.
+  the thread becomes its thread. `/new [title]` in a session thread opens a sibling session. Claude Code
+  is the default agent; `/codex [title]` and `/discuss [title]` do the same with Codex or a Claude Code + Codex
+  discussion (NEW_COMMANDS), once `sessions.codex.status()` says Codex is not signed out.
 - When topics are not enabled for the bot everything falls back to the main chat
   (`topics_enabled=false`): a message -> the topic's Telegram session (`config.telegram.sessions[path]`,
   `/topic`, `/new`, `/sessions`).
@@ -169,6 +171,10 @@ SHOWN_TOPICS = 6               # topic buttons before "More…"
 CREATE_PAUSE = 1.0             # between thread creations after the first few
 TITLE_WAIT = 60.0              # a new session's thread waits (at most) this long for its short title
 RENAME_QUIET = 120.0           # one rename at most in a session's first seconds (each one posts a notice)
+DISCUSS_TURNS = 6              # replies of a discussion started from Telegram before it pauses (a message continues)
+NEW_COMMANDS = {"new": "claude", "codex": "codex", "discuss": "discussion"}   # command -> provider of the new session
+AGENTS = {"claude": "Claude Code", "codex": "Codex", "discussion": "Claude Code + Codex",
+          "debate": "Claude Code + Codex"}
 _early_renames: set[str] = set()
 
 WORDS = {
@@ -201,7 +207,9 @@ WORDS["en"].update({
     "help": ("<b>harness-pilot</b> - this chat: <i>{topic}</i>\n\n"
              "Write a message (text, voice note, photo or file) to talk to harness-pilot in this topic. Each thread is one "
              "topic of your workspace; the conversation is the same session you see in the web UI.\n\n"
-             "/new [title] - new session in this topic\n"
+             "/new [title] - new Claude Code session in this topic\n"
+             "/codex [title] - new Codex session in this topic\n"
+             "/discuss [title] - Claude Code + Codex discussion in this topic\n"
              "/sessions - choose which session this chat talks to\n"
              "/stop - stop the running turn\n"
              "/model [id] - choose the model\n"
@@ -212,7 +220,9 @@ WORDS["en"].update({
                      "Write in a session's thread to talk to harness-pilot there; write in the main chat (or create a "
                      "thread) to start a new session - you choose its topic. /close (or archiving the session in "
                      "the web UI) closes it: the thread goes away, the conversation stays in the web UI.\n\n"
-                     "/new [title] - new session (its own thread)\n"
+                     "/new [title] - new Claude Code session (its own thread)\n"
+                     "/codex [title] - new Codex session (its own thread)\n"
+                     "/discuss [title] - Claude Code + Codex discussion (its own thread)\n"
                      "/sessions - list the open sessions\n"
                      "/stop - stop the running turn\n"
                      "/close - close this session (archived, thread deleted)\n"
@@ -220,10 +230,28 @@ WORDS["en"].update({
                      "/status - state, model, cost, queue"),
     "main_chat": "main chat", "general": "General", "general_root": "General (workspace root)",
     "untitled": "Untitled", "default": "default",
-    "cmd_new": "Start a new session (its own thread)", "cmd_sessions": "List the open sessions",
+    "cmd_new": "Start a new Claude Code session (its own thread)", "cmd_sessions": "List the open sessions",
+    "cmd_codex": "Start a new Codex session (its own thread)",
+    "cmd_discuss": "Start a Claude Code + Codex discussion (its own thread)",
     "cmd_stop": "Stop the running turn", "cmd_close": "Close this session (archived, thread deleted)",
     "cmd_model": "Choose the model of the session", "cmd_status": "Session status: state, model, cost, queue",
     "cmd_topic": "Pick the topic (when threads are off)", "cmd_help": "What this bot can do",
+    "where_codex": "Where should this Codex session live?",
+    "where_discussion": "Where should this Claude Code + Codex discussion live?",
+    "agent_set": "{agent} it is. Choose where the session lives (buttons above).",
+    "ready_codex": "Codex session: write your message here.",
+    "ready_discussion": "Claude Code + Codex discussion: write your question here.",
+    "discuss_note": "They answer in turn and pause after {n} replies - write again to continue, /stop to end.",
+    "new_flat": "🆕 New session: <b>{title}</b>{agent} - write your message.",
+    "paused_limit": "⏸ The discussion paused after {n} replies. Write a message to continue it.",
+    "codex_missing": ("⚠️ Codex is not installed where harness-pilot runs, so nothing was started. Install the Codex "
+                      "command there, sign in with <code>codex login</code>, then send /{cmd} again "
+                      "(Settings → Codex shows its state)."),
+    "codex_signed_out": ("⚠️ Codex is not signed in where harness-pilot runs, so nothing was started. Run "
+                         "<code>codex login</code> in a terminal there, then send /{cmd} again "
+                         "(Settings → Codex shows its state)."),
+    "model_fixed": "This session runs {agent} ({model}): /model only changes the model of Claude Code sessions.",
+    "st_agent": "Agent: {v}", "st_replies": " · {n} replies", "st_paused": " · paused",
     "queued": "⏳ Queued - harness-pilot is still working on the previous message.",
     "nothing_running": "Nothing is running.", "stopped": "⏹ Stopped.",
     "unsupported": "This kind of message is not supported yet - send text, a photo or a file.",
@@ -264,7 +292,9 @@ WORDS["fr"].update({
     "help": ("<b>harness-pilot</b> - ce chat : <i>{topic}</i>\n\n"
              "Écrivez un message (texte, message vocal, photo ou fichier) pour parler à harness-pilot dans ce topic. Chaque "
              "fil est un topic de votre workspace ; la conversation est la même session que dans l'interface web.\n\n"
-             "/new [titre] - nouvelle session dans ce topic\n"
+             "/new [titre] - nouvelle session Claude Code dans ce topic\n"
+             "/codex [titre] - nouvelle session Codex dans ce topic\n"
+             "/discuss [titre] - discussion Claude Code + Codex dans ce topic\n"
              "/sessions - choisir la session à laquelle ce chat parle\n"
              "/stop - arrêter le tour en cours\n"
              "/model [id] - choisir le modèle\n"
@@ -276,7 +306,9 @@ WORDS["fr"].update({
                      "créez un fil) pour démarrer une nouvelle session - vous choisissez son topic. /close (ou archiver "
                      "la session dans l'interface web) la ferme : le fil disparaît, la conversation reste dans "
                      "l'interface web.\n\n"
-                     "/new [titre] - nouvelle session (son propre fil)\n"
+                     "/new [titre] - nouvelle session Claude Code (son propre fil)\n"
+                     "/codex [titre] - nouvelle session Codex (son propre fil)\n"
+                     "/discuss [titre] - discussion Claude Code + Codex (son propre fil)\n"
                      "/sessions - lister les sessions ouvertes\n"
                      "/stop - arrêter le tour en cours\n"
                      "/close - fermer cette session (archivée, fil supprimé)\n"
@@ -284,10 +316,30 @@ WORDS["fr"].update({
                      "/status - état, modèle, coût, file d'attente"),
     "main_chat": "chat principal", "general": "Général", "general_root": "Général (racine du workspace)",
     "untitled": "Sans titre", "default": "par défaut",
-    "cmd_new": "Démarrer une nouvelle session (son propre fil)", "cmd_sessions": "Lister les sessions ouvertes",
+    "cmd_new": "Démarrer une nouvelle session Claude Code (son propre fil)", "cmd_sessions": "Lister les sessions ouvertes",
+    "cmd_codex": "Démarrer une nouvelle session Codex (son propre fil)",
+    "cmd_discuss": "Démarrer une discussion Claude Code + Codex (son propre fil)",
     "cmd_stop": "Arrêter le tour en cours", "cmd_close": "Fermer cette session (archivée, fil supprimé)",
     "cmd_model": "Choisir le modèle de la session", "cmd_status": "État de la session : modèle, coût, file",
     "cmd_topic": "Choisir le topic (fils désactivés)", "cmd_help": "Ce que ce bot sait faire",
+    "where_codex": "Où mettre cette session Codex ?",
+    "where_discussion": "Où mettre cette discussion Claude Code + Codex ?",
+    "agent_set": "Ce sera {agent}. Choisissez où mettre la session (boutons au-dessus).",
+    "ready_codex": "Session Codex : écrivez votre message ici.",
+    "ready_discussion": "Discussion Claude Code + Codex : écrivez votre question ici.",
+    "discuss_note": ("Ils répondent à tour de rôle et font une pause après {n} réponses - écrivez à nouveau pour "
+                     "continuer, /stop pour arrêter."),
+    "new_flat": "🆕 Nouvelle session : <b>{title}</b>{agent} - écrivez votre message.",
+    "paused_limit": "⏸ La discussion est en pause après {n} réponses. Écrivez un message pour la continuer.",
+    "codex_missing": ("⚠️ Codex n'est pas installé là où harness-pilot tourne : rien n'a été démarré. Installez-y "
+                      "la commande Codex, connectez-vous avec <code>codex login</code>, puis renvoyez /{cmd} "
+                      "(Réglages → Codex montre son état)."),
+    "codex_signed_out": ("⚠️ Codex n'est pas connecté là où harness-pilot tourne : rien n'a été démarré. Lancez "
+                         "<code>codex login</code> dans un terminal sur cet ordinateur, puis renvoyez /{cmd} "
+                         "(Réglages → Codex montre son état)."),
+    "model_fixed": ("Cette session utilise {agent} ({model}) : /model ne change que le modèle des sessions "
+                    "Claude Code."),
+    "st_agent": "Agent : {v}", "st_replies": " · {n} réponses", "st_paused": " · en pause",
     "queued": "⏳ En file d'attente - harness-pilot travaille encore sur le message précédent.",
     "nothing_running": "Rien n'est en cours.", "stopped": "⏹ Arrêté.",
     "unsupported": "Ce type de message n'est pas encore pris en charge - envoyez du texte, une photo ou un fichier.",
@@ -328,7 +380,9 @@ CONFLICT_HELP = ("Another program (n8n, Hermes, OpenClaw, a second harness-pilot
                  "bot's messages: stop it, or create a bot dedicated to harness-pilot with @BotFather.")
 
 COMMANDS = [
-    ("new", "Start a new session (its own thread)"),
+    ("new", "Start a new Claude Code session (its own thread)"),
+    ("codex", "Start a new Codex session (its own thread)"),
+    ("discuss", "Start a Claude Code + Codex discussion (its own thread)"),
     ("sessions", "List the open sessions"),
     ("stop", "Stop the running turn"),
     ("close", "Close this session (archived, thread deleted)"),
@@ -824,6 +878,50 @@ def _fmt_cost(v: Any) -> str:
         return f"${float(v):.2f}"
     except (TypeError, ValueError):
         return "-"
+
+
+def _codex_status() -> dict:
+    """`sessions.codex.status()`: the CLI and sign-in Codex sessions use (blocking, 8 s at most: call it in a worker
+    thread). A failed check reads as unknown (`authenticated: None`), which never blocks."""
+    try:
+        return importlib.import_module("maxxing.sessions.codex").status()
+    except Exception:  # noqa: BLE001
+        log.exception("codex status failed")
+        return {"installed": True, "authenticated": None, "reason": "status_unavailable"}
+
+
+def agent_name(s: dict) -> str:
+    """Display name of a session's agent ("Claude Code", "Codex", "Claude Code + Codex", an agent plugin's name)."""
+    provider = str(s.get("provider") or "claude")
+    return AGENTS.get(provider) or s.get("provider_name") or provider
+
+
+def _fixed_model(s: dict) -> bool:
+    """A Codex or agent-plugin session: its model is not one of Claude's (/model leaves it alone)."""
+    provider = str(s.get("provider") or "claude")
+    return provider == "codex" or provider.startswith("plugin:")
+
+
+def _agent_kw(provider: str) -> dict:
+    """create_session arguments of another agent than Claude Code (none for Claude: the default)."""
+    if provider == "discussion":
+        return {"provider": provider, "discussion_turn_limit": DISCUSS_TURNS}
+    return {} if provider == "claude" else {"provider": provider}
+
+
+def _where(path: str, provider: str = "claude") -> str:
+    """"acme / blog" in the new-session messages, " · Codex" after it for another agent than Claude Code."""
+    where = topic_label(path) if path else "General"
+    return where if provider == "claude" else f"{where} · {AGENTS.get(provider, provider)}"
+
+
+def _ready(provider: str) -> str:
+    """First message of a new session's thread: what to do there."""
+    if provider == "codex":
+        return _w("ready_codex")
+    if provider == "discussion":
+        return _w("ready_discussion") + " " + _w("discuss_note", n=DISCUSS_TURNS)
+    return _w("ready")
 
 
 # =============================================================================================
@@ -1391,22 +1489,46 @@ class Gateway:
                 p["msgs"].append(msg)
                 self._new_save()
             return
+        if cmd in NEW_COMMANDS:
+            if not await self._agent_ready(msg, cmd):     # Codex signed out: said here, nothing asked or changed
+                return
+            p = self._new.get(key)                        # the "where?" timeout may have run meanwhile
+            if p is not None and p.get("starting"):
+                return
         if p is None:
             p = self._new[key] = {"msgs": [], "name": "", "title": "", "chat": msg["chat"]["id"], "thread": tid,
-                                  "asked": None, "task": None, "at": time.time()}
+                                  "asked": None, "task": None, "at": time.time(), "provider": "claude"}
+        changed = False
         if msg.get("forum_topic_created"):
             p["name"] = " ".join(str((msg["forum_topic_created"] or {}).get("name") or "").split())[:80]
-        elif cmd == "new":
+        elif cmd in NEW_COMMANDS:
             p["title"] = arg[:80]
+            changed = (p.get("provider") or "claude") != NEW_COMMANDS[cmd]
+            p["provider"] = NEW_COMMANDS[cmd]
         else:
             p["msgs"].append(msg)
         self._new_save()
+        provider = p.get("provider") or "claude"
         if p["asked"] is None:
             p["asked"] = 0                                # one question, even if the next message comes meanwhile
-            m = await self._reply(msg, _w("where"), markup=keyboard(await self._where_rows(key)), silent=True)
+            m = await self._reply(msg, _w("where" if provider == "claude" else f"where_{provider}"),
+                                  markup=keyboard(await self._where_rows(key)), silent=True)
             p["asked"] = (m or {}).get("message_id") or 0
             p["task"] = self.spawn(self._new_timeout(key), "new-session")
             self._new_save()
+        elif changed:                                     # asked already: the buttons above now make this agent's
+            await self._reply(msg, _w("agent_set", agent=AGENTS[provider]), silent=True)
+
+    async def _agent_ready(self, msg: dict, cmd: str) -> bool:
+        """`/codex` and `/discuss` need Codex installed and signed in where harness-pilot runs: else the chat is told
+        and nothing is created. An unknown state (the check failed) does not block: the turn reports its own error."""
+        if NEW_COMMANDS.get(cmd, "claude") == "claude":
+            return True
+        st = await asyncio.to_thread(_codex_status)
+        if st.get("authenticated") is not False:
+            return True
+        await self._reply(msg, _w("codex_signed_out" if st.get("installed") else "codex_missing", cmd=cmd), html=True)
+        return False
 
     def _new_save(self) -> None:
         keep = {str(k): {f: v for f, v in p.items() if f != "task"} for k, p in self._new.items()}
@@ -1494,22 +1616,25 @@ class Gateway:
         first = next((m.get("text") or m.get("caption") for m in p["msgs"] if m.get("text") or m.get("caption")), "")
         title = p["title"] or p["name"] or " ".join((first or "").split())[:60] or "Telegram"
         auto = not (p["title"] or p["name"]) and bool((first or "").strip())   # made from the message: shortened later
+        provider = p.get("provider") or "claude"
         try:
             s, tid, name = await self.new_session(path, title, p["chat"], p["thread"],
-                                                  quote=first if p["thread"] is None else "", auto_title=auto)
+                                                  quote=first if p["thread"] is None else "", auto_title=auto,
+                                                  provider=provider)
         except Exception as e:                              # keep the messages: the buttons can be tapped again
             log.exception("telegram new session failed")
             p["starting"], p["task"] = False, None
             self._new_save()
             await self.send_html(p["chat"], p["thread"], "⚠️ " + fmt.escape(_w("start_failed", err=str(e)[:300])))
             return
-        where = topic_label(path) if path else "General"
+        where = _where(path, provider)
+        note = "\n" + fmt.escape(_w("discuss_note", n=DISCUSS_TURNS)) if provider == "discussion" else ""
         try:
             if p["asked"]:
                 words = "moved" if p["thread"] is None and tid is not None else "started"
                 await self._edit({"chat": {"id": p["chat"]}, "message_id": p["asked"]},
                                  _w(words, title=fmt.escape(s.get("title") or title), where=fmt.escape(where),
-                                    name=fmt.escape(name)) + (_w("auto") if auto else ""))
+                                    name=fmt.escape(name)) + (_w("auto") if auto else "") + note)
             sent = 0
             while p["msgs"]:
                 m = p["msgs"].pop(0)
@@ -1519,23 +1644,25 @@ class Gateway:
                 await self._dispatch(m, path, s["id"], m.get("text") or m.get("caption") or "")
                 sent += 1
             if not sent and tid is not None:
-                await self.send_html(p["chat"], tid, _w("ready"), silent=True)
+                await self.send_html(p["chat"], tid, fmt.escape(_ready(provider)), silent=True)
         finally:
             if self._new.get(key) is p and not self._stopping:   # stopping: the next start says what was left
                 self._new.pop(key, None)
                 self._new_save()
 
     async def new_session(self, path: str, title: str, chat: int, tid: int | None = None,
-                          quote: str = "", auto_title: bool = False, plan_mode: bool = False) -> tuple[dict, int | None, str]:
+                          quote: str = "", auto_title: bool = False, plan_mode: bool = False,
+                          provider: str = "claude") -> tuple[dict, int | None, str]:
         """Create a Telegram session in `path` with its thread (`tid` = a thread the user made, else a new
-        one). Returns (session, thread id or None, thread name)."""
+        one), run by `provider` (NEW_COMMANDS). Returns (session, thread id or None, thread name)."""
         svc = _service()
         if svc is None:
             raise RuntimeError("Sessions are not available on this server yet.")
         assert self._sync_lock is not None
         async with self._sync_lock:                       # the sync must not race the new mapping
             kw = {"auto_title": True} if auto_title else {}
-            s = await _svc(svc.create_session, path, source="telegram", title=title, plan_mode=plan_mode, **kw)
+            s = await _svc(svc.create_session, path, source="telegram", title=title, plan_mode=plan_mode, **kw,
+                           **_agent_kw(provider))
             name = session_label(s, [t["path"] for t in _topics()])
             if tid is not None:
                 _set_session_thread(s["id"], tid, "")
@@ -1812,8 +1939,9 @@ class Gateway:
         if isinstance(res, dict) and res.get("queued"):
             await self._reply(first, _w("queued"), silent=True)
 
-    async def _session_for(self, path: str, fresh: bool = False, title: str = "Telegram") -> str:
-        """The session Telegram talks to in this topic (created when missing or deleted)."""
+    async def _session_for(self, path: str, fresh: bool = False, title: str = "Telegram",
+                           provider: str = "claude") -> str:
+        """The session Telegram talks to in this topic (created when missing or deleted; `provider` for a fresh one)."""
         svc = _service()
         if svc is None:
             raise RuntimeError("Sessions are not available on this server yet.")
@@ -1823,7 +1951,7 @@ class Gateway:
             if not s or s.get("archived"):
                 sid = None
         if not sid:
-            s = await _svc(svc.create_session, path, source="telegram", title=title)
+            s = await _svc(svc.create_session, path, source="telegram", title=title, **_agent_kw(provider))
             sid = s["id"]
             mutate_tg(lambda tg: tg.setdefault("sessions", {}).__setitem__(path, sid))
             bus.invalidate("telegram")
@@ -2019,6 +2147,7 @@ class Gateway:
                         log.exception("telegram status update failed")
                 p["refs"] = [r for r in p["refs"] if r not in done]
                 await self._answer(sid, session, result, p["chat"], p["thread"])
+                await self._paused_notice(sid, session, p["chat"], p["thread"])
             elif session.get("state") == "error":       # the turn never started (or its runner died)
                 self._untrack(sid)
                 err = session.get("error") or "the turn failed"
@@ -2038,6 +2167,7 @@ class Gateway:
             chat = tg_config().get("chat_id")
             if chat:
                 await self._answer(sid, session, result, chat, thread_of(sid), silent=not session.get("notify"))
+                await self._paused_notice(sid, session, chat, thread_of(sid))
                 return
         if mirror_web() and threaded() and is_human(session) \
                 and not session.get("archived") and await self._mirror(session, result):
@@ -2074,6 +2204,14 @@ class Gateway:
             tid = thread_of(sid) or tid                 # the send may have reopened the thread
         await self._answer(sid, session, result, chat, tid, silent=not session.get("notify"))
         return True
+
+    async def _paused_notice(self, sid: str, session: dict, chat: int, thread: int | None) -> None:
+        """A discussion followed on Telegram paused on its limit: say so after the reply (else the thread just goes
+        quiet) and how to go on."""
+        if session.get("provider") in ("discussion", "debate") and session.get("debate_paused") \
+                and session.get("discussion_pause_reason") == "limit":
+            n = int(session.get("discussion_turns") or 0)
+            await self.send_html(chat, thread_of(sid) or thread, fmt.escape(_w("paused_limit", n=n)), silent=True)
 
     async def _answer(self, sid: str, session: dict, result: dict | None, chat: int,
                       thread: int | None, silent: bool = False) -> None:
@@ -2122,18 +2260,8 @@ class Gateway:
             await self._reply(msg, _w("no_sessions"))
             return
         try:
-            if cmd == "new" and threaded():
-                s, tid, name = await self.new_session(path, arg[:80] or "Telegram", msg["chat"]["id"])
-                await self._reply(msg, _w("moved" if tid else "started", title=fmt.escape(s.get("title") or "Telegram"),
-                                         where=fmt.escape(topic_label(path) if path else "General"),
-                                         name=fmt.escape(name)), html=True)
-                if tid:
-                    await self.send_html(msg["chat"]["id"], tid, _w("ready"), silent=True)
-            elif cmd == "new":
-                sid = await self._session_for(path, fresh=True, title=arg[:80] or "Telegram")
-                s = await _svc(svc.get_session, sid) or {}
-                await self._reply(msg, f"🆕 New session: <b>{fmt.escape(s.get('title') or 'Telegram')}</b>"
-                                       " - write your message.", html=True)
+            if cmd in NEW_COMMANDS:
+                await self._cmd_new(msg, path, arg, cmd)
             elif cmd == "sessions" and threaded():
                 await self._cmd_open_sessions(msg)
             elif cmd == "sessions":
@@ -2158,6 +2286,28 @@ class Gateway:
         except Exception as e:
             log.exception("telegram command /%s failed", cmd)
             await self._reply(msg, f"⚠️ {e}")
+
+    async def _cmd_new(self, msg: dict, path: str, arg: str, cmd: str) -> None:
+        """/new, /codex, /discuss in a session thread: a sibling session in the same topic with its own thread;
+        threads off: the topic's new Telegram session."""
+        provider = NEW_COMMANDS[cmd]
+        if not await self._agent_ready(msg, cmd):
+            return
+        title = arg[:80] or "Telegram"
+        if threaded():
+            s, tid, name = await self.new_session(path, title, msg["chat"]["id"], provider=provider)
+            await self._reply(msg, _w("moved" if tid else "started", title=fmt.escape(s.get("title") or "Telegram"),
+                                     where=fmt.escape(_where(path, provider)), name=fmt.escape(name)), html=True)
+            if tid:
+                await self.send_html(msg["chat"]["id"], tid, fmt.escape(_ready(provider)), silent=True)
+            return
+        sid = await self._session_for(path, fresh=True, title=title, provider=provider)
+        s = await _svc(_service().get_session, sid) or {}
+        text = _w("new_flat", title=fmt.escape(s.get("title") or "Telegram"),
+                  agent="" if provider == "claude" else " · " + fmt.escape(AGENTS[provider]))
+        if provider == "discussion":
+            text += "\n" + fmt.escape(_w("discuss_note", n=DISCUSS_TURNS))
+        await self._reply(msg, text, html=True)
 
     async def _cmd_sessions(self, msg: dict, path: str) -> None:
         svc = _service()
@@ -2213,6 +2363,11 @@ class Gateway:
     async def _cmd_model(self, msg: dict, path: str, arg: str, sid: str | None = None) -> None:
         svc = _service()
         sid = sid or await self._session_for(path)
+        s = await _svc(svc.get_session, sid) or {}
+        if _fixed_model(s):                             # Codex, an agent plugin: Claude's models would break its turns
+            await self._reply(msg, _w("model_fixed", agent=agent_name(s), model=s.get("model") or _w("default")),
+                              silent=True)
+            return
         models = _models()
         if arg:
             model = resolve_model(arg, models)
@@ -2224,7 +2379,6 @@ class Gateway:
             await self._set_model(sid, model)
             await self._reply(msg, _w("model_set", model=fmt.escape(model or _w("default"))), html=True)
             return
-        s = await _svc(svc.get_session, sid) or {}
         cur = s.get("model") or ""
         rows = [[(("● " if mid == cur else "") + label, f"m:{mid}")] for mid, label in models]
         real = s.get("real_model")
@@ -2236,6 +2390,9 @@ class Gateway:
         fn = getattr(svc, "update_session", None)
         if fn is None:
             raise RuntimeError("Changing the model is not supported by this server version.")
+        s = await _svc(svc.get_session, sid) or {}
+        if _fixed_model(s):                             # an older model keyboard tapped after /codex (threads off)
+            raise RuntimeError(_w("model_fixed", agent=agent_name(s), model=s.get("model") or _w("default")))
         await _svc(fn, sid, model=model)
 
     async def _cmd_topic(self, msg: dict) -> None:
@@ -2383,8 +2540,12 @@ class Gateway:
 def status_text(s: dict, path: str) -> str:
     """HTML /status reply for a session."""
     e = fmt.escape
+    agent = _w("st_agent", v=e(agent_name(s)))
+    if s.get("provider") in ("discussion", "debate"):
+        n, limit = int(s.get("discussion_turns") or 0), s.get("discussion_turn_limit")
+        agent += _w("st_replies", n=f"{n}/{limit}" if limit else n) + (_w("st_paused") if s.get("debate_paused") else "")
     lines = [f"<b>{e(s.get('title') or _w('untitled'))}</b>",
-             _w("st_topic", v=e(topic_label(path) if path else _w("general"))),
+             _w("st_topic", v=e(topic_label(path) if path else _w("general"))), agent,
              _w("st_state", v=e(str(s.get("state") or "?"))) + (_w("st_queued", n=s.get("queue")) if s.get("queue") else ""),
              _w("st_model", v=e(s.get("model") or _w("default")))
              + (_w("model_last", model=e(s["real_model"])) if s.get("real_model") else ""),

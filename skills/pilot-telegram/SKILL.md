@@ -18,7 +18,8 @@ cron, active in the last `thread_days` days (Settings -> Telegram, default 30), 
 - Mirror (`mirror_web`, off by default, Settings -> Telegram): turns made in the web UI are copied
   into the thread (the user message "🖥 …" + the answer), silently unless the session's bell is on.
 - Main chat message, or a thread the user creates -> the bot asks which topic (buttons, default
-  `general/inbox` after 5 min) -> new session there, that thread becomes its thread.
+  `general/inbox` after 5 min) -> new session there, that thread becomes its thread. New sessions use
+  Claude Code; `/codex` (Codex) or `/discuss` (Claude Code + Codex discussion) choose another agent.
 - Sync = automatic (a few seconds after a session change + every 10 minutes); **Sync threads**
   (Settings -> Telegram -> Threads) forces it. No cron needed.
 
@@ -42,11 +43,18 @@ A token must never be pasted in a session or written in memory; the wizard store
 it is now in the conversation log (rotate with BotFather `/revoke` if needed).
 
 ## Use
-- Write in a session's thread -> Claude answers there. Photos and documents are saved as attachments
-  of the topic and passed to Claude.
-- Commands: `/new [title]` (sibling session in the same topic, own thread), `/stop` (stop the
-  running turn), `/close` (archive + delete the thread), `/model <id>`, `/sessions` (list the open
-  sessions), `/status`.
+- Write in a session's thread -> its agent answers there. Photos and documents are saved as attachments
+  of the topic and passed to it.
+- Commands: `/new [title]` (sibling Claude Code session in the same topic, own thread), `/codex [title]`
+  (the same with Codex), `/discuss [title]` (the same with a Claude Code + Codex discussion), `/stop` (stop the
+  running turn), `/close` (archive + delete the thread), `/model <id>` (Claude Code's model; a Codex session only
+  shows its own), `/sessions` (list the open sessions), `/status` (agent, state, model, cost, queue).
+- In the main chat, `/codex` or `/discuss` before choosing the topic changes the agent of the session being made.
+- `/codex` and `/discuss` need Codex installed and signed in where harness-pilot runs (Settings -> Codex): if not,
+  the bot says so (run `codex login`) and starts nothing.
+- A discussion started from Telegram pauses after 6 replies (the bot says so in its thread); a new message
+  continues it for 6 more, `/stop` ends it while the agents talk. Change the limit in the web UI (Change limits);
+  roles, debate mode or a duration limit: start the discussion from the web UI.
 - The session's bell (Notify): a short "finished" message in its thread when a turn ends (mirror on:
   the mirrored answers ring instead).
 
@@ -73,5 +81,6 @@ are kept apart; `topics_notice` = Threaded Mode off (info). State file: `state_d
 | A session's thread disappeared | the session was archived (`/close`, deleted thread) or is idle longer than `thread_days`; un-archive it or write in it from the web UI |
 | "Crons" or "Alerts" thread deleted | **Sync threads** recreates it |
 | No cron reports | Telegram setting `notify_crons` off, or the job's notify policy is `never` |
+| "Codex is not signed in" / "not installed" after `/codex` or `/discuss` | install the Codex CLI where harness-pilot runs and run `codex login` there; Settings -> Codex shows the state |
 
 Never call `getUpdates` yourself against the configured bot: it would steal updates from the gateway.

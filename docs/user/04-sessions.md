@@ -40,6 +40,8 @@ are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn,
 **Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
+On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Codex discussion
+([Telegram](telegram#choosing-the-agent)).
 
 These features are for Claude Code only for now:
 
@@ -52,7 +54,6 @@ These features are for Claude Code only for now:
 - **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
   follows its own sandbox, which still lets it read those files.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
-- **New sessions started from Telegram** use Claude Code.
 
 **Summary and actions** works with either agent: Codex when it is signed in, otherwise Claude Code.
 
@@ -461,7 +462,8 @@ message is searchable a second after it is written; edited files within half a m
 ## Sessions from Telegram and crons
 
 Telegram conversations and Claude cron jobs create normal sessions (marked with their source).
-A Telegram session can be continued from the web UI and the other way round.
+A Telegram session can be continued from the web UI and the other way round. Telegram starts Claude Code sessions;
+`/codex` and `/discuss` start a Codex session or a Claude Code + Codex discussion instead.
 
 ## Keyboard shortcuts
 
