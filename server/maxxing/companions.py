@@ -37,6 +37,7 @@ REVERSE = {'id': 'reverse-engineer', 'name': 'Reverse engineering investigator',
                    'For local model changes, use the pilot-model-evolution skill when available; REA is not a weight-semantic decoder.'}
 DEFAULTS = (DEFAULT, SECURITY, ARCHITECT, REVERSE)
 MAX_PATCH = 2 * 1024 * 1024
+MAX_MISSION = 6000  # characters of the mission text given to one run
 
 
 def _dir() -> Path:
@@ -124,7 +125,7 @@ def run(ident: str, path: str, mission: str = '', *, purpose: str = 'experiment'
         workspace.topic_dir(workspace.normalize_path(path))
     except ValueError as e:
         raise service.SessionError(400, 'bad_path', str(e)) from None
-    if len(mission) > 6000:
+    if len(mission) > MAX_MISSION:
         raise service.SessionError(400, 'bad_mission', 'Mission is too long.')
     from . import agent_providers
     provider = profile.get('provider') or 'codex'

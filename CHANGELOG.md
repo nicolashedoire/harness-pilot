@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A resident mission step that would be too long for one agent request is now refused when you save or start the plan, naming the step and how many characters to remove, instead of failing at launch. Prerequisite reports are shortened so a reviewed plan always fits.
 - The architect's planning run for a resident mission no longer sends a "companion review finished without changes" notification; the mission tells you when its plan is ready.
 - A resident mission waiting for your decision on a proposal no longer re-examines that proposal every two seconds, which lowers background load.
 - A resident mission step stopped before its agent received the assignment now runs again when you resume, without using a run. A step interrupted afterwards, failed or rejected offers **Retry** next to **Skip**.

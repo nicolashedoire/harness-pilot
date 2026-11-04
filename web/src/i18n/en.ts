@@ -170,6 +170,8 @@ export const en = {
   "resident.error.budget": "The authorized mission budget is exhausted. Create a new mission with reviewed limits.",
   "resident.error.not_found": "This mission no longer exists.",
   "resident.error.network": "The server could not be reached.",
+  "resident.error.tooLongStep": "Step “{title}” is {excess} characters too long for one agent request. Shorten the goal, this instruction or the titles of its prerequisites.",
+  "resident.error.tooLongGoal": "The goal is {excess} characters too long for the planning request. Shorten it.",
   "resident.error.limit": "The installation already has 50 missions.",
   "resident.error.unresolved": "Retry or skip the steps that need your attention before resuming.",
   "space.label": "Space",

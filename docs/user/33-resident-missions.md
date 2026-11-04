@@ -19,7 +19,7 @@ The planner uses native read-only/plan permissions. Code experiments use the exi
 
 ## Dependencies and results
 
-Independent assignments can run concurrently. A dependent step waits until prerequisites finish without changes, have an approved current proposal, or are explicitly skipped by the owner. It receives short predecessor reports as advisory context. Predecessor patches are **not applied to its clone**. If another patch must be integrated first, the companion should report that requirement rather than assume that code exists.
+Independent assignments can run concurrently. A dependent step waits until prerequisites finish without changes, have an approved current proposal, or are explicitly skipped by the owner. It receives short predecessor reports as advisory context, shortened further when needed so the request fits. A step whose goal, instruction and prerequisites are too long for one agent request is refused when you save or start the plan, with the step and the number of characters to remove. Predecessor patches are **not applied to its clone**. If another patch must be integrated first, the companion should report that requirement rather than assume that code exists.
 
 Approval here accepts a proposal for review/publishing; it does not apply code to the running app. Publishing still uses the companion's explicit PR action, and integration follows the PR review/queue flow. Runtime tests reported by an agent remain evidence to inspect in its conversation; a completed mission is not a certification that all proposed code is correct or merged.
 

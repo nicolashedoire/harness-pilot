@@ -499,3 +499,48 @@ def test_a_planner_stopped_before_its_model_call_can_be_requested_again(client,t
     monkeypatch.setattr(companions,'run',agents[5])
     missions.control(ident,'plan');missions.tick()
     assert len(agents[1])==1 and agents[1][0]['purpose']=='plan'
+
+
+def long_plan(n_deps=7,instruction=2000,fill='x'):
+    steps=[{'id':f'step-{i}','title':('Prerequisite %d '%i).ljust(120,fill),'role':'observer','instruction':'Check one thing.','after':[]} for i in range(n_deps)]
+    steps.append({'id':'final','title':'Integrate'.ljust(120,'y'),'role':'observer','instruction':'z'*instruction,'after':[s['id'] for s in steps]})
+    return steps
+
+
+def test_a_step_too_long_for_one_agent_request_is_refused_when_the_plan_is_reviewed(client,topic,agents):
+    ident=create(client,topic,[step(1)])
+    with missions._edit(ident) as data:data['goal']='g'*2000
+    # quotes in prerequisite titles double in the JSON of their reports: 6718 characters with empty reports
+    response=client.put('/api/missions/'+ident+'/plan',json={'steps':long_plan(fill='"')})
+    assert response.status_code==400,response.text
+    body=response.json()
+    assert body['error']=='too_long' and body['step']=='final' and body['title'].startswith('Integrate') and body['excess']>0
+    assert 'Integrate' in body['message'] and str(body['excess']) in body['message']
+    assert missions.get(ident)['steps'][0]['id']=='step-1'  # nothing saved
+    huge=client.post('/api/missions',json={'title':'Too long','path':topic,'goal':'g'*2000,'steps':long_plan(fill='"')})
+    assert huge.status_code==400 and huge.json()['step']=='final'
+
+
+def test_reports_are_trimmed_so_a_reviewed_plan_always_fits_at_launch(client,topic,agents):
+    sessions,calls,_,reports,_,_=agents
+    ident=create(client,topic,max_runs=8)
+    with missions._edit(ident) as data:data['goal']='g'*2000
+    # 5671 characters with empty reports (accepted); 120-character reports would reach 6511, 20-character ones fit
+    assert client.put('/api/missions/'+ident+'/plan',json={'steps':long_plan(instruction=1800)}).status_code==200
+    start(ident)
+    while len(calls)<8:
+        missions.tick()
+        for call in calls[:7]:
+            if sessions[call['sid']]['state']=='running':
+                sessions[call['sid']].update(state='idle',turns=1);reports[call['sid']]='r'*500
+    final=calls[-1]['mission']
+    assert 'Your step: Integrate' in final and len(final)<=companions.MAX_MISSION and '"report": "'+'r'*20+'"' in final
+    assert missions.get(ident)['steps'][-1]['state']=='running' and missions.get(ident)['phase']=='active'
+
+
+def test_a_goal_too_long_for_the_planning_request_is_refused(client,topic,agents):
+    ident=create(client,topic)
+    with missions._edit(ident) as data:data['goal']='\x01'*2000  # each escapes to six characters in JSON
+    response=client.post('/api/missions/'+ident+'/control',json={'action':'plan'})
+    assert response.status_code==400 and response.json()['error']=='too_long' and response.json()['step'] is None
+    assert missions.get(ident)['phase']=='draft' and not agents[1]
