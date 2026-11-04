@@ -7,6 +7,7 @@ import { api, errorMessage } from '@/lib/api'
 import { useWorkspace } from '@/lib/queries'
 import { Button, Input } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
+import { ProposalDiff } from './ProposalDiff'
 
 type Profile = { id: string; name: string; role: string }
 type Run = { id: string; title: string; path: string; state: string; error: string | null }
@@ -61,8 +62,7 @@ export function CompanionsSection() {
           {data.session.error && <p role="alert">{t('companions.failed')} {data.session.error}</p>}
           {!data.has_changes ? <p>{t('companions.nochanges')}</p> : <>
             <h4 className="font-semibold">{t('companions.changes')}</h4>
-            {data.patch && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted p-3 text-xs">{data.patch}</pre>}
-            {data.untracked.map((file) => <div key={file.path}><p className="font-medium">{t('companions.added')}: {file.path}</p><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-muted p-3 text-xs">{file.content}</pre></div>)}
+            <ProposalDiff patch={data.patch} untracked={data.untracked} />
             {recorded && <p role="status">{t('companions.recorded', { decision: t(recorded.value === 'approved' ? 'companions.approved' : 'companions.rejected') })}</p>}
             <div className="flex flex-wrap gap-2"><Button loading={decide.isPending} onClick={() => decide.mutate('approved')}>{t('companions.approve')}</Button><Button variant="outline" disabled={decide.isPending} onClick={() => decide.mutate('rejected')}>{t('companions.reject')}</Button></div>
           </>}

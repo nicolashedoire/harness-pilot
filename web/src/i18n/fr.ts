@@ -2,6 +2,7 @@ import type { en } from './en'
 
 // Dictionnaire français — doit contenir toutes les clés de en.ts (vérifié par TypeScript).
 export const fr: Record<keyof typeof en, string> = {
+  'companions.filesChanged': '{count} fichiers modifiés',
   "feed.kind.companion.ready.title": "Proposition du compagnon prête",
   "feed.kind.companion.ready.body": "Une proposition de modification du code attend votre avis.",
   "feed.kind.companion.empty.title": "Analyse du compagnon terminée",
