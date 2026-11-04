@@ -479,8 +479,8 @@ class Runner:
         now_thread = str((store.read(self.sid) or {}).get("codex_thread_id") or "")
         if a.codex_total is not None and now_thread:
             store.update(self.sid, codex_usage={"thread": now_thread, "total": a.codex_total})
-        # the context gauge: the JSON stream has no context size, Codex's own session file does (its last call)
-        ctx = codex.context_usage(now_thread, env, first=a.fresh) if now_thread and not is_debate else None
+        # the context gauge and automatic compaction: the JSON stream has no context size, Codex's session file does
+        ctx = codex.context_usage(now_thread, env, first=a.fresh) if now_thread else None
         if ctx:
             a.context_tokens, a.first_context, a.context_window = ctx["tokens"], ctx["first"], ctx["window"]
         if a.stopped:
@@ -494,6 +494,8 @@ class Runner:
         self._post(item, a, err)
         if is_debate:
             self._debate_followup(a, err, "codex")
+        elif not plan:
+            self._auto_compact(item, a, err, cfg)
         return err
 
     def _debate_followup(self, attempt: Attempt, err: str | None, actor: str) -> None:
@@ -710,16 +712,28 @@ class Runner:
 
     def _auto_compact(self, item: dict, a: Attempt, err: str | None, cfg: dict) -> None:
         """After a turn that ended with a big context: a summary turn runs next (before any waiting message) and
-        the session continues in a fresh thread seeded with it - every later call stops re-sending the history."""
+        the session continues in a fresh thread seeded with it - every later call stops re-sending the history.
+        Codex (`a.context_window`, from its session file): also from DEBATE_COMPACT_RATIO of its window, whichever
+        comes first - its window (258 400) is below the default threshold, and Codex compacts itself at 90 %.
+        Never when the thread's first call (its fixed part: instructions, memory, the seed) already reached the limit:
+        the continuation would start at least that big and be compacted again, turn after turn."""
         limit = int(cfg.get("auto_compact_tokens") or 0)
         if limit <= 0 or err is not None or a.stopped or not a.context_tokens:
             return
         limit = max(limit, AUTO_COMPACT_MIN)
+        if a.context_window:
+            limit = min(limit, int(a.context_window * DEBATE_COMPACT_RATIO))
         if a.context_tokens < limit or (item.get("kind") or "user") not in ("user", "seed"):
             return
         with store.edit(self.sid) as m:
             q = m.get("queue") or []
             if m.get("cron") or m.get("plan_ready") or any(x.get("kind") in ("compact", "handoff") for x in q):
+                return
+            try:
+                base = int((a.first_context if a.fresh else m.get("base_tokens")) or 0)
+            except (TypeError, ValueError, OverflowError):
+                base = 0
+            if base >= limit:
                 return
             m["queue"] = [{"text": SUMMARY_PROMPT, "attachments": [], "source": "system", "kind": "compact",
                            "auto": True, "at": time.time()}] + q
@@ -1201,7 +1215,7 @@ def _idle_compact(m: dict, item: dict, cfg: dict, now: float) -> tuple[str, int]
 def _debate_due(a: Attempt, cfg: dict) -> int | None:
     """Context (tokens) of a discussion reply that calls for a compaction before the next reply: at least the automatic
     compaction threshold (Settings -> Claude, raised to AUTO_COMPACT_MIN) or DEBATE_COMPACT_RATIO of the model's
-    window, whichever comes first. Only Claude reports its context; Codex is covered by the overflow retry."""
+    window, whichever comes first. Claude reports both in its result, Codex in its session file (`_codex_turn`)."""
     ctx = int(a.context_tokens or 0)
     if ctx <= 0:
         return None
@@ -1210,7 +1224,7 @@ def _debate_due(a: Attempt, cfg: dict) -> int | None:
     except (TypeError, ValueError, OverflowError):
         limit = 0
     limits = [max(limit, AUTO_COMPACT_MIN)] if limit > 0 else []
-    window = store.context_window_of(a.result, a.real_model) if a.result else None
+    window = a.context_window or (store.context_window_of(a.result, a.real_model) if a.result else None)
     if window:
         limits.append(int(window * DEBATE_COMPACT_RATIO))
     return ctx if limits and ctx >= min(limits) else None
