@@ -49,7 +49,6 @@ These features are for Claude Code only for now:
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.
-- **Scheduled prompts** (Crons): they run with Claude Code.
 - **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
   follows its own sandbox, which still lets it read those files.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
