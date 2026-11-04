@@ -102,6 +102,34 @@ def test_original_service_is_offline_by_default(mx, monkeypatch):
     assert not register._offline()
 
 
+LEGACY_ROUTES = [("get", "/api/settings/register", None), ("put", "/api/settings/register", {"count": True}),
+                 ("get", "/api/settings/feedback", None),
+                 ("post", "/api/settings/feedback", {"email": "a@b.io", "message": "hello"}),
+                 ("get", "/api/settings/license", None), ("put", "/api/settings/license", {"key": "HM-ABCD-EFGH-JKMN-PQRS"}),
+                 ("delete", "/api/settings/license", None)]
+
+
+@pytest.mark.parametrize("method,path,body", LEGACY_ROUTES)
+def test_legacy_cloud_routes_answer_404_while_the_original_service_is_off(client, mx, monkeypatch, method, path, body):
+    """register / feedback / license belong to the original project's cloud: not exposed by default, nothing sent."""
+    def no_network(*a, **k):
+        raise AssertionError("contacted the network")
+    monkeypatch.setattr("urllib.request.urlopen", no_network)
+    before = config.load_config()
+    r = client.request(method.upper(), path, **({"json": body} if body is not None else {}))
+    assert r.status_code == 404 and r.json()["error"] == "not_found"
+    assert config.load_config() == before and not config.get_secret(license.KEY)
+    client.cookies.clear()                                              # still behind the sign-in
+    assert client.request(method.upper(), path, **({"json": body} if body is not None else {})).status_code == 401
+
+
+def test_legacy_cloud_routes_come_back_with_the_explicit_opt_in(client, mx, monkeypatch):
+    monkeypatch.setenv("MAXXING_LICENSE_PING", "1")
+    assert client.get("/api/settings/register").status_code == 200
+    assert client.get("/api/settings/license").json()["has_key"] is False
+    assert client.get("/api/settings/feedback").status_code == 200
+
+
 def test_os_name_and_health_codes_are_short(mx, tmp_path, monkeypatch):
     f = tmp_path / "os-release"
     f.write_text('PRETTY_NAME="Ubuntu 24.04.1 LTS"\nNAME="Ubuntu"\nVERSION_ID="24.04"\n')

@@ -305,6 +305,18 @@ def test_one_chromium_for_pdfs_and_remotion(st, monkeypatch):
     assert "setBrowserExecutable" in cfg and "chrome-for-testing" in cfg
 
 
+def test_chromium_of_an_arm64_server_is_found(st, monkeypatch):
+    """Playwright puts the Linux arm64 build in chrome-linux-arm64/: `pilot deps update` reported it as failed and
+    PDFs, Scrapling and Remotion found no browser on arm64 servers."""
+    exe = st / "tools/browsers/chromium-1248/chrome-linux-arm64/chrome"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    monkeypatch.setattr(deps, "playwright_revisions", lambda py=None: {"patchright": "1248"})
+    assert deps.chromium_bin() == deps.chromium_bin("1248") == exe
+    cfg = (ROOT / "templates/remotion/remotion.config.js").read_text()
+    assert all(f"'{d}'" in cfg for d in deps.CHROMIUM_DIRS)
+
+
 def test_session_path_has_the_managed_node(st, monkeypatch, tmp_path):
     from maxxing.sessions import spawn
     (st / "tools/nodejs/current/bin").mkdir(parents=True)
