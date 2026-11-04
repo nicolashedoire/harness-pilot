@@ -5,6 +5,7 @@
 // this often is cheap.
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
+  atelierQuery,
   backupQuery,
   claudeStatusQuery,
   cronRunsQuery,
@@ -93,6 +94,9 @@ export function prefetchPageData(qc: QueryClient, pathname: string, search = '')
       break
     case 'x':
       queries.push(extensionsQuery())
+      break
+    case 'atelier':
+      queries.push(atelierQuery())
       break
   }
   for (const q of queries) void qc.prefetchQuery(q as Parameters<QueryClient['prefetchQuery']>[0])

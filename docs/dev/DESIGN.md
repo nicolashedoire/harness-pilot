@@ -53,6 +53,7 @@ exceptions are chart series (`--series-1..6`) and brand-neutral swatches in the 
 | `action` / `action-foreground` | filled buttons and checked controls: `Button` default variant, `Switch` (checked), `Checkbox` (checked), custom checkboxes / radios, the toast action button, `accent-color` of native checkboxes / radios / range inputs. The accent (`primary`, or a deeper / lighter step that carries its label at 4.5:1) or monochrome (`foreground` on `background`) with the palette's neutral buttons |
 | `secondary` | secondary buttons, segmented/tab active background |
 | `destructive`, `success`, `warning` | status (use at /10–/15 opacity for fills, solid for dots & text) |
+| `draft` | what waits for the user's validation (the Atelier's pills, banner, proposal card): an alias of the violet chart series `--series-6`, not a palette token; same opacities as the status colours |
 | `border`, `input`, `ring` | hairlines, input borders, focus |
 | `sidebar`, `sidebar-border`, `overlay` | shell & modal backdrop |
 
@@ -212,6 +213,12 @@ and resolves to false when it failed, its `openPanel` is the column's block pane
 without it the blocks find the session from `[data-mx-session]` / the URL and open their own side drawer
 (`mx-block-open` window event too). `BlockFence panel` draws a block at its large size. Settings -> Conversation blocks
 (`pages/settings/sections/Blocks.tsx`) lists, toggles and explains the plugins.
+
+**Atelier** (`pages/atelier`, API.md#atelier): the creations of the agents. `features/atelier/parts.tsx` holds what
+every Atelier screen and the conversation's proposal card share: `TypeTile` (type icon, violet while a draft waits),
+`StatePill` (`pillState(item)`: pending violet, active / applied green, error red, review amber, disabled muted),
+`Origin` (agent mark + session link + time; unknown origins say so), `VersionTag` (`vN`). Its texts are the lazy
+group `atelier`; the rail entry (`nav.atelier`, after the extension pages) stays in the core.
 
 ## 3. Layout rules
 

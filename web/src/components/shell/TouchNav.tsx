@@ -14,7 +14,7 @@ import { CountBadge, CountDot, NamedIcon, Segmented, Switch } from '@/components
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { isStandalone, installApp, useInstallMode } from '@/pwa'
 import { startTour, useTour, useTutorialHref } from '@/tour/store'
-import { navTourId, useNav } from './nav'
+import { ATELIER_NAV, navTourId, useNav } from './nav'
 import { Logo } from './Logo'
 import { HealthSummary, healthTone } from './HealthIndicator'
 import { UpdateIndicator, useReloadPending } from './UpdateIndicator'
@@ -185,7 +185,7 @@ function AppPanel() {
   const close = () => useTouchNav.getState().setPanel(null)
   const linkCls = ({ isActive }: { isActive: boolean }) => cn(tile, isActive && 'border-primary/60 text-primary')
   // Settings is a row at the bottom, like the sidebar's account area; every other page is a tile.
-  const tiles = nav.filter((n) => n.to !== '/settings')
+  const tiles = nav.filter((n) => n.to !== '/settings' && n !== ATELIER_NAV)
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-testid="touch-app-panel">
       <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-1">
@@ -236,6 +236,11 @@ function AppPanel() {
               <span className="max-w-full truncate">{x.name}</span>
             </NavLink>
           ))}
+        {/* after the extension pages, as in the sidebar */}
+        <NavLink to={ATELIER_NAV.to} className={linkCls} onClick={close} data-tour={navTourId(ATELIER_NAV)}>
+          <ATELIER_NAV.icon strokeWidth={1.9} />
+          <span className="max-w-full truncate">{t(ATELIER_NAV.label)}</span>
+        </NavLink>
       </nav>
 
       <div className="mx-3 mt-4 grid gap-1 rounded-xl border bg-card p-2" data-tour="health">

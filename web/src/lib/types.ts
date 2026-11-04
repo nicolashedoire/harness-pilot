@@ -212,7 +212,7 @@ export type SessionEventsBackPage = {
 export type SessionStreamEvents = { events: SessionEvent[]; next: number }
 
 /* ---------------------------------------------------------------- Global bus */
-export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live' | 'look' | 'themes' | 'space-labels'
+export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live' | 'look' | 'themes' | 'space-labels' | 'atelier'
 
 /* ---------------------------------------------------------------- MCP servers (Settings -> MCP) */
 export type McpState = 'connected' | 'needs_auth' | 'failed' | 'pending' | 'unknown'
@@ -985,3 +985,105 @@ export type InfraView = {
 }
 
 export type AgentProvider = {id:string;name:string;builtin:boolean;capabilities:string[];protocol?:string}
+
+/* ---------------------------------------------------------------- Atelier */
+// What the agents created for the platform (API.md#atelier): staged as drafts, approved by the user, versioned and
+// rolled back. Extensions are versioned; themes, skills, customizations and cron jobs are listed read-only.
+export type AtelierKind = 'extension' | 'theme' | 'skill' | 'customization' | 'cron'
+export type AtelierType = 'widget' | 'html_widget' | 'page' | 'block' | 'agent' | 'pin' | 'theme' | 'skill' | 'customization' | 'cron'
+export type AtelierState = 'pending' | 'active' | 'error' | 'disabled' | 'review'
+export type AtelierOrigin = {
+  agent: string // claude | codex | plugin:<id> | user | unknown
+  session: string | null
+  session_title: string | null
+  session_path: string | null
+  at: number | null
+  summary: string | null
+}
+export type AtelierApproval = { by: 'user' | 'auto' | 'migration' | null; at: number | null }
+/** What a creation declares (manifest.json / block.json "permissions"); declared = it has a "permissions" object at all. */
+export type AtelierPermissions = { network: string[]; secrets: string[]; read: string[]; declared: boolean }
+export type AtelierError = { message: string; where: 'load' | 'card' | 'api' | 'widget' | 'page' | 'run' | 'check'; at: number | null; count: number }
+export type AtelierAction = 'approve' | 'reject' | 'request_change' | 'rollback' | 'accept' | 'enable' | 'disable'
+export type AtelierItem = {
+  kind: AtelierKind
+  id: string
+  type: AtelierType
+  name: string
+  icon: string | null
+  state: AtelierState
+  /** active version number (null: not versioned, or nothing approved yet) */
+  version: number | null
+  /** the creation's own version string (manifest "version") */
+  version_label: string | null
+  versions: number
+  /** newest draft waiting for approval */
+  pending: { draft: string; at: number; change: 'new' | 'update'; origin: AtelierOrigin } | null
+  /** its files differ from the active version (changed outside the Atelier) */
+  unreviewed: boolean
+  unreviewed_since: number | null
+  origin: AtelierOrigin | null
+  approval: AtelierApproval | null
+  error: AtelierError | null
+  updated: number | null
+  /** where it lives in the app (null: nowhere) */
+  href: string | null
+  actions: AtelierAction[]
+}
+export type AtelierCounts = { pending: number; error: number; unreviewed: number; review: number; disabled: number; total: number }
+export type AtelierList = { items: AtelierItem[]; counts: AtelierCounts }
+export type AtelierVersion = {
+  n: number
+  at: number
+  active: boolean
+  origin: AtelierOrigin
+  approval: AtelierApproval
+  base: number | null
+  files: number
+  size: number
+  hash: string
+  restorable: boolean
+  health: 'ok' | 'error' | 'unknown'
+  error: AtelierError | null
+  note: string | null
+}
+export type AtelierEvent = {
+  at: number
+  action: 'approve' | 'auto' | 'reject' | 'rollback' | 'accept' | 'direct' | 'migrate' | 'propose' | 'request_change'
+  version: number | null
+  draft: string | null
+  by: 'user' | 'agent' | 'system'
+  note: string | null
+}
+export type AtelierCheckStep = { step: string; status: 'ok' | 'warn' | 'error'; detail: string }
+export type AtelierDraft = {
+  id: string
+  kind: 'extension'
+  target: string
+  name: string
+  type: AtelierType
+  icon: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'superseded'
+  change: 'new' | 'update'
+  base: number | null
+  created: number
+  origin: AtelierOrigin
+  summary: string | null
+  permissions: AtelierPermissions
+  check: { status: 'ok' | 'warn' | 'error'; steps: AtelierCheckStep[] }
+  files: { count: number; size: number; added: number; changed: number; removed: number }
+  decided: { at: number; by: 'user' | 'auto'; version?: number; reason?: string } | null
+  superseded_by: string | null
+  change_requests: { at: number; message: string; session: string | null }[]
+  auto: boolean
+}
+export type AtelierDraftFile = {
+  path: string
+  status: 'added' | 'changed' | 'removed' | 'same'
+  size: number | null
+  old_size: number | null
+  binary: boolean
+  diff: string | null
+  truncated: boolean
+}
+export type AtelierSettings = { auto_activate_safe: boolean; keep_days: number; keep_versions: number }
