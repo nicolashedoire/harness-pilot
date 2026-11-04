@@ -278,7 +278,10 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
   stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
   `new_since(after_id, limit)` / `max_id()` (push), `last_id()` / `watch_id()` -> `(max id, sum read, sum count,
-  resolved count)` tuple (changes on posts, folds, reads, resolutions).
+  resolved count)` tuple (changes on posts, folds, reads, resolutions). `watch_id()` (the feed watcher: UI + Web Push)
+  reads it through one kept connection, again only when that connection's `PRAGMA data_version` changed; never from
+  the files' size / mtime (SQLite writes and syncs the WAL frames before it publishes the commit, and rewrites a
+  restarted WAL in place).
 - `feed.rule_for(source, level, s=None, kind=None)` (kind rule, else source rule, else `default_rule`), `event_kinds(s)`
   (rows of the settings matrix), `settings()` / `save_settings(telegram, rules, hooks, kind_rules)` (config `feed`:
   `rules`, `kind_rules`, `telegram`, `hooks`).
