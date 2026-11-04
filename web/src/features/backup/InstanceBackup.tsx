@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, CalendarClock, CirclePause, Download, FolderCheck, LockKeyhole, Trash2, Upload } from 'lucide-react'
+import { Archive, CalendarClock, CirclePause, Copy, Download, FolderCheck, FolderSync, LockKeyhole, Trash2, Upload } from 'lucide-react'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { useLang, useT } from '@/i18n'
 import { useSettings } from '@/lib/queries'
@@ -11,11 +11,13 @@ import { CopyButton } from '@/components/ui/code-block'
 type Root = { source: string; archive: string | null; excluded?: string }
 type Schedule = { enabled: boolean; frequency: 'off' | 'daily' | 'weekly'; hour: number; keep: number; next_run: number | null; paused: boolean;
   last_success: number | null; error: { code: string; message: string; at: number } | null }
-type Status = { max_bytes: number; restore_hold: boolean; integrations_paused?: boolean; roots: Record<string, Root>; export_error?: string; service_resume_errors?: string[]; schedule?: Schedule }
-type Snapshot = { id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string;
+type CopyRecord = { ok: boolean; at: number; path?: string; code?: string; error?: string }
+type CopySettings = { folder: string | null; last: CopyRecord | null }
+type Status = { copy?: CopySettings; max_bytes: number; restore_hold: boolean; integrations_paused?: boolean; roots: Record<string, Root>; export_error?: string; service_resume_errors?: string[]; schedule?: Schedule }
+type Snapshot = { copy?: CopyRecord | null; id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string;
   excluded_roots?: Record<string, { source: string; reason: string }> }
 type Restored = Snapshot & { destination: string; state: string; launch_command: string; background_services_paused: boolean }
-type ExportEntry = { id: string; created: number; archive_bytes: number; files: number | null; scheduled?: boolean }
+type ExportEntry = { id: string; created: number; archive_bytes: number; files: number | null; scheduled?: boolean; copy?: CopyRecord | null }
 const queryKey = ['instance-backup'] as const
 const exportsKey = ['instance-backup', 'exports'] as const
 
@@ -108,10 +110,13 @@ export function InstanceBackupPanel() {
         <strong>{t('instanceBackup.ready')}</strong>
         <p>{t('instanceBackup.counts', { count: exported.files, mb: (exported.bytes / 1048576).toFixed(1) })}</p>
         {!!exported.external_links.length && <p>{t('instanceBackup.external', { count: exported.external_links.length })}</p>}
+        {exported.copy && <p className={exported.copy.ok ? undefined : 'text-destructive'}>
+          {exported.copy.ok ? t('instanceBackup.copy.done', { path: exported.copy.path || '' }) : t('instanceBackup.copy.failedNow', { message: exported.copy.error || '' })}</p>}
         <div><Button asChild variant="outline"><a href={`/api/backup/instance/download/${exported.id}`}><Download />{t('instanceBackup.download')}</a></Button></div>
       </div>}
-      <ExportList disabled={!!busy} />
+      <ExportList disabled={!!busy} copyOn={!!status.data.copy?.folder} />
       {status.data.schedule && !status.data.export_error && <ArchiveSchedule schedule={status.data.schedule} disabled={!!busy} />}
+      {status.data.copy && <ArchiveCopy copy={status.data.copy} disabled={!!busy} />}
       <form className="grid gap-3 border-t pt-5" onSubmit={event => {
         event.preventDefault()
         if (!file) return
@@ -164,14 +169,28 @@ export function InstanceBackupPanel() {
 }
 
 /** The encrypted archives kept in the server's data folder: download again, or delete once copied elsewhere. */
-function ExportList({ disabled }: { disabled: boolean }) {
+function ExportList({ disabled, copyOn }: { disabled: boolean; copyOn: boolean }) {
   const t = useT()
   const lang = useLang()
   const { data: settings } = useSettings()
   const queries = useQueryClient()
   const exports = useQuery({ queryKey: exportsKey, queryFn: () => api.get<ExportEntry[]>('/api/backup/instance/exports') })
   const [deleting, setDeleting] = React.useState<string | null>(null)
+  const [copying, setCopying] = React.useState<string | null>(null)
   const [error, setError] = React.useState('')
+  const copyAgain = async (entry: ExportEntry) => {
+    setCopying(entry.id)
+    setError('')
+    try {
+      const record = await api.post<CopyRecord>(`/api/backup/instance/exports/${entry.id}/copy`, {})
+      if (!record.ok) setError(t('instanceBackup.copy.failedNow', { message: record.error || '' }))
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setCopying(null)
+      await queries.invalidateQueries({ queryKey })
+    }
+  }
   const remove = async (entry: ExportEntry) => {
     if (!await confirm({ title: t('instanceBackup.exports.deleteTitle'), description: t('instanceBackup.exports.deleteBody'),
       destructive: true, confirmText: t('common.delete') })) return
@@ -195,10 +214,16 @@ function ExportList({ disabled }: { disabled: boolean }) {
         <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 text-sm">
           <span className="font-medium tabular-nums" title={fmtDate(entry.created, lang, settings?.timezone)}>{fmtRelative(entry.created, lang)}</span>
           {entry.scheduled && <Badge variant="muted">{t('instanceBackup.schedule.badge')}</Badge>}
+          {entry.copy && (entry.copy.ok
+            ? <Badge variant="success" title={entry.copy.path}>{t('instanceBackup.copy.copied')}</Badge>
+            : <Badge variant="destructive" title={entry.copy.error}>{t('instanceBackup.copy.failed')}</Badge>)}
           <span className="min-w-0 flex-1 text-muted-foreground">
             {fmtBytes(entry.archive_bytes)}{entry.files != null && ` · ${t('instanceBackup.exports.files', { count: entry.files })}`}
           </span>
           <Button asChild size="sm" variant="outline"><a href={`/api/backup/instance/download/${entry.id}`}><Download />{t('instanceBackup.download')}</a></Button>
+          {copyOn && <Button size="icon-sm" variant="ghost" disabled={disabled || !!copying || !!deleting} loading={copying === entry.id}
+            aria-label={t('instanceBackup.copy.again', { date: fmtDate(entry.created, lang, settings?.timezone) })}
+            title={t('instanceBackup.copy.againShort')} onClick={() => void copyAgain(entry)}><Copy /></Button>}
           <Button size="icon-sm" variant="ghost" disabled={disabled || !!deleting} loading={deleting === entry.id}
             aria-label={t('instanceBackup.exports.delete', { date: fmtDate(entry.created, lang, settings?.timezone) })}
             title={t('common.delete')} onClick={() => void remove(entry)}><Trash2 /></Button>
@@ -290,6 +315,49 @@ function ArchiveSchedule({ schedule, disabled }: { schedule: Schedule; disabled:
           confirmText: t('instanceBackup.schedule.off') })) return
         await run('off', () => api.del('/api/backup/instance/schedule'))
       })()}>{t('instanceBackup.schedule.off')}</Button>}
+    </div>
+    {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
+  </form>
+}
+
+/** A copy of each archive, still encrypted, in a folder the owner chose (an external drive, a synced folder). */
+function ArchiveCopy({ copy, disabled }: { copy: CopySettings; disabled: boolean }) {
+  const t = useT()
+  const lang = useLang()
+  const { data: settings } = useSettings()
+  const queries = useQueryClient()
+  const [folder, setFolder] = React.useState(copy.folder || '')
+  const [busy, setBusy] = React.useState<string | null>(null)
+  const [error, setError] = React.useState('')
+  const run = async (operation: string, action: () => Promise<CopySettings>) => {
+    setBusy(operation)
+    setError('')
+    try {
+      const saved = await action()
+      setFolder(saved.folder || '')
+      await queries.invalidateQueries({ queryKey })
+    } catch (cause) { setError(errorMessage(cause)) } finally { setBusy(null) }
+  }
+  const last = copy.last
+  return <form className="grid min-w-0 gap-3 border-t pt-5" onSubmit={event => {
+    event.preventDefault()
+    void run('save', () => api.put<CopySettings>('/api/backup/instance/copy', { folder }))
+  }}>
+    <h4 className="flex flex-wrap items-center gap-2 font-medium"><FolderSync className="size-4" />{t('instanceBackup.copy.title')}
+      {copy.folder && <Badge variant="success">{t('instanceBackup.schedule.on')}</Badge>}</h4>
+    <p className="text-sm text-muted-foreground">{t('instanceBackup.copy.hint')}</p>
+    <FormField label={t('instanceBackup.copy.folder')} hint={t('instanceBackup.copy.folderHint')}>
+      <Input value={folder} onChange={event => setFolder(event.target.value)} placeholder="/Volumes/Backup/pilot"
+        spellCheck={false} autoComplete="off" className="font-mono" disabled={disabled || !!busy} />
+    </FormField>
+    {copy.folder && last && <p role={last.ok ? 'status' : 'alert'} className={last.ok ? 'text-sm text-muted-foreground' : 'break-words text-sm text-destructive'}>
+      {last.ok ? t('instanceBackup.copy.last', { date: fmtDate(last.at, lang, settings?.timezone) })
+        : t('instanceBackup.copy.lastFailed', { date: fmtDate(last.at, lang, settings?.timezone), message: last.error || '' })}</p>}
+    <div className="flex flex-wrap gap-2">
+      <Button type="submit" disabled={disabled || !!busy || !folder.trim() || folder.trim() === copy.folder} loading={busy === 'save'}>
+        {t('instanceBackup.schedule.save')}</Button>
+      {copy.folder && <Button type="button" variant="outline" disabled={disabled || !!busy} loading={busy === 'off'}
+        onClick={() => void run('off', () => api.del<CopySettings>('/api/backup/instance/copy'))}>{t('instanceBackup.schedule.off')}</Button>}
     </div>
     {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
   </form>

@@ -80,6 +80,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "infra_refresh_min": 15,
     "result_line_hidden": [],          # Sessions: parts of the line under each answer that are hidden (cost, tokens...)           # Infra: background refresh period (minutes) while the page is on
     "donation_hidden": False,          # Settings -> Support: hide the donation links shown elsewhere in the app
+    "companion_sandbox": False,        # Settings -> Companions: Claude's OS sandbox for companion commands (spawn.py)
     "donation_url": "https://paypal.me/nicolashedoire",  # Owner's verified PayPal.Me; configurable per installation.
     "dashboard": {"order": [], "hidden": []},
     "extensions": {"disabled": [], "pinned": []},

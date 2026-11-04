@@ -400,6 +400,7 @@ def list_exports() -> list[dict]:
         result.append({'id': path.stem, 'archive_bytes': info.st_size,
                        'created': created if isinstance(created, (int, float)) else info.st_mtime,
                        'scheduled': meta.get('scheduled') is True,
+                       'copy': meta.get('copy') if isinstance(meta.get('copy'), dict) else None,
                        **{k: meta.get(k) for k in ('sha256', 'version', 'files', 'bytes')}})
     return sorted(result, key=lambda entry: entry['created'], reverse=True)
 
@@ -637,7 +638,8 @@ def status() -> dict:
         roots, error = {}, str(problem)
     return {'max_bytes': _limit(), 'restore_hold': bool(config.load_config().get('restore_hold')),
             'integrations_paused': config.integrations_paused(),
-            'roots': roots, 'export_error': error, 'requires_idle_sessions': True, 'schedule': schedule_status()}
+            'roots': roots, 'export_error': error, 'requires_idle_sessions': True, 'schedule': schedule_status(),
+            'copy': copy_status()}
 
 
 def resume_integrations() -> dict:
@@ -782,3 +784,103 @@ def record_scheduled(result: dict | None = None, code: str = '', message: str = 
     _base()
     config.write_json(_schedule_file(), state)
     return state
+
+
+# ---- copy folder ---------------------------------------------------------------------------------------------------
+# Each archive, already encrypted, is also copied to a folder the owner chose (an external drive, a folder a sync client
+# uploads). No cloud service is called. The folder is never created: an unplugged drive fails instead of filling the
+# disk its mount point lives on.
+COPY_GROUP = 'instance-backup-copy'
+
+
+def _copy_folder() -> Path | None:
+    settings = config.load_config().get('instance_backup_copy')
+    folder = settings.get('folder') if isinstance(settings, dict) else None
+    return Path(folder) if isinstance(folder, str) and folder else None
+
+
+def set_copy_folder(folder: str) -> dict:
+    if not isinstance(folder, str) or not folder.strip() or '\0' in folder or len(folder) > 4096:
+        raise SnapshotError('copy_folder', 'Choose a folder for the copies.')
+    path = Path(folder.strip()).expanduser()
+    if not path.is_absolute():
+        raise SnapshotError('copy_folder', 'Use the full path of the folder (it starts with /).')
+    if not path.is_dir():
+        raise SnapshotError('copy_folder', 'This folder does not exist. Connect the drive or create the folder first.')
+    real = path.resolve()
+    sources = [config.STATE.resolve()]
+    try:
+        sources += [Path(root['source']) for root in _included(_roots()).values()]
+    except SnapshotError:
+        pass
+    if any(real == source or source in real.parents for source in sources):
+        raise SnapshotError('copy_folder', 'Choose a folder outside the data the archive contains, ideally on another '
+                            'drive or in a synced folder.')
+    try:
+        with tempfile.NamedTemporaryFile(dir=real, prefix='.pilot-check-'):
+            pass
+    except OSError:
+        raise SnapshotError('copy_folder', 'The application cannot write in this folder.') from None
+    config.update_config(instance_backup_copy={'folder': str(path)})
+    return copy_status()
+
+
+def disable_copy() -> dict:
+    config.update_config(instance_backup_copy={'folder': ''})
+    return copy_status()
+
+
+def copy_status() -> dict:
+    folder = _copy_folder()
+    last = next((entry['copy'] for entry in list_exports() if entry.get('copy')), None) \
+        if (config.STATE / 'instance-backups' / 'exports').is_dir() else None
+    return {'folder': str(folder) if folder else None, 'last': last}
+
+
+def copy_export(ident: str) -> dict:
+    """Copy one encrypted export to the copy folder and check the copy (size and SHA-256 read back) before it gets its
+    final name. Returns the record kept in the export's metadata; a failure is a record with `ok: false`."""
+    from . import feed
+    folder = _copy_folder()
+    if folder is None:
+        raise SnapshotError('copy_off', 'No copy folder is set.', 409)
+    source = exported(ident)
+    meta_file = source.with_suffix('.json')
+    meta = config.read_json(meta_file, {})
+    meta = meta if isinstance(meta, dict) else {}
+    created = meta.get('created') if isinstance(meta.get('created'), (int, float)) else source.stat().st_mtime
+    name = f"pilot-{time.strftime('%Y%m%d-%H%M%S', time.localtime(created))}-{ident[:12]}.pilotbackup"
+    partial = folder / f'.{name}.partial'
+    try:
+        size = source.stat().st_size
+        expected = meta.get('sha256') if isinstance(meta.get('sha256'), str) else _digest(source)
+        if not folder.is_dir():
+            raise SnapshotError('copy_folder_missing', f'The copy folder {folder} is not available (is the drive connected?).')
+        if shutil.disk_usage(folder).free < size:
+            raise SnapshotError('copy_no_space', f'Not enough free space in {folder} for this archive.')
+        with source.open('rb') as incoming, partial.open('xb') as outgoing:
+            os.chmod(partial, 0o600)
+            shutil.copyfileobj(incoming, outgoing, CHUNK)
+            outgoing.flush()
+            os.fsync(outgoing.fileno())
+        if partial.stat().st_size != size or _digest(partial) != expected:
+            raise SnapshotError('copy_mismatch', 'The copy does not match the archive (size or SHA-256).')
+        target = folder / name
+        os.replace(partial, target)
+        record = {'ok': True, 'at': time.time(), 'path': str(target), 'bytes': size, 'sha256': expected}
+    except (SnapshotError, OSError) as error:
+        with contextlib.suppress(OSError):
+            partial.unlink(missing_ok=True)
+        code = error.code if isinstance(error, SnapshotError) else 'copy_io'
+        message = str(error) if isinstance(error, SnapshotError) else f'Could not write the copy in {folder}.'
+        record = {'ok': False, 'at': time.time(), 'code': code, 'error': message}
+    if source.exists():                              # not deleted meanwhile: keep the record with the archive
+        config.write_json(meta_file, {**meta, 'copy': record})
+    if record['ok']:
+        feed.system_resolve('system', COPY_GROUP)
+    else:
+        feed.system('An instance archive could not be copied', record['error'], 'error', group=COPY_GROUP,
+                    kind='instance_backup.copy_failed',
+                    params={'code': record['code'], 'message': record['error'][:300], 'folder': str(folder)[:300]},
+                    actions=[feed.link('open', 'Open', '/settings/backup')])
+    return record

@@ -27,6 +27,10 @@ class RestoreIn(BaseModel):
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class CopyIn(BaseModel):
+    folder: str = Field(max_length=4096)
+
+
 class ScheduleIn(BaseModel):
     frequency: str
     hour: int = 3
@@ -137,6 +141,21 @@ async def put_schedule(body: ScheduleIn):
 @router.delete('/schedule')
 async def delete_schedule():
     return await _call(snapshots.disable_schedule)
+
+
+@router.put('/copy')
+async def put_copy(body: CopyIn):
+    return await _call(snapshots.set_copy_folder, body.folder)
+
+
+@router.delete('/copy')
+async def delete_copy():
+    return await _call(snapshots.disable_copy)
+
+
+@router.post('/exports/{ident}/copy')
+async def copy_export(ident: str):
+    return await _call(snapshots.copy_export, ident)
 
 
 @router.get('/download/{ident}')

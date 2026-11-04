@@ -6,7 +6,7 @@ section: Getting started
 The first visit happens through a **one-time setup link**. For the local installation, obtain it by running `bash scripts/dev-local.sh link` from the repository root. Whoever has the link can claim the instance, so keep it private.
 
 The setup link first asks for the UI password (12 characters minimum, stored hashed with scrypt).
-Then the wizard has eight steps. You can leave and come back: it resumes where you stopped, and
+Then the wizard has nine steps. You can leave and come back: it resumes where you stopped, and
 every step also exists in Settings.
 
 1. **Language & time zone** – English or French, and the time zone used by scheduled jobs.
@@ -15,16 +15,19 @@ every step also exists in Settings.
    - run `claude setup-token` on any machine with a browser and paste the long-lived token, or
    - paste an Anthropic API key (pay-as-you-go).
    A real one-line test call confirms it works.
-   Claude can be skipped if you want to use Codex alone. Install and sign in to the Codex CLI separately; check its status in **Settings → Codex**.
-4. **Import** (optional) – coming from another agent (Hermes, Claude Code, OpenClaw…)? Copy the
+   Claude can be skipped if you want to use Codex alone.
+4. **Codex** (optional) – the wizard detects whether the Codex command is installed where harness-pilot runs and
+   signed in. Otherwise install it (for example `npm install -g @openai/codex`), run `codex login` in a terminal,
+   then **Check again**; or skip the step. The same status is in **Settings → Codex**.
+5. **Import** (optional) – coming from another agent (Hermes, Claude Code, OpenClaw…)? Copy the
    prompt into it, drop the zip it makes: your projects, topics, memory and skills arrive, and
    Claude finishes the job (tasks, scheduled jobs, keys to add). See [Import](import).
-5. **First project & topic** – a starter project `general` with a topic `inbox` already exists;
+6. **First project & topic** – a starter project `general` with a topic `inbox` already exists;
    create your own (for example `acme` / `blog`).
-6. **Telegram** (optional) – connect a bot to talk to your sessions from the phone. See
+7. **Telegram** (optional) – connect a bot to talk to your sessions from the phone. See
    [Telegram](telegram).
-7. **Memory backup** (optional, recommended) – configure a private GitHub repository for your memory. Local scheduled backups run only while the application is running. Verify the backup yourself after configuring it; see [Backup](backup).
-8. **Ready** – a short tour of the interface.
+8. **Memory backup** (optional, recommended) – configure a private GitHub repository for your memory. Local scheduled backups run only while the application is running. Verify the backup yourself after configuring it; see [Backup](backup).
+9. **Ready** – a short tour of the interface.
 
 ## After the wizard: the tutorial
 

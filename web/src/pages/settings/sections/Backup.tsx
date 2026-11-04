@@ -123,7 +123,7 @@ function RestoreAction({ refId, onRestored }: { refId?: string; onRestored: (res
         <p>{t('backup.previewHeld', plan.counts)}</p>
         {!!paths.length && <div><p>{t('backup.previewFiles')}</p><ul className="max-h-36 overflow-y-auto break-all">{paths.map((path) => <li key={path}><Sensitive>{path}</Sensitive></li>)}</ul></div>}
         <p>{t('backup.restoreDesc')}</p>
-        {(plan.settings || plan.crons || plan.mcp) && <p>{t('backup.previewSettings')}</p>}
+        {(plan.settings || plan.crons || plan.mcp || !!plan.labels) && <p>{t('backup.previewSettings')}</p>}
         <p>{t('backup.previewAdvisory')}</p>
         <code>{plan.commit.slice(0, 12)}</code>
       </div>,
