@@ -150,6 +150,30 @@ describe('Atelier creation and versions', () => {
     await waitFor(() => expect(accepted).toBe(true))
   })
 
+  test('next to what it declares: keys granted before permissions existed, reads refused, and Allow', async () => {
+    let consent: unknown = null
+    const access = {
+      state: 'declared',
+      secrets: [{ name: 'SHOP_TOKEN', status: 'pending', how: null, at: null }],
+      legacy: { secrets: [{ name: 'OLD_KEY', at: now - DAY }] },
+      pending: true,
+      refused: false,
+      denied: [{ kind: 'secret', name: 'SHOP_TOKEN', reason: 'not_allowed', at: now - 120, count: 3 }],
+    }
+    open({
+      'GET /api/atelier/extension/shop-sales': detail(),
+      'GET /api/extensions': [{ id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.3', enabled: true, error: null, has_api: true, permissions: { network: [], secrets: ['SHOP_TOKEN'], read: [] }, access, runtime_errors: [], origin: null }],
+      'POST /api/extensions/shop-sales/consent': (b: unknown) => ((consent = b), { ok: true }),
+    })
+    const block = await screen.findByTestId('atelier-access')
+    expect(within(block).getByTestId('atelier-legacy').textContent).toContain('OLD_KEY')
+    expect(within(block).getByText('Refused while it ran')).toBeTruthy()
+    expect(within(block).getByText('waits for your permission')).toBeTruthy()
+    expect(within(block).getByText(/3 times/)).toBeTruthy()
+    fireEvent.click(within(block).getByRole('button', { name: 'Allow' }))
+    await waitFor(() => expect(consent).toEqual({ decision: 'always' }))
+  })
+
   test('a read-only kind says where it is managed, without versions nor rollback', async () => {
     open(
       {

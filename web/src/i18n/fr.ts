@@ -4289,5 +4289,12 @@ export const fr: Record<keyof typeof en, string> = {
   "atelier.history.auto": "Activée seule · v{n}",
   "atelier.history.new": "Nouvelle création",
   "atelier.history.update": "Nouvelle version",
+  "atelier.access.legacyKeys": "Accordées avant l’existence des permissions :",
+  "atelier.access.legacy": "Elle existait avant les permissions : elle peut lire toutes les clés tant qu’elle ne déclare pas ce dont elle a besoin.",
+  "atelier.access.legacyHint": "Elle continue de fonctionner ; demande à l’agent de les déclarer pour que rien d’autre ne puisse être lu.",
+  "atelier.access.denied": "Refusé pendant qu’elle tournait",
+  "atelier.access.undeclared": "non déclarée",
+  "atelier.access.notAllowed": "attend ton autorisation",
+  "atelier.access.refused": "refusée par toi",
 
 }

@@ -77,7 +77,10 @@ Click a row (or **Details and versions** in its **…** menu) to open its page:
   failed while you used it…), the error with the lines it went through, **Ask for a fix** (the agent gets the error
   and the files, in the session that made it, or a new session in *system › harness*) and **Go back to vN**, the
   last version that worked;
-- what it does, what it asks for (as on the review screen) and the files of the version that runs;
+- what it does, what it asks for (as on the review screen) and the files of the version that runs. Under what it
+  asks for: the keys it was **granted before permissions existed** (in amber: it keeps working, but nothing limits
+  those keys until the agent declares them), the keys it tried to read and was **refused**, and **Allow** /
+  **Refuse** when a declared key waits for you (the same buttons as in Settings → Extensions);
 - **Versions**, newest first: the active one is marked; each says what the agent did, in which session, when, how it
   was approved (by you, by itself because it asks for nothing, or because it existed before the Studio) and whether it
   worked while it was active. **Changes** shows what that version changed; **Back here** makes an older version

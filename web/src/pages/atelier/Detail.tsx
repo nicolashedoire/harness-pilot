@@ -28,6 +28,7 @@ import { Page } from '@/components/shell/Page'
 import { AskFixButton, FixTarget } from '@/features/extensions/AskFix'
 import { Origin, StatePill, TypeTile, VersionTag, pillState, typeLabel } from '@/features/atelier/parts'
 import { PermissionRows } from '@/features/atelier/Permissions'
+import { AccessBlock } from '@/features/atelier/Access'
 import { VersionTimeline } from '@/features/atelier/Versions'
 import { draftHref, liveHref } from './links'
 import { useAskChange } from './RowAction'
@@ -139,12 +140,13 @@ function DetailBody({ detail }: { detail: AtelierItemDetail }) {
             <Origin origin={it.origin} withDate className="mt-1" />
           </section>
 
-          {detail.permissions && (
+          {(detail.permissions || ext?.access) && (
             <section className="grid gap-3" aria-labelledby="atelier-asks-title">
               <h3 id="atelier-asks-title" className="text-sm font-semibold">
                 {t('atelier.review.asks')}
               </h3>
-              <PermissionRows permissions={detail.permissions} />
+              {detail.permissions && <PermissionRows permissions={detail.permissions} />}
+              {ext?.access && <AccessBlock ext={ext} />}
             </section>
           )}
 

@@ -4308,5 +4308,12 @@ export const en = {
   "atelier.history.auto": "On by itself · v{n}",
   "atelier.history.new": "New creation",
   "atelier.history.update": "New version",
+  "atelier.access.legacyKeys": "Granted before permissions existed:",
+  "atelier.access.legacy": "It existed before permissions: it may read any key until it declares what it needs.",
+  "atelier.access.legacyHint": "It keeps working; ask the agent to declare them so nothing else can be read.",
+  "atelier.access.denied": "Refused while it ran",
+  "atelier.access.undeclared": "not declared",
+  "atelier.access.notAllowed": "waits for your permission",
+  "atelier.access.refused": "refused by you",
 
 }
