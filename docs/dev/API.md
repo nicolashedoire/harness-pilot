@@ -255,7 +255,7 @@ the change is re-applied on the fresh file (3 tries), then `409 conflict`. Not v
 
 ## Crons
 ```
-Cron = {id, name, schedule,            // 5-field cron expression
+Cron = {id, name, schedule,            // 5-field cron expression, a shortcut, or @reboot (next_run null)
         kind:"shell"|"claude", command, // shell
         topic_path, prompt, model, reuse_session:bool,  // claude
         permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode

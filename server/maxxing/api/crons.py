@@ -157,6 +157,11 @@ async def _local_schedule() -> None:
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Local catch-up failed')
+    try:
+        await asyncio.to_thread(localcron.boot)          # @reboot jobs: once per start of the application
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Local startup jobs failed')
     while True:
         try:
             await asyncio.to_thread(localcron.tick)

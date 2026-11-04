@@ -4,6 +4,7 @@ It does not install or alter the user's crontab. Only the current minute is cons
 application must be running and missed jobs are not replayed after sleep or a shutdown, except for the jobs with
 `catch_up`: at startup (`catch_up()`), one run of each when its schedule fired at least once since the scheduler's
 last heartbeat (`<state>/local-cron-alive.json`, written by every tick once per minute, paused or not).
+`@reboot` jobs run once each time the application starts (`boot()`, called before the first tick).
 """
 from __future__ import annotations
 
@@ -85,6 +86,32 @@ def catch_up(now: float | None = None) -> list[str]:
                     f"{missed} scheduled run{'s' if missed > 1 else ''} missed while harness-pilot was stopped: "
                     "ran once now.", "info", "crons", f"/crons?job={cid}", kind="cron.caught_up",
                     params={'cron_id': cid, 'name': job['name'], 'missed': missed, 'since': first})
+    return started
+
+
+def boot() -> list[str]:
+    """Start every enabled `@reboot` job: once per start of the application (the scheduler's first pass).
+    Returns the ids started; a job already running is left alone."""
+    if config.integrations_paused():                    # a restored copy: nothing runs until its owner resumes it
+        return []
+    started = []
+    for job in crons.list_jobs():
+        cid = job.get('id')
+        if not cid or not job.get('enabled'):
+            continue
+        try:
+            if not crons.parse(job.get('schedule') or '').reboot:
+                continue
+        except (ValueError, crons.CronError):
+            continue
+        try:
+            crons.spawn_run(cid)
+            started.append(cid)
+        except crons.CronError as e:
+            if e.code != 'already_running':
+                log.exception('Could not start the startup job %s', cid)
+        except (OSError, ValueError):
+            log.exception('Could not start the startup job %s', cid)
     return started
 
 

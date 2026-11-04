@@ -452,7 +452,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
-- Local scheduler catch-up (`localcron.catch_up(now)`, from `api/crons._local_schedule` before the first tick): heartbeat
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.catch_up()`, then
+  `localcron.boot()` once (every enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while
+  `integrations_paused`), then `localcron.tick()` every 15 s (the current minute, claimed in
+  `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local scheduler catch-up (`localcron.catch_up(now)`): heartbeat
   `<state>/local-cron-alive.json` `{at}` written by `tick()` once per minute (also while `integrations_paused`) and by
   `catch_up` itself before it starts anything (a crash never repeats it). For each enabled job with `catch_up` (not
   `@reboot`, not due this minute) and at least one `iter_runs` time after max(heartbeat, job `created`, `updated`) and
