@@ -7,6 +7,8 @@
 // - send(text): optional, replaces POST /api/sessions/{id}/messages (e.g. to show the message as pending at once);
 //   resolves to false when it failed and the view already said why (a thrown error is shown by the block);
 // - openPanel(req): optional, shows "Open beside" in the view's own side panel instead of the blocks' drawer;
+// - beside: optional, set while that panel sits beside the thread: a block shown there leaves a compact
+//   "Opened beside · <title>" placeholder in the thread (Show = select its tab, Bring back = close its tab);
 // - agent: "Claude Code" / "Codex", named in "Your answers are sent to … as a reply".
 // Without a provider a block finds its session from the nearest `[data-mx-session]` element, then from the URL
 // (`/sessions?session=<id>`, `/sessions/<id>`), and every "Open beside" also fires a `mx-block-open` window event
@@ -15,10 +17,24 @@ import * as React from 'react'
 
 export type BlockPanelRequest = { type: string; title: string; data: Record<string, unknown>; raw: string }
 
+/** A block of the thread, as the side panel knows it (same type and same raw text = same block). */
+export type BlockRef = { type: string; raw: string }
+
+/** The side panel docked beside the thread. */
+export type BlockBeside = {
+  /** Is this block shown in the panel now? */
+  has: (ref: BlockRef) => boolean
+  /** Select its tab and move the focus there. */
+  reveal: (ref: BlockRef) => void
+  /** Close its tab: the block is drawn in the thread again. */
+  bringBack: (ref: BlockRef) => void
+}
+
 export type BlockHost = {
   sessionId?: string | null
   send?: (text: string) => Promise<void | boolean>
   openPanel?: (req: BlockPanelRequest) => void
+  beside?: BlockBeside
   agent?: string
 }
 

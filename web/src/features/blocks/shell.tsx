@@ -2,7 +2,7 @@
 // (turned off, not installed, raw data, error, permission) and the helpers the renderers use (send to the
 // conversation after a confirmation, downloads, CSV).
 import * as React from 'react'
-import { Braces, Copy, Download, EllipsisVertical, PanelRight } from 'lucide-react'
+import { ArrowRight, Braces, Copy, Download, EllipsisVertical, PanelRight, Undo2 } from 'lucide-react'
 import { cn, copyText } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { errorMessage } from '@/lib/api'
@@ -21,6 +21,7 @@ import {
   Tooltip,
   confirm,
   toast,
+  useMask,
 } from '@/components/ui'
 import { resolveSessionId, useBlockHost } from './host'
 
@@ -77,7 +78,7 @@ export function BlockShell({
         {headerExtra}
         {onOpenBeside && (
           <Tooltip content={t('blocks.action.openBeside')}>
-            <Button variant="ghost" size="icon-sm" aria-label={t('blocks.action.openBeside')} onClick={onOpenBeside}>
+            <Button variant="ghost" size="icon-sm" aria-label={t('blocks.action.openBeside')} onClick={onOpenBeside} data-mx-open-beside>
               <PanelRight />
             </Button>
           </Tooltip>
@@ -199,6 +200,32 @@ export function useSendToSession() {
       }
     },
     [host, send, t],
+  )
+}
+
+/** What a block leaves in the thread while it is shown in the side panel docked beside it: Show selects (and
+ *  focuses) its tab there, Bring back closes that tab and draws the block here again. */
+export function OpenedBeside({ title, onShow, onBringBack }: { title: string; onShow: () => void; onBringBack: () => void }) {
+  const t = useT()
+  const mask = useMask()
+  return (
+    <div
+      role="group"
+      aria-label={t('blocks.beside.label', { title: mask(title) })}
+      className="mx-block not-prose my-3 flex min-w-0 items-center gap-1 rounded-xl border border-dashed bg-card/60 py-1 pr-1 pl-3 text-[13px]"
+      data-testid="block-opened-beside"
+    >
+      <PanelRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="ml-1 min-w-0 flex-1 truncate text-muted-foreground">
+        {t('blocks.beside.opened')} · <Sensitive><span className="font-medium text-foreground">{title}</span></Sensitive>
+      </span>
+      <Button variant="ghost" size="sm" onClick={onShow} aria-label={t('blocks.beside.showLabel', { title: mask(title) })}>
+        <ArrowRight /> {t('blocks.beside.show')}
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onBringBack} aria-label={t('blocks.beside.backLabel', { title: mask(title) })}>
+        <Undo2 /> {t('blocks.beside.back')}
+      </Button>
+    </div>
   )
 }
 

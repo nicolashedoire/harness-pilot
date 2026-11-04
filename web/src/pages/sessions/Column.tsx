@@ -96,7 +96,7 @@ import { forgetLog, getLog, loadEarlier, loadLog, seedEmptyLog, useLogSelect, us
 import { PlanCard, PlanToggle } from './Plan'
 import { PausedBanner, PauseSeparator, pausedOnLimit } from './PausedBanner'
 import { ChangeLimitsDialog } from './ChangeLimitsDialog'
-import { BlockPanel, useBlockPanel, useWideEnough } from './BlockPanel'
+import { BlockPanel, useBlockBeside, useBlockPanel, useWideEnough } from './BlockPanel'
 import { BlockHostProvider, type BlockHost } from '@/features/blocks/host'
 import { MaxxingControls, MaxxingMeter } from './MaxxingMeter'
 import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
@@ -454,6 +454,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const row = React.useRef<HTMLDivElement>(null)
   const panel = useBlockPanel(sid)
   const docked = useWideEnough(row) && variant !== 'mobile'
+  const beside = useBlockBeside(panel, docked)
 
   const notFound = (isError && isApiError(error) && error.status === 404) || deleted
   const running = session?.state === 'running'
@@ -653,15 +654,16 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
     [card, pauseKey],
   )
   // The blocks of this thread answer in this session (forms, checklists, "Ask for a fix"), shown at once as sent
-  // messages, and open beside it in the column's own panel.
+  // messages, and open beside it in the column's own panel (leaving a placeholder in the thread while docked).
   const blockHost = React.useMemo<BlockHost>(
     () => ({
       sessionId: sid,
       send: (text) => sendNow.current(text, []),
       openPanel: panel.open,
+      beside,
       agent: duo ? undefined : agentName,
     }),
-    [sid, panel.open, duo, agentName],
+    [sid, panel.open, beside, duo, agentName],
   )
 
   // (a picture dragged from a thread carries a file too: that is a content drag)

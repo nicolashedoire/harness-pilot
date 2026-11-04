@@ -3331,6 +3331,12 @@ export const fr: Record<keyof typeof en, string> = {
   'blocks.panel.label': 'Ouvert à côté',
   'blocks.panel.close': 'Fermer le panneau',
   'blocks.panel.closeTab': 'Fermer {title}',
+  'blocks.beside.opened': 'Ouvert à côté',
+  'blocks.beside.label': '{title}, ouvert à côté',
+  'blocks.beside.show': 'Afficher',
+  'blocks.beside.showLabel': 'Afficher {title} dans le panneau latéral',
+  'blocks.beside.back': 'Remettre ici',
+  'blocks.beside.backLabel': 'Remettre {title} dans la conversation',
   // Conversation view (pages/sessions: turns, activity, composer, header)
   'conv.intervention': 'Votre intervention',
   'conv.summarised': 'Conversation résumée pour continuer',
