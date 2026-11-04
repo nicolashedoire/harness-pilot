@@ -790,7 +790,11 @@ export type Extension = {
   /** Newest mtime (ms) of page.js and the modules of its folder: the version in the module URL
    *  (/ext/<id>/@<page_v>/page.js; the browser reuses the modules until one of them changes). */
   page_v?: number | null
+  /** Errors recorded while it ran (browser and server), since its files last changed, newest first (at most 10). */
+  runtime_errors?: ExtRuntimeError[]
 }
+/** A runtime error of an extension: `widget` / `page` seen by the browser, `card` / `api` by the server. */
+export type ExtRuntimeError = { where: 'widget' | 'page' | 'card' | 'api'; message: string; stack: string; at: number; count: number }
 
 /** A starter pack (GET /api/packs). */
 export type Pack = {

@@ -4,11 +4,14 @@
 // server/maxxing/api/extensions.py); the theme goes in the URL fragment, then by message:
 //   maxxing.api(path, {method, body, query}) -> Promise   (calls the extension's own api.py handle())
 //   maxxing.resize(px) · maxxing.theme ('dark'|'light') · maxxing.onTheme(fn)
+// The frame's uncaught errors and rejected promises come as {mx:'error', message, stack}: reported to the server as
+// runtime errors of the extension (features/extensions/report.ts), read by the agent that fixes it.
 // and the app's theme variables (--background, --card, --primary, --border… and the older --mx-bg --mx-card --mx-fg
 // --mx-muted --mx-border --mx-accent) follow the app theme; the UI kit (`ui-*` classes) is inlined by the server.
 import * as React from 'react'
 import { TriangleAlert } from 'lucide-react'
-import { request, seg } from '@/lib/api'
+import { ApiError, request, seg } from '@/lib/api'
+import { reportExtensionError } from '@/features/extensions/report'
 import { useUI, resolveTheme } from '@/stores/ui'
 import { useT } from '@/i18n'
 import { Skeleton } from '@/components/ui'
@@ -83,8 +86,9 @@ export function HtmlWidget({ id, src, height, title }: { id: string; src: string
     const onMsg = async (e: MessageEvent) => {
       const win = frame.current?.contentWindow
       if (!win || e.source !== win) return
-      const m = (e.data || {}) as { mx?: string; seq?: number; path?: string; method?: string; body?: unknown; query?: Record<string, string>; height?: number }
+      const m = (e.data || {}) as { mx?: string; seq?: number; path?: string; method?: string; body?: unknown; query?: Record<string, string>; height?: number; message?: unknown; stack?: unknown }
       if (m.mx === 'resize' && typeof m.height === 'number') setH(Math.min(1200, Math.max(80, Math.round(m.height))))
+      if (m.mx === 'error') reportExtensionError(id, 'widget', String(m.message ?? ''), typeof m.stack === 'string' ? m.stack : '')
       if (m.mx === 'api') {
         const up = (m.method || 'GET').toUpperCase()
         const method = (['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(up) ? up : 'GET') as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -96,7 +100,8 @@ export function HtmlWidget({ id, src, height, title }: { id: string; src: string
           })
           win.postMessage({ mx: 'reply', seq: m.seq, ok: true, data }, '*')
         } catch (err) {
-          win.postMessage({ mx: 'reply', seq: m.seq, ok: false, error: err instanceof Error ? err.message : String(err) }, '*')
+          // the status lets the bridge leave out what the server records itself (a failing handle(): 5xx)
+          win.postMessage({ mx: 'reply', seq: m.seq, ok: false, status: err instanceof ApiError ? err.status : 0, error: err instanceof Error ? err.message : String(err) }, '*')
         }
       }
     }

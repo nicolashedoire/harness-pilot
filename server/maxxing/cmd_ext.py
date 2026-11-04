@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 from . import cli
 
@@ -32,6 +33,14 @@ def _print(r: dict) -> None:
             print(f"      {x}")
     for fr in r.get("trace") or []:
         print(f"      at {fr}")
+    errs = r.get("runtime_errors") or []
+    if errs:
+        print(f"  recorded while it ran (since its files last changed): {len(errs)}")
+        for e in errs[:3]:
+            when = time.strftime("%Y-%m-%d %H:%M", time.localtime(e["at"]))
+            print(f"    {e['where']:<6} {when}" + (f" x{e['count']}" if e["count"] > 1 else "") + f"  {e['message']}")
+            for x in (e.get("stack") or "").splitlines()[:4]:
+                print(f"           {x}")
 
 
 def _handler(a) -> int:

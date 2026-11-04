@@ -35,6 +35,8 @@ export const GROUPS = {
   paste: ['paste'],
   // conversation blocks (features/blocks): loaded with the first block shown, and with Settings
   blocks: ['blocks'],
+  // runtime errors of extensions (features/extensions): Settings -> Extensions, a broken widget or page
+  exterr: ['exterr'],
   // what a conversation opens on demand: activity rows and the footer's details (convx.*), Change limits, the summary,
   // the HUD, the agent map, the side question, the agent modes of a new session (modes.*) and a mixed team's live
   // panel (teamx.*). Loaded once the sessions page is on screen (pages/sessions), or with the first key asked
