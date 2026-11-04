@@ -104,8 +104,13 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, agents: [{..., state, session}]}`; `state` = `stopped` once the user stopped that worker,
-  else the session's state (`missing` when it is gone). A session without a team -> 404 `not_found`.
+- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+  `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
+  session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
+  (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
+  `ACTIVITY_MAX` (3) tool calls and texts, the first `REPORT_MAX` (600) characters of its last answer once it stopped.
+  Cached per worker in `_live` (64 entries) on `(service.log_ident, running)`: the panel's polls re-read a log only
+  when it changed.
 - `stop_agent(sid, agent_id)`: only while `working` and that worker runs (else 409 `not_running`), marks it
   `stopped` and stops it alone. `stop(sid)`: phase `stopped`, running workers marked, every worker and the
   coordinator stopped. Both call `service.stop(..., _team_internal=True)`.
@@ -430,9 +435,12 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.
   The run history is parsed once per file version (`_all_runs`, keyed on path + mtime + size); `read_runs`
   returns copies.
-- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid"}`; a normal end
-  empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the orphan
-  job shell (`pgid`), records a failed Run (`code -9`, "interrupted: …") and reports it.
+- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid", "pgid_start"}`; a
+  normal end empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the
+  orphan job shell (`pgid`) when `_proc_start(pgid)` still equals `pgid_start`, records a failed Run (`code -9`,
+  "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
+  unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
+  when the process is gone or `ps` fails.
 - Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
   timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
