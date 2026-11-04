@@ -1,15 +1,19 @@
 import * as React from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, FolderCheck, LockKeyhole, CirclePause, Upload } from 'lucide-react'
+import { Archive, CirclePause, Download, FolderCheck, LockKeyhole, Trash2, Upload } from 'lucide-react'
 import { api, errorMessage, isApiError } from '@/lib/api'
-import { useT } from '@/i18n'
+import { useLang, useT } from '@/i18n'
+import { useSettings } from '@/lib/queries'
+import { fmtBytes, fmtDate, fmtRelative } from '@/lib/format'
 import { Button, FormField, Input, Sensitive, Skeleton, confirm } from '@/components/ui'
 import { CopyButton } from '@/components/ui/code-block'
 
 type Status = { max_bytes: number; restore_hold: boolean; integrations_paused?: boolean; roots: Record<string, { source: string }>; export_error?: string; service_resume_errors?: string[] }
 type Snapshot = { id: string; sha256: string; files: number; bytes: number; external_links: string[]; version: string }
 type Restored = Snapshot & { destination: string; state: string; launch_command: string; background_services_paused: boolean }
+type ExportEntry = { id: string; created: number; archive_bytes: number; files: number | null }
 const queryKey = ['instance-backup'] as const
+const exportsKey = ['instance-backup', 'exports'] as const
 
 export function InstanceBackupPanel() {
   const t = useT()
@@ -96,6 +100,7 @@ export function InstanceBackupPanel() {
         {!!exported.external_links.length && <p>{t('instanceBackup.external', { count: exported.external_links.length })}</p>}
         <div><Button asChild variant="outline"><a href={`/api/backup/instance/download/${exported.id}`}><Download />{t('instanceBackup.download')}</a></Button></div>
       </div>}
+      <ExportList disabled={!!busy} />
       <form className="grid gap-3 border-t pt-5" onSubmit={event => {
         event.preventDefault()
         if (!file) return
@@ -142,5 +147,48 @@ export function InstanceBackupPanel() {
     </>}
     {error && <p role="alert" className="break-words rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{error}</p>}
     {busy && <p role="status" className="text-sm text-muted-foreground">{t('instanceBackup.working')}</p>}
+  </div>
+}
+
+/** The encrypted archives kept in the server's data folder: download again, or delete once copied elsewhere. */
+function ExportList({ disabled }: { disabled: boolean }) {
+  const t = useT()
+  const lang = useLang()
+  const { data: settings } = useSettings()
+  const queries = useQueryClient()
+  const exports = useQuery({ queryKey: exportsKey, queryFn: () => api.get<ExportEntry[]>('/api/backup/instance/exports') })
+  const [deleting, setDeleting] = React.useState<string | null>(null)
+  const [error, setError] = React.useState('')
+  const remove = async (entry: ExportEntry) => {
+    if (!await confirm({ title: t('instanceBackup.exports.deleteTitle'), description: t('instanceBackup.exports.deleteBody'),
+      destructive: true, confirmText: t('common.delete') })) return
+    setDeleting(entry.id)
+    setError('')
+    try {
+      await api.del(`/api/backup/instance/exports/${entry.id}`)
+    } catch (cause) {
+      setError(errorMessage(cause))
+    } finally {
+      setDeleting(null)
+      await queries.invalidateQueries({ queryKey: exportsKey })
+    }
+  }
+  return <div className="grid min-w-0 gap-3 border-t pt-5">
+    <h4 className="flex items-center gap-2 font-medium"><Archive className="size-4" />{t('instanceBackup.exports.title')}</h4>
+    <p className="text-sm text-muted-foreground">{t('instanceBackup.exports.hint')}</p>
+    {exports.isLoading ? <Skeleton className="h-12" /> : !exports.data?.length
+      ? <p className="text-sm text-muted-foreground">{exports.error ? errorMessage(exports.error) : t('instanceBackup.exports.empty')}</p>
+      : <ul className="divide-y rounded-lg border">{exports.data.map(entry =>
+        <li key={entry.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 text-sm">
+          <span className="font-medium tabular-nums" title={fmtDate(entry.created, lang, settings?.timezone)}>{fmtRelative(entry.created, lang)}</span>
+          <span className="min-w-0 flex-1 text-muted-foreground">
+            {fmtBytes(entry.archive_bytes)}{entry.files != null && ` · ${t('instanceBackup.exports.files', { count: entry.files })}`}
+          </span>
+          <Button asChild size="sm" variant="outline"><a href={`/api/backup/instance/download/${entry.id}`}><Download />{t('instanceBackup.download')}</a></Button>
+          <Button size="icon-sm" variant="ghost" disabled={disabled || !!deleting} loading={deleting === entry.id}
+            aria-label={t('instanceBackup.exports.delete', { date: fmtDate(entry.created, lang, settings?.timezone) })}
+            title={t('common.delete')} onClick={() => void remove(entry)}><Trash2 /></Button>
+        </li>)}</ul>}
+    {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
   </div>
 }
