@@ -23,7 +23,11 @@ export type AuthState = {
 export type SetupBody = { token: string; password: string }
 export type LoginBody = { password: string }
 /** A sign-in (or turning two-step sign-in on) waiting for an approval in Telegram. */
-export type TwoFactorChallenge = { challenge: string; expires_in: number }
+/** `methods`: how this challenge can be answered (absent from servers before the authenticator app = Telegram). */
+export type TwoFactorChallenge = { challenge: string; expires_in: number; methods?: ('totp' | 'telegram')[] }
+/** Two-step sign-in with an authenticator app (Settings -> Security). */
+export type TotpState = { enabled: boolean; recovery_left: number; pending: boolean; enabled_at: number | null }
+export type TotpSetup = { secret: string; uri: string; expires_in: number }
 export type LoginResult = { ok: boolean; two_factor?: TwoFactorChallenge }
 export type TwoFactorPoll = { ok: boolean; status: 'pending' | 'approved'; expires_in?: number }
 export type ChangePasswordBody = { current: string; new: string }

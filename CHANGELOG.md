@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Two-step sign-in now also works with an authenticator app (Google Authenticator, 1Password, Aegis...) in Settings → Security: scan a QR code, confirm with a code and your password, and keep the recovery codes shown once in case you lose your phone. Telegram approval stays available, alone or alongside the app.
 - Settings → Notifications: while the browser asks for notification permission or sets up push, a **Cancel** button shows and the app stops waiting after 30 seconds; an answer given after a cancel no longer finishes the cancelled attempt. On a first visit, the push switch becomes available without reloading the page.
 - Plan mode now works in Claude Code and Codex discussions: both agents work out a plan without changing anything, you approve the latest one, one agent carries it out and the discussion pauses so the other can review the work when you resume.
 - Scheduled prompts can now run with **Codex**: in a job's editor, choose the agent (Claude Code or Codex) under the prompt, with an optional Codex model; the job list marks Codex jobs.
