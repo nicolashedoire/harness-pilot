@@ -58,7 +58,26 @@ function extPath(raw: unknown): string {
     .join('/')
 }
 
-export function HtmlWidget({ id, src, height, title }: { id: string; src: string; height: number; title: string }) {
+export function HtmlWidget({
+  id,
+  src,
+  height,
+  title,
+  frameUrl,
+  apiBase,
+  onError,
+}: {
+  id: string
+  src: string
+  height: number
+  title: string
+  /** the frame document (default: `src` with widget.html -> widget-frame); a draft's preview passes its own */
+  frameUrl?: string
+  /** where `maxxing.api()` goes (default `/api/ext/<id>`; a draft's preview: `/api/atelier/drafts/<id>/api`) */
+  apiBase?: string
+  /** a script error of the widget (default: recorded against the installed extension) */
+  onError?: (message: string, stack: string) => void
+}) {
   const t = useT()
   const theme = resolveTheme(useUI((s) => s.theme))
   const palette = useUI((s) => s.palette)
@@ -70,9 +89,11 @@ export function HtmlWidget({ id, src, height, title }: { id: string; src: string
   const { data: exts } = useExtensions()
   const ext = exts?.find((e) => e.id === id) ?? { id, origin: null }
   const [h, setH] = React.useState(height)
+  const errorRef = React.useRef(onError)
+  errorRef.current = onError
   // The frame URL is fixed at mount (theme changes go by message): a new fragment would not reload it anyway.
   const [frameSrc] = React.useState(
-    () => `${src.replace(/widget\.html$/, 'widget-frame')}#${encodeURIComponent(JSON.stringify({ theme: resolveTheme(useUI.getState().theme), vars: themeVars() }))}`,
+    () => `${frameUrl ?? src.replace(/widget\.html$/, 'widget-frame')}#${encodeURIComponent(JSON.stringify({ theme: resolveTheme(useUI.getState().theme), vars: themeVars() }))}`,
   )
 
   // A missing or disabled widget: say so instead of an empty frame.
@@ -95,15 +116,19 @@ export function HtmlWidget({ id, src, height, title }: { id: string; src: string
       const m = (e.data || {}) as { mx?: string; seq?: number; path?: string; method?: string; body?: unknown; query?: Record<string, string>; height?: number; message?: unknown; stack?: unknown }
       if (m.mx === 'resize' && typeof m.height === 'number') setH(Math.min(1200, Math.max(80, Math.round(m.height))))
       if (m.mx === 'error') {
-        const stack = typeof m.stack === 'string' ? m.stack : ''
-        reportExtensionError(id, 'widget', String(m.message ?? ''), stack)
-        setRuntime({ message: String(m.message ?? '') || 'Error', stack })
+        const message = String(m.message ?? ''), stack = typeof m.stack === 'string' ? m.stack : ''
+        // a draft's preview keeps its errors to itself (nothing installed to record them against)
+        if (errorRef.current) errorRef.current(message, stack)
+        else {
+          reportExtensionError(id, 'widget', message, stack)
+          setRuntime({ message: message || 'Error', stack })
+        }
       }
       if (m.mx === 'api') {
         const up = (m.method || 'GET').toUpperCase()
         const method = (['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(up) ? up : 'GET') as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
         try {
-          const data = await request(`/api/ext/${seg(id)}/${extPath(m.path)}`, {
+          const data = await request(`${apiBase ?? `/api/ext/${seg(id)}`}/${extPath(m.path)}`, {
             method,
             body: method === 'GET' ? undefined : (m.body ?? {}),
             query: m.query,
@@ -117,7 +142,7 @@ export function HtmlWidget({ id, src, height, title }: { id: string; src: string
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
-  }, [id])
+  }, [id, apiBase])
 
   React.useEffect(() => {
     // after the <html> attributes changed (accent, tint, density set them in an effect too)
