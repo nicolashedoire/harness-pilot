@@ -7,7 +7,7 @@ import { fmtDate, fmtRelative } from '@/lib/format'
 import { useCronPreview, useSettings } from '@/lib/queries'
 import { Input, Label, Select, Skeleton } from '@/components/ui'
 import { scheduleText } from './parts'
-import { PRESET_KINDS, fromPreset, hhmm, toPreset, weekdayNames, type Preset, type PresetKind } from './schedule'
+import { PRESET_KINDS, fromPreset, hhmm, isReboot, toPreset, weekdayNames, type Preset, type PresetKind } from './schedule'
 
 export function useDebounced<T>(v: T, ms = 300) {
   const [d, setD] = React.useState(v)
@@ -26,6 +26,7 @@ const KIND_KEY: Record<PresetKind, TKey> = {
   weekdays: 'crons.preset.weekdays',
   weekly: 'crons.preset.weekly',
   monthly: 'crons.preset.monthly',
+  reboot: 'crons.preset.reboot',
   custom: 'crons.preset.custom',
 }
 const MINUTE_STEPS = [1, 2, 3, 5, 10, 15, 20, 30]
@@ -210,7 +211,7 @@ export function SchedulePreview({ schedule }: { schedule: string }) {
               </ol>
             </div>
           ) : (
-            <p className="text-[13px] text-muted-foreground">{t('crons.noNextRun')}</p>
+            <p className="text-[13px] text-muted-foreground">{t(isReboot(debounced) ? 'crons.rebootHint' : 'crons.noNextRun')}</p>
           )}
         </div>
       )}

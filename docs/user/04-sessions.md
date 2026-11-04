@@ -15,9 +15,9 @@ Open **Agent map** from the session menu to inspect agent calls present in the l
 
 ## Mixed Claude and Codex team
 
-Choose **Mixed team** under **Several agents** and send a written mission. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. This first version uses these two fixed roles and does not automatically split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
+Choose **Mixed team** under **Several agents** and send a written mission, with files or images if needed. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. This first version uses these two fixed roles and does not automatically split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
 
-While the team works, its panel above the message box shows the steps (**Starting**, **Agents working**, **Synthesis**, **Done**) and, for each agent, how long it has worked, its last actions (files read, searches, commands, what it says) and, once it has finished, the start of its report. The panel folds to one line when the team is over; click it to open it again. Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Attachments and voice messages are not supported in this mode yet.
+While the team works, its panel above the message box shows the steps (**Starting**, **Agents working**, **Synthesis**, **Done**) and, for each agent, how long it has worked, its last actions (files read, searches, commands, what it says) and, once it has finished, the start of its report. The panel folds to one line when the team is over; click it to open it again. Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Files and images attached to the mission go to both agents and to the coordinator: Claude opens them itself, Codex receives the images directly (PNG, GIF, WebP or JPEG up to 3.5 MB) and the location of every other file. Each agent reads them with its own subscription. The mission is written: the microphone dictates it into the text instead of sending a voice message.
 
 ## Claude Code and Codex together
 
@@ -370,6 +370,19 @@ Long sessions then stop re-sending their whole history on every call, which roug
 Pick a higher threshold (or Off) for a session that needs every detail of a very long exchange. A single long turn
 (many tool calls in a row) is compacted along the way too, near the same threshold, instead of growing up to the
 model's limit. `pilot sessions token-report` shows, on your own sessions, what each threshold would have saved.
+
+**Discussions and debates** between Claude Code and Codex are compacted too. When a reply ends near the limit
+(the automatic compaction threshold above, or 80 % of the model's context), or when an agent refuses a reply
+because its conversation is full, Claude summarizes the exchanges so far, then both agents continue in fresh
+conversations that start from that summary, and a refused reply is asked again. The thread shows a
+*Conversation summarised to continue* separator, the summary and a note; the summary does not count as a reply.
+**Compact context** in the session's **…** menu does the same on demand, also while the discussion is paused (it
+stays paused). Codex does not report how full its conversation is, so on its side the summary comes when it
+refuses a reply.
+**Summarise & restart** works on a discussion too: a new discussion with the same objective, roles, models and
+limits starts from a summary of the exchanges (shown at its top), both agents start from it, and the old one
+is archived. A discussion paused before the hand-off stays paused in the new one: **Resume** asks the reply it
+was waiting for. Pause a running discussion first.
 
 **Compact when you come back** (Settings -> Claude, 200k tokens by default): Claude keeps the start of a conversation
 in a cache for a few minutes (up to an hour). When you write to a session that has been quiet for longer and holds at least that
