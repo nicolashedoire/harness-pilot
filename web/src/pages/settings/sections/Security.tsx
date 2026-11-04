@@ -8,6 +8,7 @@ import { Button, FormField, SecretInput, toast } from '@/components/ui'
 import { NewPasswordFields, validatePasswords } from '@/pages/auth/PasswordFields'
 import { Callout } from '@/features/common'
 import { TwoFactorRow } from '@/features/auth/TwoFactorRow'
+import { TotpCard } from '@/features/auth/TotpCard'
 import { SettingsCard, SectionStack } from './ui'
 
 export function SecuritySection() {
@@ -57,17 +58,20 @@ export function SecuritySection() {
           </div>
         </form>
       </SettingsCard>
-      <SettingsCard title={t('twofa.setting')}>
-        {tg?.chat ? (
-          <TwoFactorRow on={!!tg.settings.two_factor} id="sec-2fa" />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {t('twofa.needTelegram')}{' '}
-            <Link to="/settings/telegram" className="font-medium text-primary hover:underline">
-              {t('twofa.linkTelegram')}
-            </Link>
-          </p>
-        )}
+      <SettingsCard title={t('twofa.setting')} description={t('totp.cardDesc')}>
+        <div className="grid gap-5">
+          <TotpCard />
+          {tg?.chat ? (
+            <TwoFactorRow on={!!tg.settings.two_factor} id="sec-2fa" label={t('twofa.viaTelegram')} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('twofa.needTelegram')}{' '}
+              <Link to="/settings/telegram" className="font-medium text-primary hover:underline">
+                {t('twofa.linkTelegram')}
+              </Link>
+            </p>
+          )}
+        </div>
       </SettingsCard>
       <SettingsCard title={t('security.sessions')} description={t('security.sessionsDesc')}>
         <div className="grid gap-4">

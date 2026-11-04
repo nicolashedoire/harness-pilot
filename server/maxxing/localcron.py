@@ -2,6 +2,7 @@
 
 It does not install or alter the user's crontab. Only the current minute is considered: the
 application must be running and missed jobs are not replayed after sleep or a shutdown.
+`@reboot` jobs run once each time the application starts (`boot()`, called before the first tick).
 """
 from __future__ import annotations
 
@@ -12,6 +13,32 @@ from . import config, crons
 
 log = logging.getLogger(__name__)
 _lock = config.ProcessLock('local-cron')
+
+
+def boot() -> list[str]:
+    """Start every enabled `@reboot` job: once per start of the application (the scheduler's first pass).
+    Returns the ids started; a job already running is left alone."""
+    if config.integrations_paused():                    # a restored copy: nothing runs until its owner resumes it
+        return []
+    started = []
+    for job in crons.list_jobs():
+        cid = job.get('id')
+        if not cid or not job.get('enabled'):
+            continue
+        try:
+            if not crons.parse(job.get('schedule') or '').reboot:
+                continue
+        except (ValueError, crons.CronError):
+            continue
+        try:
+            crons.spawn_run(cid)
+            started.append(cid)
+        except crons.CronError as e:
+            if e.code != 'already_running':
+                log.exception('Could not start the startup job %s', cid)
+        except (OSError, ValueError):
+            log.exception('Could not start the startup job %s', cid)
+    return started
 
 
 def tick(now: float | None = None) -> list[str]:

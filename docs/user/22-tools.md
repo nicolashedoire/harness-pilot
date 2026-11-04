@@ -5,7 +5,10 @@ section: Extending
 
 Claude can make a video, a PDF or a batch of images in any session when the tools below are on the
 computer. On a Linux server, the installer installs them in the background (`pilot deps list` shows them,
-`pilot deps update` installs them again); the local macOS setup (`scripts/dev-local.sh`) installs none of them. Without
+`pilot deps update` installs them again); the local macOS setup (`scripts/dev-local.sh`) installs none of them.
+Verified on Debian 12 and Ubuntu 24.04 (arm64) installed from this repository: the installer brought every tool below,
+then `pilot pdf`, `scrapling extract get` and `fetch`, and the render of a new `pilot video new` project (a 5-second
+1080p MP4) worked. Not yet verified on x86_64. Without
 them, `pilot video new` and `pilot pdf` stop and say what is missing; the `image-edit` skill works as soon as you
 install ImageMagick and ffmpeg yourself (for example with Homebrew).
 
@@ -56,5 +59,7 @@ pilot video status                          # Node.js, Remotion, headless browse
 pilot deps list                             # versions of every component
 pilot deps update                           # (re)install the tools, as root (Linux server only)
 ```
-`pilot doctor` warns (never fails) when they are missing. `pilot deps update` downloads Linux builds and needs
+Only one update of the tools runs at a time: a `pilot deps update` started while another one runs (for example the
+one in the background after an installation or `pilot update`) says it waits, then goes on. `pilot doctor` warns
+(never fails) when they are missing. `pilot deps update` downloads Linux builds and needs
 root: it does not install anything in the local macOS setup.

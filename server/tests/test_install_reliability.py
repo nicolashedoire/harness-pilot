@@ -5,6 +5,7 @@ only) in a bash subprocess: nothing on this machine is changed."""
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 import threading
 import tomllib
@@ -268,6 +269,26 @@ def test_cache_dir_is_validated(value, ok):
            STATE_DIR="/var/lib/x", PORT="8787", REPO="o/n", LICENSE_API="https://api.example.com", RESTORE_TRUST="0",
            ALLOW_UNPROTECTED="0", FIREWALL="auto", SSH_HARDEN="auto", TOOLS="background", SWAP="auto")
     assert ("fine" in r.stdout) is ok, r.stderr
+
+
+def test_installer_caddy_site_serves_the_domain_over_https(tmp_path):
+    """ACCESS=domain: one site block for DOMAIN (Caddy's automatic HTTPS, HTTP redirected), the security headers, the
+    app's upload limit, the infra sites under it, and an unbuffered proxy to the local server (live updates)."""
+    from maxxing import cmd_core
+    r = sh('DOMAIN=ui.example.com; PORT=8799; caddy_site_text')
+    site = r.stdout
+    assert r.returncode == 0 and site.splitlines()[1] == "ui.example.com {", r.stderr
+    for want in ('Strict-Transport-Security "max-age=31536000; includeSubDomains"', 'X-Content-Type-Options "nosniff"',
+                 f"max_size {cmd_core.CADDY_BODY_MB}MB", "import /etc/caddy/maxxing-paths/*.caddy",
+                 "reverse_proxy 127.0.0.1:8799 {", "flush_interval -1"):
+        assert want in site, want
+    assert "tls " not in site and "http://" not in site           # a real certificate, nothing served in clear
+    if shutil.which("caddy"):                                      # a server (or CI) with Caddy: it must accept it
+        (tmp_path / "site.caddy").write_text(site.replace("/etc/caddy/maxxing-paths/", f"{tmp_path}/paths/"))
+        (tmp_path / "Caddyfile").write_text(f"{{\n\tadmin off\n}}\n\nimport {tmp_path}/site.caddy\n")
+        v = subprocess.run(["caddy", "validate", "--config", str(tmp_path / "Caddyfile"), "--adapter", "caddyfile"],
+                           capture_output=True, text=True, timeout=60)
+        assert v.returncode == 0, v.stderr[-500:]
 
 
 def test_installer_defaults_to_this_repository():

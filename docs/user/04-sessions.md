@@ -27,7 +27,7 @@ You can assign a different role to each agent, choose a built-in pair of roles, 
 
 The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
 
-From a session's **More actions** menu, **Summary and actions** asks Codex to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The summary request uses the connected Codex account and is not yet included in turn statistics.
+From a session's **More actions** menu, **Summary and actions** asks Codex (or Claude Code when Codex is not signed in) to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review; the dialog says which agent wrote it. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The request uses that agent's account; its tokens (and Claude's indicative amount) are added to the session's statistics, without counting as a turn.
 
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
 
@@ -47,13 +47,12 @@ These features are for Claude Code only for now:
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.
-- **Scheduled prompts** (Crons): they run with Claude Code.
 - **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
   follows its own sandbox, which still lets it read those files.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
 - **New sessions started from Telegram** use Claude Code.
 
-**Summary and actions** works the other way round: it needs a signed-in Codex, whatever the session's agent.
+**Summary and actions** works with either agent: Codex when it is signed in, otherwise Claude Code.
 
 ## Layout
 
@@ -298,6 +297,11 @@ commands that modify anything in this mode.
 - The HUD shows the plan as the answer and has a **Validate the plan** button.
 - Plan mode applies to every message of the session, Telegram included; validate the plan from the web
   app or the HUD. Compact and hand off still work normally.
+- **In a Claude Code and Codex discussion** (tick **Plan mode** when you start it, or use the box later), both
+  agents only read and work the plan out together, each reply giving the whole plan as it stands. Pause the
+  discussion (or let a reply limit pause it) to get the **Proposed plan** card. **Approve and run**: the agent
+  whose turn is next carries out the latest plan, then the discussion pauses again; **Resume** lets the other
+  agent review the work.
 
 ## Pilot mode
 
@@ -379,6 +383,10 @@ conversations that start from that summary, and a refused reply is asked again. 
 **Compact context** in the session's **…** menu does the same on demand, also while the discussion is paused (it
 stays paused). Codex does not report how full its conversation is, so on its side the summary comes when it
 refuses a reply.
+**Summarise & restart** works on a discussion too: a new discussion with the same objective, roles, models and
+limits starts from a summary of the exchanges (shown at its top), both agents start from it, and the old one
+is archived. A discussion paused before the hand-off stays paused in the new one: **Resume** asks the reply it
+was waiting for. Pause a running discussion first.
 
 **Compact when you come back** (Settings -> Claude, 200k tokens by default): Claude keeps the start of a conversation
 in a cache for a few minutes (up to an hour). When you write to a session that has been quiet for longer and holds at least that

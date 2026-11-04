@@ -23,7 +23,11 @@ export type AuthState = {
 export type SetupBody = { token: string; password: string }
 export type LoginBody = { password: string }
 /** A sign-in (or turning two-step sign-in on) waiting for an approval in Telegram. */
-export type TwoFactorChallenge = { challenge: string; expires_in: number }
+/** `methods`: how this challenge can be answered (absent from servers before the authenticator app = Telegram). */
+export type TwoFactorChallenge = { challenge: string; expires_in: number; methods?: ('totp' | 'telegram')[] }
+/** Two-step sign-in with an authenticator app (Settings -> Security). */
+export type TotpState = { enabled: boolean; recovery_left: number; pending: boolean; enabled_at: number | null }
+export type TotpSetup = { secret: string; uri: string; expires_in: number }
 export type LoginResult = { ok: boolean; two_factor?: TwoFactorChallenge }
 export type TwoFactorPoll = { ok: boolean; status: 'pending' | 'approved'; expires_in?: number }
 export type ChangePasswordBody = { current: string; new: string }
@@ -394,7 +398,7 @@ export type TaskBulkBody = {
 export type TaskBulkResult = { ok: boolean; updated: number; deleted: number }
 
 /* ---------------------------------------------------------------- Crons */
-export type CronKind = 'shell' | 'claude'
+export type CronKind = 'shell' | 'claude' | 'codex'   // claude / codex: a prompt run as a session turn of that agent
 export type CronNotify = 'never' | 'failure' | 'always'
 export type CronLastRun = { at: number; ok: boolean; code: number; duration_s: number }
 export type CronPermissionMode = '' | PermissionMode
@@ -528,12 +532,12 @@ export type BackupPreview = {
   ok: boolean; commit: string; hold: boolean
   counts: Record<'create' | 'replace' | 'unchanged' | 'held' | 'skip', number>
   paths: Record<'create' | 'replace' | 'unchanged' | 'held' | 'skip', string[]>
-  settings: boolean; crons: boolean; mcp: boolean
+  settings: boolean; crons: boolean; mcp: boolean; labels?: number
 }
 export type BackupRestoreResult = {
-  ok: boolean; files: number; restored: string[]; unchanged: number; skipped: string[]; skipped_count: number; crons: boolean; trash: string | null
+  ok: boolean; files: number; restored: string[]; unchanged: number; skipped: string[]; skipped_count: number; crons: boolean; labels?: number; trash: string | null
   held: { crons?: string[]; extensions?: string[]; hooks?: string[]; mcp?: string[]; review?: string[]; outside?: string[] }
-  warnings: ('crons' | 'mcp' | 'settings')[]
+  warnings: ('crons' | 'mcp' | 'settings' | 'labels')[]
 }
 
 /* ---------------------------------------------------------------- Profile (pseudo) */
@@ -613,6 +617,14 @@ export type Health = {
 export type Service = { name: string; label: string; active: boolean; enabled: boolean; since: number | null; state: string }
 export type ServiceAction = 'start' | 'stop' | 'restart'
 export type LogsPayload = { lines: string[] }
+/** GET /api/system/media-tools: the tools of thumbnails and previews, and the commands that install what is missing. */
+export type MediaTools = {
+  ok: boolean
+  ffmpeg: { path: string | null; webp: boolean }
+  pdftoppm: { path: string | null }
+  missing: ('ffmpeg' | 'ffmpeg_webp' | 'pdftoppm')[]
+  install: string[]
+}
 export type VersionInfo = {
   version: string
   local_mode?: boolean
