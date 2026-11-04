@@ -2179,6 +2179,57 @@ R('DELETE', '/api/telegram', () => {
   return { ok: true }
 })
 
+/* ---- starter packs (server/maxxing/packs.py): read from the repository's templates/packs/<id>/pack.json, so the mock
+   offers the real catalog. Installing adds the project (a free name when taken), its topics and its jobs, disabled. */
+const PACKS_DIR = path.resolve(__dirname, '../../templates/packs')
+function packList() {
+  const lang = S.settings.language === 'fr' ? 'fr' : 'en', txt = (v) => (typeof v === 'object' && v ? v[lang] || v.en : v || '')
+  let ids = []
+  try { ids = fs.readdirSync(PACKS_DIR).filter((d) => fs.existsSync(path.join(PACKS_DIR, d, 'pack.json'))).sort() } catch {}
+  const packs = ids.map((id) => {
+    const d = JSON.parse(fs.readFileSync(path.join(PACKS_DIR, id, 'pack.json'), 'utf8'))
+    const copies = S.projects.filter((p) => p.name === d.project || p.name.startsWith(d.project + '-'))
+    return { id: d.id, project: d.project, emoji: d.emoji || '', icon: d.icon || 'package', title: txt(d.title), description: txt(d.description),
+      topics: d.topics || [], crons: (d.crons || []).map((c) => c.name), installed: copies.length > 0, partial: false, project_exists: S.projects.some((p) => p.name === d.project), basics: false, def: d }
+  })
+  const missing = ['general', 'system'].filter((n) => !S.projects.some((p) => p.name === n))
+  packs.unshift({ id: 'basics', project: 'general, system', emoji: '', icon: 'house', title: lang === 'fr' ? 'Projets de base' : 'Default projects',
+    description: lang === 'fr' ? 'general/inbox et system (tutoriel, aide, Harness) : remet ceux que vous avez supprimés, sans rien écraser.' : 'general/inbox and system (tutorial, help, Harness): puts back the ones you deleted, never overwrites.',
+    topics: ['general/inbox', 'system/help', 'system/harness', 'system/tutorial'], crons: [], installed: missing.length === 0, partial: missing.length === 1, project_exists: missing.length < 2, basics: true })
+  return packs
+}
+const packOut = ({ def, ...p }) => p
+R('GET', '/api/packs', () => ({ packs: packList().map(packOut) }))
+R('POST', '/api/packs/:id/install', async ({ params }) => {
+  const pack = packList().find((p) => p.id === params.id) || fail(404, 'unknown_pack', 'Unknown pack')
+  await sleep(700)
+  let project = '', created = 0
+  const jobs = []
+  if (pack.basics) {
+    for (const [name, topics] of [['general', ['inbox']], ['system', ['help', 'harness', 'tutorial']]]) {
+      let p = S.projects.find((x) => x.name === name)
+      if (!p) { p = { name, description: '', topics: [] }; S.projects.push(p); fsAdd(S, `${projPath(name)}/CLAUDE.md`, `# Project ${name}\n\n@memory.md\n`, now()); created += 1 }
+      for (const t of topics) if (!p.topics.some((x) => x.name === t)) { p.topics.push({ name: t, description: '' }); fsAdd(S, `${topicPath(name, t)}/CLAUDE.md`, `# Topic ${t}\n`, now()); created += 1 }
+    }
+  } else {
+    project = pack.project
+    for (let n = 2; S.projects.some((p) => p.name === project); n++) project = `${pack.project}-${n}`
+    S.projects.push({ name: project, description: pack.description, topics: pack.topics.map((name) => ({ name, description: '' })) })
+    fsAdd(S, `${projPath(project)}/CLAUDE.md`, `# Project ${project}\n\n> ${pack.description}\n\n@memory.md\n`, now())
+    fsAdd(S, `${projPath(project)}/memory.md`, `# ${project} — memory\n`, now())
+    for (const t of pack.topics) fsAdd(S, `${topicPath(project, t)}/CLAUDE.md`, `# Topic ${t}\n`, now())
+    created = 2 + pack.topics.length
+    for (const c of pack.def.crons || []) {
+      const name = project === pack.project ? c.name : `${c.name} (${project})`
+      S.crons.push({ id: rid('c'), name, schedule: c.schedule, kind: 'claude', command: '', topic_path: topicPath(project, c.topic), prompt: c.prompt, model: '',
+        reuse_session: false, enabled: false, notify: c.notify || 'failure', timeout_s: 600, last_run: null })
+      jobs.push(name)
+    }
+  }
+  bus('workspace', 'crons')
+  return { ok: true, pack: packOut(packList().find((p) => p.id === pack.id)), project, created_files: created, jobs }
+})
+
 /* ---- backup */
 function backupStatus() {
   const b = S.backup
