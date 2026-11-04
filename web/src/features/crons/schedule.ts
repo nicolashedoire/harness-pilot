@@ -1,7 +1,7 @@
 // Schedule presets <-> 5-field cron expressions. Anything that does not match a preset is "custom"
 // (the raw expression field stays the source of truth; the server validates and humanises it).
 
-export type PresetKind = 'minutes' | 'hours' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'custom'
+export type PresetKind = 'minutes' | 'hours' | 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'reboot' | 'custom'
 export type Preset = {
   kind: PresetKind
   every: number // minutes / hours interval
@@ -11,7 +11,10 @@ export type Preset = {
   day: number // day of month
 }
 export const DEFAULT_PRESET: Preset = { kind: 'daily', every: 15, minute: 0, hour: 7, weekday: 1, day: 1 }
-export const PRESET_KINDS: PresetKind[] = ['minutes', 'hours', 'hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'custom']
+export const PRESET_KINDS: PresetKind[] = ['minutes', 'hours', 'hourly', 'daily', 'weekdays', 'weekly', 'monthly', 'reboot', 'custom']
+
+/** `@reboot`: runs when the application starts (local scheduler) or the server boots (crontab), never on a clock. */
+export const isReboot = (expr: string) => expr.trim().toLowerCase() === '@reboot'
 
 const int = (s: string, lo: number, hi: number): number | null => {
   if (!/^\d{1,2}$/.test(s)) return null
@@ -22,6 +25,7 @@ const int = (s: string, lo: number, hi: number): number | null => {
 /** Best-effort match of an expression to a preset (base = values to keep for the other fields). */
 export function toPreset(expr: string, base: Preset = DEFAULT_PRESET): Preset {
   const src = expr.trim().toLowerCase()
+  if (src === '@reboot') return { ...base, kind: 'reboot' }
   const short: Record<string, string> = { '@hourly': '0 * * * *', '@daily': '0 0 * * *', '@midnight': '0 0 * * *', '@weekly': '0 0 * * 0', '@monthly': '0 0 1 * *' }
   const parts = (short[src] || src).split(/\s+/)
   const custom = { ...base, kind: 'custom' as const }
@@ -73,6 +77,8 @@ export function fromPreset(p: Preset): string | null {
       return `${p.minute} ${p.hour} * * ${p.weekday}`
     case 'monthly':
       return `${p.minute} ${p.hour} ${p.day} * *`
+    case 'reboot':
+      return '@reboot'
     default:
       return null
   }

@@ -285,6 +285,7 @@ def _notify(session: dict) -> None:
         text = 'A source-code proposal is ready for your review.' if result['has_changes'] else 'The review finished without a code change.'
         feed.system('Companion review ready', text, 'warning' if result['has_changes'] else 'info', 'system', url,
                     dedupe=f"companion:{sid}:{session['turns']}", kind='companion.ready' if result['has_changes'] else 'companion.empty',
+                    params={'session_id': sid, 'fingerprint': result['fingerprint']},
                     actions=[feed.link('review', 'Review', url)])
     except service.SessionError:
         feed.system('Companion review needs attention', 'Open the companion session to inspect the result.',

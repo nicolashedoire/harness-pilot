@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from _needs import proc_fd
 from _org_helpers import org, client  # noqa: F401
 from test_mcp import env  # noqa: F401
 
@@ -43,6 +44,7 @@ def test_login_reader_does_not_steal_a_reused_fd():
     assert e.value.code == "login_expired"
 
 
+@proc_fd
 def test_login_start_does_not_leak_pty_master(env):  # noqa: F811
     from maxxing import mcp
     before = _open_fds()
@@ -53,6 +55,7 @@ def test_login_start_does_not_leak_pty_master(env):  # noqa: F811
     assert _open_fds() - before < 5
 
 
+@proc_fd
 def test_login_start_closes_master_when_popen_fails(env, monkeypatch):  # noqa: F811
     from maxxing import mcp
     mcp.add("ads", {"type": "http", "url": "https://ads.example.com/mcp"}, None)
