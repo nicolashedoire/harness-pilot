@@ -1,8 +1,9 @@
 """Resident experiments use disposable source copies and require explicit review."""
 import subprocess
+import uuid
 
 from conftest import wait_for, wait_idle
-from maxxing import config
+from maxxing import companions, config
 
 
 def test_proposal_review_and_decision(client, topic, mx, monkeypatch):
@@ -99,3 +100,20 @@ print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)
         events = result.get('events', []) if isinstance(result, dict) else result
         return any(e.get('url', '').endswith(f'run={sid}') for e in events)
     assert wait_for(notification, timeout=10)
+
+
+def test_a_mission_planning_run_raises_no_companion_review_notice(client, topic):
+    from maxxing import feed
+    from maxxing.sessions import store
+    def companion_notices():
+        return [e for e in feed.list_events()['events'] if str(e.get('kind') or '').startswith('companion.')]
+    for purpose in ('plan', 'experiment'):
+        sid = client.post('/api/sessions', json={'path': topic, 'title': purpose}).json()['id']
+        with store.edit(sid) as meta:
+            meta.update(state='idle', turns=1)
+            meta['companion'] = {'id': 'architect', 'run_id': str(uuid.uuid4()), 'base': 'a' * 40, 'purpose': purpose}
+        companions._notify({'id': sid, 'state': 'idle', 'turns': 1})
+        if purpose == 'plan':
+            assert companion_notices() == []
+    # the experiment run is still reported (its copy is missing here, so as needing attention)
+    assert [e['kind'] for e in companion_notices()] == ['companion.error']

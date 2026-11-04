@@ -263,6 +263,8 @@ def _notify(session: dict) -> None:
     meta = store.read(sid) or {}
     if not isinstance(meta.get('companion'), dict):
         return
+    if meta['companion'].get('purpose') == 'plan':
+        return  # a mission's architect plan has no proposal to review: the mission notifies (plan ready, failure)
     if session.get('state') == 'error':
         url = f'/settings/companions?run={sid}'
         feed.system('Companion review needs attention', 'The experiment stopped with an error. Open its conversation.',
