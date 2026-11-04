@@ -657,7 +657,7 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
   (non-blocking) elects the one process that runs `tick()`.
 - `create(title, path, goal, steps, max_runs, max_minutes, max_tokens, concurrent, interval_minutes, max_cycles)`,
   `save_plan(id, steps)`, `control(id, action, fingerprint)` (`plan|start|pause|stop`), `acknowledge(id, step_id)`
-  (skip, paused missions only), `get` / `listing` (each with `plan_fingerprint` = sha256 of title, path, goal,
+  (skip, paused missions only), `retry(id, step_id)` (paused only; back to pending, a new counted run), `get` / `listing` (each with `plan_fingerprint` = sha256 of title, path, goal,
   limits, steps and `_engines()` of the roles used: role instructions + engine id, and for an extension engine its
   resolved command and capabilities). `start` requires the current fingerprint and stores it as `approved_plan`;
   `advance` pauses an active mission whose fingerprint no longer matches (`plan_changed`). Internal reads use
