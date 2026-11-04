@@ -821,7 +821,8 @@ def sync_agent_files(light: bool = False) -> dict:
         if _write(reference_path(), agent_reference(ps)):
             changed.append(str(reference_path()))
         src = config.SKILLS_DIR / SKILL / "SKILL.md"
-        dst = config.claude_dir() / "skills" / SKILL / "SKILL.md"
+        from .cmd_core import skills_target
+        dst = skills_target() / SKILL / "SKILL.md"
         if src.is_file() and dst.parent.is_dir():
             from .cmd_core import render_template, template_vars
             text = render_template(src.read_text("utf-8"), {**template_vars(config.workspace()), **skill_vars(ps)})
@@ -833,5 +834,6 @@ def sync_agent_files(light: bool = False) -> dict:
 
 def agents_summary() -> dict:
     types = [t for p in enabled_plugins() for t in p["renders"]]
-    return {"types": types, "count": len(types), "skill": str(config.claude_dir() / "skills" / SKILL / "SKILL.md"),
+    from .cmd_core import skills_target
+    return {"types": types, "count": len(types), "skill": str(skills_target() / SKILL / "SKILL.md"),
             "codex": str(agents_path()), "reference": str(reference_path()), "synced_at": _last_sync["at"]}

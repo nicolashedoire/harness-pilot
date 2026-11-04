@@ -32,6 +32,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
 - View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.
 - Run locally on macOS with a scheduler that does not change the system crontab. Jobs run while the app is open; missed jobs are not replayed.
+- In the local macOS setup, the built-in skills are installed at every start, so **Create with harness-pilot** in Settings -> Appearance works without copying `pilot-theme` by hand. They are kept beside the local workspace: your personal Claude skills are not changed.
 - Configure the support link, which opens PayPal directly. The legacy application installation counter and upstream registration are disabled by default.
 - Correct macOS health indicators, documentation links, and session updates across multiple browser tabs.
 - After the update, your agent looks for the old skill names (such as `maxxing-cron`) in the notes, instructions and scheduled job prompts you wrote, and offers to rename them; nothing you wrote changes without your yes.
