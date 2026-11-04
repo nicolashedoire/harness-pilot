@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { CodeBlock } from './code-block'
 import { Diagram } from './diagram'
 import { withGroups } from '@/i18n'
+import { BlockFence, fenceBlock } from '@/features/blocks/fence'
 
 // ```git blocks: the live graph of a repository (features/git), loaded the first time one shows up.
 const GitBlock = React.lazy(withGroups(['git'], () => import('@/features/git/GitBlock')))
@@ -84,7 +85,9 @@ export type MarkdownProps = {
  * GitHub-flavoured markdown. Raw HTML is NOT rendered (escaped), unsafe URLs are dropped, app routes (/…) use
  * the router, external links
  * open in a new tab with rel="noopener noreferrer nofollow", code blocks are highlighted with a copy button,
- * ```mermaid blocks are drawn as diagrams, ```git blocks as the live graph of a repository.
+ * ```mermaid blocks are drawn as diagrams, ```git blocks as the live graph of a repository, and a fence whose info
+ * string names a conversation block type (```chart, ```table, ```form…, or ```block:<type>) as that block
+ * (features/blocks: JSON body checked against the type's schema, raw data and the reason when it does not fit).
  */
 export function Markdown({ children, className, onLink, components }: MarkdownProps) {
   // Re-render once the grammars are there - only the messages that have something to highlight (the others would
@@ -146,11 +149,14 @@ export function Markdown({ children, className, onLink, components }: MarkdownPr
             </React.Suspense>
           )
         }
-        return (
-          <CodeBlock code={textOf(child?.props?.children).replace(/\n$/, '')} language={lang} className="my-3">
+        const code = textOf(child?.props?.children).replace(/\n$/, '')
+        const plain = (
+          <CodeBlock code={code} language={lang} className="my-3">
             <code className={child?.props?.className}>{child?.props?.children}</code>
           </CodeBlock>
         )
+        const block = fenceBlock(child?.props?.className, code)
+        return block ? <BlockFence block={block} code={code} fallback={plain} /> : plain
       },
       img({ src, alt }) {
         const s = typeof src === 'string' ? src : ''
