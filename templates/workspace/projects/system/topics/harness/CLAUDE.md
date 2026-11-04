@@ -74,11 +74,10 @@ update: nothing to ask the product's authors.
   can do it, or, for a change of the product itself, follow the `pilot-customize` skill
   (customizations are recorded and carried over by updates). Never edit `{{CODE_DIR}}` otherwise.
 - Clarify what the user wants to see (data source, refresh rate, size) in one or two questions,
-  then build the smallest version that works, test it (call `api.py` directly with Python, then
-  `pilot update --verify`: the server loads every extension and computes every widget, exit code 1
-  with the error when one fails; not `curl`: the HTTP API needs the user's signed-in browser), and
-  tell the user where to look (Dashboard, or the page in the sidebar). Reload: Settings ->
-  Extensions -> Reload (automatic on file change).
+  then build the smallest version that works, test it with `pilot ext check <id>` (runs it the way the
+  server does; exit code 1 with the error: fix and run it again; not `curl`: the HTTP API needs the
+  user's signed-in browser), and tell the user where to look (Dashboard, or the page in the
+  sidebar). Reload: Settings -> Extensions -> Reload (automatic on file change).
 - Secrets the extension needs (API keys) go to Settings -> Keys and are read with `ctx.secret(name)`,
   never hard-coded.
 - List the extensions you built and what they do in memory.md.

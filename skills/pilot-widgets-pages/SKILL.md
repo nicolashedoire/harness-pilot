@@ -221,23 +221,21 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
 ## Steps
 1. Ask what to show, where the data comes from, refresh rate, which secrets are needed.
 2. Create the folder and files; for API calls use `urllib.request` with `timeout=10`.
-3. Test the Python side directly, without the server:
+3. Test it the way the server runs it, and fix until it passes:
    ```bash
-   cd <workspace>/extensions/<id> && python3 -c "
-   import json, api, tempfile
-   ctx = {'id': '<id>', 'workspace': '<workspace>', 'state_dir': tempfile.mkdtemp(),
-          'secret': lambda n: None, 'config': {'timezone': 'UTC', 'language': 'en', 'public_url': ''}}
-   print(json.dumps(api.card(ctx), indent=2))"     # page: api.handle(ctx, 'GET', 'notes', {}, None)
+   pilot ext check <id>            # --json: steps, the first error, the card it computes, the files involved
    ```
-   Check `page.js` syntax (and each module it imports) with `node --check page.js` if node is available.
-4. Check it the way the server loads it: `pilot update --verify` (changes nothing; `--json` for details). It
-   loads every extension (manifest, `api.py` import in under 10 s), computes every Card widget with the server's
-   Card rules and checks `page.js` syntax: exit code 1 and the error on the extension's line when one fails. It
-   also runs the customizations' checks: a failure there is not yours to fix now, mention it.
-5. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
+   It loads the manifest and `api.py` (10 s limit), runs `card(ctx)` with the dashboard's 20 s limit through the
+   same cleaning (dropped blocks of an unknown type are reported), checks an HTML widget's frame and every inline
+   script (`node --check`, lines of widget.html), and a page's `page.js` and the modules it imports (served, parse,
+   `mount` exported). Exit `0` = works (warnings allowed), `1` = broken: read `error` / the `trace` lines of your
+   `api.py`, fix, run it again. Do not tell the user it is done while it exits `1`. To try one route of a page's API,
+   call `api.handle(ctx, 'GET', 'notes', {}, None)` from `python3 -c` in the folder.
+4. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there.
-6. Record the extension's purpose and data source in the topic memory (`memory` skill).
+5. Record the extension's purpose and data source in the topic memory (`memory` skill).
 
 Do not test with `curl`: `/api/ext/<id>/...`, `/ext/<id>/...` and the dashboard need the user's signed-in
-browser session (401 without it), and never ask for the password or a session cookie. The Python test,
-`pilot update --verify` and the UI cover it.
+browser session (401 without it), and never ask for the password or a session cookie. `pilot ext check <id>` runs
+the same code as the server, `api.handle(...)` from Python tries one route, and `pilot update --verify` checks every
+extension at once (with the customizations' checks: run after an update).

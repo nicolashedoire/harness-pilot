@@ -257,9 +257,10 @@ def _check_extension(e: Any) -> dict:
         return item
     try:
         if e.type == "widget" and e.has_api and not e.has_html:
-            card = extensions.widget_card(e, force=True)
-            if isinstance(card, dict) and card.get("status") == "error" and card.get("error"):
-                item.update(ok=False, error=str(card.get("error"))[:300])
+            # the raw card: clean_card drops "error", so the cached / dashboard card never has it
+            _, err = extensions.compute_card(e)
+            if err:
+                item.update(ok=False, error=err)
         if e.has_page:
             node = shutil.which("node")
             if node:

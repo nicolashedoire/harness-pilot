@@ -161,5 +161,9 @@ extension** in `{{WORKSPACE}}/extensions/<id>/` (slug id, not the name of a buil
 - `hint`: the one line given to the agents (it appears in the CLAUDE.md section once the block is enabled).
 
 The plugin appears in Settings -> Conversation blocks (and Settings -> Extensions); once enabled, its type joins
-the list above (this skill is rendered again) and the Codex context. Example: `{{CODE_DIR}}/examples/extensions/kanban-block/`. Test it by answering with a ```kanban block in a
-session.
+the list above (this skill is rendered again) and the Codex context. Example: `{{CODE_DIR}}/examples/extensions/kanban-block/`.
+
+Test it with `pilot ext check <id>` (`--json` for details) and fix until it exits `0`: it validates block.json and the
+schema as the server does, checks that the frame is served, that every inline script of the entry parses
+(`node --check`, lines of the entry file) and that it calls `maxxing.onData`. Then answer with a ```kanban block in a
+session to see it drawn.

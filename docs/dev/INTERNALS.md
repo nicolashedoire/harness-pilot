@@ -380,6 +380,31 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
 
+## maxxing.extcheck / maxxing.cmd_ext (`pilot ext check`)  (owner: organisation)
+- `check(id) -> Result | None` (None: no such folder), `check_all() -> [Result]`, `timed_out(results)`. Both start
+  with `extensions.scan()` (the server's loading: manifest / block.json, `api.py` imported apart with
+  `IMPORT_TIMEOUT_S`; the other extensions are loaded too). A turned-off extension (or `restore_hold`) is `skipped`
+  and none of its code runs.
+- Routes taken in-process: a `TestClient` on a FastAPI app with the `api.extensions` and `api.blocks` routers,
+  `require_auth` overridden (`_client()`); GET `/ext/<id>/widget-frame`, `/ext/<id>/@<page_v>/page.js` (the URL
+  pages/ext imports), each module a page imports (resolved with `urljoin` against the module's URL, so
+  `extensions.module_file`'s rules apply: a module the server does not serve is a 404 there too),
+  `/ext/_blocks/<id>/frame`. Nothing listens, no request leaves.
+- Card: `card(ctx)` through `extensions.call(..., timeout=api.dashboard.TIMEOUT_S, key="card:<id>")`, then
+  `clean_card` + `widgets.strip_none` (= `widget_card(force=True)` + the dashboard, keeping the raw value to report
+  dropped blocks). Exception frames inside the extension folder -> `trace`. A timed-out call keeps an extension
+  thread: `cmd_ext` leaves with `os._exit` after printing (the pool's threads are joined at exit otherwise).
+- JavaScript: `_node_check(code, name, module, line, col)` writes the code to a temp `.mjs` / `.js` padded with
+  newlines and spaces so `node --check` reports the file's own positions (inline scripts), then rewrites the temp path
+  (and its realpath) to `name`; None when `node` is missing (a warning step). `_scan_js` is a light scanner (strings,
+  template literals and comments skipped) returning the specifiers after `import` / `from` / `import(` and the code
+  with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
+- HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
+  position, links); an unclosed `<script>` is detected by the parser never closing it.
+- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, card?, trace?,
+  timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
+- `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off.
+
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
   cron sessions, nor for a mixed-team worker on its assignment (`team_turn`: the coordinator's own stop is the team's
@@ -924,8 +949,11 @@ URLs without query / fragment / userinfo. A channel with more than 64 MB waiting
   with `git diff base..target` = review). Never touches the install; cached in `update/preflight.json` keyed by
   [HEAD, target, dirty files]. Extensions vs the target's `EXT_API_MIN..EXT_API` (read with `git show`); upgrade
   notes of the target that ask something (first paragraph not "Nothing to do").
-- `verify() -> report` (`update/report.json`): `extensions.scan()`, `widget_card(force)`, `node --check page.js` when
-  node exists, each customization's `check` (shell, cwd workspace, `MAXXING_CODE`, 60 s).
+- `verify() -> report` (`update/report.json`): `extensions.scan()`, `extensions.compute_card` for each Card widget
+  (no cache; fails on an exception, an invalid card, or a non-empty `error` card() returned instead of raising -
+  `card_error`, read from the raw card because `clean_card` drops that key; `status: "error"` alone is a data alarm,
+  not a failure), `node --check page.js` when node exists, each customization's `check` (shell, cwd workspace,
+  `MAXXING_CODE`, 60 s).
 - `mark_updated(from, to, smart)` (end of `pilot update`) -> `update/after.json`; `after_update()` runs once at
   server start (api/system.startup, after `MAXXING_AFTER_UPDATE_DELAY` s): verify, feed alert if broken, and for
   `smart` the upgrade-notes session (config `update_auto_notes`, default true).

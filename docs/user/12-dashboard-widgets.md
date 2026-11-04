@@ -159,18 +159,15 @@ def card(ctx):
 
 ### 5. Test, then load
 
-Test the function directly on the server:
+Check it on the server the way the dashboard runs it:
 
 ```bash
-cd /root/maxxing/extensions/disk-usage && python3 -c "
-import json, api, tempfile
-ctx = {'id': 'disk-usage', 'workspace': '/root/maxxing', 'state_dir': tempfile.mkdtemp(),
-       'secret': lambda n: None, 'config': {'timezone': 'UTC', 'language': 'en', 'public_url': ''}}
-print(json.dumps(api.card(ctx), indent=2))"
+pilot ext check disk-usage          # --json for the card it computes
 ```
 
-`pilot update --verify` then checks it the way the server loads it (every extension and every widget, plus the
-customizations' checks; it changes nothing) and exits with code 1 and the error when one fails.
+It loads the extension, runs `card(ctx)` with the dashboard's time limit and cleans the result as the dashboard
+does: an exception shows the lines of `api.py` it went through, a block of an unknown type is reported as dropped.
+Exit code `0` when the widget works (see [Command line reference](cli-reference#pilot-ext-check)).
 
 Then **Settings -> Extensions -> Reload**. The widget appears on the dashboard. If something is
 wrong (invalid manifest, import error, exception in `card`), the error is shown on the extension's
@@ -205,4 +202,5 @@ through a small bridge that is injected for you:
 Rules: one file only (no other file of the folder is served to the frame - inline everything, or
 load libraries from a CDN `<script src="https://...">`); no `localStorage`/cookies (the sandbox has
 none: save through `api.py` and `ctx["state_dir"]`). The refresh button of the card reloads the
-frame. Full example: `examples/extensions/snake-widget/` in the code directory.
+frame. `pilot ext check snake-widget` checks that the frame is served and that every script of `widget.html`
+parses, and warns about what the sandbox does not have. Full example: `examples/extensions/snake-widget/` in the code directory.

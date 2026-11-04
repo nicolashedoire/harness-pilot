@@ -176,11 +176,17 @@ get the same kit. Inputs of the kit are 16 px on phones (no zoom on iPhone).
 
 ## 4. Test and load
 
-- Python side: call `handle()` directly (see the test snippet in
-  [Dashboard widgets](dashboard-widgets), with `api.handle(ctx, "GET", "notes", {}, None)`).
-- JavaScript syntax: `node --check page.js` (and each module it imports) if Node is installed.
-- `pilot update --verify`: the server loads every extension (manifest, `api.py`, `page.js` syntax) and exits with
-  code 1 and the error when one fails. `curl` cannot test the page or its API: both need your signed-in browser.
+- `pilot ext check notes-board`: loads the manifest and `api.py` as the server does, checks that `page.js` is
+  served, parses (with Node.js) and exports `mount`, and that every module it imports is a file of the folder the
+  server serves (see [Command line reference](cli-reference#pilot-ext-check)). Exit code `0` when it works.
+- To try a route of `api.py`, call `handle()` directly:
+  ```bash
+  cd /root/maxxing/extensions/notes-board && python3 -c "
+  import json, api, tempfile
+  ctx = {'id': 'notes-board', 'workspace': '/root/maxxing', 'state_dir': tempfile.mkdtemp(),
+         'secret': lambda n: None, 'config': {'timezone': 'UTC', 'language': 'en', 'public_url': ''}}
+  print(json.dumps(api.handle(ctx, 'GET', 'notes', {}, None), indent=2))"
+  ```
 - **Settings -> Extensions -> Reload**, then open the page from the sidebar (Extensions, or its own entry once pinned). Errors appear on the
   extension's row.
 
