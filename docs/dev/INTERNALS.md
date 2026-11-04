@@ -753,6 +753,19 @@ refuses to put its `codex-linux-sandbox` helper under `/tmp`: a `CODEX_HOME` the
 `requirements.toml` `deny_read` would work with `--sandbox` but lives in `/etc/codex` (root, every Codex run of the
 machine): not used.
 
+Token counts. `turn.completed.usage` of `codex exec --json` (`input_tokens` with the cached ones inside,
+`cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`) is the thread's
+running total, not the turn's: the sum of every model call of every turn of the thread so far, `exec resume`
+included. Checked with codex-cli 0.150.1 against a stub Responses API that reports growing usage per call: a turn
+of two calls (102k + 103k input) reported 205k; the next turn, resumed in a new process (104k), reported 309k; the
+one after (105k + 106k), 520k. `codex.usage_totals(event)` reads those counters; `runner._codex_turn` passes meta
+`codex_usage` `{thread, total}` (the totals after that thread's last turn) as `codex_base` when it resumes the same
+thread, and `codex.events(event, base)` maps `turn_usage(totals, base)` - what they grew by (the totals as they are
+for a new thread, an unknown base, or a total below its base). After the turn the runner stores the new totals
+with the thread id `thread.started` gave. Tokens of a failed or stopped turn (no `turn.completed`) are counted with
+the thread's next turn. Turns recorded before this change keep the totals they were given (the log does not say
+where a Codex thread starts, so they are not recalculated).
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`

@@ -6,7 +6,8 @@ Meta (`<id>.json`, internal - service.public() turns it into the API.md Session)
   sessions created before 2.0.0a6 until stats.py backfills it from the log), days {YYYY-MM-DD:
   {tokens, cost}} (last 90 days), usage_fixes {codex_cached: {turns, tokens}} (stats.py recalculated the Codex
   turns recorded before cached input was split out), model, real_model, context_tokens, base_tokens (context of the
-  first call of the current thread: the fixed part), context_window (from the last result), archived, notify,
+  first call of the current thread: the fixed part), context_window (from the last result), codex_usage {thread,
+  total} (Codex: the running token totals its `turn.completed` reported after that thread's last turn), archived, notify,
   source, cron, last_text, error, csid (Claude session id), fresh (next turn uses --session-id),
   pid (runner), unit, spawned_at, finished_at, seen_at, cache_at (last side question: it warmed the
   thread's prompt cache too), env {..}, timeout_s, handoff_pending (continuation waiting for its hand-off
