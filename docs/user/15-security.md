@@ -15,7 +15,7 @@ The original project's registration/heartbeat service remains off by default, in
 restored legacy opt-in configuration. This does not remove your local conversation history,
 operational logs or token statistics; they remain useful application data on your machine.
 
-App-launched Codex turns and resumes disable built-in analytics and OTLP log, metric and trace
+App-launched Codex turns, resumes and connection-status checks disable built-in analytics and OTLP log, metric and trace
 exporters, and do not opt into exporting raw prompts or answers. These are per-process settings;
 your personal Codex configuration is not rewritten. Claude Code's existing quiet-start default
 disables its nonessential traffic; an explicitly supplied environment or saved override remains

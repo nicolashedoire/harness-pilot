@@ -2,7 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
-- Privacy defaults: FastAPI receives explicit tracing/metrics/logs/operation_spans/auto_configure=false. App-owned Codex exec/resume commands set analytics.enabled=false, all three OTLP exporters to none and prompt/answer export flags to false, without modifying personal config. Tests reject inherited FastAPI automatic-export activation and retain CLI sandbox arguments. Claude quiet-start and legacy registration opt-out behavior remain intact. Current installed Codex 0.150.1 accepts the exporter configuration in a local features-list invocation without a model request.
+- Privacy defaults: FastAPI receives explicit tracing/metrics/logs/operation_spans/auto_configure=false. App-owned Codex exec/resume and login-status commands set analytics.enabled=false, all three OTLP exporters to none and prompt/answer export flags to false, without modifying personal config. Tests reject inherited FastAPI automatic-export activation and retain CLI sandbox arguments. Claude quiet-start also covers status probes through base_env; explicit operator overrides and legacy registration opt-out behavior remain intact. Current installed Codex 0.150.1 accepts the exporter configuration in a local features-list invocation without a model request.
 
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.

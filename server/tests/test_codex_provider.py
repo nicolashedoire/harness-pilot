@@ -62,7 +62,8 @@ def test_codex_status_reports_login_without_exposing_cli_output(client, monkeypa
     monkeypatch.setattr(codex.subprocess, 'run', run)
     result = client.get('/api/system/codex').json()
     assert result == {'installed': True, 'authenticated': True, 'reason': None}
-    assert calls[0][0] == ['/fake/codex', 'login', 'status']
+    assert calls[0][0][0] == '/fake/codex' and calls[0][0][-2:] == ['login', 'status']
+    assert 'analytics.enabled=false' in calls[0][0] and 'otel.exporter="none"' in calls[0][0]
     assert calls[0][1]['stdout'] == codex.subprocess.DEVNULL and calls[0][1]['stderr'] == codex.subprocess.DEVNULL
 
 

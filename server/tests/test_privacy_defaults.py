@@ -1,5 +1,4 @@
 """App-owned telemetry stays off even when the parent environment opts into OTLP."""
-import importlib
 import pytest
 
 from maxxing import config
@@ -38,5 +37,6 @@ def test_codex_turn_and_resume_explicitly_disable_all_exporters():
 
 def test_claude_default_disables_nonessential_traffic_without_changing_user_settings(mx,monkeypatch):
     monkeypatch.delenv(spawn.QUIET_START_ENV,raising=False)
+    assert spawn.base_env()[spawn.QUIET_START_ENV]=='1'
     assert spawn.claude_env()[spawn.QUIET_START_ENV]=='1'
     assert config.load_config()['claude_quiet_start'] is True
