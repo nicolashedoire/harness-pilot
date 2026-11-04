@@ -457,7 +457,8 @@ onboarding (`mx-tour-pending` in sessionStorage, `tourDone` in the UI store) and
 group of the user menu, the palette and Settings › General. The closing card links to the
 `projects/tutorial/topics/1-first-steps` topic when it exists (else to the docs).
 - Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round; tones `unread` (finished answers, green),
-  `running` (the accent), `attention` (notifications to handle, red) and, for the dot only, `notice` (an accent dot:
+  `running` (the accent), `attention` (notifications to handle, red), `draft` (the Atelier's proposals waiting, violet)
+  and, for the dot only, `notice` (an accent dot:
   unread activity that needs nothing). They pulse (`.mx-badge-pulse`, never the running ones) only when the user
   turned on Settings -> Notifications -> On this device -> "Pulsing badges" (off by default).
 - Notifications: the sidebar entry (a tile in the touch menu) opens the centre (`features/notifications`), "To handle"

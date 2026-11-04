@@ -295,6 +295,8 @@ export const en = {
   'nav.settings': 'Settings',
   'nav.docs': 'Docs',
 'nav.atelier': 'Studio',
+'nav.atelierPending': '{count} to approve',
+'nav.atelierPending#one': '{count} to approve',
   'shell.account': 'Account',
   'shell.collapse': 'Collapse sidebar',
   'shell.resize': "Drag to resize (double-click: normal width)",

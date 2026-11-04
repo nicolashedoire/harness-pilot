@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The **Studio** entry of the sidebar (and its tile in the phone menu) shows how many proposals wait for your approval, in violet; it goes down as soon as one is decided.
 - **Open** on a widget in the Studio now takes you to its card on the dashboard: the page scrolls to it and rings it for a moment (any `/?widget=<id>` link does the same; a hidden widget is said hidden).
 - Security, Linux: when the path of a protected file (the server's secrets, `~/.ssh`, the agents' sign-ins) contains `[`, `]`, `*`, `?`, `{` or `}`, Codex's sandbox cannot hide it. With **Protect the secrets** on, Codex is now not started there, and a message says which file and how to fix it, instead of running with that file readable.
 - The Studio now says who made your scheduled jobs (you in the app, or the Claude or Codex session that added it) and the themes saved from **Create with harness-pilot** (the session that designed it).

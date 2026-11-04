@@ -15,6 +15,7 @@ import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer'
 import { isStandalone, installApp, useInstallMode } from '@/pwa'
 import { startTour, useTour, useTutorialHref } from '@/tour/store'
 import { ATELIER_NAV, navTourId, useNav } from './nav'
+import { AtelierTileBadge } from './AtelierNav'
 import { Logo } from './Logo'
 import { HealthSummary, healthTone } from './HealthIndicator'
 import { UpdateIndicator, useReloadPending } from './UpdateIndicator'
@@ -240,6 +241,7 @@ function AppPanel() {
         <NavLink to={ATELIER_NAV.to} className={linkCls} onClick={close} data-tour={navTourId(ATELIER_NAV)}>
           <ATELIER_NAV.icon strokeWidth={1.9} />
           <span className="max-w-full truncate">{t(ATELIER_NAV.label)}</span>
+          <AtelierTileBadge />
         </NavLink>
       </nav>
 
