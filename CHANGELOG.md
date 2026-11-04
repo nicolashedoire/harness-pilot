@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Preview a memory backup before restoring, restore the latest version without local history, and review skipped or held items afterward. A selected file that cannot be read or exceeds the size limit now stops the backup instead of silently dropping it. [Show me](#show:backup-preview)
 - Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
 - Get notified when a session finishes or fails, and when a Claude Code + Codex discussion pauses on its limit. Notifications are shown in your language.
 - Choose per kind of event what reaches this browser (with or without sound), push notifications on a phone or computer, and Telegram. Push delivery has not yet been verified end to end. Repeated cron failures now fold into one row per job.

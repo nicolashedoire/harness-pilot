@@ -1,6 +1,8 @@
 import * as React from 'react'
 import { History, Plus, RotateCcw, Trash2, X } from 'lucide-react'
-import { useBackup, useBackupForget, useBackupHistory, useBackupRestore, useBackupSettings, useCronPreview } from '@/lib/queries'
+import { useBackup, useBackupForget, useBackupHistory, useBackupPreview, useBackupRestore, useBackupSettings, useCronPreview } from '@/lib/queries'
+import { errorMessage } from '@/lib/api'
+import type { BackupRestoreResult } from '@/lib/types'
 import { fmtDate, fmtRelative } from '@/lib/format'
 import { useLang, useT } from '@/i18n'
 import { useSettings } from '@/lib/queries'
@@ -104,12 +106,58 @@ function ScheduleAndInclude() {
   )
 }
 
-function HistoryList() {
+function RestoreAction({ refId, onRestored }: { refId?: string; onRestored: (result: BackupRestoreResult) => void }) {
+  const t = useT()
+  const preview = useBackupPreview()
+  const restore = useBackupRestore()
+  const run = async () => {
+    let plan
+    try { plan = await preview.mutateAsync(refId) } catch (error) { toast.error(errorMessage(error)); return }
+    const paths = [...plan.paths.create, ...plan.paths.replace].slice(0, 12)
+    const ok = await confirm({
+      title: t('backup.previewTitle'),
+      description: <div className="grid gap-2 text-sm">
+        <p>{t('backup.previewCounts', plan.counts)}</p>
+        <p>{t('backup.previewHeld', plan.counts)}</p>
+        {!!paths.length && <div><p>{t('backup.previewFiles')}</p><ul className="max-h-36 overflow-y-auto break-all">{paths.map((path) => <li key={path}><Sensitive>{path}</Sensitive></li>)}</ul></div>}
+        <p>{t('backup.restoreDesc')}</p>
+        {(plan.settings || plan.crons || plan.mcp) && <p>{t('backup.previewSettings')}</p>}
+        <p>{t('backup.previewAdvisory')}</p>
+        <code>{plan.commit.slice(0, 12)}</code>
+      </div>,
+      destructive: true, confirmText: t('backup.restore'), typeToConfirm: 'restore',
+    })
+    if (!ok) return
+    try {
+      const result = await restore.mutateAsync(plan.commit)
+      onRestored(result)
+      if (result.skipped?.length || result.warnings?.length) toast.info(t('backup.restoreReport'), t('backup.restoreReview'))
+      else toast.success(t('backup.restored', { count: result.files }))
+    } catch { /* useBackupRestore displays the error. */ }
+  }
+  return <Button variant={refId ? 'ghost' : 'outline'} size="sm" loading={preview.isPending || restore.isPending} onClick={() => void run()}>
+    <RotateCcw /> {refId ? t('backup.restore') : t('backup.restoreLatest')}
+  </Button>
+}
+
+function RestoreReport({ result }: { result: BackupRestoreResult }) {
+  const t = useT()
+  const held = Object.entries(result.held || {}).flatMap(([kind, paths]) => (paths || []).map((path) => `${kind}: ${path}`))
+  return <div className="grid gap-3 rounded-lg border p-4 text-sm" role="status">
+    <strong>{t('backup.restoreReport')}</strong>
+    <p>{t('backup.restoreReportCounts', { restored: result.files, unchanged: result.unchanged, skipped: result.skipped_count ?? result.skipped?.length ?? 0 })}</p>
+    {!!result.skipped?.length && <div><strong>{t('backup.restoreSkipped')}</strong><ul>{result.skipped.map((path) => <li key={path}><Sensitive>{path}</Sensitive></li>)}</ul></div>}
+    {!!result.warnings?.length && <div><strong>{t('backup.restoreReview')}</strong><ul>{result.warnings.map((warning) => <li key={warning}>{t(`backup.warning.${warning}`)}</li>)}</ul></div>}
+    {!!held.length && <div><strong>{t('backup.restoreHeld')}</strong><ul>{held.map((item) => <li key={item}><Sensitive>{item}</Sensitive></li>)}</ul></div>}
+    {result.trash && <p>{t('backup.restoreTrash')}: <Sensitive>{result.trash}</Sensitive></p>}
+  </div>
+}
+
+function HistoryList({ onRestored }: { onRestored: (result: BackupRestoreResult) => void }) {
   const t = useT()
   const lang = useLang()
   const { data: settings } = useSettings()
   const { data, isLoading } = useBackupHistory()
-  const restore = useBackupRestore()
   if (isLoading) return <Skeleton className="h-48" />
   if (!data?.length) return <EmptyState compact icon={History} title={t('backup.noHistory')} description={t('backup.noHistoryDesc')} />
   return (
@@ -123,7 +171,7 @@ function HistoryList() {
           {r.ok ? (
             <span className="text-muted-foreground">
               {t('backup.filesCount', { count: r.files })}
-              {r.changed != null && ` · ${t('backup.changedCount', { count: r.changed })}`}
+              {r.changed != null && ` · ${t(r.changed ? 'backup.changedYes' : 'backup.changedNo')}`}
             </span>
           ) : (
             <span className="min-w-0 flex-1 truncate text-destructive">{r.error || r.code}</span>
@@ -135,23 +183,7 @@ function HistoryList() {
             </code>
           )}
           {r.ok && r.commit && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={restore.isPending}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: t('backup.restoreTitle'),
-                  description: t('backup.restoreDesc'),
-                  destructive: true,
-                  confirmText: t('backup.restore'),
-                  typeToConfirm: 'restore',
-                })
-                if (ok) restore.mutate(r.commit!, { onSuccess: (res) => toast.success(t('backup.restored', { count: res.files ?? res.restored?.length ?? 0 })) })
-              }}
-            >
-              <RotateCcw /> {t('backup.restore')}
-            </Button>
+            <RestoreAction refId={r.commit} onRestored={onRestored} />
           )}
         </li>
       ))}
@@ -163,9 +195,11 @@ export function BackupSection() {
   const t = useT()
   const { data: b } = useBackup()
   const forget = useBackupForget()
+  const [result, setResult] = React.useState<BackupRestoreResult | null>(null)
   return (
     <SectionStack>
       {!b?.configured && <BackupWhy />}
+      <SettingsCard title={t('backup.scopeTitle')}><p className="max-w-2xl text-sm text-muted-foreground">{t('backup.scopeBody')}</p></SettingsCard>
       <SettingsCard title={t('backup.repository')} description={t('backup.repositoryDesc')}>
         <BackupSetup />
       </SettingsCard>
@@ -175,7 +209,7 @@ export function BackupSection() {
             <ScheduleAndInclude />
           </SettingsCard>
           <SettingsCard title={t('backup.history')} description={t('backup.historyDesc')}>
-            <HistoryList />
+            <div className="grid gap-4"><div><RestoreAction onRestored={setResult} /></div>{result && <RestoreReport result={result} />}<HistoryList onRestored={setResult} /></div>
           </SettingsCard>
           <SettingsCard danger title={t('backup.forget')} description={t('backup.forgetDesc')}>
             <Button

@@ -345,10 +345,13 @@ async def test_api(gh, ws):
         r = (await c.post("/api/backup/run")).json()
         assert r["ok"] and r["files"] >= 4
         assert len((await c.get("/api/backup/history")).json()) == 1
+        preview = await c.post("/api/backup/preview", json={"ref": r['commit']})
+        assert preview.status_code == 200 and preview.json()['commit'] == r['commit']
         assert (await c.post("/api/backup/restore", json={})).json()["ok"]
         assert (await c.delete("/api/backup")).json()["ok"]
         r = await c.post("/api/backup/restore", json={})
         assert r.status_code == 409 and r.json()["error"] == "not_configured"
+        assert (await c.post("/api/backup/preview", json={})).status_code == 409
 
 
 def test_cli(gh, ws, capsys):
@@ -519,13 +522,117 @@ def test_restored_backup_settings_get_the_settings_checks(ws, mx_state, include)
     assert after["include"] == before["include"] and after["schedule"] == before["schedule"]
 
 
-def test_restore_write_failure_leaves_the_file_in_place(ws, mx_state):
-    """The file in place goes to the trash before the new one is written: a failed write puts it back."""
+def test_restore_write_failure_leaves_the_file_in_place(ws, mx_state, monkeypatch):
+    """A failed temporary write must leave the existing file in place."""
     (ws / "notes.md").write_text("mine\n")
-    (ws / "notes.md.restore-tmp").mkdir()                    # the write of the restored copy fails
+    def fail_write(*args, **kwargs):
+        raise OSError("simulated full disk")
+    monkeypatch.setattr(backup.tempfile, "mkstemp", fail_write)
     r = backup._apply({"notes.md": b"backup\n"}, hold=False)
     assert r["skipped"] == ["workspace/notes.md"], r
     assert (ws / "notes.md").read_text() == "mine\n"
+
+
+def test_restore_ignores_a_preexisting_temporary_symlink(ws, mx_state):
+    (ws / "notes.md").write_text("mine\n")
+    outside = mx_state / "outside.txt"
+    outside.write_text("untouched\n")
+    (ws / "notes.md.restore-tmp").symlink_to(outside)
+    r = backup._apply({"notes.md": b"backup\n"}, hold=False)
+    assert r["ok"] and (ws / "notes.md").read_text() == "backup\n"
+    assert outside.read_text() == "untouched\n"
+
+
+def test_restore_keeps_distinct_previous_versions_in_same_second(ws, mx_state, monkeypatch):
+    monkeypatch.setattr(backup.time, "strftime", lambda *args: "same-second")
+    path = ws / "memory.md"
+    path.write_text("first\n")
+    a = backup._apply({"memory.md": b"second\n"}, hold=False)
+    b = backup._apply({"memory.md": b"third\n"}, hold=False)
+    assert a['trash'] != b['trash']
+    assert (Path(a['trash']) / "workspace/memory.md").read_text() == "first\n"
+    assert (Path(b['trash']) / "workspace/memory.md").read_text() == "second\n"
+
+
+def test_backup_aborts_if_selected_file_grows_too_large(gh, ws, mx_state):
+    bare = gh.add_repo(REPO)
+    assert backup.configure(REPO, GH_TOKEN)["ok"]
+    before = backup.run()
+    assert before['ok']
+    (ws / 'memory.md').write_bytes(b'x' * (backup.MAX_FILE + 1))
+    after = backup.run()
+    assert not after['ok'] and after['code'] == 'file_too_large'
+    assert _commits(bare) == 1
+    assert _clone_files(bare, mx_state / 'clone-before-large')['memory.md'] == '- root fact\n'
+
+
+def test_backup_aborts_if_selected_file_cannot_be_opened(gh, ws, mx_state, monkeypatch):
+    bare = gh.add_repo(REPO)
+    assert backup.configure(REPO, GH_TOKEN)["ok"]
+    assert backup.run()['ok']
+    real_open = backup.os.open
+    def denied_open(path, *args, **kwargs):
+        if Path(path) == ws / 'memory.md':
+            raise PermissionError('simulated access failure')
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(backup.os, 'open', denied_open)
+    after = backup.run()
+    assert not after['ok'] and after['code'] == 'read_failed'
+    assert _commits(bare) == 1
+
+
+def test_backup_does_not_replace_snapshot_when_mcp_export_fails(gh, ws, monkeypatch):
+    from maxxing import mcp
+    bare = gh.add_repo(REPO)
+    assert backup.configure(REPO, GH_TOKEN)["ok"] and backup.run()['ok']
+    def fail_export():
+        raise OSError('simulated export failure')
+    monkeypatch.setattr(mcp, 'export', fail_export)
+    result = backup.run()
+    assert not result['ok'] and result['code'] == 'read_failed'
+    assert _commits(bare) == 1
+
+
+def test_backup_does_not_replace_snapshot_when_workspace_is_missing(gh, ws, mx_state):
+    bare = gh.add_repo(REPO)
+    assert backup.configure(REPO, GH_TOKEN)["ok"] and backup.run()['ok']
+    config.update_config(workspace=str(mx_state / 'missing-workspace'))
+    result = backup.run()
+    assert not result['ok'] and result['code'] == 'read_failed'
+    assert _commits(bare) == 1
+    assert _clone_files(bare, mx_state / 'clone-before-missing')['memory.md'] == '- root fact\n'
+
+
+def test_preview_and_restore_project_metadata_tasks_and_memory(gh, ws, mx_state):
+    gh.add_repo(REPO)
+    assert backup.configure(REPO, GH_TOKEN)["ok"]
+    meta = ws / 'projects/acme/.maxxing.json'
+    meta.write_text('{"name": "acme"}\n')
+    (ws / 'tasks.json').write_text('{"tasks": [{"title": "Example"}]}\n')
+    saved = backup.run()
+    assert saved['ok']
+    meta.write_text('{"name": "changed"}\n')
+    (ws / 'tasks.json').unlink()
+    (ws / 'memory.md').write_text('- changed\n')
+    _in_use()
+    result = backup.preview(saved['commit'])
+    assert result['ok'] and result['commit'] == saved['commit']
+    assert 'projects/acme/.maxxing.json' in result['paths']['replace']
+    assert 'memory.md' in result['paths']['replace']
+    assert 'tasks.json' in result['paths']['create']
+    assert meta.read_text() == '{"name": "changed"}\n'  # preview writes nothing to the workspace
+    restored = backup.restore(result['commit'])
+    assert restored['ok'] and not restored['skipped']
+    assert meta.read_text() == '{"name": "acme"}\n'
+    assert json.loads((ws / 'tasks.json').read_text())['tasks'][0]['title'] == 'Example'
+    assert (ws / 'memory.md').read_text() == '- root fact\n'
+    assert (Path(restored['trash']) / 'workspace/memory.md').read_text() == '- changed\n'
+    assert backup.preview('--help')['code'] == 'bad_ref'
+
+
+def test_restore_reports_unreadable_configuration(ws, mx_state):
+    result = backup._apply({f'{backup.META_DIR}/config.json': b'{invalid json'}, hold=True)
+    assert result['ok'] and result['warnings'] == ['settings']
 
 
 def test_backtracking_include_pattern_is_refused_and_skipped(ws):

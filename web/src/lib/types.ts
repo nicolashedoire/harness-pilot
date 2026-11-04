@@ -491,7 +491,7 @@ export type TelegramTestResult = {
 }
 
 /* ---------------------------------------------------------------- Backup */
-export type BackupRun = { at: number; ok: boolean; commit: string | null; files: number; changed?: number; error: string | null; code?: string; duration_s?: number }
+export type BackupRun = { at: number; ok: boolean; commit: string | null; files: number; changed?: boolean; error: string | null; code?: string; duration_s?: number }
 export type BackupStatus = {
   configured: boolean
   repo: string | null
@@ -509,12 +509,22 @@ export type BackupRunResult = {
   ok: boolean
   commit: string | null
   files: number
-  changed?: number
+  changed?: boolean
   error?: string
   code?: string
   leaks?: { file: string; kinds: string[] }[]
 }
-export type BackupRestoreResult = { ok: boolean; files: number; restored: string[]; unchanged: number; crons: boolean; trash: string }
+export type BackupPreview = {
+  ok: boolean; commit: string; hold: boolean
+  counts: Record<'create' | 'replace' | 'unchanged' | 'held' | 'skip', number>
+  paths: Record<'create' | 'replace' | 'unchanged' | 'held' | 'skip', string[]>
+  settings: boolean; crons: boolean; mcp: boolean
+}
+export type BackupRestoreResult = {
+  ok: boolean; files: number; restored: string[]; unchanged: number; skipped: string[]; skipped_count: number; crons: boolean; trash: string | null
+  held: { crons?: string[]; extensions?: string[]; hooks?: string[]; mcp?: string[]; review?: string[]; outside?: string[] }
+  warnings: ('crons' | 'mcp' | 'settings')[]
+}
 
 /* ---------------------------------------------------------------- Profile (pseudo) */
 export type ProfileColor = 'clay' | 'blue' | 'violet' | 'green' | 'amber' | 'rose' | 'teal' | 'zinc'
