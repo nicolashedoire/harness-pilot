@@ -38,7 +38,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: 'extensions', group: 'integrations', label: 'settings.extensions', description: 'settings.extensions.desc', icon: Blocks, keywords: 'widgets pages plugins' },
   { id: 'telegram', group: 'integrations', label: 'settings.telegram', description: 'settings.telegram.desc', icon: Send, keywords: 'bot threads' },
   { id: 'pull-requests', group: 'integrations', label: 'prQueue.section', description: 'prQueue.section.desc', icon: GitPullRequest, keywords: 'pull requests git merge review dependency queue approval' },
-  { id: 'system', group: 'platform', label: 'settings.system', description: 'settings.system.desc', icon: Server, keywords: 'health services logs update version' },
+  { id: 'system', group: 'platform', label: 'settings.system', description: 'settings.system.desc', icon: Server, keywords: 'health services logs update version background service launchd mac git' },
   { id: 'updates', group: 'platform', label: 'settings.updates', description: 'settings.updates.desc', icon: History, keywords: 'changelog what is new versions release notes history' },
   { id: 'stats', group: 'platform', label: 'settings.stats', description: 'settings.stats.desc', icon: BarChart3, keywords: 'usage quota tokens statistics plan limit' },
   { id: 'features', group: 'platform', label: 'settings.features', description: 'settings.features.desc', icon: ToggleRight, keywords: 'features options hud mirror telegram usage presentation enable experimental' },

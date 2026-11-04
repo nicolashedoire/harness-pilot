@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, seg } from '../api'
-import type { Changelog, Health, LogsPayload, MediaTools, MemoryInfo, Ok, Preflight, Service, ServiceAction, Session, TokenStats, UpdateReport, UsagePayload, VersionInfo } from '../types'
+import type { Changelog, Health, LocalService, LogsPayload, MediaTools, MemoryInfo, Ok, Preflight, Service, ServiceAction, Session, TokenStats, UpdateReport, UsagePayload, VersionInfo } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -39,6 +39,10 @@ export function useLogs(unit: string, lines = 200) {
 /** ffmpeg (with WebP) and pdftoppm: Settings -> System shows a notice while one is missing. */
 export function useMediaTools() {
   return useQuery({ queryKey: qk.system.mediaTools, queryFn: () => api.get<MediaTools>('/api/system/media-tools'), staleTime: 60_000 })
+}
+/** Local installation on macOS: the background service (read-only). Asked only in local mode. */
+export function useLocalService(enabled = true) {
+  return useQuery({ queryKey: qk.system.localService, queryFn: () => api.get<LocalService>('/api/system/local-service'), staleTime: 30_000, enabled })
 }
 export const versionQuery = () => ({ queryKey: qk.system.version, queryFn: () => api.get<VersionInfo>('/api/system/version'), staleTime: 5 * 60_000 })
 export function useVersion() {
