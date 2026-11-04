@@ -13,8 +13,8 @@
  * nothing when a window of the app is focused (the app shows its own notice). `notificationclick` runs an action
  * (a link, or one of the allowed POSTs) or opens the event's page in the running app.
  */
-const VERSION = "de81ec700eb5"
-const PRECACHE = ["/assets/index-CGXiLVaY.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-DXTPoy1H.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-CZHf0Rep.js","/assets/vendor-query-CthOliPc.js","/assets/files-COwfzO_S.js","/assets/queries-YMQpRzsf.js","/assets/sessions-DfcylLN4.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-pVoEei-M.js","/assets/button-Bd9LfJcS.js","/assets/sensitive-CIl-5cWV.js","/assets/viewerStore-DClrTGcm.js","/assets/store-B_lTs0ox.js","/assets/format-Djj3rPVZ.js","/assets/util-Cm0wcSN_.js","/assets/index-9RPTDoIW.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
+const VERSION = "43c846a55724"
+const PRECACHE = ["/assets/index-DVQwMtkY.js","/assets/rolldown-runtime-hePW80VL.js","/assets/vendor-react-CATZNyVw.js","/assets/createLucideIcon-Bl3st4bB.js","/assets/utils-uBxhDOSP.js","/assets/vendor-router-D1EQYbXg.js","/assets/vendor-ui-frGWvPt-.js","/assets/media-BRSza_NQ.js","/assets/vendor-query-CthOliPc.js","/assets/files-BBPAppRw.js","/assets/queries-DXXLoPXs.js","/assets/sessions-DHJzkTQI.js","/assets/circle-alert-CKj6nwHI.js","/assets/info-HsLYbbZe.js","/assets/pause-Cf_UjNFO.js","/assets/triangle-alert-ChjDwiwd.js","/assets/x-cGfvABuH.js","/assets/spinner-DSvp5pd7.js","/assets/button-Bg2HK9Cx.js","/assets/sensitive-_VMAcDoc.js","/assets/viewerStore-COfywxKn.js","/assets/store-B_lTs0ox.js","/assets/format-Djj3rPVZ.js","/assets/util-Df4nfxqw.js","/assets/index-9RPTDoIW.css","/assets/inter-latin-wght-normal-Dx4kXJAl.woff2"]
 const SHELL = `mx-shell-${VERSION}`
 const ASSETS = `mx-assets-${VERSION}`
 const OFFLINE = '/offline.html'
