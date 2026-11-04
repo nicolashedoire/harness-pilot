@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Make a task repeat every day, every week on chosen days, or every month: when you mark it done, the next one is added to *To do* with its due date and reminder.
 - Give a task a reminder (a date and a time) in its panel: you get one notification when it comes, in Notifications and as a push notification, even after a restart, and it leaves *To handle* once the task is done. Claude can set it too ("remind me Friday at 9:00").
 - A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
 - Telegram companion notifications now show the exact proposed changes and let the linked owner approve, reject or reopen the companion conversation. Older buttons cannot approve a changed proposal; decisions never apply or publish code. Large changes stay in the application review. Thread creation no longer produces a spurious unsupported-message reply during synchronization. [Show me](#show:telegram-setup)
@@ -16,6 +17,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - On an arm64 Linux server, the headless browser used for web pages, PDFs and videos is now found once installed; `pilot deps update` reported it as failed before.
 - Troubleshooting now has a section for the local setup on macOS: where the logs are, how to restart, a port already in use, folder permissions, the missing `ffmpeg` and `pdftoppm` tools (with their `brew install` commands) and what Settings → System shows locally.
 - Long Claude Code and Codex discussions no longer stop when an agent's conversation gets full: near the limit, or when an agent refuses a reply for lack of room, Claude summarizes the exchanges so far and both agents continue in fresh conversations from that summary, marked in the thread. **Compact context** in the discussion's **…** menu does the same on demand.
+- Give a task a reminder (a date and a time) in its panel: you get one notification when it comes, in Notifications and as a push notification, even after a restart, and it leaves *To handle* once the task is done. Claude can set it too ("remind me Friday at 9:00").
 - A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
 - Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.
 - On macOS, a scheduled job interrupted before its end (app stopped, out of memory) no longer leaves its command running: the next run of the job stops it, after checking it is still the same process.
