@@ -407,7 +407,8 @@ stays untouched), and a seed for the `ready` scenario when the page would be emp
 `MOCK_PORT=8809 MOCK_SCENARIO=ready|onboarding|login|setup|maxxing node mock/server.mjs`
 (`maxxing`: 30 more sessions that keep finishing at random, for Maxxing mode; `MOCK_PASSWORD=…` asks for that password;
 `MOCK_LOCAL=mac|mac-terminal|mac-none|linux` serves a local installation, on a Mac with its background service running the app,
-installed while the app runs in a terminal, or not installed;
+installed while the app runs in a terminal, or not installed; `MOCK_MEDIA=none|no-webp|no-pdf` makes Settings -> System
+show the thumbnail tools as missing;
 `MOCK_DIST=…` serves another build)
 (`POST /__mock/scenario {"name"}` resets at runtime; setup token `dev-token`, password `password123`; two-step sign-in:
 Telegram code `246810` (Allow is pressed after 4 s), authenticator app: real RFC 6238 codes of the secret it shows, or
