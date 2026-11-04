@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
-import type { BackupConfigBody, BackupConfigResult, BackupRestoreResult, BackupRun, BackupRunResult, BackupSettingsBody, BackupStatus, Ok } from '../types'
+import type { BackupConfigBody, BackupConfigResult, BackupPreview, BackupRestoreResult, BackupRun, BackupRunResult, BackupSettingsBody, BackupStatus, Ok } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -23,6 +23,9 @@ export function useBackupRun() {
 }
 export function useBackupRestore() {
   return useMut((ref?: string) => api.post<BackupRestoreResult>('/api/backup/restore', ref ? { ref } : {}), { invalidate: inv })
+}
+export function useBackupPreview() {
+  return useMut((ref?: string) => api.post<BackupPreview>('/api/backup/preview', ref ? { ref } : {}), { errorToast: false })
 }
 export function useBackupForget() {
   return useMut(() => api.del<Ok>('/api/backup'), { invalidate: inv })
