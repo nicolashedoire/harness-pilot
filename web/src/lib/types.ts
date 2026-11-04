@@ -394,7 +394,7 @@ export type TaskBulkBody = {
 export type TaskBulkResult = { ok: boolean; updated: number; deleted: number }
 
 /* ---------------------------------------------------------------- Crons */
-export type CronKind = 'shell' | 'claude'
+export type CronKind = 'shell' | 'claude' | 'codex'   // claude / codex: a prompt run as a session turn of that agent
 export type CronNotify = 'never' | 'failure' | 'always'
 export type CronLastRun = { at: number; ok: boolean; code: number; duration_s: number }
 export type CronPermissionMode = '' | PermissionMode
@@ -530,12 +530,12 @@ export type BackupPreview = {
   ok: boolean; commit: string; hold: boolean
   counts: Record<'create' | 'replace' | 'unchanged' | 'held' | 'skip', number>
   paths: Record<'create' | 'replace' | 'unchanged' | 'held' | 'skip', string[]>
-  settings: boolean; crons: boolean; mcp: boolean
+  settings: boolean; crons: boolean; mcp: boolean; labels?: number
 }
 export type BackupRestoreResult = {
-  ok: boolean; files: number; restored: string[]; unchanged: number; skipped: string[]; skipped_count: number; crons: boolean; trash: string | null
+  ok: boolean; files: number; restored: string[]; unchanged: number; skipped: string[]; skipped_count: number; crons: boolean; labels?: number; trash: string | null
   held: { crons?: string[]; extensions?: string[]; hooks?: string[]; mcp?: string[]; review?: string[]; outside?: string[] }
-  warnings: ('crons' | 'mcp' | 'settings')[]
+  warnings: ('crons' | 'mcp' | 'settings' | 'labels')[]
 }
 
 /* ---------------------------------------------------------------- Profile (pseudo) */
