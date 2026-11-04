@@ -101,6 +101,7 @@ def test_pause_time_is_set_by_both_pauses_and_cleared_on_resume_and_stop(mx):
     before = time.time()
     s = service.pause_debate(sid)
     assert s["discussion_pause_reason"] == "user" and before <= s["discussion_paused_at"] <= time.time()
+    assert s["discussion_elapsed"] >= 5                                         # the period's running time
     at = s["discussion_paused_at"]
     assert service.pause_debate(sid)["discussion_paused_at"] == at             # pausing again keeps the first time
     s = service.resume_debate(sid)                                              # nothing queued: no runner

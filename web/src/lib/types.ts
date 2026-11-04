@@ -100,6 +100,10 @@ export type Session = {
   swarm_agents?: number | null
   debate_paused?: boolean
   discussion_pause_reason?: string | null
+  /** When it paused (limit or pause button), Unix seconds; null while not paused. */
+  discussion_paused_at?: number | null
+  /** Running seconds of the current period up to its last pause. */
+  discussion_elapsed?: number
   discussion_turns?: number
   discussion_turn_limit?: number | null
   discussion_duration_seconds?: number | null

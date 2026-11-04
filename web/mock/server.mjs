@@ -1995,7 +1995,8 @@ function seedFeed(st, t) {
   const disc = { id: uuid(), title: 'Compare hosting offers', path: topicPath('ops', 'server'), state: 'idle', queue: 0, created: t - 3 * HOUR, updated: t - 40 * MIN,
     turns: 12, cost_usd: 1.9, model: '', real_model: 'claude-opus-5-5', context_tokens: 64000, context_window: 1000000, archived: false, notify: false,
     source: 'web', unread: true, last_text: 'Codex: the managed option wins on maintenance, the VPS on price. Shall we write the decision record?', error: null,
-    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_turns: 12, discussion_turn_limit: 12, discussion_duration_seconds: null }
+    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_paused_at: t - 40 * MIN, discussion_turns: 12, discussion_turn_limit: 12,
+    discussion_duration_seconds: null, discussion_elapsed: 22 * MIN }
   st.sessions.push(disc)
   st.events[disc.id] = conversation(disc, { last: disc.last_text, turns: disc.turns })
   // ---- three days ago
@@ -2196,7 +2197,10 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be resumed.')
   if (!s.debate_paused) fail(409, 'not_paused', 'The conversation is not paused.')
-  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_turns: 0, updated: now() })
+  // after a limit pause: a new period only while a limit is still reached (API.md "Discussion periods")
+  const reached = (s.discussion_turn_limit && s.discussion_turns >= s.discussion_turn_limit) || (s.discussion_duration_seconds && (s.discussion_elapsed || 0) >= s.discussion_duration_seconds)
+  if (s.discussion_pause_reason === 'limit' && reached) Object.assign(s, { discussion_turns: 0, discussion_elapsed: 0 })
+  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_paused_at: null, updated: now() })
   feedResolve(S, 'sessions', `discussion:${s.id}`)
   bus('sessions', 'feed')
   return s
@@ -2204,7 +2208,19 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
 R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be paused.')
-  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', updated: now() })
+  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', discussion_paused_at: s.debate_paused ? s.discussion_paused_at : now(), updated: now() })
+  bus('sessions')
+  return s
+})
+R('PATCH', '/api/sessions/:id/discussion', ({ params, body }) => {
+  const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
+  if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations have limits.')
+  const ok = (v, hi) => v === null || (Number.isInteger(v) && v >= 1 && v <= hi)
+  if ('turn_limit' in body && !ok(body.turn_limit, 200)) fail(422, 'invalid', 'turn_limit: 1-200')
+  if ('duration_minutes' in body && !ok(body.duration_minutes, 1440)) fail(422, 'invalid', 'duration_minutes: 1-1440')
+  if ('turn_limit' in body) s.discussion_turn_limit = body.turn_limit
+  if ('duration_minutes' in body) s.discussion_duration_seconds = body.duration_minutes === null ? null : body.duration_minutes * 60
+  s.updated = now()
   bus('sessions')
   return s
 })

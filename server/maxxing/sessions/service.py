@@ -134,6 +134,7 @@ def public(meta: dict) -> dict:
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
             "discussion_paused_at": m.get("discussion_paused_at") or None,
             "discussion_turns": int(m.get("discussion_turns") or 0),
+            "discussion_elapsed": round(_num(m.get("discussion_elapsed"))),
             "discussion_turn_limit": m.get("discussion_turn_limit"),
             "discussion_duration_seconds": m.get("discussion_duration_seconds"),
             "context_tokens": m.get("context_tokens"), "context_window": _context_window(m),
