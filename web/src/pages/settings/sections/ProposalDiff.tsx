@@ -2,10 +2,10 @@ import { FileCode2 } from 'lucide-react'
 import { useT } from '@/i18n'
 
 type Line = { kind: 'add' | 'remove' | 'context' | 'meta' | 'hunk'; text: string; old?: number; next?: number }
-type FileDiff = { title: string; lines: Line[]; added: number; removed: number }
+type FileDiff = { title: string; lines: Line[]; added: number; removed: number; executable?: boolean }
 
 /** Keep every line from Git, including binary patches and unusual file headers. */
-export function parseProposal(patch: string, untracked: { path: string; content: string }[]): FileDiff[] {
+export function parseProposal(patch: string, untracked: { path: string; content: string; executable: boolean }[]): FileDiff[] {
   const files: FileDiff[] = []
   let current: FileDiff | undefined
   let old = 0, next = 0, inHunk = false
@@ -37,6 +37,7 @@ export function parseProposal(patch: string, untracked: { path: string; content:
   }
   for (const file of untracked) {
     addFile(file.path)
+    current!.executable = file.executable
     const lines = file.content.split('\n')
     if (lines.at(-1) === '') lines.pop()
     lines.forEach((text, i) => current!.lines.push({ kind: 'add', text: `+${text}`, next: i + 1 }))
@@ -46,7 +47,7 @@ export function parseProposal(patch: string, untracked: { path: string; content:
   return files
 }
 
-export function ProposalDiff({ patch, untracked }: { patch: string; untracked: { path: string; content: string }[] }) {
+export function ProposalDiff({ patch, untracked }: { patch: string; untracked: { path: string; content: string; executable: boolean }[] }) {
   const t = useT()
   const files = parseProposal(patch, untracked)
   return <div className="grid gap-4" aria-label={t('companions.changes')}>
@@ -54,6 +55,7 @@ export function ProposalDiff({ patch, untracked }: { patch: string; untracked: {
     {files.map((file, index) => <details key={`${index}:${file.title}`} open className="min-w-0 overflow-hidden rounded-lg border bg-card">
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2.5 text-sm">
         <FileCode2 className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 break-all font-mono text-xs font-medium">{file.title}</span>
+        {file.executable && <span className="text-xs text-muted-foreground">{t('companions.executable')}</span>}
         <span className="font-mono text-xs font-semibold text-green-600 dark:text-green-400">+{file.added}</span><span className="font-mono text-xs font-semibold text-red-600 dark:text-red-400">−{file.removed}</span>
       </summary>
       <div className="max-h-[32rem] overflow-auto"><table className="w-full min-w-max border-collapse font-mono text-xs leading-5"><tbody>

@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import Field
 
-from .. import companions
+from .. import companions, companion_pr
 from ..security import require_auth
 from ..sessions import service
 from .sessions import _call, _Text
@@ -23,6 +23,12 @@ class RoleIn(_Text):
 class RunIn(_Text):
     path: str
     mission: str = Field(default='', max_length=6000)
+
+
+class PullRequestIn(_Text):
+    fingerprint: str = Field(min_length=64, max_length=64)
+    title: str = Field(min_length=1, max_length=180)
+    body: str = Field(default='', max_length=12000)
 
 
 class DecisionIn(_Text):
@@ -62,3 +68,8 @@ async def get_review(sid: str):
 @router.post('/runs/{sid}/decision')
 async def decision(sid: str, body: DecisionIn):
     return await _call(companions.decide, sid, body.decision, body.fingerprint)
+
+
+@router.post('/runs/{sid}/pull-request')
+async def create_pull_request(sid: str, body: PullRequestIn):
+    return await _call(companion_pr.publish, sid, body.fingerprint, body.title, body.body)

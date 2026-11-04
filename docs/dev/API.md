@@ -252,6 +252,7 @@ Companions are persistent, editable role definitions stored in private local sta
 | PUT | `/api/companions/{id}` | `{name,role}` | Updates a role; existing runs retain their original instructions. |
 | POST | `/api/companions/{id}/runs` | `{path,mission?}` | Clones the installed source at its committed HEAD into private state, starts a Codex session in that clone, and returns the session. The clone has no remote. |
 | GET | `/api/companions/runs/{sid}/review` | – | Session, bounded patch and untracked-file summaries, plus a fingerprint for the current proposal. |
+| POST | `/api/companions/runs/{sid}/pull-request` | `{fingerprint,title,body}` | Publishes the previously approved exact proposal as a draft GitHub PR; never merges. Requires a GitHub origin and authenticated GitHub CLI. |
 | POST | `/api/companions/runs/{sid}/decision` | `{decision:"approved"\|"rejected",fingerprint}` | Records a decision on the exact finished proposal; a changed or running proposal is refused. This does not apply or publish the patch. |
 
 On completion, a proposal is posted to the existing notifications feed with a link to its review. Sound follows the browser's notification and audio settings. Role instructions and logs are local and no background monitoring is enabled by this feature.

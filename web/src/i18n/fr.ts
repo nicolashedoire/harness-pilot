@@ -2,6 +2,16 @@ import type { en } from './en'
 
 // Dictionnaire français — doit contenir toutes les clés de en.ts (vérifié par TypeScript).
 export const fr: Record<keyof typeof en, string> = {
+  'companions.filesChanged#one': '{count} fichier modifié',
+  "companions.prTitle": "Créer une pull request brouillon",
+  "companions.prTarget": "Les changements validés seront publiés sur {repo} dans une PR brouillon. Rien ne sera fusionné.",
+  "companions.prNoTarget": "Un dépôt GitHub configuré et une connexion à GitHub CLI sont nécessaires.",
+  "companions.prOpen": "Ouvrir la pull request brouillon",
+  "companions.prName": "Titre de la pull request",
+  "companions.prBody": "Description (Markdown)",
+  "companions.prCreate": "Créer la PR brouillon",
+  "companions.prCreated": "Pull request brouillon créée.",
+  "companions.executable": "Fichier exécutable",
   'companions.filesChanged': '{count} fichiers modifiés',
   "feed.kind.companion.ready.title": "Proposition du compagnon prête",
   "feed.kind.companion.ready.body": "Une proposition de modification du code attend votre avis.",

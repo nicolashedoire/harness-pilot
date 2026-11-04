@@ -12,7 +12,7 @@ import { ProposalDiff } from './ProposalDiff'
 type Profile = { id: string; name: string; role: string }
 type Run = { id: string; title: string; path: string; state: string; error: string | null }
 type Decision = { value: 'approved' | 'rejected'; fingerprint: string }
-type Review = { session: Run; patch: string; untracked: { path: string; content: string }[]; fingerprint: string; has_changes: boolean; decision: Decision | null }
+type Review = { target: string | null; session: Run; patch: string; untracked: { path: string; content: string; executable: boolean }[]; fingerprint: string; has_changes: boolean; decision: Decision | null; pull_request: { url: string; fingerprint: string } | null }
 const field = 'w-full rounded-md border border-input bg-transparent p-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 export function CompanionsSection() {
@@ -24,6 +24,8 @@ export function CompanionsSection() {
   const [role, setRole] = React.useState('')
   const [path, setPath] = React.useState('')
   const [mission, setMission] = React.useState('')
+  const [prTitle, setPrTitle] = React.useState('Improve the platform')
+  const [prBody, setPrBody] = React.useState('## Proposed change\n\nReviewed in harness-pilot.\n\n## Verification\n\nSee the companion session for test results.')
   const { data: ws } = useWorkspace()
   const topics = (ws?.projects || []).flatMap((p) => p.topics)
   const list = useQuery({ queryKey: ['companions'], queryFn: () => api.get<{ companions: Profile[]; runs: Run[] }>('/api/companions'), refetchInterval: 3000 })
@@ -33,6 +35,7 @@ export function CompanionsSection() {
   const save = useMutation({ mutationFn: () => selected === 'new' ? api.post<Profile>('/api/companions', { name, role }) : api.put<Profile>(`/api/companions/${encodeURIComponent(selected)}`, { name, role }), onSuccess: (p) => { setSelected(p.id); void qc.invalidateQueries({ queryKey: ['companions'] }); toast.success(t('companions.saved')) }, onError: (e) => toast.error(errorMessage(e)) })
   const start = useMutation({ mutationFn: () => api.post<Run>(`/api/companions/${encodeURIComponent(selected)}/runs`, { path, mission }), onSuccess: (r) => { setParams({ run: r.id }); void qc.invalidateQueries({ queryKey: ['companions'] }); toast.success(t('companions.started')) }, onError: (e) => toast.error(errorMessage(e)) })
   const decide = useMutation({ mutationFn: (decision: 'approved' | 'rejected') => api.post<Review>(`/api/companions/runs/${encodeURIComponent(sid)}/decision`, { decision, fingerprint: review.data?.fingerprint }), onSuccess: (r) => { qc.setQueryData(['companion-review', sid], r); void qc.invalidateQueries({ queryKey: ['companions'] }) }, onError: (e) => { toast.error(errorMessage(e)); void review.refetch() } })
+  const publish = useMutation({ mutationFn: () => api.post<{url: string}>(`/api/companions/runs/${encodeURIComponent(sid)}/pull-request`, { fingerprint: review.data?.fingerprint, title: prTitle, body: prBody }), onSuccess: () => { void review.refetch(); toast.success(t('companions.prCreated')) }, onError: (e) => toast.error(errorMessage(e)) })
   const data = review.data
   const recorded = data?.decision?.fingerprint === data?.fingerprint ? data?.decision : null
   return <SectionStack>
@@ -65,6 +68,15 @@ export function CompanionsSection() {
             <ProposalDiff patch={data.patch} untracked={data.untracked} />
             {recorded && <p role="status">{t('companions.recorded', { decision: t(recorded.value === 'approved' ? 'companions.approved' : 'companions.rejected') })}</p>}
             <div className="flex flex-wrap gap-2"><Button loading={decide.isPending} onClick={() => decide.mutate('approved')}>{t('companions.approve')}</Button><Button variant="outline" disabled={decide.isPending} onClick={() => decide.mutate('rejected')}>{t('companions.reject')}</Button></div>
+            {recorded?.value === 'approved' && <div className="grid gap-3 rounded-lg border p-4">
+              <h4 className="font-semibold">{t('companions.prTitle')}</h4>
+              <p className="text-muted-foreground">{data.target ? t('companions.prTarget', { repo: data.target }) : t('companions.prNoTarget')}</p>
+              {data.pull_request?.fingerprint === data.fingerprint ? <a className="text-primary underline" href={data.pull_request.url} target="_blank" rel="noopener noreferrer">{t('companions.prOpen')}</a> : <>
+                <label className="grid gap-1">{t('companions.prName')}<Input value={prTitle} maxLength={180} onChange={(e) => setPrTitle(e.target.value)} /></label>
+                <label className="grid gap-1">{t('companions.prBody')}<textarea className={field} rows={5} maxLength={12000} value={prBody} onChange={(e) => setPrBody(e.target.value)} /></label>
+                <div><Button disabled={!data.target || !prTitle.trim()} loading={publish.isPending} onClick={() => publish.mutate()}>{t('companions.prCreate')}</Button></div>
+              </>}
+            </div>}
           </>}
         </>}
       </div>}

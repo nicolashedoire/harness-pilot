@@ -1,6 +1,16 @@
 // English dictionary — the reference. Every key must also exist in fr.ts (TypeScript enforces it).
 // Variables: {name}. Plurals: add `key#one` next to `key`; it is used when vars.count is 1 (fr: 0 or 1).
 export const en = {
+  'companions.filesChanged#one': '{count} file changed',
+  "companions.prTitle": "Create a draft pull request",
+  "companions.prTarget": "This publishes the approved changes to {repo} as a draft PR. Nothing will be merged.",
+  "companions.prNoTarget": "A GitHub origin and an authenticated GitHub CLI are required.",
+  "companions.prOpen": "Open the draft pull request",
+  "companions.prName": "Pull request title",
+  "companions.prBody": "Description (Markdown)",
+  "companions.prCreate": "Create draft PR",
+  "companions.prCreated": "Draft pull request created.",
+  "companions.executable": "Executable file",
   'companions.filesChanged': '{count} files changed',
   "feed.kind.companion.ready.title": "Companion proposal ready",
   "feed.kind.companion.ready.body": "A source-code proposal is ready for your review.",

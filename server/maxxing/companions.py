@@ -14,7 +14,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import architecture, bus, config, feed, workspace
+from . import architecture, bus, config, feed, gitview, workspace
 from .sessions import service, store
 
 DEFAULT = {'id': 'observer', 'name': 'Platform observer', 'provider': 'codex',
@@ -68,9 +68,9 @@ def save(name: str, role: str, ident: str | None = None) -> dict:
     return item
 
 
-def _git(cwd: Path, *args: str, limit: int = MAX_PATCH) -> bytes:
+def _git(cwd: Path, *args: str, limit: int = MAX_PATCH, extra_env: dict | None = None) -> bytes:
     env = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1',
-           'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'}
+           'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0', **(extra_env or {})}
     try:
         with tempfile.TemporaryFile() as out:
             result = subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', *args], cwd=cwd, env=env,
@@ -187,15 +187,20 @@ def review(sid: str) -> dict:
                 raise service.SessionError(400, 'binary_file', 'Non-UTF-8 additions cannot be reviewed here.') from None
         except OSError:
             raise service.SessionError(400, 'read_failed', 'An experiment file could not be read.') from None
-        additions.append((rel, data))
-        if len(patch) + sum(len(d) for _, d in additions) > MAX_PATCH:
+        additions.append((rel, data, bool(info.st_mode & 0o111)))
+        if len(patch) + sum(len(d) for _, d, _ in additions) > MAX_PATCH:
             raise service.SessionError(400, 'too_large', 'The proposal is too large to review here.')
     digest = hashlib.sha256(patch)
-    for name, data in additions:
-        digest.update(name.encode() + b'\0' + data + b'\0')
-    return {'session': service.public(meta), 'fingerprint': digest.hexdigest(), 'patch': patch.decode('utf-8', 'replace'),
-            'untracked': [{'path': name, 'content': data.decode('utf-8', 'replace')} for name, data in additions],
-            'has_changes': bool(patch or additions), 'base': base, 'decision': companion.get('decision')}
+    for name, data, executable in additions:
+        digest.update(name.encode() + b'\0' + data + b'\0' + (b'x' if executable else b'-'))
+    try:
+        target = gitview.github_name(_git(config.CODE, 'remote', 'get-url', 'origin', limit=4096).decode().strip())
+    except (service.SessionError, UnicodeError):
+        target = None
+    return {'target': target, 'session': service.public(meta), 'fingerprint': digest.hexdigest(), 'patch': patch.decode('utf-8', 'replace'),
+            'untracked': [{'path': name, 'content': data.decode('utf-8'), 'executable': executable} for name, data, executable in additions],
+            'has_changes': bool(patch or additions), 'base': base, 'decision': companion.get('decision'),
+            'pull_request': companion.get('pull_request')}
 
 
 def decide(sid: str, decision: str, fingerprint: str) -> dict:
