@@ -115,11 +115,13 @@ Session = {
   discussion_turns: int,              // replies of the current period
   discussion_elapsed: int,            // seconds the current period has run, paused time excluded (live while it runs)
   discussion_turn_limit: int|null,    // replies per period (1-200), null = no limit
-  discussion_duration_seconds: int|null   // duration of a period (60-86400 s), null = no limit
+  discussion_duration_seconds: int|null,  // duration of a period (60-86400 s), null = no limit
+  discussion_partner: "codex"|"plugin:<id>"|null   // the second agent (null: not a discussion); a plugin's name is
+                                      // `provider_name` and its capabilities `provider_capabilities`
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
-| POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6}` | `Session` (starts the first turn if message or voice). `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
+| POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6, discussion_partner?:"plugin:<id>"}` | `Session` (starts the first turn if message or voice). `discussion_partner` (provider `discussion` / `debate` only, else `400 unsupported`): an installed, enabled agent plugin replaces Codex as the second agent (`codex_model` and `codex_role` then apply to it); `400 bad_provider` when unknown or disabled, `400 unsupported` (the message names the capability) when it lacks `plan` with `plan_mode` or `attachments` with attachments - the same checks apply to `PATCH plan_mode` and to messages with attachments. `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
 | POST | `/api/teams` | `{path, message, title?}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. |
 | GET | `/api/teams/{sid}` | – | `{id, phase, created, agents: [{id, provider, role, stopped, state, session: Session\|null, started_at, finished_at, activity: [{kind: "read"\|"search"\|"run"\|"edit"\|"web"\|"say"\|"other", target}], report: string\|null}]}`: team phase and its two worker sessions, including individual status and links. `started_at` is the team's start, `finished_at` when the worker stopped running (null while it runs). `activity` = the last 3 actions of the worker's latest turn, oldest first: a tool call (`target`: a file path relative to the topic, a pattern, a command or a URL) or the first line of what it said (`say`), 120 characters at most. `report` = the first 600 characters of its final answer once it stopped running, else null. Read from the last 128 kB of the worker's log only, again only when that log changed. The team is retained with the coordinator session. |
 | POST | `/api/teams/{sid}/agents/{agent_id}/stop` | – | Stop one independently launched team worker; other workers continue. Returns 404 for sessions outside this team. |
@@ -878,7 +880,8 @@ Plans from agents are parsed from their full bounded assistant text, never the 2
 `GET /api/agent-providers` (authenticated) returns `{id, name, builtin, capabilities, protocol?}[]`.
 `POST /api/sessions` accepts an installed `plugin:<extension-id>` provider as well as the native
 providers. Session responses retain `provider_name` for external engines. Read-only `plan` and
-attachment capabilities are checked at creation. Profile `POST/PUT /api/companions` accepts an
+attachment capabilities are checked at creation. A discussion or debate takes one as its second agent
+(`discussion_partner`, see Sessions); it needs `text`, plus `plan` in plan mode and `attachments` for files. Profile `POST/PUT /api/companions` accepts an
 optional `provider`; omitting it preserves the previous choice, defaulting to Codex for new roles.
 A coding companion needs `source-edit`. See [AGENT-PROVIDERS.md](AGENT-PROVIDERS.md) for the external
 executable protocol and trust model. Provider token totals use dynamic keys in `Stats.providers`.

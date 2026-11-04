@@ -66,9 +66,10 @@ def _transcript(sid: str) -> tuple[str, bool]:
     page = service.read_back(sid, limit=200)
     lines = []
     actor = 'Agent'
+    partner = (service.store.read(sid) or {}).get('provider_name') or 'Codex'   # a plugin in a discussion's 2nd seat
     for event in page.get('events') or []:
         kind, text = event.get('type'), event.get('text')
-        if kind == 'note' and text in ('Claude Code', 'Codex'):
+        if kind == 'note' and text in ('Claude Code', 'Codex', partner):
             actor = text
         elif kind in ('user', 'assistant') and isinstance(text, str) and text.strip():
             lines.append(f"{'User' if kind == 'user' else actor}: {text.strip()}")

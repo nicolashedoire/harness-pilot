@@ -153,6 +153,7 @@ def public(meta: dict) -> dict:
             "team_parent": m.get("team_parent"),
             "team_turn": _team_turn(m),
             "debate_telegram": bool(m.get("debate_telegram")),
+            "discussion_partner": (m.get("discussion_partner") or "codex") if m.get("provider") in ("discussion", "debate") else None,
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
             "discussion_paused_at": m.get("discussion_paused_at") or None,
@@ -327,6 +328,22 @@ def _spawn(sid: str) -> None:
                                "text": f"Could not start the turn: {e}"[:500]})
 
 
+def _check_partner(ident: str, plan_mode: bool, attachments: bool) -> dict:
+    """The agent plugin chosen as a discussion's second agent (`plugin:<id>`), if its declared capabilities allow what
+    the discussion asks of it: `text` (every reply), `plan` in plan mode, `attachments` for files. Else a clear 400."""
+    from .. import agent_providers
+    adapter = agent_providers.get(ident) if str(ident).startswith('plugin:') else None
+    if adapter is None:
+        raise SessionError(400, 'bad_provider', 'The second agent must be an installed and enabled agent plugin '
+                                                '(plugin:<id>); leave it out for Codex.')
+    name, caps = adapter['name'], adapter['capabilities']
+    for needed, wanted, why in (('text', True, 'answer in a discussion'), ('plan', plan_mode, 'join a discussion in plan mode'),
+                                ('attachments', attachments, 'receive attached files')):
+        if wanted and needed not in caps:
+            raise SessionError(400, 'unsupported', f"{name} cannot {why}: it does not declare the '{needed}' capability.")
+    return adapter
+
+
 def _default_title(path: str, message: str | None) -> str:
     first = titles.provisional(message or "")
     if first:
@@ -342,7 +359,7 @@ def create_session(path: str, message: str | None = None, title: str | None = No
                    provider: str = "claude", discussion_turn_limit: int | None = None,
                    discussion_duration_seconds: int | None = None,
                    claude_role: str = '', codex_role: str = '', codex_model: str | None = None,
-                   swarm_agents: int | None = None) -> dict:
+                   swarm_agents: int | None = None, discussion_partner: str | None = None) -> dict:
     """`auto_title`: `title` was made from the first message by the caller (Telegram) - still worth a short title."""
     try:
         p = workspace.normalize_path(path)
@@ -359,6 +376,9 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         raise SessionError(400, 'unsupported', 'This agent adapter does not support attachments.')
     if provider in ("discussion", "debate") and plan_mode:
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
+    partner = _check_partner(discussion_partner, plan_mode, bool(attachments)) if discussion_partner else None
+    if discussion_partner and provider not in ('discussion', 'debate'):
+        raise SessionError(400, 'unsupported', 'Only a discussion or a debate has a second agent to choose.')
     if swarm_agents is not None and (provider != 'claude' or type(swarm_agents) is not int or not 2 <= swarm_agents <= 6):
         raise SessionError(400, 'bad_swarm', 'Agent teams require Claude and a requested count between 2 and 6.')
     files = _check_attachments(attachments)
@@ -374,6 +394,9 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         meta['provider_capabilities'] = adapter['capabilities']
     if swarm_agents is not None:
         meta['swarm_agents'] = swarm_agents
+    if partner:                              # an agent plugin holds the second seat of the discussion
+        meta.update(discussion_partner=partner['id'], provider_name=partner['name'],
+                    provider_capabilities=partner['capabilities'])
     if provider in ("discussion", "debate"):
         if discussion_turn_limit is not None and not 1 <= discussion_turn_limit <= 200:
             raise SessionError(400, "bad_limit", "The response limit must be between 1 and 200.")
@@ -457,6 +480,8 @@ def send_message(sid: str, text: str, attachments: list[str] | None = None, sour
     audio = _check_voice(voice_path)
     if not (text or "").strip() and not files and not audio:
         raise SessionError(400, "empty", "Empty message")
+    if files and meta.get('discussion_partner'):
+        _check_partner(meta['discussion_partner'], False, True)
     extra: dict[str, Any] = {"hud": True} if hud else {}
     if ref:
         extra["refs"] = [str(ref)]
@@ -764,6 +789,8 @@ def update_session(sid: str, title: str | None = None, model: str | None = None,
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
     if model is not None:
         model = _check_model(model)
+    if plan_mode and cur.get('discussion_partner'):
+        _check_partner(cur['discussion_partner'], True, False)
     if path is not None:
         move_session(sid, path, cur)
     with store.edit(sid) as m:

@@ -25,9 +25,9 @@ For another engine, install a trusted adapter under the workspace's extensions d
 manage it through Settings → Extensions. The engine must declare coding support to be used by
 a resident role. A missing or disabled engine produces an error; another engine is never chosen
 silently. Text-only engines do not accept attachments, and plan mode appears only when supported.
-Native thread compaction and handoff remain adapter-specific. External engines currently run in
-single-agent sessions or resident experiments; the existing native mixed-team and discussion modes
-use Claude Code and Codex.
+Native thread compaction and handoff remain adapter-specific. External engines run in single-agent
+sessions, resident experiments, and as the second agent of a discussion or debate (instead of Codex)
+when they declare what it needs; the native mixed-team mode uses Claude Code and Codex.
 
 Extensions are local trusted programs. A disposable source copy is not an operating-system sandbox;
 each adapter must enforce its own model and tool permissions. See the developer
