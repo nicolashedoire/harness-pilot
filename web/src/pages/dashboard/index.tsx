@@ -1,17 +1,14 @@
 // Dashboard: widget cards from GET /api/dashboard rendered with native blocks.
 // Edit mode: reorder (drag handle or arrow buttons), hide/show, PUT /api/dashboard/layout.
 import * as React from 'react'
-import { ArrowDown, ArrowUp, Bell, Check, ExternalLink, Eye, EyeOff, GripVertical, LayoutDashboard, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
-import { useDashboard, useFeed, useFillPendingWidgets, useRefreshWidget, useSaveLayout } from '@/lib/queries'
-import { useNavigate } from 'react-router'
-import { useUI } from '@/stores/ui'
-import { useMediaQuery } from '@/stores/media'
-import { FeedPanel } from '@/features/feed/FeedItems'
+import { ArrowDown, ArrowUp, Check, ExternalLink, Eye, EyeOff, GripVertical, LayoutDashboard, Pencil, RefreshCw, TriangleAlert, X } from 'lucide-react'
+import { useDashboard, useFillPendingWidgets, useRefreshWidget, useSaveLayout } from '@/lib/queries'
+import { PendingCard, usePendingEvents } from '@/features/notifications/PendingCard'
 import { fmtRelative } from '@/lib/format'
 import type { Widget } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
-import { Button, Card, CountBadge, EmptyState, NamedIcon, Skeleton, SkeletonText, Spinner, StatusDot, Tooltip } from '@/components/ui'
+import { Button, Card, EmptyState, NamedIcon, Skeleton, SkeletonText, Spinner, StatusDot, Tooltip } from '@/components/ui'
 import { Page } from '@/components/shell/Page'
 import { useRegisterCommands } from '@/commands/registry'
 import { BlockView, InView, SmartLink } from './blocks'
@@ -19,11 +16,11 @@ import { HtmlWidget } from './HtmlWidget'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
 
-/** With the notifications panel open, the grid has 2 columns up to 2xl (3 above). */
-const spanCls = (s: number, panel = false) =>
-  s >= 3 ? (panel ? 'md:col-span-2 2xl:col-span-3' : 'md:col-span-2 xl:col-span-3') : s === 2 ? 'md:col-span-2' : ''
+const spanCls = (s: number) => (s >= 3 ? 'md:col-span-2 xl:col-span-3' : s === 2 ? 'md:col-span-2' : '')
+/** The client card "To handle" (features/notifications), placed after the first widget while something needs you. */
+const PENDING_ID = 'mx-pending'
 
-// Memoised: a feed or layout refetch only re-renders the cards whose data changed (patched widgets keep identity).
+// Memoised: a layout or widget refetch only re-renders the cards whose data changed (patched widgets keep identity).
 /** True until the element has been on screen once: a card below the fold keeps its entrance (and its charts',
  *  timeline's, numbers') for the moment it scrolls into view, instead of playing it unseen at load. */
 function useWaitForView(ref: React.RefObject<HTMLElement | null>): boolean {
@@ -40,7 +37,7 @@ function useWaitForView(ref: React.RefObject<HTMLElement | null>): boolean {
   return wait
 }
 
-const WidgetCard = React.memo(function WidgetCard({ w, index, panel }: { w: Widget; index: number; panel?: boolean }) {
+const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; index: number }) {
   const t = useT()
   const lang = useLang()
   const refresh = useRefreshWidget()
@@ -50,7 +47,7 @@ const WidgetCard = React.memo(function WidgetCard({ w, index, panel }: { w: Widg
   return (
     <InView.Provider value={!wait}>
     {/* Widgets arrive one after the other (32 ms apart, capped so a long dashboard is complete in ~0.5 s). */}
-    <Card ref={cardRef} className={cn('mx-card-in min-w-0 gap-0 overflow-hidden', wait && 'mx-wait', spanCls(w.span, panel))} style={{ '--i': Math.min(index, 6) } as React.CSSProperties}>
+    <Card ref={cardRef} className={cn('mx-card-in min-w-0 gap-0 overflow-hidden', wait && 'mx-wait', spanCls(w.span))} style={{ '--i': Math.min(index, 6) } as React.CSSProperties}>
       <div className="flex h-12 items-center gap-2.5 px-[var(--pad-card)] pt-1">
         <NamedIcon name={w.icon} className="size-4 text-muted-foreground" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{card?.title || w.title}</h2>
@@ -190,8 +187,8 @@ function EditList({ widgets, layout, setLayout }: { widgets: Widget[]; layout: L
   )
 }
 
-/** The cards slide to their new place (2-D FLIP, transform only) when the grid changes under them: notifications
- *  panel opened / closed (2 <-> 3 columns), a widget shown, hidden or moved. Children of `grid` = cards, in `ids` order. */
+/** The cards slide to their new place (2-D FLIP, transform only) when the grid changes under them: the "To handle"
+ *  card coming or going, a widget shown, hidden or moved. Children of `grid` = cards, in `ids` order. */
 function useGridFlip(grid: React.RefObject<HTMLDivElement | null>, ids: string[], sig: string) {
   type Box = { left: number; top: number; width: number }
   const last = React.useRef(new Map<string, Box>())
@@ -252,15 +249,11 @@ export default function DashboardPage() {
   const visible = widgets.filter((w) => !w.hidden)
   const gridRef = React.useRef<HTMLDivElement>(null)
 
-  const navigate = useNavigate()
-  const feedPanel = useUI((s) => s.feedPanel)
-  const setFeedPanel = useUI((s) => s.setFeedPanel)
-  const wideScreen = useMediaQuery('(min-width: 1280px)')
-  const feed = useFeed(null, false, 30)
-  const unread = feed.data?.unread ?? 0
-  const panel = feedPanel && wideScreen
+  const pending = usePendingEvents()
+  const withPending = pending.count > 0 && visible.length > 0
   const ids = visible.map((w) => w.id)
-  useGridFlip(gridRef, ids, `${ids.join(',')}|${panel}|${!!edit}`)
+  if (withPending) ids.splice(1, 0, PENDING_ID)
+  useGridFlip(gridRef, ids, `${ids.join(',')}|${!!edit}`)
   const startEdit = () => setEdit({ order: widgets.map((w) => w.id), hidden: new Set(widgets.filter((w) => w.hidden).map((w) => w.id)) })
   useRegisterCommands('dashboard', [{ id: 'dash:edit', title: t('dash.edit'), group: t('nav.dashboard'), icon: Pencil, perform: startEdit }], [t, widgets])
 
@@ -275,19 +268,6 @@ export default function DashboardPage() {
     </>
   ) : (
     <>
-      <Tooltip content={wideScreen ? (feedPanel ? t('feed.hidePanel') : t('feed.showPanel')) : t('feed.title')}>
-        <Button
-          variant={panel ? 'secondary' : 'ghost'}
-          size="sm"
-          className="relative gap-1.5"
-          onClick={() => (wideScreen ? setFeedPanel(!feedPanel) : navigate('/feed'))}
-          aria-label={t('feed.title')}
-          data-testid="feed-bell"
-        >
-          <Bell />
-          <CountBadge count={unread} title={t('feed.unreadCount', { count: unread })} />
-        </Button>
-      </Tooltip>
       <Tooltip content={t('dash.refreshAll')}>
         <Button variant="ghost" size="icon-sm" onClick={() => refetch()} aria-label={t('dash.refreshAll')} disabled={isFetching}>
           {isFetching && !isLoading ? <Spinner /> : <RefreshCw />}
@@ -301,8 +281,6 @@ export default function DashboardPage() {
 
   return (
     <Page title={t('nav.dashboard')} actions={actions} width="wide">
-      <div className="flex items-start gap-4">
-      <div className="min-w-0 flex-1">
       {isLoading ? (
         <SkeletonGrid />
       ) : isError ? (
@@ -315,17 +293,18 @@ export default function DashboardPage() {
       ) : !visible.length ? (
         <EmptyState icon={LayoutDashboard} title={t('dash.empty')} description={t('dash.emptyDesc')} action={widgets.length ? <Button onClick={startEdit}>{t('dash.edit')}</Button> : undefined} />
       ) : (
-        <div ref={gridRef} className={cn('grid grid-flow-row-dense gap-4 md:grid-cols-2', panel ? '2xl:grid-cols-3' : 'xl:grid-cols-3')}>
-          {visible.map((w, i) => (
-            <ErrorBoundary key={w.id} variant="card" resetKey={w.card?.updated} className={cn('rounded-xl border bg-card', spanCls(w.span, panel))}>
-              <WidgetCard w={w} index={i} panel={panel} />
-            </ErrorBoundary>
-          ))}
+        <div ref={gridRef} className="grid grid-flow-row-dense gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {ids.map((id, i) => {
+            if (id === PENDING_ID) return <PendingCard key={id} style={{ '--i': Math.min(i, 6) } as React.CSSProperties} />
+            const w = visible.find((x) => x.id === id)!
+            return (
+              <ErrorBoundary key={w.id} variant="card" resetKey={w.card?.updated} className={cn('rounded-xl border bg-card', spanCls(w.span))}>
+                <WidgetCard w={w} index={i} />
+              </ErrorBoundary>
+            )
+          })}
         </div>
       )}
-      </div>
-      {panel && !edit && <FeedPanel className="sticky top-4 h-[calc(100dvh-7.5rem)] w-80 shrink-0" />}
-      </div>
     </Page>
   )
 }

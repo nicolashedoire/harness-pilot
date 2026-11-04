@@ -6,7 +6,7 @@
 export const GROUPS = {
   settings: [
     'mcp', 'system', 'stats', 'keys', 'memory', 'trash', 'features', 'security', 'profile', 'fonts', 'accent',
-    'density', 'tint', 'colors', 'backup', 'import', 'telegram', 'packs', 'pc', 'license', 'register', 'cdef',
+    'density', 'tint', 'colors', 'backup', 'import', 'telegram', 'packs', 'pc', 'license', 'register', 'cdef', 'nset',
   ],
   auth: ['onb', 'setup', 'login', 'pw', 'twofa'],
   infra: ['infra'],

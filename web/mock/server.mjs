@@ -153,6 +153,7 @@ function buildState(scenario) {
     }
     seedTasks(st, t)
     seedCrons(st, t)
+    seedFeed(st, t)
     // telegram
     st.telegram.token = '7412369850:AAH3kx9-Qw2Er4Ty6Ui8Op0As1Df3Gh5Jk7'
     st.telegram.bot = { id: 7412369850, username: 'acme_maxxing_bot', name: 'Acme Maxxing' }
@@ -171,6 +172,7 @@ function buildState(scenario) {
   } else if (scenario === 'onboarding' || scenario === 'setup') {
     st.layout.hidden = ['claude-usage']
   }
+  if (!st.feed) { st.feed = { events: [], nextId: 1, settings: { telegram: true, rules: {}, kind_rules: {} }, hooks: [] }; st.push = { subs: [] } }
   seedFiles(st, t)
   return st
 }
@@ -1647,6 +1649,7 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
     c.last_run = { at: started, ok, code: ok ? 0 : 22, duration_s: dur }
     S.cronRuns.unshift({ id: rid('r'), cron_id: c.id, name: c.name, at: started, ok, code: c.last_run.code, duration_s: dur,
       output_tail: ok ? 'Done.' : 'curl: (22) The requested URL returned error: 503', session_id: sid })
+    feedCronRun(c, S.cronRuns[0])
     bus('crons', 'health')
   }, c.kind === 'claude' ? 3600 : 1500)
   bus('crons')
@@ -1891,6 +1894,383 @@ for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
   })
 }
 
+/* =================================================================== feed (notifications) + web push */
+// docs/dev/API.md#feed-notifications and #web-push. In-memory: S.feed = {events, nextId, settings, hooks}, S.push.
+const FEED_CATEGORIES = ['sessions', 'crons', 'system', 'webhooks']
+const FEED_OWN_THREAD = ['crons', 'system', 'security', 'sessions']
+const FEED_BUILTIN = { crons: 'Cron jobs', system: 'harness-pilot', security: 'Sign-ins', sessions: 'Sessions' }
+const FEED_RULES = ['auto', 'off', 'silent', 'loud']
+const FEED_LEVELS = ['info', 'success', 'warning', 'error']
+// kind -> [source, typical level] (same order as the server's registry)
+const FEED_KINDS = {
+  'session.done': ['sessions', 'success'], 'session.failed': ['sessions', 'error'], 'discussion.paused': ['sessions', 'warning'],
+  'cron.succeeded': ['crons', 'success'], 'cron.failed': ['crons', 'error'],
+  'update.available': ['system', 'info'], 'update.attention': ['system', 'warning'], 'update.review': ['system', 'info'],
+  'update.started': ['system', 'info'], 'update.broken': ['system', 'warning'], 'claude.updated': ['system', 'success'],
+  'claude.update_failed': ['system', 'error'], 'deps.vulnerable': ['system', 'warning'], 'deps.update_failed': ['system', 'warning'],
+  'health.issue': ['system', 'warning'],
+  'signin.ok': ['security', 'info'], 'signin.failed': ['security', 'warning'], 'signin.denied': ['security', 'warning'],
+  'webhook.refused': ['security', 'warning'], 'backup.restore_held': ['security', 'warning'],
+  'infra.down': ['infra', 'error'], 'infra.up': ['infra', 'success'], 'infra.cert_expiring': ['infra', 'warning'],
+  'infra.domain_expiring': ['infra', 'warning'],
+  'webhook.test': ['', 'info'],
+  'stripe.sale': ['', 'success'], 'stripe.payment': ['', 'success'], 'stripe.refund': ['', 'warning'], 'stripe.payment_failed': ['', 'error'],
+  'stripe.dispute': ['', 'error'], 'stripe.subscription_created': ['', 'success'], 'stripe.subscription_cancelled': ['', 'warning'], 'stripe.event': ['', 'info'],
+  'shopify.order_created': ['', 'success'], 'shopify.order_paid': ['', 'success'], 'shopify.order_cancelled': ['', 'warning'],
+  'shopify.refund': ['', 'warning'], 'shopify.stock': ['', 'info'], 'shopify.event': ['', 'info'],
+  'github.ping': ['', 'success'], 'github.push': ['', 'info'], 'github.pull_request': ['', 'info'], 'github.issue': ['', 'info'],
+  'github.workflow': ['', 'success'], 'github.release': ['', 'success'], 'github.star': ['', 'info'], 'github.event': ['', 'info'],
+  custom: ['', 'info'],
+}
+const POST_ACTIONS = [/^\/api\/crons\/[A-Za-z0-9_-]{1,64}\/run$/, /^\/api\/sessions\/[A-Za-z0-9-]{1,64}\/discussion\/resume$/]
+const feedCategory = (source) => (source === 'sessions' ? 'sessions' : source === 'crons' ? 'crons' : ['system', 'security', 'infra'].includes(source) ? 'system' : 'webhooks')
+const feedPending = (e) => (e.level === 'warning' || e.level === 'error') && !e.read && !e.resolved_at
+function feedPublic(e, detail = false) {
+  const { group, occurrences, dedupe, ...rest } = e
+  const out = { ...rest, category: feedCategory(e.source), pending: feedPending(e) }
+  if (detail) out.occurrences = occurrences && occurrences.length ? occurrences : [{ at: e.at, title: e.title, body: e.body.slice(0, 300), params: e.params }]
+  return out
+}
+const feedLink = (id, label, url) => ({ id, label, type: 'link', url })
+const feedPost = (id, label, url) => ({ id, label, type: 'post', url })
+const sessionUrl = (s) => `/sessions?path=${encodeURIComponent(s.path)}&session=${s.id}`
+
+function feedAdd(st, ev) {
+  const t = ev.at ?? now()
+  const e = { id: st.feed.nextId++, at: t, source: 'custom', level: 'info', title: '', body: '', url: '', count: 1, read: false,
+    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], ...ev }
+  if (e.group) {
+    const row = st.feed.events.find((x) => x.source === e.source && x.group === e.group && x.level === e.level && !x.read && !x.resolved_at && t - x.at < DAY)
+    if (row) {
+      if (!row.occurrences.length) row.occurrences.push({ at: row.at, title: row.title, body: row.body.slice(0, 300), params: row.params })
+      row.occurrences.unshift({ at: t, title: e.title, body: e.body.slice(0, 300), params: e.params })
+      row.occurrences = row.occurrences.slice(0, 20)
+      Object.assign(row, { count: row.count + 1, at: t, title: e.title, body: e.body, url: e.url, params: e.params, actions: e.actions })
+      return row
+    }
+  }
+  st.feed.events.push(e)
+  st.feed.events.sort((a, b) => b.id - a.id)
+  return e
+}
+function feedResolve(st, source, group) {
+  let n = 0
+  for (const e of st.feed.events) if (e.source === source && e.group === group && !e.resolved_at && (e.level === 'warning' || e.level === 'error')) { e.resolved_at = now(); n++ }
+  return n
+}
+function feedCounts() {
+  const sources = new Map(), categories = Object.fromEntries(FEED_CATEGORIES.map((c) => [c, { total: 0, unread: 0, pending: 0 }])), kinds = {}
+  let unread = 0, pending = 0
+  for (const e of [...S.feed.events].sort((a, b) => b.at - a.at)) {
+    const p = feedPending(e) ? 1 : 0, u = e.read ? 0 : 1
+    unread += u; pending += p
+    const s = sources.get(e.source) || { source: e.source, total: 0, unread: 0, pending: 0 }
+    s.total++; s.unread += u; s.pending += p; sources.set(e.source, s)
+    const c = categories[feedCategory(e.source)]; c.total++; c.unread += u; c.pending += p
+    const k = (kinds[e.kind] ||= { total: 0, unread: 0, pending: 0 }); k.total++; k.unread += u; k.pending += p
+  }
+  return { unread, pending, sources: [...sources.values()], categories, kinds }
+}
+function feedRule(kind, source, level) {
+  const f = S.feed.settings
+  if (f.kind_rules[kind] && f.kind_rules[kind] !== 'auto') return f.kind_rules[kind]
+  return feedDefault(source, level)
+}
+function feedDefault(source, level) {
+  const r = S.feed.settings.rules[source]
+  if (r && r !== 'auto') return r
+  if (FEED_OWN_THREAD.includes(source)) return 'off'
+  return level === 'error' ? 'loud' : level === 'warning' ? 'silent' : 'off'
+}
+function feedSettings() {
+  const f = S.feed.settings
+  const seen = new Set(S.feed.events.map((e) => e.source))
+  const names = [...Object.keys(FEED_BUILTIN), ...S.feed.hooks.map((h) => h.name)]
+  for (const n of [...seen].sort()) if (!names.includes(n)) names.push(n)
+  const sources = names.map((n) => ({ source: n, label: FEED_BUILTIN[n] || n, builtin: n in FEED_BUILTIN, rule: f.rules[n] || 'auto', own_thread: FEED_OWN_THREAD.includes(n) }))
+  const eventKinds = Object.entries(FEED_KINDS).map(([kind, [source, level]]) => ({ kind, category: source ? feedCategory(source) : 'webhooks', source, level, builtin: true,
+    rule: f.kind_rules[kind] || 'auto', default: feedDefault(source, level), own_thread: FEED_OWN_THREAD.includes(source) }))
+  const extra = new Map()
+  for (const e of S.feed.events) if (!(e.kind in FEED_KINDS) && !extra.has(e.kind)) extra.set(e.kind, e)
+  for (const [kind, e] of extra) eventKinds.push({ kind, category: feedCategory(e.source), source: e.source, level: e.level, builtin: false, rule: f.kind_rules[kind] || 'auto',
+    default: feedDefault(e.source, e.level), own_thread: FEED_OWN_THREAD.includes(e.source) })
+  return { telegram: f.telegram, sources, hooks: S.feed.hooks.map(hookOut), kinds: ['stripe', 'shopify', 'github', 'generic'], rules: FEED_RULES,
+    kind_rules: { ...f.kind_rules }, event_kinds: eventKinds }
+}
+const hookOut = (h) => ({ id: h.id, name: h.name, kind: h.kind, created: h.created, url: `https://ui.example.com/api/hooks/${h.token}`, has_secret: !!h.secret })
+
+function seedFeed(st, t) {
+  st.feed = { events: [], nextId: 1, settings: { telegram: true, rules: {}, kind_rules: {} }, hooks: [
+    { id: 'h_stripe1', name: 'stripe', kind: 'stripe', created: t - 20 * DAY, token: 'tok-stripe-demo', secret: 'whsec_demo' },
+    { id: 'h_shop01', name: 'acme-shop', kind: 'shopify', created: t - 9 * DAY, token: 'tok-shop-demo', secret: '' },
+    { id: 'h_gh0001', name: 'github', kind: 'github', created: t - 30 * DAY, token: 'tok-gh-demo', secret: 'ghs_demo' },
+  ] }
+  st.push = { subs: [] }
+  const add = (ev) => feedAdd(st, ev)
+  const find = (title) => st.sessions.find((s) => s.title === title)
+  // a Claude Code + Codex discussion paused by its turn limit (pending, with Resume)
+  const disc = { id: uuid(), title: 'Compare hosting offers', path: topicPath('ops', 'server'), state: 'idle', queue: 0, created: t - 3 * HOUR, updated: t - 40 * MIN,
+    turns: 12, cost_usd: 1.9, model: '', real_model: 'claude-opus-5-5', context_tokens: 64000, context_window: 1000000, archived: false, notify: false,
+    source: 'web', unread: true, last_text: 'Codex: the managed option wins on maintenance, the VPS on price. Shall we write the decision record?', error: null,
+    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_turns: 12, discussion_turn_limit: 12, discussion_duration_seconds: null }
+  st.sessions.push(disc)
+  st.events[disc.id] = conversation(disc, { last: disc.last_text, turns: disc.turns })
+  // ---- three days ago
+  add({ at: t - 3 * DAY - 2 * HOUR, source: 'system', level: 'success', kind: 'claude.updated', title: 'Claude Code updated to 2.4.1', body: 'From 2.4.0, while nothing was running.',
+    url: '/settings/claude', params: { version: '2.4.1', previous: '2.4.0' }, read: true })
+  const down = add({ at: t - 3 * DAY - HOUR, source: 'infra', level: 'error', kind: 'infra.down', title: 'Down: www.example.com', body: 'https://www.example.com/: http_502',
+    url: '/infra?id=site:local:www.example.com', group: 'down:site:local:www.example.com', params: { resource_id: 'site:local:www.example.com', name: 'www.example.com', reason: 'http_502' },
+    actions: [feedLink('open', 'Open', '/infra?id=site:local:www.example.com')], read: true })
+  add({ at: t - 3 * DAY - 40 * MIN, source: 'infra', level: 'success', kind: 'infra.up', title: 'Back up: www.example.com', url: '/infra?id=site:local:www.example.com',
+    group: 'up:site:local:www.example.com', params: { resource_id: 'site:local:www.example.com', name: 'www.example.com' }, read: true })
+  down.resolved_at = t - 3 * DAY - 40 * MIN
+  const oldFail = add({ at: t - 3 * DAY, source: 'crons', level: 'error', kind: 'cron.failed', title: 'Cron failed: Memory backup', body: 'fatal: unable to access (HTTP 404)',
+    url: '/crons?job=c_backup', group: 'failed:c_backup', params: { cron_id: 'c_backup', name: 'Memory backup', run_id: 'r_0a1b2c3d', code: 128, duration_s: 3.1 },
+    actions: [feedLink('open_run', 'Open the run', '/crons?job=c_backup&run=r_0a1b2c3d'), feedPost('rerun', 'Run again', '/api/crons/c_backup/run')] })
+  oldFail.resolved_at = t - 2 * DAY - 19 * HOUR                       // the next run succeeded: unread, but no longer pending
+  // ---- yesterday
+  add({ at: t - DAY - 6 * HOUR, source: 'stripe', level: 'success', kind: 'stripe.sale', title: 'Sale: 49.00 EUR', body: 'customer@example.com', url: 'https://dashboard.stripe.com/payments',
+    params: { amount: '49.00 EUR', email: 'customer@example.com' }, read: true })
+  add({ at: t - DAY - 5 * HOUR, source: 'acme-shop', level: 'success', kind: 'shopify.order_created', title: 'New order #1042: 89.00 EUR', body: 'buyer@example.com',
+    url: 'https://acme.myshopify.com/admin/orders/1042', params: { order: '#1042', amount: '89.00 EUR', email: 'buyer@example.com' } })
+  add({ at: t - DAY - 4 * HOUR, source: 'system', level: 'info', kind: 'update.available', title: 'Update available: 2.0.1', body: 'Installed: 2.0.0. Open the topic ops/server and say: update.',
+    url: '/sessions?path=projects/ops/topics/server', dedupe: 'update-2.0.1', params: { version: '2.0.1', current: '2.0.0', topic: 'ops/server' },
+    actions: [feedLink('open', 'Open', '/sessions?path=projects/ops/topics/server')] })
+  add({ at: t - DAY - 3 * HOUR, source: 'github', level: 'error', kind: 'github.workflow', title: 'CI failure - acme/website', body: 'main', url: 'https://github.com/acme/website/actions/runs/1',
+    params: { repo: 'acme/website', workflow: 'CI', conclusion: 'failure', branch: 'main' } })
+  add({ at: t - DAY - 2 * HOUR, source: 'security', level: 'warning', kind: 'signin.failed', title: '3 wrong passwords', body: '203.0.113.7 · Mozilla/5.0 (X11; Linux x86_64)',
+    params: { count: 3, ip: '203.0.113.7', ua: 'Mozilla/5.0 (X11; Linux x86_64)' }, actions: [feedLink('open', 'Open', '/settings/security')], read: true })
+  add({ at: t - DAY - HOUR, source: 'mail', level: 'warning', kind: 'custom', title: 'Invoice from ACME: 39 EUR due Friday', body: 'From billing@acme.example', dedupe: 'msg-1234' })
+  // ---- today
+  for (let i = 0; i < 12; i++) {
+    const name = i % 3 === 0 ? 'Daily blog article' : i % 3 === 1 ? 'Memory backup' : 'Weekly SEO report'
+    const cid = i % 3 === 0 ? 'c_blog' : i % 3 === 1 ? 'c_backup' : 'c_seo'
+    add({ at: t - 10 * HOUR + i * 40 * MIN, source: 'crons', level: 'success', kind: 'cron.succeeded', title: 'Cron jobs succeeded', body: `${name} (${4 + i} s)`,
+      url: `/crons?job=${cid}`, group: 'ok', params: { cron_id: cid, name, run_id: rid('r'), duration_s: 4 + i } })
+  }
+  for (let i = 0; i < 3; i++) {
+    const run = rid('r')
+    add({ at: t - (45 - i * 15) * MIN, source: 'crons', level: 'error', kind: 'cron.failed', title: 'Cron failed: Uptime check',
+      body: 'curl: (22) The requested URL returned error: 503', url: '/crons?job=c_uptime', group: 'failed:c_uptime',
+      params: { cron_id: 'c_uptime', name: 'Uptime check', run_id: run, code: 22, duration_s: 10.0 },
+      actions: [feedLink('open_run', 'Open the run', `/crons?job=c_uptime&run=${run}`), feedPost('rerun', 'Run again', '/api/crons/c_uptime/run')] })
+  }
+  add({ at: t - 40 * MIN, source: 'sessions', level: 'warning', kind: 'discussion.paused', title: `Discussion paused: ${disc.title}`,
+    body: 'The turn limit was reached (12 turns).', url: sessionUrl(disc), group: `discussion:${disc.id}`,
+    params: { session_id: disc.id, title: disc.title, path: disc.path, provider: 'discussion', turns: 12, turn_limit: 12, duration_s: 2280, duration_limit_s: null },
+    actions: [feedPost('resume', 'Resume', `/api/sessions/${disc.id}/discussion/resume`), feedLink('open_session', 'Open', sessionUrl(disc))] })
+  add({ at: t - 35 * MIN, source: 'security', level: 'warning', kind: 'webhook.refused', title: 'Webhook acme-shop refused: no signing secret',
+    body: 'Add the Shopify signing secret in Settings -> Notifications (source menu -> Set the signing secret); events are refused until then.',
+    group: 'hook-secret-h_shop01', params: { hook_id: 'h_shop01', name: 'acme-shop', service: 'shopify' },
+    actions: [feedLink('add_secret', 'Add the secret', '/settings/notifications?hook=h_shop01')] })
+  add({ at: t - 30 * MIN, source: 'system', level: 'warning', kind: 'health.issue', title: 'Disk 91 % full (8.2 GB free)', group: 'health:3f2a9c1b7d4e',
+    params: { issue_id: '3f2a9c1b7d4e', code: 'disk_full', text: 'Disk 91 % full (8.2 GB free)', level: 'warn' }, actions: [feedLink('open', 'Open', '/settings/system')] })
+  const failed = find('Categorise September expenses')
+  if (failed) add({ at: t - 28 * MIN, source: 'sessions', level: 'error', kind: 'session.failed', title: `Session failed: ${failed.title}`, body: failed.error || '',
+    url: sessionUrl(failed), group: `session:${failed.id}`, params: { session_id: failed.id, title: failed.title, path: failed.path, provider: 'claude', error: failed.error || '' },
+    actions: [feedLink('open_session', 'Open', sessionUrl(failed))] })
+  for (const [title, ago] of [['Fix hero image on mobile', 62], ['Editorial calendar for November', 25]]) {
+    const s = find(title)
+    if (!s) continue
+    for (let i = 0; i < (title.startsWith('Fix') ? 2 : 1); i++) add({ at: t - (ago - i * 5) * MIN, source: 'sessions', level: 'success', kind: 'session.done',
+      title: `Session finished: ${s.title}`, body: s.last_text, url: sessionUrl(s), group: `session:${s.id}`,
+      params: { session_id: s.id, title: s.title, path: s.path, provider: 'claude', turns: s.turns }, actions: [feedLink('open_session', 'Open', sessionUrl(s))] })
+  }
+  for (let i = 0; i < 2; i++) add({ at: t - (20 - i * 10) * MIN, source: 'security', level: 'info', kind: 'signin.ok', title: 'Signed in', body: '198.51.100.4 · Mozilla/5.0 (iPhone)',
+    group: 'signin', params: { ip: '198.51.100.4', ua: 'Mozilla/5.0 (iPhone)', via: 'password' } })
+}
+
+function feedCronRun(c, run) {
+  if (!S.feed) return
+  if (run.ok) {
+    feedResolve(S, 'crons', `failed:${c.id}`)
+    feedAdd(S, { source: 'crons', level: 'success', kind: 'cron.succeeded', title: 'Cron jobs succeeded', body: `${c.name} (${run.duration_s} s)`, url: `/crons?job=${c.id}`,
+      group: 'ok', params: { cron_id: c.id, name: c.name, run_id: run.id, duration_s: run.duration_s } })
+  } else {
+    const url = `/crons?job=${c.id}&run=${run.id}`
+    feedAdd(S, { source: 'crons', level: 'error', kind: 'cron.failed', title: `Cron failed: ${c.name}`, body: run.output_tail, url: `/crons?job=${c.id}`, group: `failed:${c.id}`,
+      params: { cron_id: c.id, name: c.name, run_id: run.id, code: run.code, duration_s: run.duration_s },
+      actions: [feedLink('open_run', 'Open the run', url), feedPost('rerun', 'Run again', `/api/crons/${c.id}/run`)] })
+  }
+  bus('feed')
+}
+
+function feedActions(list) {
+  if (list == null) return []
+  if (!Array.isArray(list) || list.length > 4) fail(400, 'bad_action', 'At most 4 actions')
+  return list.map((a) => {
+    if (!a || typeof a !== 'object' || !/^[a-z0-9_-]{1,32}$/.test(String(a.id || '')) || !String(a.label || '').trim() || String(a.label).length > 60) fail(400, 'bad_action', 'Action: {id, label, type, url}')
+    const url = String(a.url || '')
+    if ((a.type || 'link') !== 'link' || !(/^\/(?![/\\])/.test(url) || /^https:\/\//.test(url))) fail(400, 'bad_action', 'Only link actions to an app path or an https:// URL')
+    return { id: a.id, label: String(a.label).trim(), type: 'link', url }
+  })
+}
+function feedParams(p) {
+  if (p == null) return {}
+  if (typeof p !== 'object' || Array.isArray(p) || Object.keys(p).length > 20) fail(400, 'bad_params', 'params: an object (20 names at most)')
+  const out = {}
+  for (const [k, v] of Object.entries(p)) {
+    if (!/^[a-z_][a-z0-9_]{0,31}$/.test(k) || !(v === null || ['string', 'number', 'boolean'].includes(typeof v))) fail(400, 'bad_params', `params.${k}`)
+    out[k] = typeof v === 'string' ? v.slice(0, 500) : v
+  }
+  return out
+}
+
+R('GET', '/api/feed', ({ q }) => {
+  const limit = Math.max(1, Math.min(Number(q.get('limit') || 50), 200))
+  const before = Number(q.get('before') || 0)
+  let list = S.feed.events.filter((e) => e.at > now() - 30 * DAY)
+  if (q.get('source')) list = list.filter((e) => e.source === q.get('source'))
+  if (q.get('category')) list = list.filter((e) => feedCategory(e.source) === q.get('category'))
+  if (q.get('kind')) list = list.filter((e) => e.kind === q.get('kind'))
+  if (['1', 'true'].includes(q.get('unread'))) list = list.filter((e) => !e.read)
+  if (['1', 'true'].includes(q.get('pending'))) list = list.filter(feedPending)
+  if (before) list = list.filter((e) => e.id < before)
+  list.sort((a, b) => b.id - a.id)
+  return { events: list.slice(0, limit).map((e) => feedPublic(e)), more: list.length > limit, ...feedCounts() }
+})
+R('GET', '/api/feed/summary', () => feedCounts())
+R('GET', '/api/feed/settings', () => feedSettings())
+R('PUT', '/api/feed/settings', ({ body }) => {
+  const f = S.feed.settings
+  for (const key of ['rules', 'kind_rules']) {
+    if (body[key] == null) continue
+    for (const [k, v] of Object.entries(body[key])) {
+      if (!FEED_RULES.includes(v)) fail(400, 'bad_rule', `Rule: ${FEED_RULES.join(', ')}`)
+      if (v === 'auto') delete f[key][k]; else f[key][k] = v
+    }
+  }
+  if (typeof body.telegram === 'boolean') f.telegram = body.telegram
+  bus('feed')
+  return feedSettings()
+})
+R('POST', '/api/feed/read', ({ body }) => {
+  for (const e of S.feed.events) if (body.all || (body.source && e.source === body.source) || (Array.isArray(body.ids) && body.ids.includes(e.id))) e.read = true
+  bus('feed')
+  const c = feedCounts()
+  return { unread: c.unread, pending: c.pending }
+})
+R('POST', '/api/feed/resolve', ({ body }) => {
+  if (!Array.isArray(body.ids)) fail(422, 'invalid', 'ids must be a list')
+  for (const e of S.feed.events) if (body.ids.includes(e.id) && !e.resolved_at) e.resolved_at = now()
+  bus('feed')
+  return { pending: feedCounts().pending }
+})
+R('POST', '/api/feed', ({ body }) => {
+  const title = String(body.title || '').trim()
+  if (!title) fail(400, 'empty', 'An event needs a title')
+  const level = body.level || 'info'
+  if (!FEED_LEVELS.includes(level)) fail(400, 'bad_level', `Level: ${FEED_LEVELS.join(', ')}`)
+  const kind = body.kind || 'custom'
+  if (!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(kind) || (kind in FEED_KINDS && FEED_KINDS[kind][0] !== '')) fail(400, 'bad_kind', 'This kind is reserved')
+  const source = String(body.source || 'custom').toLowerCase()
+  if (body.dedupe && S.feed.events.some((e) => e.source === source && e.dedupe === body.dedupe)) return { event: null, duplicate: true }
+  const ev = feedAdd(S, { source, level, title, body: String(body.body || ''), url: String(body.url || ''), dedupe: body.dedupe || undefined, group: body.group || null,
+    kind, params: feedParams(body.params), actions: feedActions(body.actions) })
+  bus('feed')
+  return { event: feedPublic(ev), duplicate: false }
+})
+R('GET', '/api/feed/:id', ({ params }) => {
+  const e = S.feed.events.find((x) => x.id === Number(params.id)) || fail(404, 'not_found', 'No such event')
+  return { event: feedPublic(e, true) }
+})
+R('DELETE', '/api/feed/:id', ({ params }) => {
+  S.feed.events = S.feed.events.filter((x) => x.id !== Number(params.id))
+  bus('feed')
+  return { ok: true }
+})
+R('POST', '/api/feed/hooks', ({ body }) => {
+  if (!['stripe', 'shopify', 'github', 'generic'].includes(body.kind)) fail(400, 'bad_kind', 'Kind: stripe, shopify, github, generic')
+  const name = String(body.name || body.kind).toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').slice(0, 40)
+  if (name in FEED_BUILTIN) fail(409, 'reserved', `${name} is a built-in source`)
+  if (S.feed.hooks.some((h) => h.name === name)) fail(409, 'exists', `A source named ${name} already exists`)
+  const h = { id: crypto.randomBytes(4).toString('hex'), name, kind: body.kind, created: now(), token: crypto.randomBytes(18).toString('base64url'), secret: String(body.secret || '') }
+  S.feed.hooks.push(h); bus('feed')
+  return hookOut(h)
+})
+R('PATCH', '/api/feed/hooks/:id', ({ params, body }) => {
+  const h = S.feed.hooks.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown source')
+  if (typeof body.secret === 'string') h.secret = body.secret.trim()
+  if (body.regenerate) h.token = crypto.randomBytes(18).toString('base64url')
+  if (h.secret) feedResolve(S, 'security', `hook-secret-${h.id}`)
+  bus('feed')
+  return hookOut(h)
+})
+R('DELETE', '/api/feed/hooks/:id', ({ params }) => {
+  const h = S.feed.hooks.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown source')
+  S.feed.hooks = S.feed.hooks.filter((x) => x !== h)
+  feedResolve(S, 'security', `hook-secret-${h.id}`)
+  bus('feed')
+  return { ok: true }
+})
+R('POST', '/api/feed/hooks/:id/test', ({ params }) => {
+  const h = S.feed.hooks.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown source')
+  const ev = feedAdd(S, { source: h.name, level: 'info', kind: 'webhook.test', title: `Test from ${h.name}`, body: 'If you can read this, the source works.', params: { name: h.name } })
+  bus('feed')
+  return { event: feedPublic(ev) }
+})
+R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
+  const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
+  if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be resumed.')
+  if (!s.debate_paused) fail(409, 'not_paused', 'The conversation is not paused.')
+  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_turns: 0, updated: now() })
+  feedResolve(S, 'sessions', `discussion:${s.id}`)
+  bus('sessions', 'feed')
+  return s
+})
+R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
+  const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
+  if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be paused.')
+  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', updated: now() })
+  bus('sessions')
+  return s
+})
+
+// ---- web push (the mock never sends anything: /test answers ok)
+const PUSH_KEY = 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM'
+const pushOut = (p) => ({ id: p.id, endpoint: p.endpoint, label: p.label, created: p.created, last_ok: p.last_ok, last_error: p.last_error, prefs: p.prefs })
+function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {} }) {
+  if (p == null) return clone(base)
+  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds}')
+  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true, kinds = p.kinds ?? base.kinds
+  if (!Array.isArray(levels) || levels.some((l) => !FEED_LEVELS.includes(l))) fail(400, 'bad_prefs', 'prefs.levels')
+  if (typeof sound !== 'boolean') fail(400, 'bad_prefs', 'prefs.sound')
+  if (typeof kinds !== 'object' || Array.isArray(kinds)) fail(400, 'bad_prefs', 'prefs.kinds')
+  const out = {}
+  for (const [k, v] of Object.entries(kinds)) {
+    if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
+    if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.kinds.${k}: {enabled, sound}`)
+    out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+  }
+  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: out }
+}
+R('GET', '/api/push', () => ({ available: true, public_key: PUSH_KEY, subscriptions: S.push.subs.map(pushOut) }))
+R('POST', '/api/push/subscriptions', ({ body }) => {
+  if (!/^https:\/\//.test(String(body.endpoint || '')) || !body.keys || !body.keys.p256dh || !body.keys.auth) fail(400, 'bad_subscription', 'endpoint (https) and keys {p256dh, auth}')
+  let p = S.push.subs.find((x) => x.endpoint === body.endpoint)
+  if (!p) { p = { id: crypto.randomBytes(6).toString('hex'), endpoint: body.endpoint, label: '', created: now(), last_ok: null, last_error: null, prefs: pushPrefs(null) }; S.push.subs.push(p) }
+  // (the real server also checks that keys are a P-256 point and a 16-byte secret)
+  p.keys = body.keys
+  if (typeof body.label === 'string') p.label = body.label.slice(0, 80)
+  if (body.prefs != null) p.prefs = pushPrefs(body.prefs, p.prefs)
+  return pushOut(p)
+})
+R('PATCH', '/api/push/subscriptions/:id', ({ params, body }) => {
+  const p = S.push.subs.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown subscription')
+  if (typeof body.label === 'string') p.label = body.label.slice(0, 80)
+  if (body.prefs != null) p.prefs = pushPrefs(body.prefs, p.prefs)
+  return pushOut(p)
+})
+R('DELETE', '/api/push/subscriptions/:id', ({ params }) => {
+  S.push.subs = S.push.subs.filter((x) => x.id !== params.id)
+  return { ok: true }
+})
+R('POST', '/api/push/subscriptions/:id/test', ({ params }) => {
+  const p = S.push.subs.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown subscription')
+  p.last_ok = now()
+  return { ok: true, status: 201 }
+})
+
 /* =================================================================== http plumbing */
 function cookieToken(req) {
   const m = /(?:^|;\s*)mx_session=([^;]+)/.exec(req.headers.cookie || '')
@@ -1999,7 +2379,7 @@ function resetScenario(name) {
   startMaxxing()
   for (const set of sessionSubs.values()) for (const r of set) r.end()
   sessionSubs.clear()
-  bus('sessions', 'workspace', 'tasks', 'crons', 'telegram', 'backup', 'health', 'extensions')
+  bus('sessions', 'workspace', 'tasks', 'crons', 'telegram', 'backup', 'health', 'extensions', 'feed')
 }
 
 const server = http.createServer(async (req, res) => {

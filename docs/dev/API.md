@@ -103,7 +103,7 @@ Session = {
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
-| POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath}` | `Session` (starts the first turn if message or voice) |
+| POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6}` | `Session` (starts the first turn if message or voice). `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
 | GET | `/api/sessions/{id}` | – | `Session` |
 | PATCH | `/api/sessions/{id}` | `{title?, model?, archived?, notify?, plan_mode?, favorite?, path?}` | `Session` (`plan_mode:false` also clears `plan_ready`; `favorite` is carried over by a hand-off; `path` moves the session to another topic and its Claude transcript with it - `400 bad_path`, `409 busy` while a turn runs or messages wait; `model`: an id of letters, digits and `._:@/[]-`, 100 characters at most, not starting with `-`, else `400 bad_model`, also on create) |
 | POST | `/api/sessions/{id}/plan/approve` | `{text?}` (shown in the thread as the user's message) | `{queued:bool, session:Session}` — plan mode off, then a turn that tells Claude to implement its latest plan (queue item flag `plan_approved`, kept by steer like `hud`) |
@@ -501,25 +501,144 @@ Built-in card links are SPA routes: `/sessions/<id>`, `/sessions`, `/tasks?task=
 | GET | `/api/stats/tokens?force=1` | – | `{totals, projects:[{name, …}], topics:[{path, …}], sessions:[{id, title, path, archived, updated, …}] (top 100), days:[{date, tokens, cost_usd}] (90 days), latency:{start_s, first_answer_s, turns}, at}` (latency: medians over the last 20 turns of every session: seconds from starting `claude` to its first event / first answer); each group has `input, output, cache_read, cache_write, total, cost_usd, turns, sessions` (sorted by `total`; project `""` = workspace root). Cached 20 s |
 
 ## Feed (notifications)
-`FeedEvent = {id, at, source, level: "info"|"success"|"warning"|"error", title, body, url, count, read}` (`count` > 1 =
-folded repeats). Kept 30 days in `<state>/feed.db`.
+```
+FeedEvent = {
+  id, at, source, level: "info"|"success"|"warning"|"error", title, body, url, count, read,
+  kind: string,              // stable dotted key (table below); "custom" for external posts and rows written before kinds existed
+  params: {[name]: string|number|boolean|null},   // values of the kind's translation (table below)
+  actions: FeedAction[],     // [] when none
+  category: "sessions"|"crons"|"system"|"webhooks",   // the type filter, from the source (below)
+  pending: bool,             // needs attention: level warning|error AND unread AND not resolved
+  resolved_at: number|null,  // the problem went away (resolved by its producer, or POST /api/feed/resolve)
+  first_at: number           // first occurrence of a folded row (= at while count is 1)
+}
+FeedAction = {id, label, type: "link"|"post", url}
+FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest first, at most 20 (body <= 300 chars);
+                                                                      // one entry (the event itself) when never folded
+```
+`count` > 1 = folded repeats. Kept 30 days in `<state>/feed.db`.
+
+- **Text and translation.** `title` / `body` are the English fallback (CLI, Telegram, scripts, old rows). The web shows
+  `feed.kind.<kind>.title` (and `.body` when it has one) interpolated with `params`, and falls back to `title` / `body`
+  for an unknown kind or a missing translation. For `session.*` and the webhook kinds the `body` is content (Claude's
+  last text, a customer e-mail...): show it as it is.
+- **Category** (from `source`): `sessions` -> sessions; `crons` -> crons; `system`, `security`, `infra` -> system;
+  anything else (webhook sources, scripts) -> webhooks.
+- **Folding** (`group`): a post with a group folds into the latest row of the same source + group + level that is
+  unread, NOT resolved and younger than 24 h: `count` + 1, `at` / `title` / `body` / `url` / `params` / `actions`
+  replaced by the new ones, the occurrence added to `occurrences`. A resolved or read row is never grown: a new one
+  starts.
+- **Pending / resolved.** "À traiter" = `pending` events. Built-in producers resolve their own problems (column
+  *Resolved by* below): `resolved_at` is set and `pending` turns false, the row stays in the activity (still unread
+  until read). Resolution only touches warning / error rows.
+- **Actions.** `label` is the English fallback; the web translates `feed.action.<id>` (ids are shared between kinds).
+  `link`: navigate (an app path in the SPA, an `https://` URL in a new tab). `post`: the web sends `POST <url>` (no
+  body, usual cookie + `X-Maxxing` header), then refetches the feed. Only built-in server producers can create `post`
+  actions, and only for these paths: `/api/crons/{id}/run`, `/api/sessions/{id}/discussion/resume` - the web should
+  run a `post` action only when its url matches one of them. External events (`POST /api/feed`, `maxxing feed post`,
+  webhooks) may only carry `link` actions whose url is an app path (`/…`, not `//…`) or an `https://` URL:
+  `POST /api/feed` refuses anything else with `400 bad_action`, a webhook's are dropped. At most 4 actions per event;
+  `id` matches `[a-z0-9_-]{1,32}`, `label` <= 60 characters.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/api/feed?source=&unread=1&before=<id>&limit=50` | – | `{events: FeedEvent[], more, unread, sources: [{source, total, unread}]}` newest first (`limit` <= 200) |
-| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?}` | `{event, duplicate}` (`dedupe` = idempotent per source; `group` folds into the latest unread row of that group, 24 h) · `400 empty\|bad_level\|bad_source` |
-| POST | `/api/feed/read` | `{ids?: number[], source?, all?: bool}` | `{unread}` |
+| GET | `/api/feed?source=&category=&kind=&unread=1&pending=1&before=<id>&limit=50` | – | `{events: FeedEvent[], more, unread, pending, sources: [{source, total, unread, pending}], categories: {<category>: {total, unread, pending}}, kinds: {<kind>: {total, unread, pending}}}` newest first (`limit` <= 200). The counts cover the last 30 days and ignore the filters; every category is always present · `400 bad_category` |
+| GET | `/api/feed/summary` | – | `{unread, pending, sources, categories, kinds}` (the same counts, no events: badges) |
+| GET | `/api/feed/{id}` | – | `{event: FeedDetail}` · `404 not_found` |
+| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?}` | `{event, duplicate}` (`dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
+| POST | `/api/feed/read` | `{ids?: number[], source?, all?: bool}` | `{unread, pending}` |
+| POST | `/api/feed/resolve` | `{ids: number[]}` | `{pending}` (resolved by hand: out of "À traiter", read state unchanged) |
 | DELETE | `/api/feed/{id}` | – | `{ok}` |
-| GET / PUT | `/api/feed/settings` | PUT `{telegram?: bool, rules?: {<source>: "auto"\|"off"\|"silent"\|"loud"}}` (merged) | `{telegram, sources: [{source, label, builtin, rule, own_thread}], hooks: FeedHook[], kinds, rules}` |
+| GET / PUT | `/api/feed/settings` | PUT `{telegram?: bool, rules?: {<source>: Rule}, kind_rules?: {<kind>: Rule}}` (`Rule` = `"auto"\|"off"\|"silent"\|"loud"`; both maps merged into the saved ones, `"auto"` removes an entry) | `{telegram, sources: [{source, label, builtin, rule, own_thread}], hooks: FeedHook[], kinds, rules, kind_rules: {<kind>: Rule}, event_kinds: EventKind[]}` (`kinds` = the webhook kinds, unchanged) · `400 bad_rule\|bad_kind` |
 | POST | `/api/feed/hooks` | `{name, kind: "stripe"\|"shopify"\|"github"\|"generic", secret?}` | `FeedHook = {id, name, kind, created, url, has_secret}` · `409 exists\|reserved`, `400 bad_kind` |
-| PATCH | `/api/feed/hooks/{id}` | `{secret?, regenerate?: bool}` | `FeedHook` (regenerate = new token, the old URL dies) |
+| PATCH | `/api/feed/hooks/{id}` | `{secret?, regenerate?: bool}` | `FeedHook` (regenerate = new token, the old URL dies; a non-empty secret resolves the hook's `webhook.refused`) |
 | DELETE | `/api/feed/hooks/{id}` | – | `{ok}` |
 | POST | `/api/feed/hooks/{id}/test` | – | `{event}` |
-| POST | `/api/hooks/{token}` | the service's payload (<= 1 MB) | **public** (no cookie, no CSRF header: the token is the permission). Signatures: Stripe `Stripe-Signature` (5 min tolerance), Shopify `X-Shopify-Hmac-Sha256`, GitHub `X-Hub-Signature-256`, generic `X-Signature: sha256=<hex>` - checked when the hook has a secret; a stripe/shopify/github hook WITHOUT a secret refuses every delivery with `401 secret_required` (+ one folded `security` warning in the feed); a generic hook without a secret accepts the token alone. `200 {ok, duplicate, id}` / `{ok, ignored}` (Shopify / GitHub: a delivery whose signed body was already posted is a duplicate whatever its delivery-id header; Shopify keys a known topic too) · `401 bad_signature\|secret_required`, `404` (unknown token: checked before the body is read), `413` (Content-Length or streamed body over 1 MB), `429` (120/min/hook), `400 bad_json` (also for JSON nested too deep), `400 bad_payload` (valid JSON whose fields have an unexpected shape for that service) |
+| POST | `/api/hooks/{token}` | the service's payload (<= 1 MB) | **public** (no cookie, no CSRF header: the token is the permission). Signatures: Stripe `Stripe-Signature` (5 min tolerance), Shopify `X-Shopify-Hmac-Sha256`, GitHub `X-Hub-Signature-256`, generic `X-Signature: sha256=<hex>` - checked when the hook has a secret; a stripe/shopify/github hook WITHOUT a secret refuses every delivery with `401 secret_required` (+ one folded `webhook.refused` warning in the feed); a generic hook without a secret accepts the token alone. `200 {ok, duplicate, id}` / `{ok, ignored}` (Shopify / GitHub: a delivery whose signed body was already posted is a duplicate whatever its delivery-id header; Shopify keys a known topic too) · `401 bad_signature\|secret_required`, `404` (unknown token: checked before the body is read), `413` (Content-Length or streamed body over 1 MB), `429` (120/min/hook), `400 bad_json` (also for JSON nested too deep), `400 bad_payload` (valid JSON whose fields have an unexpected shape for that service). A generic payload may add `actions` (links only; others dropped) |
 
-Telegram: rule `auto` = error -> loud, warning -> silent, else off; built-in `crons`, `system`, `security` default to off
-(own threads). The bot posts in the thread "Notifications" (`telegram.threads["#feed"]`) with buttons *Ask Claude*
+`EventKind = {kind, category, source, level, builtin, rule, default, own_thread}`: every built-in kind (table order),
+then the kinds seen in the last 30 days that are not built-in (`builtin: false`, `source` / `level` of their latest
+event). `rule` = the kind's own rule (`"auto"` = none); `default` = what `"auto"` gives now (`"off"\|"silent"\|"loud"`):
+the rule of its source when one is set, else `"off"` for the sources that have their own Telegram thread or are already
+mirrored (`crons`, `system`, `security`, `sessions`: `own_thread`), else by `level` (error -> loud, warning -> silent,
+else off). Effective rule of an event: its kind's rule unless auto, else its source's rule unless auto, else that
+default. Telegram posts only new rows (a fold never posts again).
+
+**Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
+`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
+
+| kind | source | level | params | actions | resolved by |
+|---|---|---|---|---|---|
+| `session.done` | sessions | success | `session_id, title, path, provider, turns` | `open_session` | – |
+| `session.failed` | sessions | error | `session_id, title, path, provider, error` | `open_session` | the next `session.done` of that session |
+| `discussion.paused` | sessions | warning | `session_id, title, path, provider ("discussion"\|"debate"), turns, turn_limit, duration_s, duration_limit_s` (limits: number or null) | `resume` (post), `open_session` | resume, a new message, Stop or deletion of that session |
+| `cron.succeeded` | crons | success | `cron_id, name, run_id, duration_s` (folded over all jobs, group `ok`: params of the latest run) | – | – |
+| `cron.failed` | crons | error | `cron_id, name, run_id, code, duration_s` (folded per job) | `open_run`, `rerun` (post) | the next successful run of that job |
+| `update.available` | system | info | `version, current, topic` | `open` | – |
+| `update.attention` | system | warning | – (the body explains: customizations, roll-back) | `open` | – |
+| `update.review` | system | info | `version` (automatic update waiting for you) | `open` | – |
+| `update.started` | system | info | `version` (automatic update starting) | – | – |
+| `update.broken` | system | warning | `version, problems, names` (after an update: what stopped working) | `open` | – |
+| `claude.updated` | system | success | `version, previous` | – | – |
+| `claude.update_failed` | system | error | `version, error` | `open` | the next `claude.updated` |
+| `deps.vulnerable` | system | warning | `count` | `open` | – |
+| `deps.update_failed` | system | warning | `count, names` | `open` | – |
+| `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
+| `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
+| `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
+| `webhook.refused` | security | warning | `hook_id, name, service ("stripe"\|"shopify"\|"github")` | `add_secret` | its signing secret set, or the hook deleted |
+| `backup.restore_held` | security | warning | `extensions, hooks, mcp, review, outside` (counts) | `open` | – |
+| `infra.down` | infra | error | `resource_id, name, reason` | `open` | `infra.up` of that resource |
+| `infra.up` | infra | success | `resource_id, name` | – | – |
+| `infra.cert_expiring` | infra | warning | `resource_id, name, days` | `open` | – |
+| `infra.domain_expiring` | infra | warning\|error | `resource_id, name, days` | `open` | – |
+| `webhook.test` | *hook name* | info | `name` | – | – |
+| `stripe.sale` · `stripe.payment` · `stripe.refund` · `stripe.payment_failed` | *hook name* | success · success · warning · error | `amount` (formatted, "49.00 EUR"), *`email`* | – | – |
+| `stripe.dispute` · `stripe.subscription_created` · `stripe.subscription_cancelled` · `stripe.event` | *hook name* | error · success · warning · info | `amount` · *`email`* · *`email`* · `type` | – | – |
+| `shopify.order_created` · `shopify.order_paid` · `shopify.order_cancelled` | *hook name* | success · success · warning | `order, amount` (cancelled: `order`), *`email`* | – | – |
+| `shopify.refund` · `shopify.stock` · `shopify.event` | *hook name* | warning · info\|warning · info | `order_id` · `available, item_id` · `topic, order` | – | – |
+| `github.ping` · `github.push` · `github.pull_request` · `github.issue` | *hook name* | success · info · info · info | `repo` · `repo, branch, commits, message` · `repo, action, title, user` · `repo, action, title` | – | – |
+| `github.workflow` · `github.release` · `github.star` · `github.event` | *hook name* | success\|error · success · info · info | `repo, workflow, conclusion, branch` · `repo, tag, name` · `repo, action, user` · `repo, event` | – | – |
+| `custom` | any | any | whatever the poster gave | links given | – |
+
+Telegram: the bot posts in the thread "Notifications" (`telegram.threads["#feed"]`) with buttons *Ask Claude*
 (`callback_data f:<id>` -> new session in the default topic, event quoted as data) and *Open* (https links).
+
+## Web Push
+Notifications on the phone / computer while no tab is open, for the events of the feed. The server holds a VAPID key
+pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscriptions (`<state>/push.json`).
+
+```
+PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}
+PushPrefs = {
+  levels: Level[],                                  // kinds not listed below are pushed when their level is here
+  sound: bool,                                      // the sound of the kinds not listed below
+  kinds: {<kind>: {enabled: bool, sound: bool}}     // per kind: pushed or not, with or without sound
+}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}}
+```
+An event is pushed to a subscription when `prefs.kinds[kind]` is set (its `enabled` decides), else when its level is
+in `prefs.levels`; it rings when that kind's `sound` (else `prefs.sound`) is true - the payload carries
+`silent: !sound` for `showNotification`. In a POST / PATCH, `levels`, `sound` and `kinds` left out keep their saved
+value; `kinds` given replaces the whole map (a bare `true` / `false` for a kind = `enabled` with the default sound).
+Only new rows are pushed (a fold does not push again), whatever process posted them (cron runs and `maxxing feed post`
+too), within ~3 s; rows already there when the server starts are never pushed. A subscription the push service
+answers 404 / 410 is removed. Sounds inside an open tab are the web's business (per device), not the server's.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/push` | – | `{available: bool, public_key: string\|null, subscriptions: PushSubscription[]}` (`public_key` = the `applicationServerKey`, base64url of the uncompressed P-256 point; `available: false` + `public_key: null` when the server cannot encrypt - crypto library missing) |
+| POST | `/api/push/subscriptions` | `{endpoint, keys: {p256dh, auth}, label?, prefs?}` (= `PushSubscription.toJSON()` + label / prefs) | `PushSubscription` - created, or updated when that endpoint is already known (keys, label, prefs given) · `400 bad_subscription` (endpoint not `https://`, keys not base64url of a P-256 point / 16 bytes), `400 bad_prefs`, `503 unavailable` |
+| PATCH | `/api/push/subscriptions/{id}` | `{label?, prefs?}` | `PushSubscription` · `404 not_found`, `400 bad_prefs` |
+| DELETE | `/api/push/subscriptions/{id}` | – | `{ok}` |
+| POST | `/api/push/subscriptions/{id}/test` | – | `{ok: true, status}` - a test notification (kind `push.test`) · `404 not_found`, `502 push_failed {status}` (`status` 404 / 410: the subscription was removed) |
+
+Payload (JSON, encrypted `aes128gcm`, at most ~3 kB; the service worker shows it):
+`{id, at, kind, params, level, category, source, title, body, url, count, actions, tag, silent}` - `body` cut at 500
+characters, `tag` = `feed-<id>` (`push-test` for a test), `silent` = the subscription's preference for that kind (pass
+it to `showNotification`; the test notification uses `prefs.sound`). The service worker shows `title` / `body`
+(English fallback) or its own translation of `kind` + `params`, and opens `url` (or `/feed`) on click.
+`Urgency: high` for errors, `normal` otherwise; `TTL` 24 h.
 
 ## Packs (starter projects)
 `Pack = {id, project, emoji, icon, title, description, topics[], crons[] (names), installed, partial, project_exists, basics}` (title and

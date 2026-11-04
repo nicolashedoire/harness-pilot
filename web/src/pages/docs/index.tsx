@@ -1,6 +1,7 @@
 // /docs and /docs/:slug — in-app documentation: left index (sections) + search (titles, then full text).
 import * as React from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router'
+import type { Components } from 'react-markdown'
 import { BookOpen, FileQuestion, ListTree, Search } from 'lucide-react'
 import { useAllDocs, useDoc, useDocs } from '@/lib/queries'
 import type { DocMeta } from '@/lib/types'
@@ -9,6 +10,24 @@ import { useT } from '@/i18n'
 import { Button, EmptyState, Input, Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle, Skeleton, SkeletonText } from '@/components/ui'
 import { Markdown } from '@/components/ui/markdown'
 import { PageHeader } from '@/components/shell/Page'
+
+function headingText(children: React.ReactNode): string {
+  return React.Children.toArray(children).map((child) => {
+    if (typeof child === 'string' || typeof child === 'number') return String(child)
+    return React.isValidElement<{ children?: React.ReactNode }>(child) ? headingText(child.props.children) : ''
+  }).join('')
+}
+
+function headingId(children: React.ReactNode): string {
+  return headingText(children).trim().toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, '').replace(/\s/g, '-')
+}
+
+const docHeadings: Components = {
+  h1: ({ node: _node, children, ...props }) => <h1 {...props} className={cn('scroll-mt-20', props.className)} id={headingId(children)}>{children}</h1>,
+  h2: ({ node: _node, children, ...props }) => <h2 {...props} className={cn('scroll-mt-20', props.className)} id={headingId(children)}>{children}</h2>,
+  h3: ({ node: _node, children, ...props }) => <h3 {...props} className={cn('scroll-mt-20', props.className)} id={headingId(children)}>{children}</h3>,
+  h4: ({ node: _node, children, ...props }) => <h4 {...props} className={cn('scroll-mt-20', props.className)} id={headingId(children)}>{children}</h4>,
+}
 
 function groupDocs(docs: DocMeta[]) {
   const sorted = [...docs].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
@@ -92,18 +111,32 @@ export default function DocsPage() {
   const t = useT()
   const navigate = useNavigate()
   const { slug } = useParams()
+  const location = useLocation()
   const { data: docs, isLoading } = useDocs()
   const { data: page, isLoading: pageLoading, isError } = useDoc(slug)
   const [sheet, setSheet] = React.useState(false)
+  React.useEffect(() => {
+    if (!page || !location.hash) return
+    let id = location.hash.slice(1)
+    try { id = decodeURIComponent(id) } catch { return }
+    const frame = requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }))
+    return () => cancelAnimationFrame(frame)
+  }, [page, location.hash])
   const onLink = React.useCallback(
     (href: string) => {
-      if (/^[a-z0-9-]+(#.*)?$/i.test(href) || href.startsWith('/docs/')) {
-        const s = href.replace(/^\/docs\//, '').replace(/#.*$/, '').replace(/\.md$/, '')
-        return () => navigate(`/docs/${s}`)
+      const match = /^(?:\/docs\/|\.\/)?(?:\d+-)?([a-z0-9-]+)(?:\.md)?(#[a-z0-9_-]+)?$/i.exec(href)
+      const anchor = /^#[a-z0-9_-]+$/i.test(href) ? href : match?.[2] || ''
+      const targetSlug = match?.[1] || (anchor ? slug : undefined)
+      if (targetSlug && docs?.some((d) => d.slug === targetSlug)) {
+        const target = `/docs/${targetSlug}${anchor}`
+        return { href: target, onClick: () => {
+          navigate(target)
+          if (targetSlug === slug && anchor) document.getElementById(anchor.slice(1))?.scrollIntoView({ block: 'start' })
+        } }
       }
       return null
     },
-    [navigate],
+    [navigate, slug, docs],
   )
   if (!slug && docs?.length) {
     const first = groupDocs(docs)[0].docs[0]
@@ -137,7 +170,7 @@ export default function DocsPage() {
           ) : !docs?.length ? (
             <EmptyState icon={BookOpen} title={t('docs.empty')} />
           ) : page ? (
-            <Markdown className="max-w-3xl animate-in text-[15px]" onLink={onLink}>
+            <Markdown className="max-w-3xl animate-in text-[15px]" onLink={onLink} components={docHeadings}>
               {page.markdown}
             </Markdown>
           ) : null}

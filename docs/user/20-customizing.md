@@ -33,4 +33,4 @@ The application itself can also be changed in the repository. The web interface 
 
 ## Updates and customizations
 
-The legacy server's customization replay, smart updates and rollback flow have not been validated for this repository. Automatic updates are disabled in the local setup. Do not assume an update will preserve or replay changes automatically; review the Git changes and back up the workspace first. See [Local installation](installation) and the [audit](../AUDIT.md) for the supported path and current limitations.
+The legacy server's customization replay, smart updates and rollback flow have not been validated for this repository. Automatic updates are disabled in the local setup. Do not assume an update will preserve or replay changes automatically; review the Git changes and back up the workspace first. See [Local installation](installation) and the [audit](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/AUDIT.md) for the supported path and current limitations.

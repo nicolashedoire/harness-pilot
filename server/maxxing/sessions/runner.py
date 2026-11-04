@@ -270,6 +270,16 @@ class Runner:
             role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
+        swarm_count = meta.get('swarm_agents')
+        if actor == 'claude' and kind == 'user' and type(swarm_count) is int and 2 <= swarm_count <= 6:
+            team = (f'[Agent team requested by the user]\nAct as the coordinator. When the task can be split into '
+                    f'independent parts, delegate to {swarm_count} native Claude Code subagents using the Agent tool. '
+                    'Launch their Agent calls together in the same assistant message with run_in_background: false; '
+                    'do not wait for one to finish before starting another. Give each a distinct concrete assignment, '
+                    'avoid overlapping edits, wait for '
+                    'their results, and synthesize them for the user. If delegation is unavailable or unsuitable, '
+                    'say so clearly; do not pretend agents were launched. Follow the session permissions.')
+            item = {**item, 'preface': '\n\n'.join(filter(None, [team, item.get('preface')]))}
         if actor == "codex":
             return self._codex_turn(item, meta, cfg, cwd, kind, is_debate)
         mode = effective_mode(meta, cfg)
