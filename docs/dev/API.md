@@ -530,7 +530,9 @@ FeedEvent = {
   category: "sessions"|"crons"|"system"|"webhooks",   // the type filter, from the source (below)
   pending: bool,             // needs attention: level warning|error AND unread AND not resolved
   resolved_at: number|null,  // the problem went away (resolved by its producer, or POST /api/feed/resolve)
-  first_at: number           // first occurrence of a folded row (= at while count is 1)
+  first_at: number,          // first occurrence of a folded row (= at while count is 1)
+  quiet: bool                // posted with `quiet` (`maxxing feed post --quiet`): never sent to Telegram nor pushed,
+                             // and the web shows no notice / sound for it (it is in the feed like any other)
 }
 FeedAction = {id, label, type: "link"|"post", url}
 FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest first, at most 20 (body <= 300 chars);
@@ -565,7 +567,7 @@ FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest 
 | GET | `/api/feed?source=&category=&kind=&unread=1&pending=1&before=<id>&limit=50` | – | `{events: FeedEvent[], more, unread, pending, sources: [{source, total, unread, pending}], categories: {<category>: {total, unread, pending}}, kinds: {<kind>: {total, unread, pending}}}` newest first (`limit` <= 200). The counts cover the last 30 days and ignore the filters; every category is always present · `400 bad_category` |
 | GET | `/api/feed/summary` | – | `{unread, pending, sources, categories, kinds}` (the same counts, no events: badges) |
 | GET | `/api/feed/{id}` | – | `{event: FeedDetail}` · `404 not_found` |
-| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?}` | `{event, duplicate}` (`dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
+| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?, quiet?: bool}` | `{event, duplicate}` (`quiet`: in the feed only - no Telegram, no push, no notice in the web; `dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
 | POST | `/api/feed/read` | `{ids?: number[], source?, all?: bool}` | `{unread, pending}` |
 | POST | `/api/feed/resolve` | `{ids: number[]}` | `{pending}` (resolved by hand: out of "À traiter", read state unchanged) |
 | DELETE | `/api/feed/{id}` | – | `{ok}` |
@@ -582,7 +584,7 @@ event). `rule` = the kind's own rule (`"auto"` = none); `default` = what `"auto"
 the rule of its source when one is set, else `"off"` for the sources that have their own Telegram thread or are already
 mirrored (`crons`, `system`, `security`, `sessions`: `own_thread`), else by `level` (error -> loud, warning -> silent,
 else off). Effective rule of an event: its kind's rule unless auto, else its source's rule unless auto, else that
-default. Telegram posts only new rows (a fold never posts again).
+default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
 `open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.

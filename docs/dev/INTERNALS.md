@@ -188,6 +188,8 @@ Python modules call each other only through these functions. Keep signatures sta
   `POST_ACTIONS`), params coerced instead of refused; external callers (API, CLI, webhooks) are not trusted
   (`clean_kind` / `clean_params(strict)` / `clean_actions(trusted, strict)` raise `FeedError 400 bad_kind|bad_params|
   bad_action`; feedhooks drops a generic payload's bad actions with `strict=False`).
+  `notify=False` = a quiet event (CLI `--quiet`, API `quiet`): the new row gets `quiet = 1`, it is not sent to
+  Telegram and `push.wants` refuses it (a fold never changes the flag of the row it grows).
   `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
   raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
   `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
@@ -195,9 +197,9 @@ Python modules call each other only through these functions. Keep signatures sta
   `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
   and documented with its params in API.md.
 - Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
-  after 2.0.0a108: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
+  after 2.0.0a108, `quiet` (0 / 1) after them: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
   `ALTER TABLE` (a "duplicate column" from a concurrent process is ignored) and the index `events_grp(source, grp)`.
-  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`. A fold (`group`) only matches an unread, unresolved row of
+  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`, not quiet. A fold (`group`) only matches an unread, unresolved row of
   the same level younger than 24 h and pushes the previous state into `occurrences` (seeded with the row itself).
 - `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
   `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,

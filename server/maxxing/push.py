@@ -7,7 +7,8 @@ new feed events their preferences ask for. See docs/dev/API.md#web-push.
   `auth` secret, AES-128-GCM, one record. Only ECDH / ECDSA / AES-GCM come from `cryptography`; HKDF is hmac.
 - Subscriptions in <state>/push.json (mode 600): {subs: [{id, endpoint, keys: {p256dh, auth}, label, created, last_ok,
   last_error, prefs: {levels, sound, kinds: {<kind>: {enabled, sound}}}}]}. A push service answering 404 / 410 means
-  the subscription is gone: removed. The payload says `silent` when the kind (or the default) has no sound.
+  the subscription is gone: removed. The payload says `silent` when the kind (or the default) has no sound. Quiet
+  events (`maxxing feed post --quiet`) are never pushed.
 - dispatch() is called by the server's feed watcher (api/feed.py, in a thread) after any change of feed.db: it sends
   the rows added since the last pass (any process may have written them: cron runs, `maxxing feed post`). Rows that
   were there when the server started are never sent (prime()).
@@ -303,7 +304,10 @@ def remove(sid: str) -> None:
 
 # ---- sending -------------------------------------------------------------------------------
 def wants(prefs: dict | None, ev: dict) -> bool:
-    """A kind set in prefs.kinds decides (`enabled`); otherwise the event's level must be in prefs.levels."""
+    """Never a quiet event. A kind set in prefs.kinds decides (`enabled`); otherwise the event's level must be in
+    prefs.levels."""
+    if ev.get("quiet"):
+        return False
     p = _prefs(prefs, strict=False)
     if ev.get("kind") in p["kinds"]:
         return p["kinds"][ev["kind"]]["enabled"]

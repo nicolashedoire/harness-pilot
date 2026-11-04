@@ -1,12 +1,16 @@
-"""Notifications follow-ups: changing the limits of a Claude Code + Codex discussion and its pause time
-(docs/dev/API.md#sessions)."""
+"""Notifications follow-ups: changing the limits of a Claude Code + Codex discussion, its pause time and quiet feed
+posts (docs/dev/API.md#sessions, #feed-notifications)."""
 from __future__ import annotations
 
+import sqlite3
 import time
 
+import httpx
 import pytest
 
 from conftest import all_events, wait_for
+from maxxing import config, feed, push
+from test_notifications import _b64, _ua_keys
 
 
 # ---- discussion limits -----------------------------------------------------------------------------------------
@@ -120,3 +124,53 @@ def test_a_limit_pause_resets_the_counters_only_while_a_limit_is_reached(mx, tur
                  discussion_paused_at=time.time())
     s = service.resume_debate(sid)
     assert s["discussion_turns"] == after and not s["debate_paused"] and s["discussion_paused_at"] is None
+
+
+# ---- quiet posts ------------------------------------------------------------------------------------------------
+def test_quiet_posts_skip_telegram_but_land_in_the_feed(client, mx, monkeypatch):
+    from maxxing import cli
+    sent_tg: list[str] = []
+    monkeypatch.setattr(feed, "_to_telegram", lambda ev: sent_tg.append(ev["title"]))
+    q = client.post("/api/feed", json={"title": "Nightly report ready", "source": "report", "quiet": True}).json()
+    assert q["event"]["quiet"] is True
+    assert cli.main(["feed", "post", "Stock checked", "--source", "stock", "--level", "error", "--quiet"]) == 0
+    loud = client.post("/api/feed", json={"title": "Disk almost full", "source": "report", "level": "error"}).json()
+    assert loud["event"]["quiet"] is False
+    assert sent_tg == ["Disk almost full"]
+    assert {e["title"]: e["quiet"] for e in client.get("/api/feed").json()["events"]} == {
+        "Nightly report ready": True, "Stock checked": True, "Disk almost full": False}
+
+
+def test_quiet_rows_are_never_pushed(mx, monkeypatch, capsys):
+    from maxxing import cli
+    _, pub, auth = _ua_keys()
+    push.subscribe("https://fcm.example.com/send/phone", {"p256dh": pub, "auth": _b64(auth)}, "Phone",
+                   {"levels": ["info", "success", "warning", "error"],
+                    "sources": {"stock": {"enabled": True, "sound": True}}})
+    got: list[httpx.Request] = []
+    monkeypatch.setattr(push, "http_transport", httpx.MockTransport(lambda r: got.append(r) or httpx.Response(201)))
+    push.prime()
+    feed.post("Nightly report ready", source="report", notify=False)
+    assert cli.main(["feed", "post", "Stock checked", "--source", "stock", "--level", "error", "--quiet"]) == 0
+    feed.post("Disk almost full", source="report", level="error")
+    assert push.dispatch() == 1 and len(got) == 1                          # only the one that was not quiet
+    assert not push.wants(None, {"level": "error", "quiet": True})
+
+
+def test_an_older_feed_db_gets_the_quiet_column(mx):
+    path = config.state_dir() / "feed.db"
+    with sqlite3.connect(path) as c:                    # the schema of the notifications rebuild, before `quiet`
+        c.executescript("""
+            CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at REAL NOT NULL, source TEXT NOT NULL, level TEXT NOT NULL,
+                title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '',
+                dedupe TEXT, grp TEXT, count INTEGER NOT NULL DEFAULT 1, read INTEGER NOT NULL DEFAULT 0,
+                kind TEXT NOT NULL DEFAULT 'custom', params TEXT NOT NULL DEFAULT '{}',
+                actions TEXT NOT NULL DEFAULT '[]', resolved_at REAL, first_at REAL,
+                occurrences TEXT NOT NULL DEFAULT '[]');
+        """)
+        c.execute("INSERT INTO events(at, source, level, title) VALUES (?, 'mail', 'info', 'Old row')", (time.time(),))
+    feed._ready.discard(str(path))
+    assert [e["quiet"] for e in feed.list_events()["events"]] == [False]
+    assert feed.post("New quiet row", notify=False)["quiet"] is True

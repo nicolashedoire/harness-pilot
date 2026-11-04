@@ -150,10 +150,10 @@ def _damaged(e: sqlite3.DatabaseError) -> bool:
 
 
 # Columns added after the first schema (2.0.0a108 and older have only the first line's): an older feed.db gets them
-# with ALTER TABLE on its first open; its rows read as kind "custom", no params / actions, never resolved.
+# with ALTER TABLE on its first open; its rows read as kind "custom", no params / actions, never resolved, not quiet.
 _ADDED = (("kind", "TEXT NOT NULL DEFAULT 'custom'"), ("params", "TEXT NOT NULL DEFAULT '{}'"),
           ("actions", "TEXT NOT NULL DEFAULT '[]'"), ("resolved_at", "REAL"), ("first_at", "REAL"),
-          ("occurrences", "TEXT NOT NULL DEFAULT '[]'"))
+          ("occurrences", "TEXT NOT NULL DEFAULT '[]'"), ("quiet", "INTEGER NOT NULL DEFAULT 0"))
 
 
 def _migrate(c: sqlite3.Connection) -> None:
@@ -190,7 +190,7 @@ def _open(path: Path, key: str) -> sqlite3.Connection:
                     dedupe TEXT, grp TEXT, count INTEGER NOT NULL DEFAULT 1, read INTEGER NOT NULL DEFAULT 0,
                     kind TEXT NOT NULL DEFAULT 'custom', params TEXT NOT NULL DEFAULT '{}',
                     actions TEXT NOT NULL DEFAULT '[]', resolved_at REAL, first_at REAL,
-                    occurrences TEXT NOT NULL DEFAULT '[]');
+                    occurrences TEXT NOT NULL DEFAULT '[]', quiet INTEGER NOT NULL DEFAULT 0);
                 CREATE UNIQUE INDEX IF NOT EXISTS events_dedupe ON events(source, dedupe) WHERE dedupe IS NOT NULL;
                 CREATE INDEX IF NOT EXISTS events_at ON events(at);
                 CREATE INDEX IF NOT EXISTS events_src ON events(source, read);
@@ -229,7 +229,7 @@ def _row(r: sqlite3.Row, detail: bool = False) -> dict:
           "kind": r["kind"] or "custom", "params": _json(r["params"], dict), "actions": _json(r["actions"], list),
           "category": category(r["source"]),
           "pending": r["level"] in PROBLEM_LEVELS and not read and resolved is None,
-          "resolved_at": resolved, "first_at": r["first_at"] or r["at"]}
+          "resolved_at": resolved, "first_at": r["first_at"] or r["at"], "quiet": bool(r["quiet"])}
     if detail:
         occ = _json(r["occurrences"], list)
         ev["occurrences"] = occ or [_occurrence(r["at"], r["title"], r["body"], ev["params"])]
@@ -348,7 +348,8 @@ def post(title: str, body: str = "", level: str = "info", source: str = "custom"
          dedupe: str | None = None, group: str | None = None, notify: bool = True, *, kind: str | None = "custom",
          params: dict | None = None, actions: list | None = None, trusted: bool = False) -> dict | None:
     """Add an event. Returns it, or None when `dedupe` says it was already posted. `trusted` = a built-in producer of
-    this server (reserved kinds, `post` actions, lenient params); everything external is not."""
+    this server (reserved kinds, `post` actions, lenient params); everything external is not. `notify=False` = quiet:
+    the new row is neither sent to Telegram nor pushed (column `quiet`; a fold keeps the flag of the row it grows)."""
     title, body, url = _utf8(title), _utf8(body), _utf8(url)
     dedupe, group = (_utf8(str(v)) if v else v for v in (dedupe, group))
     title = " ".join((title or "").split())[:TITLE_MAX]
@@ -388,9 +389,9 @@ def post(title: str, body: str = "", level: str = "info", source: str = "custom"
         else:
             try:
                 cur = c.execute("INSERT INTO events(at, source, level, title, body, url, dedupe, grp, kind, params, "
-                                "actions, first_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                                "actions, first_at, quiet) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                 (now, source, level, title, body, url, dedupe, group, kind, _dumps(params),
-                                 _dumps(acts), now))
+                                 _dumps(acts), now, 0 if notify else 1))
             except sqlite3.IntegrityError:             # the same dedupe key inserted by a concurrent request
                 if dedupe:
                     return None
