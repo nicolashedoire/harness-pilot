@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Feed events carry `kind`, `params`, `category`, `actions` and `resolved_at`; unread warnings and errors stay pending until resolved (by hand or by the auto-resolution rules in `feed.py`). Post actions are only created by server code, for an allow-list of paths; anything else is `400 bad_action`. New built-in source `sessions` (`service.on_session_stop`, cron sessions excluded); Telegram rules per kind (`event_kinds`); health issues posted to the feed. Web Push (`push.py`, `api/push.py`): VAPID keys, subscriptions with per-kind `{enabled, sound}` prefs, RFC 8291 encryption, new dependency `cryptography` (+ `cffi`, `pycparser`). `push.dispatch()` drains the new rows in batches of `DISPATCH_BATCH`, since the watcher only calls it again when the feed changes. The service worker shows `push.test` even when the app is focused. See `API.md` and `INTERNALS.md`.
 - Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory; mixed-provider teams are not yet implemented. Existing session permissions and stop handling are unchanged.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users

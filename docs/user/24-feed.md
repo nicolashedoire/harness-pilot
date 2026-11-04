@@ -8,14 +8,18 @@ deployments, important e-mails, any script's result - in one place instead of ch
 
 ## Where you see it
 
-- **Dashboard**: a panel next to the widgets (wide screens). The bell in the header shows the unread
-  count and hides / shows the panel; on a phone it opens the list.
-- **See all** (page `/feed`): **Needs attention** on top - the warnings and errors you have not read and that are
-  not solved yet, with their buttons (*Run again*, *Resume*, *Add the secret*...) - then the activity of the last
-  30 days by day, filters by type (*Sessions*, *Cron jobs*, *System*, *Webhooks*), *Unread only*,
-  *Mark all as read*. Open an event to see its details and, for a folded row, each occurrence.
+- **Notifications** in the sidebar (a tile in the menu on a phone), with the unread count: it opens the
+  notifications centre. **To handle** on top - the warnings and errors you have not read and that are not solved
+  yet, with their buttons (*Run again*, *Resume*, *Add the secret*...) - then the activity by day.
+- **See all notifications** (page `/notifications`): the last 30 days, filters by type (*Sessions*, *Crons*,
+  *System*, *Webhooks*), *Unread only*, *Mark all as read*. Open an event to see its details and, for a folded row,
+  each occurrence.
+- **Dashboard**: a **To handle** card appears only when something needs you.
+- **In a session**: a discussion paused by its limit shows a banner with **Resume**.
+- **In this browser**: a short sound per level (choose the sounds and the volume, or none) and, when the app is in
+  the background, a system notification.
 - **Push notifications** (optional): allow them on a phone or a computer and the important events arrive even when
-  no tab is open - per type of event, with or without sound.
+  the app is closed - per type of event, with or without sound.
 - **Telegram** (optional): the bot posts in the thread **Notifications** by itself - no Claude, instant.
   Under each message, **Ask harness-pilot** opens a session about it, and **Open** follows its link.
 
@@ -23,7 +27,7 @@ Click an event to mark it read and open its link (the cron job's history, the St
 GitHub run…). Its **…** menu marks it read or deletes it. Repeated events fold into one row
 (*Cron jobs succeeded ×12*, *Cron failed: Backup ×3*) until you read it.
 
-A problem leaves **Needs attention** by itself when it is solved: the cron job's next run succeeds, the discussion
+A problem leaves **To handle** by itself when it is solved: the cron job's next run succeeds, the discussion
 resumes, the webhook gets its signing secret, the health issue goes away, the site is back up. You can also mark it
 read, or solved.
 
@@ -81,8 +85,8 @@ Settings -> Notifications, per type of event (or for a whole source):
 
 | Rule | Effect |
 |---|---|
-| **Auto (by level)** (default) | errors ring, warnings are silent, info / success stay in the dashboard |
-| **Not in Telegram** | dashboard only |
+| **Auto (by level)** (default) | errors ring, warnings are silent, info / success stay in the app |
+| **Not in Telegram** | the app only |
 | **Telegram, silent** | posted without a sound |
 | **Telegram, rings** | posted with a sound (e.g. your sales) |
 
@@ -93,10 +97,12 @@ thread off.
 
 ## Push notifications
 
-Settings -> Notifications -> **Push notifications**: allow them in each browser (phone or computer) where you want
-them; on an iPhone, add harness-pilot to the home screen first. By default warnings and errors are pushed; choose per
-type of event whether it is pushed and whether it makes a sound (e.g. *Session finished: pushed, silent*). Push needs
-HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is forgotten by itself.
+Settings -> Notifications -> **On this device** -> **Receive even when the app is closed**: turn it on in each browser
+(phone or computer) where you want them; on an iPhone, add harness-pilot to the home screen first. **Send a test**
+checks that they arrive. By default warnings and errors are pushed; in **What and where**, the *Browser* and *Sound*
+columns choose per type of event whether it reaches this browser and whether it makes a sound (e.g. *Session
+finished: browser, silent*). Push needs HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is
+forgotten by itself.
 
 ## Good to know
 
