@@ -132,9 +132,10 @@ def _propose(a) -> int:
         # <state> is not writable here (Codex's sandbox): the server registers it when this turn ends
     did = req["draft"]
     perms = chk["permissions"]
+    block = "```proposal\n" + json.dumps({"draft": did, "title": chk["name"]}, ensure_ascii=False) + "\n```"
     if a.json:
         print(json.dumps({"ok": True, "draft": did, "status": status, "id": a.id, "name": chk["name"],
-                          "type": chk["type"], "permissions": perms, "check": chk["status"]},
+                          "type": chk["type"], "permissions": perms, "check": chk["status"], "block": block},
                          indent=2, ensure_ascii=False))
         return 0
     when = {"pending": "is waiting for the user's approval in the Atelier",
@@ -145,7 +146,8 @@ def _propose(a) -> int:
           + (" · check: warnings" if chk["status"] == "warn" else ""))
     if status != "active":
         print("  Nothing of it runs or shows on the dashboard until the user approves it: tell the user it is "
-              "waiting for them in the Atelier.")
+              "waiting for them in the Atelier, and put this block in your answer (the user approves it from there):")
+    print(block)
     return 0
 
 

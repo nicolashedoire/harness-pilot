@@ -939,5 +939,29 @@
     }
    }
   }
+ },
+ {
+  "type": "proposal",
+  "icon": "package-check",
+  "category": "organisation",
+  "hint": "A creation waiting in the Atelier for the user's approval: paste the block `pilot ext propose` printed.",
+  "fields": "{draft: \"d_<12 hex>\" (the id pilot ext propose printed), title?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "draft"
+   ],
+   "properties": {
+    "draft": {
+     "type": "string",
+     "minLength": 14,
+     "maxLength": 14
+    },
+    "title": {
+     "type": "string",
+     "maxLength": 120
+    }
+   }
+  }
  }
 ]

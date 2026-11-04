@@ -4,6 +4,8 @@
 import { describe, expect, test } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { ProposalBlock } from '@/features/blocks/builtins/proposal'
+import BlockFence from '@/features/blocks/BlockFence'
+import { fenceBlock } from '@/features/blocks/fence'
 import type { BlockPlugin } from '@/features/blocks/types'
 import { mockApi, renderApp } from './render'
 
@@ -103,5 +105,17 @@ describe('Proposal block', () => {
     show({ 'GET /api/atelier/drafts/d_5f2c8a91b3e4': detail({ type: 'page', check: { status: 'error', steps: [{ step: 'page.js', status: 'error', detail: 'SyntaxError' }] } }) })
     const card = await screen.findByRole('region', { name: 'Proposal: Weather' })
     expect((within(card).getByRole('button', { name: 'Turn the page on' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  test('a ```proposal fence of an answer is a block, drawn by this card', async () => {
+    const code = '{"draft": "d_5f2c8a91b3e4", "title": "Weather"}'
+    const fb = fenceBlock('language-proposal', code)
+    expect(fb).toEqual({ type: 'proposal', explicit: false, candidate: false })
+    mockApi({
+      'GET /api/blocks': { plugins: [{ ...plugin, schema: { type: 'object', required: ['draft'], properties: { draft: { type: 'string', minLength: 14, maxLength: 14 }, title: { type: 'string', maxLength: 120 } } } }], agents: {} },
+      'GET /api/atelier/drafts/d_5f2c8a91b3e4': detail(),
+    })
+    renderApp(<BlockFence block={fb!} code={code} fallback={<pre>{code}</pre>} />)
+    expect(await screen.findByRole('region', { name: 'Proposal: Weather' })).toBeTruthy()
   })
 })

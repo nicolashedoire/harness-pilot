@@ -110,7 +110,7 @@ const WidgetCard = React.memo(function WidgetCard({ w, index }: { w: Widget; ind
             </Button>
           </div>
         ) : card?.html ? (
-          <HtmlWidget key={card.updated} id={w.id} src={card.html} height={card.height || 260} title={w.title} />
+          <HtmlWidget key={card.updated} id={w.id} src={card.html} height={card.height || 260} title={w.title} network={card.network} />
         ) : card ? (
           <div className="mx-fade grid gap-5">
             {(Array.isArray(card.blocks) ? card.blocks : []).map((b, i) => (
