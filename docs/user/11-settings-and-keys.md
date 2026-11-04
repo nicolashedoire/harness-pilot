@@ -5,6 +5,10 @@ section: Settings
 
 Settings provide the main application controls. Some inherited server-only functions are not available in local mode; Codex sign-in is managed by the Codex CLI.
 
+The menu groups the sections under **You**, **Agents**, **Data**, **Integrations** and **Platform**, with **Support**
+last. On a computer, type in **Search settings** above the menu to keep only the matching sections (Enter opens the
+first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds them too.
+
 | Section | What you find |
 |---|---|
 | **General** | **layout** of this device (*Auto*: the touch layout on phones and tablets, the sidebar on computers; *Touch*; *Desktop* when the screen is wide enough), the first screen of the touch layout (*Last session* or *Dashboard*), the line under each answer, language (English/French), time zone, files root, public URL, **App** (install it on this computer or phone, below) |

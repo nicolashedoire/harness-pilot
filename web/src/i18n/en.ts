@@ -1059,6 +1059,14 @@ export const en = {
   'updates.installed': "Installed",
   'settings.docs': 'Docs',
   'settings.docs.desc': 'Documentation.',
+  // settings menu (lazy, group `settings`): group headings and its search
+  'setnav.you': 'You',
+  'setnav.agents': 'Agents',
+  'setnav.data': 'Data',
+  'setnav.integrations': 'Integrations',
+  'setnav.platform': 'Platform',
+  'setnav.search': 'Search settings',
+  'setnav.none': 'No setting matches.',
 
   // general
   'settings.appearance': 'Appearance',
