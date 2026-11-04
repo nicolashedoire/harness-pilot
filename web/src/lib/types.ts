@@ -212,7 +212,7 @@ export type SessionEventsBackPage = {
 export type SessionStreamEvents = { events: SessionEvent[]; next: number }
 
 /* ---------------------------------------------------------------- Global bus */
-export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live' | 'look' | 'themes' | 'space-labels'
+export type BusTopic = 'sessions' | 'workspace' | 'tasks' | 'crons' | 'telegram' | 'backup' | 'health' | 'extensions' | 'trash' | 'feed' | 'profile' | 'register' | 'license' | 'infra' | 'mcp' | 'team' | 'team_live' | 'look' | 'themes' | 'space-labels' | 'atelier'
 
 /* ---------------------------------------------------------------- MCP servers (Settings -> MCP) */
 export type McpState = 'connected' | 'needs_auth' | 'failed' | 'pending' | 'unknown'
@@ -945,3 +945,22 @@ export type InfraView = {
 }
 
 export type AgentProvider = {id:string;name:string;builtin:boolean;capabilities:string[];protocol?:string}
+
+/* ---------------------------------------------------------------- Atelier */
+// What the agents created for the platform (API.md "Atelier"): every creation is validated before it is active, and
+// every version is kept.
+export type AtelierKind = 'widget' | 'page' | 'block' | 'theme' | 'skill' | 'customization'
+export type AtelierState = 'draft' | 'active' | 'error' | 'applied' | 'review' | 'disabled'
+export type AtelierOrigin = { agent: string; session_id: string | null; session_title: string | null; at: number }
+export type AtelierItem = {
+  id: string
+  kind: AtelierKind
+  name: string
+  description: string
+  state: AtelierState
+  version: number
+  origin: AtelierOrigin | null
+  /** the draft waiting for validation (state "draft", or a new version of an active creation) */
+  draft_id: string | null
+}
+export type AtelierList = { items: AtelierItem[] }

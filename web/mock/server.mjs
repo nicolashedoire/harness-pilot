@@ -4050,6 +4050,33 @@ for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
   })
 }
 
+/* ---- Atelier (the creations of the agents: drafts to validate, versions, rollback). State created on first use;
+   the `ready` and `maxxing` scenarios get two drafts, a broken page, a customization to review after an update, and
+   creations that work. Origins point at seeded sessions (by title). */
+function atelier() {
+  if (S.atelier) return S.atelier
+  const seeded = S.scenario === 'ready' || S.scenario === 'maxxing'
+  const t = now()
+  const from = (title, agent, ago) => {
+    const s = S.sessions.find((x) => x.title === title)
+    return { agent, session_id: s ? s.id : null, session_title: s ? s.title : title, at: t - ago }
+  }
+  const item = (id, kind, name, description, state, version, origin, extra = {}) => ({ id, kind, name, description, state, version, origin, draft_id: null, ...extra })
+  S.atelier = {
+    items: !seeded ? [] : [
+      item('weather', 'widget', 'Weather', 'Today and the next three days for the office, refreshed every hour.', 'draft', 1, from('Editorial calendar for November', 'claude', 12 * MIN), { draft_id: 'd_weather' }),
+      item('trip-map', 'block', 'Trip map', 'Draws the stops of a trip on a map in the conversation.', 'draft', 1, from('Keyword research: project management tools', 'codex', 40 * MIN), { draft_id: 'd_trip_map' }),
+      item('notes', 'page', 'Notes', 'A page to jot down and search short notes.', 'error', 2, from('Add pricing page', 'claude', 2 * DAY)),
+      item('c-20261020-7f3a', 'customization', 'Telegram threads limit', 'Up to 80 open threads in the Telegram group instead of 40.', 'review', 1, from('Caddy: add security headers', 'codex', 5 * DAY)),
+      item('shop-sales', 'widget', 'Shop sales', 'Orders and revenue of the day, with the orders to ship.', 'active', 3, from('Draft: 5 ways to speed up checkout', 'claude', 3 * DAY)),
+      item('ember', 'theme', 'Ember', 'Warm dark palette with an orange accent.', 'applied', 2, from('Fix hero image on mobile', 'claude', 6 * DAY)),
+      item('invoice-pdf', 'skill', 'Invoice to PDF', 'Turns an order into a printable invoice.', 'active', 1, from('Categorise September expenses', 'codex', 9 * DAY)),
+    ],
+  }
+  return S.atelier
+}
+R('GET', '/api/atelier', async () => { await sleep(120); return { items: atelier().items } })
+
 /* =================================================================== feed (notifications) + web push */
 // docs/dev/API.md#feed-notifications and #web-push. In-memory: S.feed = {events, nextId, settings, hooks}, S.push.
 const FEED_CATEGORIES = ['sessions', 'crons', 'system', 'webhooks']

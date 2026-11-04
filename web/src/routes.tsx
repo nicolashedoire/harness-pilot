@@ -49,6 +49,8 @@ export const routes: RouteObject[] = [
           { path: 'notifications', lazy: page(() => import('./pages/notifications'), ['ncentre']) },
           // the notifications page was /feed (links in Telegram messages, push payloads, bookmarks)
           { path: 'feed', element: <Navigate to="/notifications" replace /> },
+          // What the agents created for the platform: validate, version, roll back (its own sub-paths)
+          { path: 'atelier/*', lazy: page(() => import('./pages/atelier'), ['atelier']) },
           // Optional feature pages (Settings -> Features)
           { path: 'git', lazy: page(() => import('./features/git/GitPage'), ['git']) },
           { path: 'team', lazy: page(() => import('./features/team/TeamPage'), ['team']) },

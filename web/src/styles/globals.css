@@ -134,6 +134,9 @@ html[data-kbd] {
   --color-sidebar: var(--sidebar);
   --color-sidebar-border: var(--sidebar-border);
   --color-overlay: var(--overlay);
+  /* a creation waiting for the user's validation (Atelier: pills, banner, proposal card): the violet chart series
+     slot, not a palette token (readable on the light and dark backgrounds of every base) */
+  --color-draft: var(--series-6);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
