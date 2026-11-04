@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from _needs import ffmpeg_webp, non_utf8_names
 from maxxing import videos
 
 
@@ -93,7 +94,7 @@ def test_upload_and_search(client, tree, mx, topic):
     assert client.get("/api/files/search", params={"q": "memory.md"}).json()
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+@ffmpeg_webp
 def test_thumbnail(client, tree):
     img = tree / "pic.png"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=640x480", "-frames:v", "1",
@@ -109,7 +110,7 @@ def test_thumbnail(client, tree):
 
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+@ffmpeg_webp
 def test_thumbnail_of_an_animated_png(client, tree):
     img = tree / "anim.png"                                  # APNG: ffmpeg's apng demuxer, not png_pipe
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x48:rate=4:d=1", "-plays", "0",
@@ -205,6 +206,7 @@ def test_thumb_concurrent_requests_never_serve_a_half_written_file(client, mx, m
     assert [f.name for f in (mx["state"] / "thumbs").glob("*.part.webp")] == []
 
 
+@non_utf8_names
 def test_list_and_search_survive_a_non_utf8_name(client, mx):
     (mx["files"] / "ok.txt").write_text("x")
     open(os.fsencode(str(mx["files"])) + b"/caf\xe9.txt", "wb").close()      # Latin-1 name (zip, SMB copy)
