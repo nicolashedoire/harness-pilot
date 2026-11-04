@@ -7,7 +7,7 @@ Model Lab is an optional page extension plus the `pilot-model-evolution` compani
 
 ## Install in a workspace
 
-The `pilot-model-evolution` skill ships with harness-pilot: `pilot init` and `pilot update` install it for Claude Code with the other product skills (see [Skills](skills)). For Codex, copy `skills/pilot-model-evolution/` from the repository into `<workspace>/.agents/skills/pilot-model-evolution/`. The Model Lab page is not installed by default: copy `examples/extensions/model-lab/` into `<workspace>/extensions/model-lab/`. The page finds the skill in `<workspace>/.agents/skills/`, `<workspace>/.claude/skills/` or Claude Code's skills folder, in that order.
+The `pilot-model-evolution` skill ships with harness-pilot: `pilot init` and `pilot update` install it for Claude Code and Codex with the other product skills (see [Skills](skills)). The Model Lab page is not installed by default: copy `examples/extensions/model-lab/` into `<workspace>/extensions/model-lab/`. The page finds the skill in `<workspace>/.agents/skills/`, `<workspace>/.claude/skills/` or Claude Code's skills folder, in that order.
 
 Reload extensions in Settings → Extensions, then open `/x/model-lab`. The page can be pinned using the existing extension controls. No model framework is installed in the host. The runner uses Python's standard library; each adapter uses its own already configured interpreter.
 
