@@ -886,6 +886,15 @@ allow authentication and reads, and reject mutations until explicit activation. 
 rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
 and recovery limits are documented in [the backup guide](../user/10-backup.md).
 
+`.pilotbackup` file: a 43-byte header, then the AES-256-GCM ciphertext of the ZIP, then the 16-byte GCM tag.
+Header (big-endian): magic `PILOTBK\n` (8 bytes), format version `u8` = 2, KDF identifier `u8` (1 = scrypt),
+`log2(N)` `u8`, `r` `u16`, `p` `u16`, salt (16 bytes), nonce (12 bytes). The whole header is the GCM associated
+data. New archives use scrypt N = 2^15, r = 8, p = 1. Decryption takes the cost from the header and refuses, with
+`400 kdf_params` and before any derivation, `log2(N)` outside 14–20, `r` outside 1–16, `p` outside 1–4,
+128·N·r above 128 MiB or N·r·p above 2^21. Another magic, version or KDF gives `400 format`. A changed header
+field gives `400 decrypt_failed`. The key is derived from the Unicode NFC form of the passphrase, on export and on
+import. Development archives written before format version 2 are not readable.
+
 ## Pull request integration queue
 
 All routes require owner authentication. Work runs off the event loop.
