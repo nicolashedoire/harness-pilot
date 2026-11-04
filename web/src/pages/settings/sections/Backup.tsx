@@ -8,6 +8,7 @@ import { useLang, useT } from '@/i18n'
 import { useSettings } from '@/lib/queries'
 import { Badge, Button, EmptyState, FormField, Input, Sensitive, Skeleton, StatusDot, confirm, toast } from '@/components/ui'
 import { BackupSetup, BackupWhy } from '@/features/backup/BackupSetup'
+import { InstanceBackupPanel } from '@/features/backup/InstanceBackup'
 import { SettingsCard, SectionStack } from './ui'
 
 function useDebounced<T>(v: T, ms = 350) {
@@ -199,6 +200,7 @@ export function BackupSection() {
   const [result, setResult] = React.useState<BackupRestoreResult | null>(null)
   return (
     <SectionStack>
+      <SettingsCard title={t('instanceBackup.title')} description={t('instanceBackup.description')}><InstanceBackupPanel /></SettingsCard>
       {!b?.configured && <BackupWhy />}
       <SettingsCard title={t('backup.scopeTitle')}><p className="max-w-2xl text-sm text-muted-foreground">{t('backup.scopeBody')}</p></SettingsCard>
       <SettingsCard title={t('backup.repository')} description={t('backup.repositoryDesc')}>

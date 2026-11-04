@@ -832,3 +832,24 @@ a day, `search.db` is VACUUMed when more than 25 % of its pages are free (and it
 |---|---|---|---|
 | GET | `/api/search?q=&kinds=session,file,memory,task&limit=30` | – | `{results:[{kind, id (session id / file path / task id), path, title, snippet, at, score}], took_ms}` — every word required, as a prefix, accent-insensitive, BM25 (title x4), one result per session/file/task; `snippet` marks matches with `\u0002`…`\u0003` |
 | GET | `/api/search/stats` | – | `{counts:{session, file, memory, task}, bytes, refreshed_at}` |
+
+
+## Complete instance backup
+
+Authenticated endpoints under `/api/backup/instance` are independent of selective GitHub backups.
+All writes require the usual `X-Maxxing: 1` CSRF header. No passphrase is persisted.
+
+| Method/path | Request | Result |
+| --- | --- | --- |
+| GET base | — | Data roots, size limit, `restore_hold`, export availability |
+| POST `/export` | `{passphrase}` (12–1024 characters) | Encrypted archive id, SHA-256 and counts; idle sessions required |
+| GET `/download/{id}` | — | Authenticated `.pilotbackup` attachment, `Cache-Control: no-store` |
+| POST `/preview` | Multipart `file`, `passphrase` | Verified inventory, staged id and SHA-256, omitted external links |
+| POST `/restore` | `{id, sha256}` from preview | Separate destination, state path and quoted launch command |
+| POST `/activate` | `{}` | Start deferred background services and exit recovered read-only mode |
+
+A full snapshot pauses pausable services and rejects concurrent HTTP mutations/WebSocket activity.
+Changed sources or active/queued sessions abort export. Restored instances defer service startup,
+allow authentication and reads, and reject mutations until explicit activation. Preview hashes are
+rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
+and recovery limits are documented in [the backup guide](../user/10-backup.md).
