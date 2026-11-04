@@ -1035,8 +1035,8 @@ const SessionRow = React.memo(function SessionRow({
             )}
             <span className="shrink-0 tabular-nums">{fmtRelative(s.updated, lang)}</span>
             {s.debate_paused && s.discussion_pause_reason === 'limit' && <span className="shrink-0 text-warning">· {t('sessions.discussionLimitReached')}</span>}
-            {(s.provider === 'discussion' || s.provider === 'debate') && !!s.discussion_turns && (
-              <span className="shrink-0 tabular-nums">· {t('conv.reply', { n: s.discussion_turn_limit ? `${s.discussion_turns}/${s.discussion_turn_limit}` : s.discussion_turns })}</span>
+            {(s.provider === 'discussion' || s.provider === 'debate') && !!s.discussion_turns && !(s.debate_paused && s.discussion_pause_reason === 'limit') && (
+              <span className="min-w-0 truncate tabular-nums">· {t('conv.reply', { n: s.discussion_turn_limit ? `${s.discussion_turns}/${s.discussion_turn_limit}` : s.discussion_turns })}</span>
             )}
             {model && !label && s.provider !== 'discussion' && s.provider !== 'debate' && <span className="truncate">· {modelLabel(model, claude?.models)}</span>}
             {s.queue > 0 && <span className="shrink-0">· {t('sessions.queue.short', { count: s.queue })}</span>}
