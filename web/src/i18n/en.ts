@@ -3668,6 +3668,7 @@ export const en = {
   'convx.detail.model': 'Model',
   'convx.detail.tokens': 'Tokens',
   'convx.detail.tokensValue': '{input} in · {output} out',
+  'convx.planDuo': 'Approve: the agent whose turn is next implements the latest plan, then the discussion pauses; Resume lets the other agent review the work.',
   'convx.detail.cache': 'Cache',
   'conv.copy': 'Copy the reply',
   'conv.turnFailed': 'Failed',

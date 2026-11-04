@@ -3649,6 +3649,7 @@ export const fr: Record<keyof typeof en, string> = {
   'convx.detail.model': 'Modèle',
   'convx.detail.tokens': 'Jetons',
   'convx.detail.tokensValue': '{input} en entrée · {output} en sortie',
+  'convx.planDuo': 'Approuver : l’agent dont c’est le tour applique le dernier plan, puis la discussion se met en pause ; Reprendre laisse l’autre agent relire le travail.',
   'convx.detail.cache': 'Cache',
   'conv.copy': 'Copier la réponse',
   'conv.turnFailed': 'Échec',

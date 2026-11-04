@@ -357,8 +357,6 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         raise SessionError(400, 'unsupported', 'This agent adapter does not support plan mode.')
     if adapter and attachments and 'attachments' not in adapter['capabilities']:
         raise SessionError(400, 'unsupported', 'This agent adapter does not support attachments.')
-    if provider in ("discussion", "debate") and plan_mode:
-        raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
     if swarm_agents is not None and (provider != 'claude' or type(swarm_agents) is not int or not 2 <= swarm_agents <= 6):
         raise SessionError(400, 'bad_swarm', 'Agent teams require Claude and a requested count between 2 and 6.')
     files = _check_attachments(attachments)
@@ -760,8 +758,6 @@ def update_session(sid: str, title: str | None = None, model: str | None = None,
         adapter = agent_providers.get(cur['provider'])
         if not adapter or 'plan' not in adapter['capabilities']:
             raise SessionError(400, 'unsupported', 'This agent adapter does not support plan mode.')
-    if cur.get("provider") in ("discussion", "debate") and plan_mode:
-        raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
     if model is not None:
         model = _check_model(model)
     if path is not None:
@@ -787,7 +783,9 @@ def update_session(sid: str, title: str | None = None, model: str | None = None,
 
 def approve_plan(sid: str, text: str = "") -> dict:
     """The user validates the plan Claude proposed: plan mode goes off and Claude is told to implement it
-    (a message shown as the user's `text`). -> {queued, session}"""
+    (a message shown as the user's `text`). -> {queued, session}. A discussion / debate: the agent whose turn is next
+    implements the latest plan of the exchange, then the discussion pauses (runner `_debate_followup`): Resume lets
+    the other agent review the work."""
     _require(sid)
     with store.edit(sid) as m:
         m["plan_mode"], m["plan_ready"] = False, False
