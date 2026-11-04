@@ -49,8 +49,8 @@ async def put_settings(body: SettingsIn):
 @router.post("/run")
 async def run():
     res = await asyncio.to_thread(backup.run)
-    if res.get("code") == "busy":
-        raise HTTPException(409, detail={"error": "busy", "message": res["error"]})
+    if res.get("code") in ("busy", "paused"):
+        raise HTTPException(409, detail={"error": res["code"], "message": res["error"]})
     return {k: res.get(k) for k in ("ok", "commit", "files", "changed", "error", "code", "leaks")
             if res.get(k) is not None or k in ("ok", "commit", "files")}
 

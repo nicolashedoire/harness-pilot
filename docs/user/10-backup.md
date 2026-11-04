@@ -34,6 +34,13 @@ are excluded. Those links are listed before restoration; reinstall their depende
    files and settings. The copy starts on loopback in read-only review mode with background services
    paused. **Enable this instance’s services** in Settings → Backup when ready. Reconnect external
    agent tools and review integrations/schedules before enabling them.
+7. Telegram, scheduled tasks and the GitHub memory backup stay **paused** after you enable the services.
+   The copy does not poll the Telegram bot or send it notifications, runs no scheduled task (**Run now**
+   still works) and refuses to push the memory backup. While the original instance still runs, two live
+   copies would otherwise answer the same bot, run every task twice and push to the same repository.
+   Stop the original instance first, then choose **Resume integrations** in Settings → Backup.
+   If two-step sign-in is on, type the code Telegram shows: its Allow button only answers once Telegram
+   is resumed on this copy.
 
 Restoration retargets stored application data paths and preserves historical attachment links.
 It resets active runtime process handles and native agent thread handles; conversation history

@@ -57,6 +57,7 @@ def test_full_snapshot_preserves_data_credentials_labels_and_separate_destinatio
     assert cfg['workspace'] == str(destination / 'workspace')
     assert cfg['files_root'] == str(destination / 'files')
     assert cfg['restore_hold'] is True and cfg['bind'] == '127.0.0.1'
+    assert cfg['integrations_paused'] is True and restored['integrations_paused'] is True
     labels = json.loads((destination / 'state/space-labels/labels.json').read_text())
     identity = (destination / 'files/attachment.bin').stat()
     assert labels[str(destination / 'files/attachment.bin')] == {
@@ -261,3 +262,70 @@ def test_restored_copy_gets_its_own_crontab_and_interrupted_exports_leave_no_pla
     os.utime(staging, (1, 1))
     snapshots.status()
     assert not staging.exists()
+
+
+def test_restored_integrations_stay_paused_after_activation_until_resumed(mx, monkeypatch):
+    """Activating a restored copy must not make it a second live instance: Telegram, scheduled jobs and the GitHub
+    memory backup stay off until the owner resumes them, then each one really works again."""
+    import argparse
+    import subprocess as sp
+    from fastapi.testclient import TestClient
+    from _conn_helpers import GH_TOKEN, TG_TOKEN, FakeGitHub, FakeTelegram
+    from conftest import wait_for
+    from maxxing import backup, cmd_cron, crons, localcron
+    from maxxing.app import create_app
+    from maxxing.telegram import gateway
+
+    telegram, github = FakeTelegram(), FakeGitHub(mx['tmp'] / 'remotes')
+    monkeypatch.setenv('MAXXING_TELEGRAM_API', telegram.url)
+    monkeypatch.setenv('MAXXING_TELEGRAM_POLL', '1')
+    monkeypatch.setenv('MAXXING_GITHUB_API', github.url)
+    monkeypatch.setenv('MAXXING_GITHUB_GIT', f"file://{mx['tmp'] / 'remotes'}")
+    bare = github.add_repo('alice/memory')
+    (mx['ws'] / 'memory.md').write_text('- restored fact\n')
+    security.set_password('correct horse battery')
+    # The state a restore leaves behind, with a linked bot, a job and a configured memory backup.
+    config.update_config(restore_hold=True, integrations_paused=True, telegram={'chat_id': 555, 'user_ids': [555]})
+    config.set_secret('telegram_token', TG_TOKEN)
+    job = crons.create_job({'name': 'Every minute', 'schedule': '* * * * *', 'command': 'true', 'notify': 'never'})
+    assert backup.configure('alice/memory', GH_TOKEN)['ok']
+    started = []
+    monkeypatch.setattr(crons, 'spawn_run', started.append)
+    commits = lambda: int(sp.run(['git', '--git-dir', str(bare), 'rev-list', '--count', 'main'], capture_output=True,
+                                 text=True).stdout.strip() or 0)
+    scheduled = argparse.Namespace(cron_cmd='run', id=job['id'], if_due=True, detach=False)
+    try:
+        with TestClient(create_app()) as c:
+            c.cookies.set(security.COOKIE, security.make_cookie())
+            c.headers['X-Maxxing'] = '1'
+            assert c.post('/api/backup/instance/resume-integrations').json()['error'] == 'restore_hold'
+            assert c.post('/api/backup/instance/activate').status_code == 200
+            assert c.get('/api/backup/instance').json()['integrations_paused'] is True
+            # Telegram: no poller and no notification from this copy.
+            assert gateway.gateway() is None and not gateway.status()['running']
+            gateway.system_alert('A restored copy must stay silent.')
+            # Scheduled jobs: no crontab line, no local tick, a leftover crontab line exits without running.
+            assert 'cron run' not in crons.read_crontab()
+            assert localcron.tick() == [] and started == []
+            monkeypatch.setattr(crons, 'run_job', lambda cid: pytest.fail('a paused scheduled job ran'))
+            assert cmd_cron._handler(scheduled) == 0
+            # GitHub memory backup: refused before any push.
+            refused = c.post('/api/backup/run')
+            assert refused.status_code == 409 and refused.json()['error'] == 'paused'
+            assert commits() == 0 and backup.history() == []
+            assert telegram.calls == [] and gateway.status()['last_poll_ok'] is None
+
+            resumed = c.post('/api/backup/instance/resume-integrations')
+            assert resumed.status_code == 200, resumed.text
+            assert resumed.json()['telegram'] is True and resumed.json()['scheduled_jobs'] == 2
+            assert c.get('/api/backup/instance').json()['integrations_paused'] is False
+            wait_for(lambda: gateway.status()['last_poll_ok'])     # the bot is polled again
+            assert gateway.status()['running'] and telegram.calls
+            assert f"cron run {job['id']}" in crons.read_crontab()
+            assert job['id'] in localcron.tick()
+            pushed = c.post('/api/backup/run')
+            assert pushed.status_code == 200 and pushed.json()['ok'] is True, pushed.text
+            assert commits() == 1
+    finally:
+        telegram.close()
+        github.close()

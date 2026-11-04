@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import tempfile
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field, SecretStr
 from .. import config, instance_backup as snapshots, uploads
 from ..security import require_auth
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/backup/instance', tags=['backup'], dependencies=[Depends(require_auth)])
 
 
@@ -93,3 +95,16 @@ async def activate(request: Request):
         return {'ok': True, 'already_active': True}
     await request.app.state.activate_restored_instance()
     return {'ok': True}
+
+
+@router.post('/resume-integrations')
+async def resume_integrations():
+    """Telegram, scheduled jobs and the GitHub memory backup of a restored copy, once the original is stopped."""
+    result = await _call(snapshots.resume_integrations)
+    try:
+        from ..telegram import gateway
+        result['telegram'] = await gateway.start()
+    except Exception:
+        log.exception('Could not start Telegram after resuming integrations')
+        result['telegram'] = False
+    return result
