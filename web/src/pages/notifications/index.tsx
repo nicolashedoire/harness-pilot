@@ -31,7 +31,7 @@ function MoreButton({ pages }: { pages: ReturnType<typeof useFeedPages> }) {
   return (
     <div className="flex justify-center p-2">
       <Button variant="ghost" size="sm" loading={pages.isFetchingNextPage} onClick={() => pages.fetchNextPage()}>
-        {t('feed.more')}
+        {t('ncentre.more')}
       </Button>
     </div>
   )
@@ -67,9 +67,9 @@ export default function NotificationsPage() {
   const select = (ev: FeedEvent) => set({ id: String(ev.id) })
 
   const markAll = (
-    <Tooltip content={touch ? t('feed.markAllRead') : null}>
-      <Button variant="outline" size={touch ? 'icon' : 'sm'} disabled={!summary?.unread} onClick={() => read.mutate({ all: true })} aria-label={t('feed.markAllRead')}>
-        <CheckCheck /> {!touch && t('feed.markAllRead')}
+    <Tooltip content={touch ? t('ncentre.markAllRead') : null}>
+      <Button variant="outline" size={touch ? 'icon' : 'sm'} disabled={!summary?.unread} onClick={() => read.mutate({ all: true })} aria-label={t('ncentre.markAllRead')}>
+        <CheckCheck /> {!touch && t('ncentre.markAllRead')}
       </Button>
     </Tooltip>
   )
@@ -87,7 +87,7 @@ export default function NotificationsPage() {
       <Page
         title={t('feed.title')}
         leading={
-          <Button variant="ghost" size="icon" onClick={() => (window.history.length > 1 ? navigate(-1) : set({ id: null }))} aria-label={t('feed.back')}>
+          <Button variant="ghost" size="icon" onClick={() => (window.history.length > 1 ? navigate(-1) : set({ id: null }))} aria-label={t('ncentre.back')}>
             <ArrowLeft />
           </Button>
         }
@@ -108,7 +108,7 @@ export default function NotificationsPage() {
         <Segmented
           value={tab}
           onChange={(k) => set({ filter: k, id: null }, true)}
-          aria-label={t('feed.filters')}
+          aria-label={t('ncentre.filters')}
           className="mb-3 grid w-full grid-cols-2"
           options={[
             {
@@ -122,7 +122,7 @@ export default function NotificationsPage() {
                 </>
               ),
             },
-            { value: 'all', label: t('feed.all') },
+            { value: 'all', label: t('ncentre.all') },
           ]}
         />
         <div className="grid gap-2.5">
@@ -148,7 +148,7 @@ export default function NotificationsPage() {
   return (
     <Page
       title={t('feed.title')}
-      description={t('feed.pageDesc')}
+      description={t('ncentre.pageDesc')}
       actions={
         <>
           {markAll}
@@ -160,8 +160,8 @@ export default function NotificationsPage() {
       <div className="mb-4 flex flex-wrap items-center gap-3 border-b pb-4">
         <FilterChips value={filter} onChange={(f) => set({ filter: f === 'all' ? null : f, id: null })} withPending pendingCount={summary?.pending} />
         <label className="ml-auto flex items-center gap-2 text-[13px] text-muted-foreground">
-          <Switch checked={unread} onCheckedChange={(v) => set({ unread: v ? '1' : null, id: null })} aria-label={t('feed.unreadOnly')} />
-          {t('feed.unreadOnly')}
+          <Switch checked={unread} onCheckedChange={(v) => set({ unread: v ? '1' : null, id: null })} aria-label={t('ncentre.unreadOnly')} />
+          {t('ncentre.unreadOnly')}
         </label>
       </div>
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(320px,440px)_minmax(0,1fr)]">
@@ -179,7 +179,7 @@ export default function NotificationsPage() {
             />
           )}
           <MoreButton pages={pages} />
-          {filter === 'pending' && <p className="px-2 pt-3 text-xs leading-relaxed text-muted-foreground">{t('feed.pendingHint')}</p>}
+          {filter === 'pending' && <p className="px-2 pt-3 text-xs leading-relaxed text-muted-foreground">{t('ncentre.pendingHint')}</p>}
         </section>
         <div className="min-w-0 lg:sticky lg:top-[calc(var(--header-h)+1.5rem)]">
           {shown ? (
@@ -187,7 +187,7 @@ export default function NotificationsPage() {
           ) : id != null && !fetching && !pages.isPending ? (
             <NotificationMissing />
           ) : events.length ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">{t('feed.pick')}</p>
+            <p className="py-16 text-center text-sm text-muted-foreground">{t('ncentre.pick')}</p>
           ) : null}
         </div>
       </div>
