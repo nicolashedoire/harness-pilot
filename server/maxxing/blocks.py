@@ -812,8 +812,8 @@ _last_sync: dict[str, Any] = {"at": None}
 
 def sync_agent_files(light: bool = False) -> dict:
     """Write the enabled types where the agents read them: `<state>/blocks/agents.md` (Codex) and `reference.md`
-    (full schemas), and the installed `pilot-blocks` skill rendered again with the list (Claude Code; only when it
-    is installed - `pilot init` installs it). Idempotent: files are rewritten only when they change."""
+    (full schemas), and the installed `pilot-blocks` skill rendered again with the list (Claude Code's and Codex's
+    copies; only when installed - `pilot init` installs them). Idempotent: files are rewritten only when they change."""
     ps = enabled_plugins(light)
     changed: list[str] = []
     with _sync_lock:
@@ -822,13 +822,13 @@ def sync_agent_files(light: bool = False) -> dict:
         if _write(reference_path(), agent_reference(ps)):
             changed.append(str(reference_path()))
         src = config.SKILLS_DIR / SKILL / "SKILL.md"
-        from .cmd_core import skills_target
-        dst = skills_target() / SKILL / "SKILL.md"
-        if src.is_file() and dst.parent.is_dir():
-            from .cmd_core import render_template, template_vars
-            text = render_template(src.read_text("utf-8"), {**template_vars(config.workspace()), **skill_vars(ps)})
-            if _write(dst, text):
-                changed.append(str(dst))
+        from .cmd_core import codex_skills_target, skills_target
+        for dst in (skills_target() / SKILL / "SKILL.md", codex_skills_target() / SKILL / "SKILL.md"):
+            if src.is_file() and dst.parent.is_dir():
+                from .cmd_core import render_template, template_vars
+                text = render_template(src.read_text("utf-8"), {**template_vars(config.workspace()), **skill_vars(ps)})
+                if _write(dst, text):
+                    changed.append(str(dst))
         _last_sync["at"] = time.time()
     return {"changed": changed, "at": _last_sync["at"]}
 

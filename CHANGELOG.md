@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Codex sessions can now use the product skills (tasks, scheduled jobs, notifications, backup…): `pilot init` and `pilot update` install them for Codex too, and `pilot doctor` reports a missing or outdated Codex copy.
 - Model Lab experiments no longer end in an error when the adapter's interpreter or program is larger than 16 MB, which was the case of the Python that uv installs on Linux.
 - Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
