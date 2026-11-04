@@ -118,6 +118,12 @@ even a hijacked server could not use it to reach your files: only web pages (htt
 to a page, and no permission or app can be installed. Claude cannot upload files from the PC or record its screen.
 The list of recent actions keeps addresses without their query part (sign-in codes are not kept).
 
+**What was tested.** harness-pilot PC was tested end to end on a Mac (Apple chip and Intel) and on Linux with a test
+server: the download, the confirmation, Claude's browser actions and refusals, **Stop now**, **Erase the profile** and
+**Disconnect** work. Windows, **Start with the computer** and a download through the browser have not been tried yet.
+On a Mac, prefer the terminal command shown by the card. A file downloaded by the browser cannot be run as it is: it
+is not marked as a program, and macOS may block it because harness-pilot PC is not notarized by Apple yet.
+
 ## Backup and new server
 
 The memory backup keeps the list of servers (values that look like secrets blanked - tokens, passwords, `API_KEY`-like
