@@ -22,6 +22,7 @@ import { audioPaths, baseName, FILE_HREF, fmtTokens, isAudio, isImage, isVideo, 
 
 export type ItemCtx = {
   filesRoot: string | null
+  restoredFileRoots?: string[]
   providerName?: string
   models: ClaudeModel[] | undefined
   running: boolean
@@ -479,16 +480,24 @@ export function RequestRow({ text }: { text: string }) {
 
 /* ---------------------------------------------------------------- assistant */
 export const AssistantMessage = React.memo(function AssistantMessage({ text, onFork }: { text: string; onFork?: (seed: Seed) => void }) {
-  const { filesRoot } = React.useContext(ItemContext)
+  const { filesRoot, restoredFileRoots } = React.useContext(ItemContext)
+  const roots = React.useMemo(() => [filesRoot, ...(restoredFileRoots || [])].filter((root): root is string => !!root), [filesRoot, restoredFileRoots])
   // "New session from this message": the reply goes along as a quote.
   const { onContextMenu, touch, menu } = useMessageMenu({ text, onFork: onFork && (() => onFork({ text: '', quotes: [text.trim()], attachments: [] })) })
   const open = useOpenPreview()
-  const md = React.useMemo(() => linkifyMarkdown(text, filesRoot), [text, filesRoot])
+  const md = React.useMemo(() => linkifyMarkdown(text, roots), [text, roots])
   // the paths of a block (a `file` block, a table…) are its own: no second thumbnail under the message
   const prose = React.useMemo(() => stripBlockFences(text), [text])
-  const media = React.useMemo(() => mediaPaths(prose, filesRoot), [prose, filesRoot])
-  const audio = React.useMemo(() => audioPaths(prose, filesRoot), [prose, filesRoot])
-  const onLink = React.useCallback((href: string) => (href.startsWith(FILE_HREF) ? () => open(decodeURIComponent(href.slice(FILE_HREF.length))) : null), [open])
+  const media = React.useMemo(() => mediaPaths(prose, roots), [prose, roots])
+  const audio = React.useMemo(() => audioPaths(prose, roots), [prose, roots])
+  const onLink = React.useCallback((href: string) => {
+    if (href.startsWith(FILE_HREF)) return () => open(decodeURIComponent(href.slice(FILE_HREF.length)))
+    // Absolute Markdown links can refer to the previous machine's files root after a restore.
+    if (roots.some(root => root !== '/' && (href === root || href.startsWith(root.replace(/\/+$/, '') + '/')))) {
+      return { href: FILE_HREF + encodeURIComponent(href), onClick: () => open(href) }
+    }
+    return null
+  }, [open, roots])
   return (
     <div className="group/msg relative min-w-0" onContextMenu={onContextMenu} {...touch}>
       {menu}

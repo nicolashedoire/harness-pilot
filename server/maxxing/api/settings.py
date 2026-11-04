@@ -45,8 +45,16 @@ def _err(code: str, msg: str) -> HTTPException:
 
 def current() -> dict:
     cfg = config.load_config()
+    root = config.files_root().resolve()
+    restored_roots = []
+    for alias in cfg.get('restored_path_aliases') or []:
+        if not isinstance(alias, dict) or not all(isinstance(alias.get(k), str) for k in ('source', 'target')):
+            continue
+        if Path(alias['source']).is_absolute() and Path(alias['target']).resolve().is_relative_to(root):
+            restored_roots.append(alias['source'])
     return {"timezone": cfg.get("timezone") or "UTC", "language": cfg.get("language") or "en",
             "public_url": cfg.get("public_url") or "", "files_root": cfg.get("files_root") or "/root",
+            **({'restored_file_roots': restored_roots} if restored_roots else {}),
             "presentation_default": bool(cfg.get("presentation_default", False)),
             "usage_widget": bool(cfg.get("usage_widget", False)),
             "git_page": bool(cfg.get("git_page", False)),
