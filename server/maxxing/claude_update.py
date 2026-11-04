@@ -240,8 +240,9 @@ def _tick(now: float, force_check: bool) -> str:
         d.update(installed=after, last={"from": installed, "to": after, "at": at, "ok": True, "error": None},
                  failed_version=None, failed_at=None)
         _save(d)
+        feed.system_resolve("system", "claude-update-failed")
         feed.system(f"Claude Code updated to {after}", f"From {installed}, while nothing was running.", "success",
-                    "system", "/settings/claude")
+                    "system", "/settings/claude", kind="claude.updated", params={"version": after, "previous": installed})
         return "updated"
     if not ok:
         err = out or "The update failed"
@@ -253,7 +254,9 @@ def _tick(now: float, force_check: bool) -> str:
              last={"from": installed, "to": latest, "at": at, "ok": False, "error": err[-400:]})
     _save(d)
     if feed.system(f"Claude Code could not update to {latest}", f"{err[-600:]}\nBy hand: claude update", "error",
-                   "system", "/settings/claude", dedupe=f"claude-update-failed:{latest}") is not None:
+                   "system", "/settings/claude", dedupe=f"claude-update-failed:{latest}", group="claude-update-failed",
+                   kind="claude.update_failed", params={"version": latest, "error": err[-300:]},
+                   actions=[feed.link("open", "Open", "/settings/claude")]) is not None:
         from .telegram import gateway
         gateway.system_alert(f"Claude Code could not update to {latest}:\n{err[-600:]}\nBy hand: claude update")
     return "failed"

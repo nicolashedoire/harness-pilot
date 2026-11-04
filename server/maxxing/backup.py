@@ -1030,7 +1030,10 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
             body = ("The backup brought code that runs on this server; it stays off until you turn it on: "
                     + "; ".join(w for w in what if w) + ". Crons and Extensions pages.")
             feed.system("Restored but turned off - check them first", body, "warning", "security",
-                        group="backup-restore-held")
+                        group="backup-restore-held", kind="backup.restore_held",
+                        params={"extensions": len(held["extensions"]), "hooks": len(held["hooks"]),
+                                "mcp": len(held["mcp"]), "review": len(held["review"]), "outside": len(outside)},
+                        actions=[feed.link("open", "Open", "/settings/extensions")])
             from .telegram import gateway
             gateway.system_alert("Restored but turned off - check them first\n" + body)
         except Exception:                          # the notice is a convenience: the restore itself is done

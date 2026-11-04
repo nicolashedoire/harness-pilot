@@ -5,6 +5,14 @@ import { useSettings } from '@/lib/queries'
 
 export type NavItem = { to: string; label: TKey; /** label in the mobile tab bar when `label` is too long */ short?: TKey; icon: LucideIcon; /** g + key */ key: string; end?: boolean }
 
+/** Look of a sidebar navigation entry (pages and the Notifications entry). */
+export const navItemClass = (active: boolean, collapsed: boolean) =>
+  [
+    'mx-boot-item group relative flex h-9 items-center gap-3 rounded-md px-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+    active ? 'bg-accent text-foreground' : '',
+    collapsed ? 'justify-center px-0' : '',
+  ].join(' ')
+
 /** `data-tour` id of a nav item (guided tour targets): nav-dashboard, nav-sessions… */
 export const navTourId = (n: NavItem) => `nav-${n.to === '/' ? 'dashboard' : n.to.slice(1)}`
 

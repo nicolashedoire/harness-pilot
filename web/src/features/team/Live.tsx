@@ -6,7 +6,8 @@ import { teamPresence, useTeam } from '@/lib/queries'
 import { useUI } from '@/stores/ui'
 import { useT } from '@/i18n'
 import { toast } from '@/components/ui'
-import { playChime, showSystemNotification } from '@/features/notify/useDoneNotifier'
+import { showSystemNotification } from '@/features/notify/useDoneNotifier'
+import { playNotificationSound } from '@/features/notifications/sound'
 import { chatTitle, personOf } from './people'
 import { useTeamUI } from './store'
 
@@ -44,17 +45,16 @@ function useMessageNotifier() {
     const away = document.hidden || !document.hasFocus()
     const onScreen = (id: string) =>
       (location.pathname.startsWith('/team') && new URLSearchParams(location.search).get('chat') === id) || (ui.open && ui.chat === id && !location.pathname.startsWith('/team'))
-    let rang = false
-    for (const c of fresh) {
-      if (!away && onScreen(c.id)) continue
+    const shown = fresh.filter((c) => away || !onScreen(c.id))
+    // a new message rings (one sound for a burst), the system notification stays silent then
+    const rings = shown.length > 0 && playNotificationSound('info')
+    for (const c of shown) {
       const title = chatTitle(team, c)
       const who = c.kind === 'group' ? `${personOf(team, c.last!.author).name.split(' ')[0]} : ` : ''
       const body = who + (c.last!.kind === 'poll' ? `📊 ${c.last!.text}` : `${c.last!.files ? '📎 ' : ''}${c.last!.text}`).slice(0, 160)
       const open = () => navigate(`/team?chat=${encodeURIComponent(c.id)}`)
-      if (!away || !showSystemNotification(title, body, open, `mx-team-${c.id}`)) toast.action(title, body, { label: t('notify.open'), onClick: open })
-      rang = true
+      if (!away || !showSystemNotification(title, body, open, `mx-team-${c.id}`, rings)) toast.action(title, body, { label: t('notify.open'), onClick: open })
     }
-    if (rang && useUI.getState().notifySound) playChime()
   }, [team, enabled, navigate, t])
 }
 

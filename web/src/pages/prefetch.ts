@@ -7,7 +7,7 @@ const PAGE_LOADERS: Record<string, () => Promise<unknown>> = {
   tasks: () => import('./tasks'),
   crons: () => import('./crons'),
   settings: () => import('./settings'),
-  feed: () => import('./feed'),
+  notifications: () => import('./notifications'),
   docs: () => import('./docs'),
   x: () => import('./ext/hub'),
 }

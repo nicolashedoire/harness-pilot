@@ -31,6 +31,7 @@ ROUTERS = [
     "stats",
     "search",
     "feed",
+    "push",
     "hooks",
     "packs",
     "git",
