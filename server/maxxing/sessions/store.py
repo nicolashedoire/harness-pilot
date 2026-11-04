@@ -219,7 +219,7 @@ def add_usage(m: dict, usage: dict | None, cost: float, when: float, actor: str 
         tk = m["tokens"]
         for k, src in TOKEN_KEYS:
             tk[k] = int(tk.get(k) or 0) + int(u.get(src) or 0)
-    if actor in ('claude', 'codex'):
+    if actor in ('claude', 'codex') or (isinstance(actor, str) and actor.startswith('plugin:') and len(actor) <= 64):
         providers = m.get('provider_usage') if isinstance(m.get('provider_usage'), dict) else {}
         p = providers.get(actor) if isinstance(providers.get(actor), dict) else {**empty_tokens(), 'turns': 0}
         for k, src in TOKEN_KEYS:

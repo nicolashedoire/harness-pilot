@@ -56,7 +56,7 @@ def roles() -> list[dict]:
         p for p in items if p.get('id') not in reserved]
 
 
-def save(name: str, role: str, ident: str | None = None) -> dict:
+def save(name: str, role: str, ident: str | None = None, provider: str | None = None) -> dict:
     name, role = name.strip(), role.strip()
     if not name or not role or len(name) > 80 or len(role) > 4000:
         raise service.SessionError(400, 'bad_role', 'A name and role are required.')
@@ -67,7 +67,13 @@ def save(name: str, role: str, ident: str | None = None) -> dict:
             raise service.SessionError(404, 'not_found', 'Companion not found.')
         if not ident and len(items) >= 99:
             raise service.SessionError(400, 'limit', 'Maximum number of companions reached.')
-        item = {'id': ident or str(uuid.uuid4()), 'name': name, 'role': role, 'provider': 'codex'}
+        previous = next((p for p in roles() if p['id'] == ident), {})
+        provider = provider or previous.get('provider') or 'codex'
+        from . import agent_providers
+        adapter = agent_providers.get(provider)
+        if not adapter or 'source-edit' not in adapter['capabilities']:
+            raise service.SessionError(400, 'bad_provider', 'Choose an available coding agent for this companion.')
+        item = {'id': ident or str(uuid.uuid4()), 'name': name, 'role': role, 'provider': provider}
         config.write_json(_dir() / 'roles.json', [p for p in items if p.get('id') != item['id']] + [item], mode=0o600)
     bus.invalidate('companions')
     return item
@@ -113,13 +119,19 @@ def run(ident: str, path: str, mission: str = '') -> dict:
         raise service.SessionError(400, 'bad_path', str(e)) from None
     if len(mission) > 6000:
         raise service.SessionError(400, 'bad_mission', 'Mission is too long.')
+    from . import agent_providers
+    provider = profile.get('provider') or 'codex'
+    adapter = agent_providers.get(provider)
+    if not adapter or 'source-edit' not in adapter['capabilities']:
+        raise service.SessionError(400, 'bad_provider', 'The companion coding agent is unavailable or disabled.')
     run_id = str(uuid.uuid4())
     repo = _clone(run_id)
     base = _git(repo, 'rev-parse', 'HEAD', limit=100).decode().strip()
     architecture.write(repo)
     try:
-        session = service.create_session(path, title=f"{profile['name']} — platform review", provider='codex',
-                                         permission_mode='acceptEdits', timeout_s=1800)
+        session = service.create_session(path, title=f"{profile['name']} — platform review", provider=provider,
+                                         permission_mode='acceptEdits', timeout_s=1800,
+                                         env={'PYTHONPATH': str(repo / 'server')} if (repo / 'server' / 'maxxing').is_dir() else None)
         sid = session['id']
         with store.edit(sid) as meta:
             meta['companion'] = {'id': ident, 'name': profile['name'], 'role': profile['role'],
@@ -133,6 +145,8 @@ def run(ident: str, path: str, mission: str = '') -> dict:
                 "try the complete user journey where feasible, and assess clarity, visual design and accessibility. "
                 "For interface changes, visually inspect the result when tools permit. Run relevant tests and "
                 "report separately what was verified, what could not be verified, and remaining improvements. "
+                "Before running tests, confirm that imports and test commands target this disposable copy, "
+                "not an editable installation or another checkout. Do not install dependencies into a shared environment. "
                 "A static source import map is available at ../architecture.json. "
                 "Use it to navigate, but recognize that runtime and product relationships may be missing. "
                 "Do not claim an unperformed check. The user must review and approve or reject your proposal. "

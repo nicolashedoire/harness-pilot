@@ -834,6 +834,15 @@ a day, `search.db` is VACUUMed when more than 25 % of its pages are free (and it
 | GET | `/api/search?q=&kinds=session,file,memory,task&limit=30` | – | `{results:[{kind, id (session id / file path / task id), path, title, snippet, at, score}], took_ms}` — every word required, as a prefix, accent-insensitive, BM25 (title x4), one result per session/file/task; `snippet` marks matches with `\u0002`…`\u0003` |
 | GET | `/api/search/stats` | – | `{counts:{session, file, memory, task}, bytes, refreshed_at}` |
 
+## Agent provider catalog
+
+`GET /api/agent-providers` (authenticated) returns `{id, name, builtin, capabilities, protocol?}[]`.
+`POST /api/sessions` accepts an installed `plugin:<extension-id>` provider as well as the native
+providers. Session responses retain `provider_name` for external engines. Read-only `plan` and
+attachment capabilities are checked at creation. Profile `POST/PUT /api/companions` accepts an
+optional `provider`; omitting it preserves the previous choice, defaulting to Codex for new roles.
+A coding companion needs `source-edit`. See [AGENT-PROVIDERS.md](AGENT-PROVIDERS.md) for the external
+executable protocol and trust model. Provider token totals use dynamic keys in `Stats.providers`.
 
 ## Complete instance backup
 

@@ -18,6 +18,7 @@ router = APIRouter(prefix='/api/companions', tags=['companions'], dependencies=[
 class RoleIn(_Text):
     name: str = Field(min_length=1, max_length=80)
     role: str = Field(min_length=1, max_length=4000)
+    provider: str | None = Field(default=None, max_length=64)
 
 
 class RunIn(_Text):
@@ -47,12 +48,12 @@ async def list_companions():
 
 @router.post('')
 async def create_role(body: RoleIn):
-    return await _call(companions.save, body.name, body.role)
+    return await _call(companions.save, body.name, body.role, None, body.provider)
 
 
 @router.put('/{ident}')
 async def update_role(ident: str, body: RoleIn):
-    return await _call(companions.save, body.name, body.role, ident)
+    return await _call(companions.save, body.name, body.role, ident, body.provider)
 
 
 @router.post('/{ident}/runs')
