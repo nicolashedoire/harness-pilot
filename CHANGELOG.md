@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Settings → Backup can copy each encrypted instance archive to a folder you choose, such as an external drive or a folder synced by iCloud Drive or Dropbox. Every copy is read back and checked; a failed copy is notified and can be retried.
+- Scheduled prompts can now run with **Codex**: in a job's editor, choose the agent (Claude Code or Codex) under the prompt, with an optional Codex model; the job list marks Codex jobs.
 - Settings → Backup can create the encrypted instance archive every day or every week at the hour you choose, keeping the number of scheduled archives you set. Your passphrase is never stored: the server keeps a key derived from it, with your agreement, and the passphrase still opens every archive. A failure is notified.
 - Thumbnails and previews: when `ffmpeg` (with its WebP encoder) or `pdftoppm` is missing, Settings → System shows what does not work and the command that installs it, `pilot doctor` warns, and the local app says so in its terminal at start. Nothing is installed for you. On a Mac, Homebrew's plain `ffmpeg` cannot write WebP: run `brew install ffmpeg-full` (the local app uses it as soon as it is installed) and `brew install poppler`.
 - Settings → Stats marks the Claude plan usage as **Experimental** and explains where it comes from. When it cannot be read, Stats and the dashboard card say so in a plain sentence instead of showing an error code.

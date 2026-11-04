@@ -394,7 +394,7 @@ export type TaskBulkBody = {
 export type TaskBulkResult = { ok: boolean; updated: number; deleted: number }
 
 /* ---------------------------------------------------------------- Crons */
-export type CronKind = 'shell' | 'claude'
+export type CronKind = 'shell' | 'claude' | 'codex'   // claude / codex: a prompt run as a session turn of that agent
 export type CronNotify = 'never' | 'failure' | 'always'
 export type CronLastRun = { at: number; ok: boolean; code: number; duration_s: number }
 export type CronPermissionMode = '' | PermissionMode
