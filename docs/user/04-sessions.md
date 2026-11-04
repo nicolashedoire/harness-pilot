@@ -357,6 +357,10 @@ conversations that start from that summary, and a refused reply is asked again. 
 **Compact context** in the session's **…** menu does the same on demand, also while the discussion is paused (it
 stays paused). Codex does not report how full its conversation is, so on its side the summary comes when it
 refuses a reply.
+**Summarise & restart** works on a discussion too: a new discussion with the same objective, roles, models and
+limits starts from a summary of the exchanges (shown at its top), both agents start from it, and the old one
+is archived. A discussion paused before the hand-off stays paused in the new one: **Resume** asks the reply it
+was waiting for. Pause a running discussion first.
 
 **Compact when you come back** (Settings -> Claude, 200k tokens by default): Claude keeps the start of a conversation
 in a cache for a few minutes (up to an hour). When you write to a session that has been quiet for longer and holds at least that

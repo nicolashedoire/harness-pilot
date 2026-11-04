@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- **Summarise & restart** now works on a Claude Code and Codex discussion: a new discussion with the same objective, roles, models and limits continues from a summary of the exchanges, and a paused discussion stays paused on the reply it was waiting for.
 - Long Claude Code and Codex discussions no longer stop when an agent's conversation gets full: near the limit, or when an agent refuses a reply for lack of room, Claude summarizes the exchanges so far and both agents continue in fresh conversations from that summary, marked in the thread. **Compact context** in the discussion's **…** menu does the same on demand.
 - Screen-reader labels (Skip to content, Close, items hidden by presentation mode, session columns and their resize handles, attachments) and the "server could not be reached" error now follow the interface language.
 - An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.

@@ -3630,6 +3630,7 @@ export const fr: Record<keyof typeof en, string> = {
   'convx.detail.model': 'Modèle',
   'convx.detail.tokens': 'Jetons',
   'convx.detail.tokensValue': '{input} en entrée · {output} en sortie',
+  'convx.handoffDuo': 'harness-pilot résume les échanges, puis une nouvelle discussion avec le même objectif, les mêmes rôles, modèles et limites repart de ce résumé pour les deux agents, et celle-ci est archivée. Une discussion en pause le reste, prête à reprendre sur sa prochaine réponse.',
   'convx.detail.cache': 'Cache',
   'conv.copy': 'Copier la réponse',
   'conv.turnFailed': 'Échec',
