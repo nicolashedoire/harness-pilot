@@ -690,7 +690,9 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 
 ## CLI
 Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in
-pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog` = the name it was called by
+pyproject `[project.scripts]`. In the local setup `bash scripts/dev-local.sh cli <args>` runs it with the
+exports and preparation of the local server (`MAXXING_STATE`, workspace, skills dirs, local crontab file), from
+the caller's folder; a bare `uv run pilot` has no `MAXXING_STATE` and reads `/var/lib/claude-maxxing`. argparse `prog` = the name it was called by
 (`cli.prog_name()`, `pilot` for `python -m maxxing`). On a server, install.sh writes `/usr/local/bin/maxxing`
 (`cmd_core.BIN_LINK`: a link to the venv's script, or a wrapper exporting `MAXXING_STATE`) and every `init`
 (so every update) runs `cmd_core.ensure_cli_alias()`: `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing`, the
