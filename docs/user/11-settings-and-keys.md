@@ -94,7 +94,7 @@ does not start, the previous one is put back.
 
 Each update shows in the notifications ("Claude Code updated to 2.1.5"), and the switch shows the last one
 (`2.1.4 -> 2.1.5` and its date). A failure is also notified, once per version, with the reason; the server tries
-again 6 hours later. Leave the switch off to update by hand (`claude update` in a terminal); `maxxing doctor` then
+again 6 hours later. Leave the switch off to update by hand (`claude update` in a terminal); `pilot doctor` then
 lists Claude Code under `claude_version` when it is behind.
 
 ## Permission mode
@@ -129,7 +129,7 @@ Store API keys and tokens your projects need (for example `OPENAI_API_KEY`, `SHO
   code - `NODE_OPTIONS`, `BASH_ENV`, `GIT_SSH_COMMAND`... -, `ANTHROPIC_BASE_URL`, anything starting with
   `MAXXING_`); an existing key with such a name is kept but no longer exposed.
 
-From scripts and sessions: `maxxing keys list|get|set|delete` (the value of `set` is read from stdin) -
+From scripts and sessions: `pilot keys list|get|set|delete` (the value of `set` is read from stdin) -
 a script that renews a token writes the new value back this way. Scripts read keys from the
 environment (`os.environ["NAME"]`), never from a file of their own.
 

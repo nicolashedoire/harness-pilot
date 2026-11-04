@@ -22,7 +22,7 @@ Your personal knowledge system in plain Markdown: "note for today: long call wit
   in each topic's `memory.md`. Read both before working.
 - Never delete or rewrite a note without asking; append instead. Keep the user's own words for
   journal entries and ideas, only fix obvious transcription errors.
-- Follow-ups go to the task board (`maxxing-tasks` skill). Past conversations are searchable with
+- Follow-ups go to the task board (`pilot-tasks` skill). Past conversations are searchable with
   Ctrl+K; the notes themselves can be searched with `grep -ri` in the project folder.
 
 @memory.md

@@ -69,13 +69,13 @@ If voice messages are off, the bot replies with a short hint instead.
 
 ## From the terminal
 ```
-maxxing voice status                 # engine, model, readiness
-maxxing voice set --engine local --model small --language auto
-maxxing voice download [model]       # pre-download a local model
-maxxing voice transcribe note.ogg    # test a file
+pilot voice status                 # engine, model, readiness
+pilot voice set --engine local --model small --language auto
+pilot voice download [model]       # pre-download a local model
+pilot voice transcribe note.ogg    # test a file
 ```
-`maxxing doctor` reports the voice status. To install the local engine by hand:
-`cd /opt/claude-maxxing/server && uv sync --extra voice` (then `maxxing update` keeps it).
+`pilot doctor` reports the voice status. To install the local engine by hand:
+`cd /opt/claude-maxxing/server && uv sync --extra voice` (then `pilot update` keeps it).
 
 ## Troubleshooting
 - *Mic button greyed out* - voice is off or not ready: open Settings -> Voice.

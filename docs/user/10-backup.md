@@ -56,7 +56,7 @@ In local mode, scheduled backups run only while the app is running; missed runs 
 
 ## Restore
 
-- **Settings -> Backup -> Preview and restore latest** previews the latest revision, even when the local history is empty. The restore button next to a history entry previews that revision. The preview shows counts and example paths for files to create, replace, hold aside or skip. It pins the reviewed commit; local files can still change between preview and restore. The CLI `maxxing backup restore` restores the latest revision (or `--ref` selects one). Files that would be overwritten are first moved to a uniquely named folder under the application's state `trash/` directory.
+- **Settings -> Backup -> Preview and restore latest** previews the latest revision, even when the local history is empty. The restore button next to a history entry previews that revision. The preview shows counts and example paths for files to create, replace, hold aside or skip. It pins the reviewed commit; local files can still change between preview and restore. The CLI `pilot backup restore` restores the latest revision (or `--ref` selects one). Files that would be overwritten are first moved to a uniquely named folder under the application's state `trash/` directory.
 - After a restore, review the result for skipped files, settings that could not be restored, and items held aside. A successful response does not mean every item was restored. The original files are in the indicated trash folder when replacements occurred.
 - On a **new server** (no session started yet: the installer's restore, a move to another server) everything comes
   back as it was, jobs and extensions on. On a server **already in use**, code that runs on the server comes back
@@ -80,8 +80,8 @@ The inherited new-server restore procedure has not yet been validated for this v
 ## Command line
 
 ```bash
-maxxing backup status [--json]
-maxxing backup run
-maxxing backup restore [--ref <commit>]
-maxxing backup restore --from owner/name      # token from $MAXXING_GITHUB_TOKEN or prompted
+pilot backup status [--json]
+pilot backup run
+pilot backup restore [--ref <commit>]
+pilot backup restore --from owner/name      # token from $MAXXING_GITHUB_TOKEN or prompted
 ```

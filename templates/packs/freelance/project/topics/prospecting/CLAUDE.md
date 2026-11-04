@@ -50,5 +50,5 @@ example.com before my call", "draft a first message to their marketing lead".
 
 ## Automations
 
-- No job is created by this pack. On request (`maxxing-cron` skill): a Monday "pipeline review"
+- No job is created by this pack. On request (`pilot-crons` skill): a Monday "pipeline review"
   (stage counts, follow-ups due, stale prospects), or a weekly batch of new targets to research.

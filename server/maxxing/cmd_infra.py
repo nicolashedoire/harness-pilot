@@ -1,5 +1,5 @@
 """`maxxing infra` - where every site, database, bucket, domain and server is, and the standard recipes to create
-them on this server (skill `maxxing-infra`, page Infra).
+them on this server (skill `pilot-infra`, page Infra).
 
     maxxing infra status                         sources and problems of the last snapshot
     maxxing infra list [--kind K] [--json]       resources (site, worker, pages, database, bucket, domain, server)

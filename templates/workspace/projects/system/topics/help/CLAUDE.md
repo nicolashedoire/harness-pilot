@@ -17,7 +17,7 @@ is the only authority: `{{CODE_DIR}}/docs/user/` (the same pages as Settings -> 
 2. Answer short: the steps in the UI (page -> button), then the CLI or file alternative if any.
    Mention the page title so the user can read more (Settings -> Docs -> <title>); never invent
    URLs or links.
-3. Offer to do it yourself when it can be done from here (`maxxing ...` commands, editing workspace
+3. Offer to do it yourself when it can be done from here (`pilot ...` commands, editing workspace
    files, creating a cron job through the API/CLI, writing an extension). Do it only after the user
    says yes, then verify the result.
 4. Answer in the user's language (the docs are in English).
@@ -32,29 +32,29 @@ is the only authority: `{{CODE_DIR}}/docs/user/` (the same pages as Settings -> 
 | `06-files.md` | file browser, editor, uploads, previews (CSV, HTML, archives, fonts, PDF...), the file viewer |
 | `07-tasks.md` | task board, tasks.json |
 | `08-crons.md` | scheduled jobs: shell or Claude, schedule syntax, time zone, notifications |
-| `09-telegram.md` | Telegram bot, one thread per open session (thread names), commands, voice, two-step sign-in (`maxxing 2fa off`) |
+| `09-telegram.md` | Telegram bot, one thread per open session (thread names), commands, voice, two-step sign-in (`pilot 2fa off`) |
 | `10-backup.md` | memory backup to GitHub, restore, new server |
 | `11-settings-and-keys.md` | settings (appearance: theme, accent, background, fonts; features), secret keys vault, trash |
 | `12-dashboard-widgets.md` / `13-page-extensions.md` | extensions |
 | `14-skills.md` | shipped Claude Code skills |
 | `15-security.md` | password, permissions, exposure |
 | `16-troubleshooting.md` | common problems and fixes |
-| `17-cli-reference.md` | every `maxxing` command |
+| `17-cli-reference.md` | every `pilot` command (`maxxing` = the same command, earlier name) |
 | `18-voice.md` | voice messages (speech-to-text) |
 | `19-system-project.md` | this `system` project and its topics |
 | `20-customizing.md` | changing the product's own code, kept across updates |
 | `21-import.md` | importing from another agent (Hermes, Claude Code, OpenClaw...) |
 | `22-tools.md` | videos (Remotion), PDFs, images, web scraping |
 | `23-license.md` | fair source license (what is allowed), optional hello to the authors (anonymous counter, email, news), Feedback button (bug / idea to the authors, email required), donations (Settings -> Support, links only, can be hidden), optional Enterprise key (Settings -> License), updates |
-| `24-feed.md` | notifications feed: dashboard panel, webhooks (Stripe, Shopify, GitHub, JSON), `maxxing feed post`, Telegram rules |
-| `25-starter-projects.md` | starter projects (packs): e-commerce, affiliate, creator, apps, second brain, freelance; Settings -> Starter pack, `maxxing packs` |
+| `24-feed.md` | notifications feed: dashboard panel, webhooks (Stripe, Shopify, GitHub, JSON), `pilot feed post`, Telegram rules |
+| `25-starter-projects.md` | starter projects (packs): e-commerce, affiliate, creator, apps, second brain, freelance; Settings -> Starter pack, `pilot packs` |
 | `26-git.md` | Git & GitHub: ```git graphs in the chat, the Git page (Settings -> Features: server clones + GitHub account, rights, branches, commits, pull requests), GITHUB_TOKEN |
-| `27-infra.md` | Infra page (Settings -> Features, off by default): sites, databases, buckets, domains, servers of this server, other servers (SSH), Cloudflare, Hostinger; statuses and alerts; recipes `maxxing infra` (path sites, PostgreSQL, Garage buckets); ```infra blocks; any domain without a key (public DNS + RDAP, Add a domain); Vercel, Netlify, Supabase, GitHub Pages (beta) |
-| `28-mcp.md` | Settings -> MCP: MCP servers (tools of a service for Claude), every session or one topic, states, Connect (OAuth sign-in), keys as ${KEY}; `maxxing mcp` |
+| `27-infra.md` | Infra page (Settings -> Features, off by default): sites, databases, buckets, domains, servers of this server, other servers (SSH), Cloudflare, Hostinger; statuses and alerts; recipes `pilot infra` (path sites, PostgreSQL, Garage buckets); ```infra blocks; any domain without a key (public DNS + RDAP, Add a domain); Vercel, Netlify, Supabase, GitHub Pages (beta) |
+| `28-mcp.md` | Settings -> MCP: MCP servers (tools of a service for Claude), every session or one topic, states, Connect (OAuth sign-in), keys as ${KEY}; `pilot mcp` |
 | `29-team.md` | Settings -> Features -> Team: chats with other Harness users (DMs, groups, files, polls), one-time invitation server to server (public address, not Tailscale), Summarize, To a session |
 | `{{CODE_DIR}}/CHANGELOG.md` | every update, newest first ("what changed?", "since when?") - Settings -> Updates |
 
-Useful commands: `maxxing status`, `maxxing doctor`, `maxxing cron list`. For updates, widgets,
+Useful commands: `pilot status`, `pilot doctor`, `pilot cron list`. For updates, widgets,
 pages, extensions and starter packs send the user to the topic `system/harness`.
 
 ## Server administration
@@ -68,7 +68,7 @@ removals or upgrades of the kernel/major packages, firewall changes (a wrong rul
 out - keep SSH open), editing system configuration. Reading and diagnosing never needs permission.
 
 ### Health check ("how is the server?")
-- `maxxing status` and `maxxing doctor --json` (follow the `fix` hints of failed checks)
+- `pilot status` and `pilot doctor --json` (follow the `fix` hints of failed checks)
 - disk `df -h /` and the biggest folders `du -xh --max-depth=2 / 2>/dev/null | sort -h | tail -15`
 - memory/load `free -h`, `uptime`; failed units `systemctl --failed`
 - services `systemctl status claude-maxxing caddy cron --no-pager`
@@ -90,7 +90,7 @@ Summarise in a few lines: OK / to watch / to fix, then propose fixes.
 
 ### Disk full
 Typical culprits: `journalctl --disk-usage` (`journalctl --vacuum-time=14d`), apt cache
-(`apt clean`), old session logs (`maxxing sessions compact-logs --dry-run`), the trash in the state
+(`apt clean`), old session logs (`pilot sessions compact-logs --dry-run`), the trash in the state
 folder. Show sizes and ask before deleting anything.
 
 Record durable facts about this server (provider, size, quirks, decisions) in memory.md.

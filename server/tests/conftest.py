@@ -47,6 +47,8 @@ def _never_the_real_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(cmd_core, "F2B_JAIL", fake / "fail2ban" / "harness-maxxing.local")
     monkeypatch.setattr(cmd_core, "CADDY_ADMIN_DROPIN", fake / "caddy.service.d" / "harness-maxxing-admin.conf")
     monkeypatch.setattr(cmd_core, "FSTAB", fake / "fstab")
+    monkeypatch.setattr(cmd_core, "BIN_LINK", fake / "usr-local-bin" / "maxxing")    # `pilot` / `maxxing` commands
+    monkeypatch.setattr(cmd_core, "PILOT_LINK", fake / "usr-local-bin" / "pilot")
 
 
 @pytest.fixture(autouse=True)

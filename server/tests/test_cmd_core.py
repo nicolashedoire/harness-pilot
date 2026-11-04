@@ -31,6 +31,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(cmd_core, "CADDYFILE", etc / "Caddyfile")
     monkeypatch.setattr(cmd_core, "CADDY_SITE", etc / "claude-maxxing.caddy")
     monkeypatch.setattr(cmd_core, "BIN_LINK", etc / "maxxing")
+    monkeypatch.setattr(cmd_core, "PILOT_LINK", etc / "pilot")
     monkeypatch.setattr(cmd_core, "JOBS_SLICE_PATH", etc / "maxxing-jobs.slice")
     calls: list[tuple] = []
 
@@ -74,7 +75,7 @@ def test_init_creates_state_config_workspace_skills(env, capsys):
         assert (ws / rel).is_file(), rel
     assert json.loads((ws / "tasks.json").read_text()) == {"version": 1, "projects": [], "tasks": []}
     names = cmd_core.product_skill_names()
-    assert "memory" in names and "memory-compaction" in names and "maxxing-setup" in names
+    assert "memory" in names and "memory-compaction" in names and "pilot-setup" in names
     for n in names:
         assert (home / ".claude" / "skills" / n / "SKILL.md").is_file()
     st = json.loads((home / ".claude" / "settings.json").read_text())
@@ -172,12 +173,12 @@ def test_skills_manifest_replaces_and_removes(env, tmp_path, monkeypatch):
     assert len(backups) == 1 and (backups[0] / "SKILL.md").read_text() == "user's own skill"
     # a product skill disappears from the code -> removed at the next init; user skills stay
     fake_src = tmp_path / "skills-src"
-    for n in ("memory", "maxxing-doctor"):
+    for n in ("memory", "pilot-doctor"):
         (fake_src / n).mkdir(parents=True)
         (fake_src / n / "SKILL.md").write_text(f"---\nname: {n}\n---\n")
     monkeypatch.setattr(config, "SKILLS_DIR", fake_src)
     assert run_cli("init", "--quiet") == 0
-    assert sorted(p.name for p in target.iterdir()) == ["maxxing-doctor", "memory", "my-skill"]
+    assert sorted(p.name for p in target.iterdir()) == ["memory", "my-skill", "pilot-doctor"]
     assert (target / "my-skill" / "SKILL.md").read_text() == "keep me"
     assert all(s["state"] == "ok" for s in cmd_core.skills_status())
 
@@ -193,9 +194,9 @@ def test_skills_are_rendered_with_the_paths_of_this_install(env):
         text = text.replace(str(config.CODE), "<code>")      # a dev checkout may itself live under /root/maxxing
         for default in ("/opt/claude-maxxing", "/root/maxxing", "/var/lib/claude-maxxing", "{{"):
             assert default not in text, (name, default)
-    assert f'p = "{env["ws"]}/tasks.json"' in texts["maxxing-tasks"]
-    assert f"{env['state']}/crons/jobs.json" in texts["maxxing-cron"]
-    assert f"bash {config.CODE}/install.sh" in texts["maxxing-setup"]
+    assert f'p = "{env["ws"]}/tasks.json"' in texts["pilot-tasks"]
+    assert f"{env['state']}/crons/jobs.json" in texts["pilot-crons"]
+    assert f"bash {config.CODE}/install.sh" in texts["pilot-setup"]
     assert all(s["state"] == "ok" for s in cmd_core.skills_status())
     # a stale copy (old defaults) is reported as outdated, and the next init renders it again
     (target / "memory" / "SKILL.md").write_text((config.SKILLS_DIR / "memory" / "SKILL.md").read_text())

@@ -110,7 +110,7 @@ def test_conflict_changes_nothing_then_resume_after_claude_adapts(code, capsys):
     assert p["reason"] == "conflict" and p["conflicts"] == ["server/maxxing/rules.py"] and p["target_version"] == "1.2.0"
     assert run_cli("doctor") in (0, 1)
     assert "update pending: customizations conflict" in capsys.readouterr().out
-    # what Claude does (skill maxxing-customize): rebase, adapt, continue, resume
+    # what Claude does (skill pilot-customize): rebase, adapt, continue, resume
     customs.ensure_identity()                                           # done by save() / update anyway
     subprocess.run(["git", "-C", str(clone), "rebase", "origin/main"], capture_output=True)
     assert customs.rebase_in_progress() and customs.conflicts() == ["server/maxxing/rules.py"]

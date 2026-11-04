@@ -53,4 +53,4 @@ Ideas, hooks and scripts for every format: "10 video ideas on home workouts", "w
 ## Automations
 
 - Fits a weekly "idea batch" job (e.g. Sunday evening: 10 new ideas from the backlog and recent
-  comments) with the `maxxing-cron` skill; only create it if the user asks.
+  comments) with the `pilot-crons` skill; only create it if the user asks.

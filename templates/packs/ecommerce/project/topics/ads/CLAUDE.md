@@ -57,4 +57,4 @@ week?", "how should I split a 50 per day budget?". Analysis and proposals here; 
 - "Ads review" (Monday 09:00): last week's results per campaign vs target, best and worst ad sets,
   at most 3 suggested changes, nothing applied. Created disabled, enable it on the Crons page or ask here.
 - A spend spike or tracking break can go to the feed with
-  `maxxing feed post "Meta spend +80% today" --level warning --source ads`.
+  `pilot feed post "Meta spend +80% today" --level warning --source ads`.

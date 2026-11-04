@@ -1,10 +1,10 @@
 # harness-pilot
 
-![Two luminous companions representing the agents](docs/assets/project-cover.png)
+![harness-pilot — Your AI agent crew, illustrated by a troupe of colorful AI companions](docs/assets/project-cover.png)
 
-**A self-hosted workspace for working with Claude Code and OpenAI Codex.**
+**A self-hosted control room for Claude Code and OpenAI Codex.**
 
-Create project sessions, work with either agent, or let both exchange ideas automatically while you follow along. The project is under active development; some advanced features currently work only with Claude Code.
+Organize work by project, collaborate with either agent, and follow their automatic discussions as they happen. The project is under active development; some advanced features currently work only with Claude Code.
 
 ## What you can do
 
@@ -19,19 +19,23 @@ Each agent uses its own CLI and account. Automatic discussions pass the other ag
 
 ## Run locally on macOS
 
-Requirements: Python, [uv](https://docs.astral.sh/uv/), and a signed-in installation of Claude Code and/or Codex. From the repository root:
+Requirements: macOS, Git, Python 3.11 or newer, [uv](https://docs.astral.sh/uv/), and Claude Code and/or Codex installed and signed in. An agent's account and CLI are required to use that agent.
+
+Clone the repository and start the local server:
 
 ```sh
+git clone https://github.com/nicolashedoire/harness-pilot.git
+cd harness-pilot
 bash scripts/dev-local.sh
 ```
 
-Open `http://127.0.0.1:8787`. On the first run, open another terminal and run:
+If you already cloned the repository, start from its root and run the last command. On the first run, leave that terminal open, open a second terminal in the same repository, and run:
 
 ```sh
 bash scripts/dev-local.sh link
 ```
 
-Open the configuration link and choose a password in your browser. The local instance binds to your computer only and stores its workspace and state in `.harness-pilot-local/`, which Git ignores. Stop the server with `Ctrl+C` in its terminal.
+Open the configuration link and choose a password in your browser. Then use `http://127.0.0.1:8787`. The local instance binds to your computer only and stores its workspace and state in `.harness-pilot-local/`, which Git ignores. Stop the server with `Ctrl+C` in its terminal.
 
 The local script uses an isolated workspace and does not change your system crontab. A local scheduler runs jobs while the application is running; it does not replay jobs missed during sleep or shutdown, and does not support `@reboot`. Scheduled prompts currently use Claude Code. A new local configuration starts in Claude's default permission mode. The application's legacy installation counter, registration and license communication with the upstream service are disabled. Agent CLIs and optional integrations have their own network and privacy settings. The legacy installer and upgrade paths have not yet been validated for this repository; use the local script above.
 
@@ -45,11 +49,11 @@ For a task that benefits from parallel work, select **Claude Code — agent team
 
 The session menu can generate a reviewable summary, decisions, and suggested actions using Codex. Select the proposed actions you want before adding them to the task board. You can also review and edit the summary before explicitly saving it to the topic's shared `memory.md`. Codex reads this memory on its next turn; Claude normally loads it when starting a new thread. Summary requests use the connected Codex account and are not yet included in the turn statistics.
 
-To follow discussions in Telegram, configure a bot in **Settings → Telegram** and enable mirroring. Telegram setup is separate from connecting the agents.
+Telegram is optional and configured separately under **Settings → Telegram**. The inherited Claude integration is documented in the [Telegram guide](docs/user/09-telegram.md); mirroring and control of Codex and two-agent discussions have not yet been validated.
 
 ## Documentation and contributions
 
-The guides in `docs/user/` describe the existing application; some legacy pages are still being updated for this version. See [the current audit](docs/AUDIT.md) for known inconsistencies and [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
+Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 
 Memory backups cover selected files and settings, not conversations, attachments or all project files. Preview a restore and review its result in Settings → Backup. See the [backup guide](docs/user/10-backup.md) for the exact scope and current limitations.
 
