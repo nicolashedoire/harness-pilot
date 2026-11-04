@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
 - Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.

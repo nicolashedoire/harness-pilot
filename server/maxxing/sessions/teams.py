@@ -15,12 +15,15 @@ from . import store
 log = logging.getLogger('maxxing.teams')
 
 
-def create(path: str, message: str, title: str | None = None) -> dict:
+def create(path: str, message: str, title: str | None = None, attachments: list[str] | None = None) -> dict:
     from . import service
 
     goal = (message or '').strip()
     if not goal or len(goal) > 24000:
         raise service.SessionError(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
+    # the same files go to both workers (Claude reads them, Codex gets the images inline and the other paths) and to
+    # the coordinator with the synthesis request
+    files = service._check_attachments(attachments)
     parent = service.create_session(path, title=title or goal[:100], provider='claude')
     sid = parent['id']
     agents = []
@@ -31,8 +34,8 @@ def create(path: str, message: str, title: str | None = None) -> dict:
                                            permission_mode='plan')
             agents.append({'id': child['id'], 'provider': provider, 'role': role, 'stopped': False})
         with store.edit(sid) as m:
-            m['team'] = {'phase': 'launching', 'goal': goal, 'agents': agents, 'created': time.time()}
-        store.append_log(sid, {'type': 'mx_user', 'text': goal, 'attachments': [], 'source': 'web', 'at': time.time()})
+            m['team'] = {'phase': 'launching', 'goal': goal, 'attachments': files, 'agents': agents, 'created': time.time()}
+        store.append_log(sid, {'type': 'mx_user', 'text': goal, 'attachments': files, 'source': 'web', 'at': time.time()})
         with store.edit(sid) as m:
             # Keep team stop serialized with launch so a late launch cannot revive a stopped team.
             if m['team'].get('phase') != 'launching':
@@ -45,7 +48,7 @@ def create(path: str, message: str, title: str | None = None) -> dict:
                     'Analyze the mission from your assigned perspective and report your findings to the coordinator. '
                     'Do not edit files or take external actions during this analysis. '
                     'Your report is advisory; clearly distinguish evidence from assumptions.\n\n'
-                    f'Your assignment: {agent["role"]}\n\nMission:\n{goal}', source='team')
+                    f'Your assignment: {agent["role"]}\n\nMission:\n{goal}', files, source='team')
             m['team']['phase'] = 'working'
         bus.invalidate('sessions', 'workspace')
         return service.get_session(sid) or parent
@@ -162,7 +165,7 @@ def advance(sid: str) -> None:
         if m['team'].get('agents') != agents:
             return  # A concurrent stop changed a worker; rebuild the reports on the next pass.
         m['team']['phase'] = 'synthesizing'
-        m.setdefault('queue', []).append(service._item(prompt, [], 'team'))
+        m.setdefault('queue', []).append(service._item(prompt, team.get('attachments') or [], 'team'))
         m.update(state='running', spawned_at=time.time(), error=None, pid=None, updated=time.time())
     service._spawn(sid)
     bus.invalidate('sessions', 'workspace')
