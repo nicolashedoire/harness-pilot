@@ -14,7 +14,7 @@ The command is `pilot`. `maxxing` is the same command under its earlier name and
 | `pilot serve [--host IP] [--port N]` | run the web server (used by the `claude-maxxing` service) |
 | `pilot setup-link [--reset]` | print the one-time setup link; `--reset` forgets the password and starts the setup again |
 | `pilot password` | set a new UI password (interactive) |
-| `pilot 2fa status\|off\|forget-browsers` | two-step sign-in with Telegram: state, turn it off (the way back in when Telegram does not answer), make every browser ask again |
+| `pilot 2fa status\|off\|forget-browsers` | two-step sign-in (Telegram and authenticator app): state, turn both off (the way back in when Telegram does not answer or the phone is lost), make every browser ask again |
 | `pilot status [--json]` | version, URL, service, Claude auth, Telegram, backup, paths |
 | `pilot doctor [--json] [--live] [--offline] [--deps]` | check the installation; `--live` makes a real Claude call, `--offline` skips the update checks (GitHub, Claude Code release), `--deps` also looks up known vulnerabilities of the installed packages (osv.dev) |
 | `pilot harden [--undo] [--no-restart]` | apply (or remove) the systemd sandbox of the service, then restart it; restores the previous settings if the service does not come back (see [Security](security)) |

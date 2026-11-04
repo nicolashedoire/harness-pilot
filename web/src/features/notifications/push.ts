@@ -3,6 +3,8 @@
 // what it needs to show a push without the app (texts in the UI language, which kinds ring, the logo of the
 // accent) through a small JSON in Cache Storage. Also: a click on a push opens its page in the running app.
 import * as React from 'react'
+import { browserRequest } from '@/lib/browser-request'
+import { activeRegistration, enrollPush } from './enrollment'
 import { useNavigate } from 'react-router'
 import { translate, type TKey } from '@/i18n'
 import { appIconSrc } from '@/lib/accent'
@@ -26,9 +28,9 @@ async function registration(): Promise<ServiceWorkerRegistration | null> {
   return (await navigator.serviceWorker.getRegistration().catch(() => undefined)) ?? null
 }
 
-/** A service worker controls this page (production build on HTTPS or localhost). */
-export async function pushReady(): Promise<boolean> {
-  return pushSupported() && !!(await registration())?.active
+/** An active service worker is available (production build on HTTPS or localhost, including first install). */
+export async function pushReady(signal?: AbortSignal): Promise<boolean> {
+  return pushSupported() && !!await activeRegistration({ current: registration, ready: () => navigator.serviceWorker.ready }, signal)
 }
 
 export async function currentSubscription(): Promise<PushSubscription | null> {
@@ -38,17 +40,18 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
 
 /** Asks the browser for a subscription (permission prompt) and returns the body for the server. `sources`: the
  *  webhooks and scripts of the matrix (pushSources). A subscription made with another server key is replaced. */
-export async function subscribeBrowser(publicKey: string, sources: PushSource[] = []): Promise<PushSubscribeBody> {
-  const r = await registration()
+export async function subscribeBrowser(publicKey: string, sources: PushSource[] = [], signal?: AbortSignal): Promise<PushSubscribeBody> {
+  const r = await browserRequest(registration, { signal })
   if (!r) throw new Error('no_service_worker')
-  if (Notification.permission === 'default' && (await Notification.requestPermission()) !== 'granted') throw new Error('denied')
-  if (Notification.permission !== 'granted') throw new Error('denied')
-  let sub = await r.pushManager.getSubscription()
-  if (sub && !sameServerKey(sub.options?.applicationServerKey, publicKey)) {
-    await sub.unsubscribe().catch(() => false)
-    sub = null
-  }
-  if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) })
+  const sub = await enrollPush({
+    permission: () => Notification.permission,
+    requestPermission: () => Notification.requestPermission(),
+    getSubscription: () => r.pushManager.getSubscription(),
+    matches: (existing) => sameServerKey(existing.options?.applicationServerKey, publicKey),
+    // as before: a failed unsubscribe still lets the browser try the new key (it answers for itself)
+    unsubscribe: (existing) => existing.unsubscribe().catch(() => false),
+    subscribe: () => r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) }),
+  }, signal)
   const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
   const { notifyPrefs, soundPrefs, soundSet } = useUI.getState()
   return { endpoint: json.endpoint, keys: json.keys, label: deviceLabel(), prefs: pushPrefs(notifyPrefs, soundPrefs, soundSet, sources) }

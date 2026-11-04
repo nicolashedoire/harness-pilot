@@ -8,7 +8,7 @@ Update it with each step.
 
 - **Enabled (step 3)** for Debian 12 and Ubuntu 24.04. The gate is gone; the script refuses only a shell that is not
   bash 4 or newer. `MAXXING_INSTALL_LIB=1` still loads the functions without running anything (tests). HTTPS with a
-  domain (needed by mobile push, webhooks and Team) is the next step.
+  domain (needed by mobile push, webhooks and Team): see step 4 below.
 - **Before step 3**, the script exited at its first lines unless `MAXXING_INSTALL_LIB=1`; the runs below up to step
   2 bypassed that gate through library mode.
 - **Tests.** `server/tests/test_install_reliability.py` and `test_install_security.py` (37 tests, 91 cases with their
@@ -44,8 +44,24 @@ Update it with each step.
     at; fixed separately in `deps.CHROMIUM_DIRS`.
   - A minimal image without tzdata gave `UTC` then `Etc/UTC` (doctor warning): the installer now reads the system zone
     after installing tzdata.
+- **Step 4, HTTPS with a domain** (`ACCESS=domain`), Debian 12 and Ubuntu 24.04 containers started with
+  `--add-host ui.example.com:127.0.0.1`:
+  - the installer installed Caddy 2.11.8 from its apt repository (signing key fingerprint checked), wrote
+    `/etc/caddy/claude-maxxing.caddy` and a Caddyfile with the admin API on a socket; `caddy validate` passed, Caddy
+    listened on 80/443, the server stayed on `127.0.0.1:8787`, the setup link started with `https://ui.example.com`;
+  - Let's Encrypt cannot issue for a test domain, so `tls internal` was added by hand to the site (test only, Caddy's
+    local CA trusted with `--cacert`): HTTP answered 308 to HTTPS; HTTPS/2 200 with HSTS, nosniff, `SAMEORIGIN`,
+    `same-origin`; `POST /api/auth/setup` set an `HttpOnly; SameSite=strict; Secure` cookie; `GET /api/push` said
+    `available: true`; a generic webhook's URL was `https://ui.example.com/api/hooks/<token>` and a POST to it
+    created a feed event; `/api/stream` streamed through Caddy; `pilot doctor` showed the public URL reachable with
+    the test CA in `SSL_CERT_FILE`;
+  - a local installation re-run with `ACCESS=domain DOMAIN=ui.example.com` switched to the domain (public URL, Caddy
+    installed, everything else kept); the generated site was byte-identical before and after `caddy_site_text`;
+  - `pilot uninstall --yes --purge` removed the site and Caddy (installed by the installer).
+  - Not verifiable here: a real Let's Encrypt certificate (needs a real domain with DNS and ports 80/443 open),
+    Team readiness (the test domain resolves to a loopback address, which `teampeer.readiness` rightly refuses).
 - **Not verified yet:** x86_64 (no amd64 emulation here), a real server (firewall and SSH hardening are left to the
-  host in a container, swap is skipped there), `ACCESS=domain` (Caddy and its certificate), `ACCESS=tailscale`,
+  host in a container, swap is skipped there), a Let's Encrypt certificate for a real domain, `ACCESS=tailscale`,
   `RESTORE_FROM`.
 
 ## What pointed to the original project
@@ -106,7 +122,7 @@ Renaming them needs a migration of existing installs; it is not part of this pla
 3. Re-enable for Debian 12 and Ubuntu 24.04: remove the gate, run install, `pilot doctor` and uninstall end to end in
    systemd containers of both, the installer tests green on Linux. Done.
 4. HTTPS with a domain (`ACCESS=domain`, Caddy): verified as far as possible without a real domain (configuration
-   generated and validated by Caddy), documented as the condition for mobile push, webhooks and Team.
+   generated and validated by Caddy), documented as the condition for mobile push, webhooks and Team. Done.
 5. User docs (`docs/user/02-installation.md`, `README.md`, `docs/user/22-tools.md`) aligned with what was verified.
 
 ## Reproduce
@@ -128,3 +144,15 @@ docker rm -f pilot-test
 
 Tests on Linux: `cd server && MAXXING_STATE=$(mktemp -d) uv run pytest tests/test_install_reliability.py
 tests/test_install_security.py`.
+
+## Public install and tools (step 5)
+
+From the public path, in a fresh Ubuntu 24.04 arm64 systemd container: `curl -fsSLo install.sh` of the raw `main`
+file, then `ASSUME_YES=1 bash install.sh` with every other default (local access, local voice, background tools).
+9 steps in 48 s; the background unit installed Node.js 22.23.3, Scrapling 0.4.15, Chromium 1248 (found in
+`chrome-linux-arm64/`), Remotion 4.0.534 and the Whisper `small` model; `pilot video status` was all ready. Then, for
+real: `pilot pdf page.html page.pdf` (text read back with `pdftotext`), `scrapling extract get` and `scrapling extract
+fetch` (browser) on example.com, `pilot video new` then `npm run render` (h264, 1920x1080, 5 s, rendered in 22 s).
+A manual `pilot deps update` during the background one broke both before the deps lock (Node.js and Remotion
+missing); with the lock (`deps.exclusive`), the second one waits. User docs: `README.md` (Run on a Linux server), `docs/user/02-installation.md`,
+`docs/user/22-tools.md`.

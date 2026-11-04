@@ -69,6 +69,11 @@ class TeamIn(_Text):
     message: str = Field(default='', max_length=24000)   # empty -> 400 bad_mission (teams.create says why)
     title: str | None = Field(default=None, max_length=120)
     attachments: list[str] = Field(default_factory=list)
+    claude_role: str = Field(default='', max_length=2000)   # empty = teams.ROLES (the default assignment)
+    codex_role: str = Field(default='', max_length=2000)
+    coordinator: Literal['claude', 'codex'] = 'claude'      # writes the synthesis (the returned session)
+    claude_model: str = Field(default='', max_length=100)   # empty = that agent's default model
+    codex_model: str = Field(default='', max_length=100)
 
 
 class DiscussionPresetIn(_Text):
@@ -152,7 +157,9 @@ async def shutdown() -> None:
 @router.post('/teams')
 async def create_team(body: TeamIn):
     from ..sessions import teams
-    return await _call(teams.create, body.path, body.message, body.title, body.attachments)
+    return await _call(teams.create, body.path, body.message, body.title, body.attachments,
+                       {'claude': body.claude_role, 'codex': body.codex_role}, body.coordinator,
+                       {'claude': body.claude_model, 'codex': body.codex_model})
 
 
 @router.get('/teams/{sid}')

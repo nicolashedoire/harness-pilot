@@ -193,3 +193,58 @@ def test_stats_survive_badly_typed_meta_fields(client, mx):
     d = r.json()
     assert d["totals"]["sessions"] == len(cases) + 1 and d["latency"]["turns"] == 0
     assert all(isinstance(s["title"], str) and isinstance(s["path"], str) for s in d["sessions"])
+
+
+def test_older_codex_turns_that_counted_cached_input_twice_are_recalculated_once(client, mx):
+    """Before cached input was split out, a Codex result kept the cache reads inside input_tokens and repeated them as
+    cache_read_input_tokens (and had no cache_creation_input_tokens). Those turns are recalculated from the log once."""
+    at = 1_700_000_000
+    day = __import__("time").strftime("%Y-%m-%d", __import__("time").localtime(at))
+    legacy = {"input_tokens": 1000, "output_tokens": 50, "cache_read_input_tokens": 800}
+    current = {"input_tokens": 200, "output_tokens": 50, "cache_read_input_tokens": 800, "cache_creation_input_tokens": 0}
+
+    def session(provider, lines):
+        m = store.new_meta("projects/acme/topics/blog", provider)
+        m["provider"] = provider
+        store.create(m)
+        with store.edit(m["id"]) as meta, open(store.log_path(m["id"]), "a") as f:
+            for line in lines:
+                f.write(json.dumps({**line, "mx_at": at}) + "\n")
+                store.add_usage(meta, line.get("usage"), float(line.get("total_cost_usd") or 0), at)
+                meta["turns"] = meta.get("turns", 0) + 1
+                meta["cost_usd"] = meta.get("cost_usd", 0) + float(line.get("total_cost_usd") or 0)
+        return m["id"]
+
+    codex = session("codex", [{"type": "result", "subtype": "success", "usage": legacy},
+                              {"type": "result", "subtype": "success", "usage": current}])
+    # a Claude turn of a discussion reports a cost: never touched, even without cache_creation_input_tokens
+    talk = session("discussion", [{"type": "result", "total_cost_usd": 0.2, "usage": legacy},
+                                  {"type": "result", "subtype": "success", "usage": legacy}])
+    # an agent plugin may omit cache_creation_input_tokens too: only Codex / discussion sessions are recalculated
+    plugin = session("plugin:acme", [{"type": "result", "subtype": "success", "usage": legacy}])
+
+    r = client.get("/api/stats/tokens?force=1").json()
+    assert r["corrected"] == {"turns": 2, "tokens": 1600}
+    assert store.read(codex)["tokens"]["input"] == 200 + 200            # 1000 - 800, then the corrected turn
+    assert store.read(codex)["days"][day]["tokens"] == (1850 - 800) + 1050
+    assert store.read(talk)["tokens"]["input"] == 1000 + 200
+    assert store.read(plugin)["tokens"]["input"] == 1000
+    assert store.read(codex)["usage_fixes"] == {"codex_cached": {"turns": 1, "tokens": 800}}
+    assert r["totals"]["input"] == 400 + 1200 + 1000 and r["totals"]["cost_usd"] == 0.2
+    # never subtracted twice
+    again = client.get("/api/stats/tokens?force=1").json()
+    assert again["corrected"] == r["corrected"] and again["totals"]["input"] == r["totals"]["input"]
+    assert store.read(codex)["tokens"]["input"] == 400
+
+
+def test_a_codex_session_backfilled_from_its_log_leaves_the_double_count_out(client, mx):
+    m = store.new_meta("projects/acme/topics/blog", "Old Codex")
+    m["provider"] = "codex"
+    m.pop("tokens")
+    store.create(m)
+    with open(store.log_path(m["id"]), "a") as f:
+        f.write(json.dumps({"type": "result", "subtype": "success",
+                            "usage": {"input_tokens": 1000, "output_tokens": 5, "cache_read_input_tokens": 900}}) + "\n")
+    r = client.get("/api/stats/tokens?force=1").json()
+    assert r["totals"]["input"] == 100 and r["totals"]["cache_read"] == 900
+    assert store.read(m["id"])["tokens"]["input"] == 100 and r["corrected"]["tokens"] == 900
