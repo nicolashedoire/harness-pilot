@@ -30,7 +30,7 @@ ARCHITECT = {'id': 'architect', 'name': 'Application architect and router', 'pro
                      'documentation and code to identify relevant modules and guide other companions with precise '
                      'file paths, dependencies and verification steps. State uncertainty and missing links.'}
 REVERSE = {'id': 'reverse-engineer', 'name': 'Reverse engineering investigator', 'provider': 'codex',
-           'role': 'Use the rea-investigation skill and optional external REA tools to investigate source, '
+           'role': 'Use the pilot-rea-investigation skill and optional external REA tools to investigate source, '
                    'application behavior and dependencies. Keep evidence and internal maps, distinguish observations '
                    'from hypotheses, and guide tested improvements. Report tool/provider availability honestly. '
                    'For local model changes, use the model-evolution workflow when available; REA is not a weight-semantic decoder.'}

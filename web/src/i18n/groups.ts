@@ -7,8 +7,11 @@ export const GROUPS = {
   settings: [
     'mcp', 'system', 'stats', 'keys', 'memory', 'trash', 'features', 'security', 'profile', 'fonts', 'accent',
     'density', 'tint', 'colors', 'themegen', 'backup', 'import', 'telegram', 'packs', 'pc', 'license', 'register', 'cdef', 'nset',
-    'codex', 'update', 'companions',
+    'codex', 'update', 'vset',
   ],
+  // Settings -> Companions and the words of the companion notifications (`companions.kind.*`, see
+  // features/notifications/text.ts): loaded with Settings, and before a companion notice is shown
+  companions: ['companions'],
   auth: ['onb', 'setup', 'login', 'pw', 'twofa'],
   infra: ['infra'],
   git: ['git'],
