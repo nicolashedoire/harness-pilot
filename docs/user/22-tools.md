@@ -59,5 +59,7 @@ pilot video status                          # Node.js, Remotion, headless browse
 pilot deps list                             # versions of every component
 pilot deps update                           # (re)install the tools, as root (Linux server only)
 ```
-`pilot doctor` warns (never fails) when they are missing. `pilot deps update` downloads Linux builds and needs
+Only one update of the tools runs at a time: a `pilot deps update` started while another one runs (for example the
+one in the background after an installation or `pilot update`) says it waits, then goes on. `pilot doctor` warns
+(never fails) when they are missing. `pilot deps update` downloads Linux builds and needs
 root: it does not install anything in the local macOS setup.

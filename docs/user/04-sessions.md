@@ -15,7 +15,7 @@ Open **Agent map** from the session menu to inspect agent calls present in the l
 
 ## Mixed Claude and Codex team
 
-Choose **Mixed team** under **Several agents** and send a written mission, with files or images if needed. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. This first version uses these two fixed roles and does not automatically split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
+Choose **Mixed team** under **Several agents** and send a written mission, with files or images if needed. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. Those are the default roles: change either one in the form before sending (**Default roles** puts them back). Each agent receives its role with the mission, the team panel shows it, and the coordinator names both in its synthesis. The team does not split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
 
 While the team works, its panel above the message box shows the steps (**Starting**, **Agents working**, **Synthesis**, **Done**) and, for each agent, how long it has worked, its last actions (files read, searches, commands, what it says) and, once it has finished, the start of its report. The panel folds to one line when the team is over; click it to open it again. Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Files and images attached to the mission go to both agents and to the coordinator: Claude opens them itself, Codex receives the images directly (PNG, GIF, WebP or JPEG up to 3.5 MB) and the location of every other file. Each agent reads them with its own subscription. The mission is written: the microphone dictates it into the text instead of sending a voice message.
 
@@ -27,7 +27,7 @@ You can assign a different role to each agent, choose a built-in pair of roles, 
 
 The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
 
-From a session's **More actions** menu, **Summary and actions** asks Codex to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The summary request uses the connected Codex account and is not yet included in turn statistics.
+From a session's **More actions** menu, **Summary and actions** asks Codex (or Claude Code when Codex is not signed in) to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review; the dialog says which agent wrote it. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The request uses that agent's account; its tokens (and Claude's indicative amount) are added to the session's statistics, without counting as a turn.
 
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
 
@@ -47,13 +47,12 @@ These features are for Claude Code only for now:
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.
-- **Scheduled prompts** (Crons): they run with Claude Code.
 - **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
   follows its own sandbox, which still lets it read those files.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
 - **New sessions started from Telegram** use Claude Code.
 
-**Summary and actions** works the other way round: it needs a signed-in Codex, whatever the session's agent.
+**Summary and actions** works with either agent: Codex when it is signed in, otherwise Claude Code.
 
 ## Layout
 
@@ -298,6 +297,11 @@ commands that modify anything in this mode.
 - The HUD shows the plan as the answer and has a **Validate the plan** button.
 - Plan mode applies to every message of the session, Telegram included; validate the plan from the web
   app or the HUD. Compact and hand off still work normally.
+- **In a Claude Code and Codex discussion** (tick **Plan mode** when you start it, or use the box later), both
+  agents only read and work the plan out together, each reply giving the whole plan as it stands. Pause the
+  discussion (or let a reply limit pause it) to get the **Proposed plan** card. **Approve and run**: the agent
+  whose turn is next carries out the latest plan, then the discussion pauses again; **Resume** lets the other
+  agent review the work.
 
 ## Pilot mode
 

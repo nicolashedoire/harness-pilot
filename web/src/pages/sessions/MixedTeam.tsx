@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { useSessionsUI } from './store'
 
 type Act = { kind: 'read' | 'search' | 'run' | 'edit' | 'web' | 'say' | 'other'; target: string }
-type Agent = { id: string; provider: string; role: string; state: string; started_at: number | null; finished_at: number | null; activity?: Act[]; report?: string | null }
+type Agent = { id: string; provider: string; role: string; custom_role?: boolean; state: string; started_at: number | null; finished_at: number | null; activity?: Act[]; report?: string | null }
 type Team = { phase: string; created?: number; agents: Agent[] }
 
 const ACTIVE = ['launching', 'working', 'synthesizing']
@@ -140,7 +140,7 @@ function AgentCard({ agent, now, canStop, busy, onStop, onOpen }: { agent: Agent
           {elapsed && <span className="font-mono tabular-nums">· {elapsed}</span>}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">{t(codex ? 'mixedTeam.codexRole' : 'mixedTeam.claudeRole')}</p>
+      <p className="line-clamp-3 text-xs break-words text-muted-foreground">{agent.custom_role ? <Sensitive length={16}>{agent.role}</Sensitive> : t(codex ? 'mixedTeam.codexRole' : 'mixedTeam.claudeRole')}</p>
       {report ? (
         <Sensitive block>
           <div className="rounded-lg bg-background px-3 py-2">

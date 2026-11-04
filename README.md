@@ -89,7 +89,7 @@ Coordinate reviewed code proposals with the optional [pull request integration q
 
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 
-Settings → Backup offers an encrypted local **complete instance backup** (settings, credentials, conversations, attachments, projects, files and labels), restored into a separate instance for review before services resume. The optional **GitHub memory backup** covers selected files and non-secret settings only. See the [backup guide](docs/user/10-backup.md) for both workflows, exclusions and recovery instructions.
+Settings → Backup offers an encrypted local **complete instance backup** (settings, credentials, conversations, attachments, projects, files and labels), restored into a separate instance for review before services resume. The optional **GitHub memory backup** covers selected files, non-secret settings and the space labels of those files only. See the [backup guide](docs/user/10-backup.md) for both workflows, exclusions and recovery instructions.
 
 You can support development through [PayPal](https://paypal.me/nicolashedoire). The link opens PayPal directly; the application does not handle payments or store payment credentials.
 

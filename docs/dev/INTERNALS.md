@@ -101,7 +101,8 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
 - State: coordinator meta `team: {phase, goal, attachments, agents: [{id, provider, role, stopped}], created}`, worker meta
   `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
   (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
-- `create(path, message, title=None, attachments=None)`: mission of 1-24 000 characters (else 400 `bad_mission`),
+- `create(path, message, title=None, attachments=None, roles=None)`: mission of 1-24 000 characters (else 400
+  `bad_mission`); `roles` `{claude?, codex?}` replace `ROLES` (the defaults) for that worker when not blank;
   attachments checked by `service._check_attachments` (400 `bad_attachment`) before anything is created. Creates the
   coordinator then the workers, logs the mission and its attachments as the coordinator's `mx_user` line, then, inside the coordinator's
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
@@ -326,6 +327,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
   by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:
   params, actions, body dropped in that order when too long). Tests set `push.http_transport` (httpx.MockTransport).
+- Web: `features/notifications/push.ts` (`subscribeBrowser`, `usePushSync`) through `enrollment.ts` (`enrollPush`,
+  `activeRegistration`) and `lib/browser-request.ts`: each native step (permission, subscription, key replacement)
+  runs under one 30 s deadline and stops on abort; a late native answer is ignored, never sent to the server.
 
 ## maxxing.backup  (owner: connectivity)
 - `run() -> dict`, `restore(ref=None) -> dict`, `restore_from(repo, token, ref=None)`, `status()`,
@@ -360,6 +364,15 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   widgets, heartbeat).
 - `services(force=False)` - GET /api/system/services: ONE `systemctl show <all units>` (blocks split on blank
   lines, matched by `Id`), cached 10 s; `invalidate_services()` after a start / stop / restart.
+
+## maxxing.mediatools  (owner: organisation)
+- `status() -> dict` - GET /api/system/media-tools: `ffmpeg` / `pdftoppm` from `shutil.which` on every call, `webp`
+  from `ffmpeg -hide_banner -encoders` listing `libwebp` (`_encodes_webp`, lru-cached per binary path and mtime);
+  `missing` in the order ffmpeg | ffmpeg_webp, pdftoppm; `install_commands(missing)`: Homebrew on `darwin`
+  (`ffmpeg-full`, keg-only, which `scripts/dev-local.sh` puts first on the PATH when installed; `poppler`), one
+  `sudo apt-get install -y` elsewhere. Never installs anything.
+- `log_missing()` - one warning per missing tool plus the commands, called by `api/system.startup()` in local mode only
+  (the terminal of dev-local.sh); `cmd_core.check_media_tools` is the doctor check `media_tools` (warn, never fail).
 
 ## maxxing.security (session cookie)
 - Cookie `mx_session` = `<issued_at>.<nonce>.<hmac_sha256(cookie_key, "<issued_at>.<nonce>")>` (legacy
@@ -397,7 +410,25 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `TTL` 120 s, `GRACE` 60 s to collect an approval, `NEW_MAX` 5 per client / 15 min, `PENDING_MAX` 10.
 - Trusted browser: cookie `mx_device` = `<issued_at>.<nonce>.<hmac(device_key)>`, path `/api/auth`, 30 days;
   `forget_devices()` = `device_key` -> None (recreated on first use).
-- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer.
+- CLI `pilot 2fa status|off|forget-browsers` (`cmd_twofactor.py`): the way back in when Telegram does not answer
+  or the phone with the authenticator app is lost (`off` turns both methods off).
+- `required()` = `enabled()` or `totp.is_on()` (what `POST /api/auth/login` checks). A `login` challenge carries
+  `methods`: `"totp"` when the app is on, `"telegram"` when the app is off (as before) or Telegram is on and linked
+  (an `enable` challenge is Telegram only). Telegram is sent only with `"telegram"`; when that send fails and the app is on, the challenge
+  keeps `("totp",)`. A TOTP-only challenge lives `TOTP_TTL` (300 s). `check(id, code)` tries `totp.verify(code)` first
+  (`via` `totp` | `recovery`), then the Telegram code; wrong ones share `CODE_TRIES` and `BAD_MAX`.
+
+## maxxing.totp (two-step sign-in with an authenticator app)
+- RFC 6238: HMAC-SHA1, 6 digits, `STEP` 30 s, `DRIFT` 1 step either way; `hotp()`, `code_at()`, `uri()` (otpauth link,
+  issuer `harness-pilot`). Secret: 20 random bytes, base32.
+- secrets.json (mode 600, no other encryption, like the password hash): `totp_pending` `{secret, created}` (`begin()`,
+  `PENDING_TTL` 600 s) and `totp` `{secret, last_step, enabled_at, recovery:[sha256 hex]}` (`confirm(code)` -> the 10
+  plain recovery codes, 80 bits each, returned once).
+- `verify(code)` under `config._lock`: a 6-digit code must match a step > `last_step` (stored on success: no replay,
+  the enrolment code included); otherwise a recovery code (normalised: case, spaces, dashes, 0/1/8 -> O/I/B) is
+  removed from the list on use. `disable(code=None)`: with a code only when it verifies (Settings), without at once
+  (`pilot 2fa off`). Throttling is the callers': `twofactor.check` at sign-in, `api/auth._reauth` (password-change
+  throttle) for enable / disable.
 
 ## maxxing.bus
 - `invalidate(*topics)` - thread-safe UI invalidation (see API.md Global bus).
@@ -410,7 +441,17 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
   `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
   `crons.managed_lines()`, `localcron.tick()`, `api/tasks.check_reminders()`, scheduled `pilot cron run` (detached or
-  `--if-due`) and `backup.run()` (code `paused`, not recorded in the history) do nothing.
+  `--if-due`), `backup.run()` (code `paused`, not recorded in the history) and scheduled instance archives
+  (`instance_backup.schedule_delay()` is None) do nothing.
+- Scheduled instance archives: config `instance_backup_schedule` `{frequency, hour, keep, since}` + secret
+  `instance_backup_schedule_key` `{salt, kdf, key}` (hex; a key derived from the passphrase, never the passphrase).
+  `instance_backup.set_schedule()` / `disable_schedule()` / `schedule_status()`; `schedule_delay()` -> seconds until
+  due (None: off or paused); `export_scheduled()` = `export(None, sealed=(salt, kdf, key), keep=keep)` (marks the
+  export `scheduled`, prunes the older scheduled ones under the operation lock); `record_scheduled(result | code,
+  message)` keeps `<state>/instance-backups/schedule.json` (last success, error, `retry_at`, `notified`) and posts
+  or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
+  of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
+  scheduled=True)`): pausing services for the snapshot never cancels it.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
@@ -444,8 +485,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
   unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
   when the process is gone or `ps` fails.
-- Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
-  timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
+- Claude and Codex jobs (`_run_agent`) call `sessions.service.create_session(..., provider=<kind>, source="cron", cron=True,
+  env={MAXXING_CRON_ID, MAXXING_CRON_NAME}, timeout_s)` (or `send_message` when `reuse_session`; a remembered session of
+  the other agent - the job's kind changed - is not reused), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
   starts `python -m maxxing cron run <id>` in `systemd-run --collect --unit maxxing-cron-<id> --slice=maxxing-jobs.slice`
   + `memory_properties()` + `RuntimeMaxSec=<timeout_s + KILL_GRACE_S + 120>` (backstop if the run itself dies). The
@@ -703,6 +745,7 @@ against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 - `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,
   launch_guard=None)`: an existing session tagged with `launch_key` is returned instead of a new run; `plan` =
   `plan_mode` + `permission_mode='plan'` (the engine must declare the `plan` capability) and a read-only prompt.
+- Plan mode in a discussion (runner): its turns use `DEBATE_PLAN_PREFACE` instead of `PLAN_PREFACE` (Claude and Codex paths); a `plan_approved` item becomes `DEBATE_PLAN_APPROVED_PREFACE` + text in `turn`, and `_debate_followup` pauses the exchange after it (`discussion_pause_reason` `user`, next reply in `debate_pending`).
   Manual companion runs keep the defaults. `companions.MAX_MISSION` (6000) bounds the mission text; missions check it
   when a plan is created, saved or started (`_check_lengths`, `TooLong` with `details` {step, title, excess}, kept in the
   error body by `api/missions._call`), trim prerequisite reports at launch, and fit the planner's role catalog.
@@ -867,6 +910,16 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and
   its parents up to the Git repository root (the default local dir is inside the checkout), so the personal
   `~/.agents/skills` of the computer is never written. Tests point it to a temporary folder (`conftest.py`).
+- `scripts/dev-local.sh` (local setup): `HARNESS_PILOT_LOCAL_DIR` (default `<repo>/.harness-pilot-local`: state,
+  workspace, skills, local crontab file, `logs/`) and `HARNESS_PILOT_PORT` (default 8787: `serve --port`, written to
+  the config so `link`, `cli doctor` and `cli status` name it; the start refuses a port that already has a
+  listener). `dev-local.sh service install|status|restart|uninstall` runs `scripts/macos-service.sh` (macOS only): a
+  launchd agent `HARNESS_PILOT_SERVICE_LABEL` (default `local.harness-pilot`) in
+  `~/Library/LaunchAgents/<label>.plist` running `/bin/bash <repo>/scripts/dev-local.sh` in `gui/<uid>` with the PATH
+  of the installing terminal, the local dir and the port as EnvironmentVariables, RunAtLoad, KeepAlive
+  `{SuccessfulExit: false}`, ThrottleInterval 10, stdout/stderr to `<local dir>/logs/server.log` / `server.err.log`.
+  `install` refuses a port in use or an existing plist, and removes the agent again when its error log says
+  "Operation not permitted" (TCC: a clone in Desktop, Documents, Downloads, iCloud Drive or on an external disk).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL

@@ -543,3 +543,119 @@ def test_restore_refuses_inconsistent_excluded_roots(mx, files_root, entry):
     with pytest.raises(snapshots.SnapshotError) as caught:
         snapshots.inspect(encrypted, PASSWORD)
     assert caught.value.code == 'manifest'
+
+
+def test_scheduled_archives_store_a_derived_key_never_the_passphrase(mx):
+    seed(mx)
+    with pytest.raises(snapshots.SnapshotError) as refused:
+        snapshots.set_schedule('daily', 3, 2, PASSWORD)
+    assert refused.value.code == 'consent_required'
+    with pytest.raises(snapshots.SnapshotError) as refused:
+        snapshots.set_schedule('daily', 3, 2)
+    assert refused.value.code == 'passphrase_required'
+    with pytest.raises(snapshots.SnapshotError) as refused:
+        snapshots.set_schedule('hourly', 3, 2, PASSWORD, True)
+    assert refused.value.code == 'schedule'
+    status = snapshots.set_schedule('daily', 3, 2, PASSWORD, True)
+    assert status['enabled'] and status['frequency'] == 'daily' and status['next_run'] > time.time()
+    for name in ('secrets.json', 'config.json'):
+        assert PASSWORD.encode() not in (mx['state'] / name).read_bytes()
+    assert set(config.load_secrets()[snapshots.SCHEDULE_KEY]) == {'salt', 'kdf', 'key'}
+    # Changing the frequency keeps the stored key; the passphrase alone opens a scheduled archive.
+    assert snapshots.set_schedule('weekly', 4, 2)['frequency'] == 'weekly'
+    exported = snapshots.export_scheduled()
+    assert exported['scheduled'] is True
+    preview = snapshots.inspect(snapshots.exported(exported['id']), PASSWORD)
+    assert preview['sha256'] and preview['files'] == exported['files']
+    with pytest.raises(snapshots.SnapshotError) as refused:
+        snapshots.inspect(snapshots.exported(exported['id']), 'another backup phrase')
+    assert refused.value.code == 'decrypt_failed'
+    off = snapshots.disable_schedule()
+    assert off['enabled'] is False and off['next_run'] is None
+    assert snapshots.SCHEDULE_KEY not in config.load_secrets() and snapshots.schedule_delay() is None
+    assert snapshots.list_exports()[0]['id'] == exported['id']              # archives already made stay
+
+
+def test_scheduled_retention_keeps_the_newest_scheduled_archives_and_every_manual_one(mx):
+    seed(mx)
+    snapshots.set_schedule('daily', 3, 2, PASSWORD, True)
+    manual = snapshots.export(PASSWORD)['id']
+    made = [snapshots.export_scheduled()['id'] for _ in range(3)]
+    kept = {entry['id']: entry['scheduled'] for entry in snapshots.list_exports()}
+    assert kept == {manual: False, made[1]: True, made[2]: True}
+    assert not (mx['state'] / 'instance-backups' / 'exports' / f'{made[0]}.json').exists()
+
+
+def test_schedule_timing_retries_and_failure_notice(mx, monkeypatch):
+    from maxxing import feed
+    config.update_config(timezone='UTC')
+    snapshots.set_schedule('daily', 3, 7, PASSWORD, True)
+    first = snapshots.schedule_status()['next_run']
+    assert time.gmtime(first).tm_hour == 3 and 0 < first - time.time() <= 86400
+    notices = lambda: feed.list_events(kind='instance_backup.failed')['events']
+    # Blocked by activity: retried in 30 minutes, no notice yet.
+    state = snapshots.record_scheduled(None, 'sessions_active', 'Finish or stop active sessions.')
+    assert abs(state['retry_at'] - time.time() - snapshots.SCHEDULE_RETRY) < 5 and notices() == []
+    # Still blocked six hours later: one notice for the series.
+    with config._lock:
+        state['failing_since'] -= snapshots.SCHEDULE_NOTIFY_AFTER
+        config.write_json(mx['state'] / 'instance-backups' / 'schedule.json', state)
+    snapshots.record_scheduled(None, 'sessions_active', 'Finish or stop active sessions.')
+    assert len(notices()) == 1 and notices()[0]['params']['code'] == 'sessions_active'
+    # Another kind of failure waits for the next day's slot and does not notify again.
+    state = snapshots.record_scheduled(None, 'too_large', 'The archive exceeds the portable backup limit.')
+    assert time.gmtime(state['retry_at']).tm_hour == 3 and state['retry_at'] - time.time() > 12 * 3600
+    assert len(notices()) == 1
+    assert snapshots.schedule_status()['error']['code'] == 'too_large'
+    # A success resolves the notice and the next run is the next day's slot.
+    snapshots.record_scheduled({'id': 'a' * 32})
+    status = snapshots.schedule_status()
+    assert status['error'] is None and status['last_id'] == 'a' * 32 and notices()[0]['resolved_at']
+    assert time.gmtime(status['next_run']).tm_hour == 3 and status['next_run'] - time.time() > 12 * 3600
+    # A restored copy never runs the schedule until its integrations are resumed.
+    config.update_config(integrations_paused=True)
+    assert snapshots.schedule_delay() is None and snapshots.schedule_status()['next_run'] is None
+
+
+def test_scheduler_runs_a_due_archive_through_the_app_wrapper_and_records_the_outcome(mx, monkeypatch):
+    import asyncio
+    from maxxing.api import instance_backup as snapshot_api
+    snapshots.set_schedule('daily', 3, 7, PASSWORD, True)
+    delays = iter([-1.0, -1.0])
+    monkeypatch.setattr(snapshots, 'schedule_delay', lambda: next(delays, None))
+    monkeypatch.setattr(snapshots, 'SCHEDULE_POLL', 0.01)
+    calls = []
+
+    async def export(password, scheduled=False):
+        calls.append((password, scheduled))
+        if len(calls) == 1:
+            raise snapshots.SnapshotError('crons_active', 'Wait for running scheduled tasks.', 409)
+        return {'id': 'b' * 32}
+
+    async def main():
+        task = asyncio.create_task(snapshot_api.scheduler(export))
+        for _ in range(500):
+            if len(calls) == 2 and snapshots.schedule_status()['last_id']:
+                break
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(main())
+    assert calls == [(None, True), (None, True)]
+    assert snapshots.schedule_status()['last_id'] == 'b' * 32
+
+
+def test_schedule_routes(client, mx):
+    seed(mx)
+    assert client.get('/api/backup/instance').json()['schedule']['enabled'] is False
+    refused = client.put('/api/backup/instance/schedule', json={'frequency': 'daily', 'passphrase': PASSWORD})
+    assert refused.status_code == 400 and refused.json()['error'] == 'consent_required'
+    saved = client.put('/api/backup/instance/schedule', json={'frequency': 'weekly', 'hour': 22, 'keep': 4,
+                                                             'passphrase': PASSWORD, 'store_key': True})
+    assert saved.status_code == 200, saved.text
+    assert {k: saved.json()[k] for k in ('enabled', 'frequency', 'hour', 'keep')} == \
+        {'enabled': True, 'frequency': 'weekly', 'hour': 22, 'keep': 4}
+    assert client.get('/api/backup/instance').json()['schedule']['enabled'] is True
+    assert client.delete('/api/backup/instance/schedule').json()['enabled'] is False
