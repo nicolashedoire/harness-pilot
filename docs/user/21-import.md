@@ -13,7 +13,7 @@ Pick your agent and press **Copy the prompt**, then send it to the old agent. It
 and zips it (`pilot import --prompt hermes` prints the same prompt in a terminal):
 
 ```
-harness-maxxing-export/
+harness-pilot-export/
   memory.md                                      who you are, preferences, global facts
   projects/<project>/CLAUDE.md, memory.md        what the project is / its facts and decisions
   projects/<project>/topics/<topic>/CLAUDE.md, memory.md, useful files

@@ -8,13 +8,15 @@ Conversations can share durable context through plain Markdown files in the work
 ## Three levels
 
 ```
-/root/maxxing/
+<workspace>/
   CLAUDE.md  memory.md                         workspace (global)
   projects/acme/
     CLAUDE.md  memory.md                       project acme
     topics/blog/
       CLAUDE.md  memory.md                     topic acme / blog
 ```
+
+In the local macOS setup, the workspace is `.harness-pilot-local/workspace/` under the repository root. Other installations may use a different workspace path.
 
 With the default templates, Claude Code loads `CLAUDE.md` from the workspace, project and topic when starting a thread; each imports its neighboring `memory.md` using `@memory.md`. Codex receives the existing `CLAUDE.md` and `memory.md` files from those levels as context on every turn. Codex reads at most the first 32 KiB of each file. Custom instructions can change what Claude loads.
 
