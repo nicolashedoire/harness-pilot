@@ -102,8 +102,10 @@ Session = {
   created, updated, turns, cost_usd,
   model: string,                      // chosen ("" = default)
   real_model: string|null,            // model that actually answered last turn (from the log)
-  context_tokens: int|null,           // last turn input+cache tokens
-  context_window: int|null,           // context window of the model of the last turn (Claude Code `modelUsage[..].contextWindow`, e.g. 1000000); null = unknown
+  context_tokens: int|null,           // last turn input+cache tokens (Codex: the input of the last model call of its
+                                      // thread, read from Codex's session file - INTERNALS.md `maxxing.sessions.codex`)
+  context_window: int|null,           // context window of the model of the last turn (Claude Code `modelUsage[..].contextWindow`, e.g. 1000000;
+                                      // Codex: the `model_context_window` it records, the usable 95 % of the model's, e.g. 258400); null = unknown
   archived: bool, favorite: bool, notify: bool,
   source: "web"|"telegram"|"cron",
   cron: bool,                         // started by a scheduled job (not mirrored on Telegram)
