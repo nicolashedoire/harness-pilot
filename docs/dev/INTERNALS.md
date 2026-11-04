@@ -209,7 +209,8 @@ account (the shipped catalog when signed out, checked with a throw-away `CODEX_H
 the one shipped with the binary (10 models, 5 with `visibility` "list": gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna,
 gpt-5.5, gpt-5.2). The pickers get what the CLI's own picker shows (`visibility` "list", sorted by `priority`, ids
 matching `sessions.service._MODEL_ID`, no repeats): `debug models` (15 s), else `--bundled`, else `KNOWN_MODELS` (the
-same five, to update with a Codex release that changes them). Cached 10 min per binary path + mtime (`invalidate()`).
+same five, to update with a Codex release that changes them). Cached 10 min per binary path + mtime, dropped by
+`invalidate()` (`codex_login` calls it when the sign-in changes; the web drops its `codex-models` query then too).
 Nothing is stored: a session or a job keeps the id it was given, and an id outside the list shows as "Other…" with its
 text. `debug` is a CLI debugging command: if a release drops or changes it, the list falls back without breaking the
 pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/components/codex-model-field.test.tsx`.

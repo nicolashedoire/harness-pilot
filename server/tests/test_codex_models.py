@@ -78,6 +78,12 @@ def test_the_cli_catalog_gives_the_models_of_its_own_picker_in_its_order(client,
     os.utime(binary, (st.st_atime, st.st_mtime + 5))
     (fake / "catalog.json").write_text(json.dumps({"models": [{"slug": "gpt-next", "visibility": "list"}]}))
     assert [m["id"] for m in client.get("/api/system/codex/models").json()["models"]] == ["gpt-next"]
+    # signed in to another account (or out): the CLI's list for that account is read again
+    (fake / "catalog.json").write_text(json.dumps({"models": [{"slug": "gpt-account", "visibility": "list"}]}))
+    assert [m["id"] for m in client.get("/api/system/codex/models").json()["models"]] == ["gpt-next"]
+    from maxxing import codex_login
+    codex_login._signed_in_changed()                                                            # noqa: SLF001
+    assert [m["id"] for m in client.get("/api/system/codex/models").json()["models"]] == ["gpt-account"]
 
 
 @pytest.mark.parametrize("mode", ["offline", "garbage"])
@@ -95,7 +101,7 @@ def test_an_older_cli_or_none_at_all_gives_the_built_in_list(client, fake, monke
     assert [m["id"] for m in builtin["models"]] == [m[0] for m in codex_models.KNOWN_MODELS]
     codex_models.invalidate()
     monkeypatch.delenv("MAXXING_CODEX_BIN")
-    monkeypatch.setattr(codex_models.shutil, "which", lambda name: None)
+    monkeypatch.setattr(codex_models.codex.shutil, "which", lambda name: None)
     before = len(_calls(fake))
     assert client.get("/api/system/codex/models").json() == builtin
     assert len(_calls(fake)) == before

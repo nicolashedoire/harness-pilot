@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import time
 
@@ -33,10 +32,6 @@ TIMEOUT_S = 15               # `debug models` may refresh the catalog over the n
 MODEL_ID_RE = re.compile(r"[A-Za-z0-9._:@/\[\]][A-Za-z0-9._:@/\[\]-]{0,99}")   # = sessions.service._MODEL_ID
 
 _cache: tuple[float, str, dict] | None = None
-
-
-def _binary() -> str | None:
-    return os.environ.get("MAXXING_CODEX_BIN") or shutil.which("codex")
 
 
 def parse(text: str) -> list[dict]:
@@ -75,9 +70,10 @@ def _ask(path: str, *args: str) -> list[dict]:
 
 def models() -> dict:
     """{models: [{id, label, description}], source: "cli" | "bundled" | "builtin"}: `codex debug models`, else
-    `codex debug models --bundled`, else KNOWN_MODELS. Cached TTL_S per binary (path and modification time)."""
+    `codex debug models --bundled`, else KNOWN_MODELS. Cached TTL_S per binary (path and modification time), and
+    until the sign-in changes (`codex_login` calls `invalidate()`)."""
     global _cache
-    path = _binary()
+    path = codex.binary()
     try:
         key = f"{path}:{os.stat(path).st_mtime}" if path else ""
     except OSError:
