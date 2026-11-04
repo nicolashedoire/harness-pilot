@@ -51,7 +51,7 @@ it is now in the conversation log (rotate with BotFather `/revoke` if needed).
   shows its own), `/sessions` (list the open sessions), `/status` (agent, state, model, cost, queue).
 - In the main chat, `/codex` or `/discuss` before choosing the topic changes the agent of the session being made.
 - `/codex` and `/discuss` need Codex installed and signed in where harness-pilot runs (Settings -> Codex): if not,
-  the bot says so (run `codex login`) and starts nothing.
+  the bot says so (sign it in from Settings -> Codex, or `codex login`) and starts nothing.
 - A discussion started from Telegram pauses after 6 replies (the bot says so in its thread); a new message
   continues it for 6 more, `/stop` ends it while the agents talk. Change the limit in the web UI (Change limits);
   roles, debate mode or a duration limit: start the discussion from the web UI.
@@ -81,6 +81,6 @@ are kept apart; `topics_notice` = Threaded Mode off (info). State file: `state_d
 | A session's thread disappeared | the session was archived (`/close`, deleted thread) or is idle longer than `thread_days`; un-archive it or write in it from the web UI |
 | "Crons" or "Alerts" thread deleted | **Sync threads** recreates it |
 | No cron reports | Telegram setting `notify_crons` off, or the job's notify policy is `never` |
-| "Codex is not signed in" / "not installed" after `/codex` or `/discuss` | install the Codex CLI where harness-pilot runs and run `codex login` there; Settings -> Codex shows the state |
+| "Codex is not signed in" / "not installed" after `/codex` or `/discuss` | install the Codex CLI where harness-pilot runs, then sign it in from Settings -> Codex (ChatGPT account with a one-time code, or an OpenAI API key) or with `codex login` there |
 
 Never call `getUpdates` yourself against the configured bot: it would steal updates from the gateway.

@@ -245,11 +245,10 @@ WORDS["en"].update({
     "new_flat": "🆕 New session: <b>{title}</b>{agent} - write your message.",
     "paused_limit": "⏸ The discussion paused after {n} replies. Write a message to continue it.",
     "codex_missing": ("⚠️ Codex is not installed where harness-pilot runs, so nothing was started. Install the Codex "
-                      "command there, sign in with <code>codex login</code>, then send /{cmd} again "
-                      "(Settings → Codex shows its state)."),
-    "codex_signed_out": ("⚠️ Codex is not signed in where harness-pilot runs, so nothing was started. Run "
-                         "<code>codex login</code> in a terminal there, then send /{cmd} again "
-                         "(Settings → Codex shows its state)."),
+                      "command there, sign it in from Settings → Codex in the web app, then send /{cmd} again."),
+    "codex_signed_out": ("⚠️ Codex is not signed in where harness-pilot runs, so nothing was started. Sign it in "
+                         "from Settings → Codex in the web app (or run <code>codex login</code> in a terminal there), "
+                         "then send /{cmd} again."),
     "model_fixed": "This session runs {agent} ({model}): /model only changes the model of Claude Code sessions.",
     "st_agent": "Agent: {v}", "st_replies": " · {n} replies", "st_paused": " · paused",
     "queued": "⏳ Queued - harness-pilot is still working on the previous message.",
@@ -332,11 +331,11 @@ WORDS["fr"].update({
     "new_flat": "🆕 Nouvelle session : <b>{title}</b>{agent} - écrivez votre message.",
     "paused_limit": "⏸ La discussion est en pause après {n} réponses. Écrivez un message pour la continuer.",
     "codex_missing": ("⚠️ Codex n'est pas installé là où harness-pilot tourne : rien n'a été démarré. Installez-y "
-                      "la commande Codex, connectez-vous avec <code>codex login</code>, puis renvoyez /{cmd} "
-                      "(Réglages → Codex montre son état)."),
-    "codex_signed_out": ("⚠️ Codex n'est pas connecté là où harness-pilot tourne : rien n'a été démarré. Lancez "
-                         "<code>codex login</code> dans un terminal sur cet ordinateur, puis renvoyez /{cmd} "
-                         "(Réglages → Codex montre son état)."),
+                      "la commande Codex, connectez-la depuis Réglages → Codex dans l'application web, puis renvoyez "
+                      "/{cmd}."),
+    "codex_signed_out": ("⚠️ Codex n'est pas connecté là où harness-pilot tourne : rien n'a été démarré. Connectez-le "
+                         "depuis Réglages → Codex dans l'application web (ou lancez <code>codex login</code> dans un "
+                         "terminal sur cet ordinateur), puis renvoyez /{cmd}."),
     "model_fixed": ("Cette session utilise {agent} ({model}) : /model ne change que le modèle des sessions "
                     "Claude Code."),
     "st_agent": "Agent : {v}", "st_replies": " · {n} réponses", "st_paused": " · en pause",
