@@ -1987,6 +1987,102 @@ R('DELETE', '/api/backup', () => {
   return { ok: true }
 })
 
+/* ---- complete instance backup (server/maxxing/instance_backup.py): encrypted exports kept on the server, a verified
+   preview of an uploaded archive, restore into a separate copy whose services and integrations start paused */
+const IB_DESCRIPTION = { version: VERSION, files: 1834, bytes: 412 * 1024 * 1024, external_links: ['workspace/projects/acme/topics/website/node_modules'],
+  includes: ['settings_and_credentials', 'sessions', 'attachments', 'workspace', 'files', 'space_labels'],
+  excludes: ['application_and_provider_binaries', 'temporary_runtime_files', 'external_symlink_targets'], excluded_roots: {} }
+const ibId = () => crypto.randomBytes(16).toString('hex')
+function ibState() {
+  if (S.instanceBackup) return S.instanceBackup
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.instanceBackup = { restore_hold: false, integrations_paused: false, previews: {}, // previews: id -> { at, ...result }
+    exports: ready ? [{ id: ibId(), created: t - 6 * DAY, sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 371 * 1024 * 1024, ...clone(IB_DESCRIPTION), files: 1791, bytes: 398 * 1024 * 1024 }] : [] }
+  return S.instanceBackup
+}
+const ibRoots = () => {
+  const files = S.settings.files_root || ROOT
+  const broad = files === '/' || files === '/root' || /^\/home\/[^/]+\/?$/.test(files) // the filesystem root or a home folder
+  return { state: { source: '/var/lib/claude-maxxing', archive: 'state' }, workspace: { source: ROOT, archive: 'workspace' },
+    files: broad ? { source: files, archive: null, excluded: 'broad_root' } : { source: files, archive: 'files' } }
+}
+const ibDescription = () => {
+  const roots = ibRoots(), left = Object.entries(roots).filter(([, r]) => !r.archive)
+  return { ...clone(IB_DESCRIPTION), includes: IB_DESCRIPTION.includes.filter((x) => x !== 'files' || roots.files.archive),
+    excluded_roots: Object.fromEntries(left.map(([name, r]) => [name, { source: r.source, reason: r.excluded }])) }
+}
+const ibHeld = () => { if (ibState().restore_hold) fail(409, 'restore_hold', 'This restored instance is in review mode. Enable services in Settings → Backup before making changes.') }
+const ibPassphrase = (p) => { if (typeof p !== 'string' || p.length < 12 || p.length > 1024) fail(400, 'passphrase', 'Use a backup passphrase between 12 and 1024 characters.') }
+R('GET', '/api/backup/instance', () => {
+  const st = ibState()
+  return { max_bytes: 2048 * 1024 * 1024, restore_hold: st.restore_hold, integrations_paused: st.integrations_paused, roots: ibRoots(),
+    export_error: null, requires_idle_sessions: true, service_resume_errors: [] }
+})
+R('POST', '/api/backup/instance/export', async ({ body }) => {
+  ibHeld(); ibPassphrase(body.passphrase)
+  if (S.sessions.some((s) => s.state === 'running' || s.queue)) fail(409, 'sessions_active', 'Finish or stop active and queued sessions before a full snapshot.')
+  await sleep(2500)
+  const e = { id: ibId(), created: now(), sha256: crypto.randomBytes(32).toString('hex'), archive_bytes: 384 * 1024 * 1024, ...ibDescription() }
+  ibState().exports.unshift(e)
+  bus('backup')
+  return e
+})
+R('GET', '/api/backup/instance/exports', () => ibState().exports.map(({ id, created, archive_bytes, sha256, version, files, bytes }) => ({ id, created, archive_bytes, sha256, version, files, bytes })))
+R('DELETE', '/api/backup/instance/exports/:id', ({ params }) => {
+  ibHeld()
+  const st = ibState()
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !st.exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  st.exports = st.exports.filter((e) => e.id !== params.id)
+  return { ok: true, id: params.id }
+})
+R('GET', '/api/backup/instance/download/:id', ({ params, res }) => {
+  if (!/^[a-f0-9]{32}$/.test(params.id) || !ibState().exports.some((e) => e.id === params.id)) fail(404, 'not_found', 'Backup not found.')
+  // A short stand-in for the real file: the format-2 header (magic, version, scrypt 2^15/8/1, salt, nonce) and random bytes.
+  const header = Buffer.concat([Buffer.from('PILOTBK\n'), Buffer.from([2, 1, 15, 0, 8, 0, 1]), crypto.randomBytes(28)])
+  const data = Buffer.concat([header, crypto.randomBytes(4096)])
+  res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': data.length, 'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="pilot-${params.id.slice(0, 12)}.pilotbackup"` })
+  res.end(data)
+  return RAW
+})
+R('POST', '/api/backup/instance/preview', async ({ req, rawBody }) => {
+  ibHeld()
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  const m = rawBody.toString('latin1').match(/name="passphrase"\r\n\r\n([^\r]*)\r\n/)
+  if (!file) fail(422, 'invalid', 'file is required')
+  ibPassphrase(m ? Buffer.from(m[1], 'latin1').toString('utf8') : null)
+  if (!file.data.subarray(0, 8).equals(Buffer.from('PILOTBK\n'))) fail(400, 'format', 'This is not a supported encrypted instance backup.')
+  await sleep(1500)
+  if (/wrong/i.test(m[1])) fail(400, 'decrypt_failed', 'The passphrase is incorrect or the backup has been modified.') // try it with a passphrase containing "wrong"
+  const p = { id: ibId(), sha256: crypto.randomBytes(32).toString('hex'), created: now() - 2 * DAY, ...ibDescription() }
+  ibState().previews[p.id] = { at: now(), ...p }
+  return p
+})
+R('POST', '/api/backup/instance/restore', async ({ body }) => {
+  ibHeld()
+  const p = ibState().previews[body.id]
+  if (!/^[a-f0-9]{32}$/.test(body.id || '') || !/^[a-f0-9]{64}$/.test(body.sha256 || '')) fail(400, 'preview_required', 'Inspect the archive before restoring it.')
+  if (!p || p.sha256 !== body.sha256 || now() - p.at > HOUR) fail(409, 'changed', 'The archive changed or its preview expired. Inspect it again.')
+  await sleep(2000)
+  delete S.instanceBackup.previews[body.id]
+  const destination = `/var/lib/pilot-restored-${crypto.randomBytes(6).toString('hex')}`, { at, ...preview } = p
+  return { destination, state: `${destination}/state`, background_services_paused: true, integrations_paused: true, ...preview,
+    launch_command: `MAXXING_STATE=${destination}/state MAXXING_CRONTAB_FILE=${destination}/crontab uv run --directory /opt/harness-pilot/server python -m uvicorn maxxing.app:create_app --factory --host 127.0.0.1 --port 8790` }
+})
+// A restored copy starts held (read-only) and with its integrations paused: the scenario has none, these only answer.
+R('POST', '/api/backup/instance/activate', () => {
+  const st = ibState()
+  if (!st.restore_hold) return { ok: true, already_active: true }
+  st.restore_hold = false; bus('backup', 'health')
+  return { ok: true }
+})
+R('POST', '/api/backup/instance/resume-integrations', () => {
+  const st = ibState()
+  if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
+  st.integrations_paused = false; bus('crons', 'backup', 'telegram')
+  return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
@@ -2297,6 +2393,170 @@ R('GET', '/api/stats/tokens', () => {
     days, at: now() }
 })
 R('GET', '/api/usage', () => ({ available: false, five_hour: null, seven_day: null, reason: 'disabled' }))
+
+/* ---- resident missions (server/maxxing/missions.py): a goal, a plan of companion steps the owner reviews, then runs
+   launched one by one as companion runs (the proposal of each waits for the owner's decision in Settings -> Companions).
+   The server's worker advances missions every 2 s; here each read does (the page polls). Cycles are not simulated. */
+const MISSION_FIELDS = ['title', 'path', 'goal', 'max_runs', 'max_seconds', 'max_tokens', 'concurrent', 'interval_seconds', 'max_cycles']
+const MISSION_PLAN = [ // what the architect proposes in the mock
+  { id: 'map', title: 'Map the keyboard paths of the Files page', role: 'architect', instruction: 'List every action of the Files page and how it is reached without a mouse. Name the components and files involved.', after: [] },
+  { id: 'focus', title: 'Fix the missing focus states', role: 'observer', instruction: 'Give every interactive element of the Files page a visible focus ring with the shared tokens, and add a test for the list.', after: ['map'] },
+  { id: 'check', title: 'Review the change for regressions', role: 'security', instruction: 'Check that the focus changes do not expose hidden actions and that the tests cover the list and the toolbar.', after: ['focus'] },
+]
+const missionStep = (s) => ({ id: s.id, title: s.title, role: s.role, instruction: s.instruction, after: [...s.after], state: 'pending', session: null })
+function missionFingerprint(m) {
+  const roles = companionsState().roles
+  const plan = Object.fromEntries(MISSION_FIELDS.map((k) => [k, m[k]]))
+  plan.steps = m.steps.map(({ id, title, role, instruction, after }) => ({ id, title, role, instruction, after }))
+  plan.roles = Object.fromEntries([...new Set(m.steps.map((s) => s.role))].sort().map((r) => { const p = roles.find((x) => x.id === r); return [r, p ? { role: p.role, engine: p.provider } : null] }))
+  return crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex')
+}
+function missionsState() {
+  if (S.missions) return S.missions
+  S.missions = []
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') S.missions.push({ ...missionNew('Keyboard-friendly Files page', topicPath('acme', 'website'),
+    'Every action of the Files page works with the keyboard alone, with a visible focus, without changing how it looks for mouse users.', 6, 90, 2000000, 1, 0, 1),
+    steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready', created: now() - 3 * HOUR })
+  return S.missions
+}
+function missionNew(title, path, goal, runs, minutes, tokens, concurrent, interval, cycles) {
+  return { id: crypto.randomBytes(16).toString('hex'), title, path, goal, steps: [], phase: 'draft', reason: '', created: now(), origin_state: '/var/lib/claude-maxxing',
+    max_runs: runs, max_seconds: minutes * 60, max_tokens: tokens, concurrent, interval_seconds: interval * 60, max_cycles: cycles,
+    cycle: 1, spent_seconds: 0, active_since: null, next_cycle: null, launches: [], tokens: 0, planner: null }
+}
+function missionValidate(steps) {
+  const roles = new Set(companionsState().roles.map((p) => p.id)), seen = new Set()
+  if (!Array.isArray(steps) || steps.length < 1 || steps.length > 8) fail(400, 'bad_plan', 'A plan needs one to eight steps.')
+  return steps.map((v) => {
+    const id = String(v?.id || ''), title = String(v?.title || '').trim(), instruction = String(v?.instruction || '').trim(), after = v?.after || []
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || seen.has(id) || !title || title.length > 120 || !roles.has(v.role) || !instruction || instruction.length > 2000
+      || !Array.isArray(after) || after.some((d) => !seen.has(d)) || new Set(after).size !== after.length) fail(400, 'bad_plan', 'Use existing roles and distinct steps with earlier prerequisites.')
+    seen.add(id)
+    return missionStep({ id, title, role: v.role, instruction, after })
+  })
+}
+const missionOut = (m) => ({ ...clone(m), plan_fingerprint: missionFingerprint(m) })
+const missionFind = (id) => missionsState().find((m) => m.id === id) || fail(404, 'not_found', 'Mission not found.')
+const missionRuns = (m) => m.launches.filter((l) => !l.aborted).length
+const missionBank = (m) => { if (m.active_since) { m.spent_seconds += Math.max(0, now() - m.active_since); m.active_since = null } }
+// A launch is an ordinary companion run (its session carries `companion`), so its proposal is reviewed in Companions.
+function missionLaunch(m, step, purpose) {
+  const role = companionsState().roles.find((p) => p.id === step.role) || companionsState().roles[0]
+  const t = now()
+  const s = { id: uuid(), title: `${role.name} — platform review`, path: m.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '',
+    real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null,
+    provider: role.provider, companion: { id: role.id, name: role.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  if (purpose === 'experiment') S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null } // a plan proposes no change
+  m.launches.push({ key: uuid(), session: s.id, purpose })
+  Object.assign(step, { state: 'running', session: s.id })
+  if (purpose === 'experiment') return companionTurn(s, `Mission goal: ${m.goal}\nYour step: ${step.title}\n${step.instruction}`)
+  const plan = JSON.stringify({ steps: MISSION_PLAN.map(({ id, title, role: r, instruction, after }) => ({ id, title, role: r, instruction, after })) }, null, 2)
+  s.state = 'running'
+  addEvents(s, { type: 'user', text: `Design a small actionable plan for this goal, using existing roles only.\n${m.goal}`, attachments: [], at: now(), source: 'companion' })
+  later(s, 3000, () => {
+    Object.assign(s, { state: 'idle', turns: 1, updated: now(), unread: true, last_text: plan.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: '```json\n' + plan + '\n```', at: now() }, { type: 'result', ok: true, cost_usd: 0, duration_ms: 3000, model: 'gpt-5.5-codex', usage: { input: 9000, output: 700, cache_read: 0, cache_write: 0 }, at: now() })
+    bus('missions', 'sessions')
+  })
+}
+function missionAdvance(m) { // like missions.advance, one pass
+  const runs = companionsState().runs
+  for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+    if (!step.session || !['running', 'review'].includes(step.state)) continue
+    const s = S.sessions.find((x) => x.id === step.session)
+    if (!s) { Object.assign(step, { state: 'failed', error: 'missing_session' }); continue }
+    if (s.state === 'running') continue
+    if (!s.turns) { Object.assign(step, { state: 'failed', error: 'agent_failed' }); continue }
+    if (step === m.planner) { step.state = 'complete'; m.tokens += 9700; continue }
+    const decision = runs[s.id]?.decision
+    if (step.state === 'running') m.tokens += 40900
+    step.state = decision?.fingerprint === companionFingerprint() ? (decision.value === 'approved' ? 'complete' : 'rejected') : 'review'
+  }
+  if (!['active', 'planning'].includes(m.phase)) return
+  const busy = [...m.steps, ...(m.planner ? [m.planner] : [])].some((s) => s.state === 'running')
+  if (busy) m.active_since ||= now(); else missionBank(m)
+  if (m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) return Object.assign(m, { phase: 'budget', reason: m.tokens >= m.max_tokens ? 'tokens' : 'time' })
+  if ([...m.steps, ...(m.phase === 'planning' && m.planner ? [m.planner] : [])].some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) return Object.assign(m, { phase: 'paused', reason: 'step_failed' })
+  if (m.phase === 'planning') {
+    if (m.planner?.state === 'complete') Object.assign(m, { steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready' })
+    else if (!m.planner) {
+      if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+      m.planner = { id: 'planner', title: 'Plan', role: 'architect', instruction: '', state: 'pending', after: [], session: null }
+      missionLaunch(m, m.planner, 'plan')
+    }
+    return
+  }
+  if (m.steps.every((s) => ['complete', 'skipped'].includes(s.state))) return Object.assign(m, { phase: 'completed', reason: 'completed' })
+  const ready = m.steps.find((s) => s.state === 'pending' && s.after.every((d) => m.steps.some((x) => x.id === d && ['complete', 'skipped'].includes(x.state))))
+  if (ready && m.steps.filter((s) => s.state === 'running').length < m.concurrent) {
+    if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+    missionLaunch(m, ready, 'experiment')
+  }
+}
+const missionsRead = () => { for (const m of missionsState()) missionAdvance(m); return missionsState() }
+R('GET', '/api/missions', () => [...missionsRead()].sort((a, b) => b.created - a.created).map(missionOut))
+R('POST', '/api/missions', ({ body }) => {
+  const title = String(body.title || '').trim(), goal = String(body.goal || '').trim()
+  if (!title || title.length > 120 || !goal || goal.length > 2000) fail(400, 'bad_mission', 'A title and bounded goal are required.')
+  if (!S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const n = (k, d) => (body[k] === undefined || body[k] === null ? d : Number(body[k]))
+  const [runs, minutes, tokens, concurrent, interval, cycles] = [n('max_runs', 8), n('max_minutes', 60), n('max_tokens', 1000000), n('concurrent', 1), n('interval_minutes', 0), n('max_cycles', 1)]
+  if (!(runs >= 1 && runs <= 32 && minutes >= 1 && minutes <= 1440 && tokens >= 1 && tokens <= 100000000 && [1, 2].includes(concurrent) && interval >= 0 && interval <= 10080 && cycles >= 1 && cycles <= 32)) fail(400, 'bad_budget', 'Mission limits are out of range.')
+  const steps = body.steps?.length ? missionValidate(body.steps) : []
+  if (missionsState().length >= 50) fail(400, 'limit', 'The mission list is full.')
+  const m = { ...missionNew(title, body.path, goal, runs, minutes, tokens, concurrent, interval, cycles), steps }
+  S.missions.push(m); bus('missions')
+  return missionOut(m)
+})
+R('GET', '/api/missions/:id', ({ params }) => { missionsRead(); return missionOut(missionFind(params.id)) })
+R('PUT', '/api/missions/:id/plan', ({ params, body }) => {
+  const m = missionFind(params.id), steps = missionValidate(body.steps)
+  if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.steps.some((s) => s.session)) fail(409, 'busy', 'A running or previously executed plan cannot be replaced.')
+  Object.assign(m, { steps, phase: 'plan_review', reason: '' }); bus('missions')
+  return missionOut(m)
+})
+R('POST', '/api/missions/:id/control', ({ params, body }) => {
+  const m = missionFind(params.id), action = body.action
+  if (!['start', 'pause', 'stop', 'plan'].includes(action)) fail(400, 'bad_action', 'Unknown mission action.')
+  if (action === 'plan') {
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.planner || m.steps.some((s) => s.session)) fail(409, 'busy', 'This mission already has a planner run.')
+    Object.assign(m, { phase: 'planning', active_since: null, reason: '' })
+  } else if (action === 'start') {
+    if (body.fingerprint !== missionFingerprint(m)) fail(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || !m.steps.length) fail(409, 'busy', 'Review a plan before starting this mission.')
+    if (missionRuns(m) >= m.max_runs || m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) fail(409, 'budget', 'The authorized mission budget is exhausted.')
+    for (const s of m.steps) if (s.state === 'interrupted' && !s.session) Object.assign(s, { state: 'pending' })
+    if (m.steps.some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) fail(409, 'unresolved', 'Retry or skip the steps that need your attention first.')
+    Object.assign(m, { phase: 'active', active_since: null, reason: '' })
+  } else {
+    if (action === 'stop' && ['completed', 'stopped', 'budget'].includes(m.phase)) fail(409, 'busy', 'A terminal mission cannot be stopped again.')
+    if (action === 'pause' && !['active', 'planning'].includes(m.phase)) fail(409, 'busy', 'Only an active mission can be paused.')
+    missionBank(m)
+    Object.assign(m, { phase: action === 'pause' ? 'paused' : 'stopped', reason: 'owner' })
+    for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+      if (!step.session || step.state !== 'running') continue
+      const s = S.sessions.find((x) => x.id === step.session)
+      if (s && s.state === 'running') { clearTimers(s); s.state = 'idle'; addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() }) }
+      step.state = 'interrupted'
+    }
+    bus('sessions')
+  }
+  missionAdvance(m) // the server's worker launches within 2 s
+  bus('missions')
+  return missionOut(m)
+})
+for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected'], 'skipped'], ['retry', ['interrupted', 'failed', 'rejected'], 'retried']]) {
+  R('POST', `/api/missions/:id/steps/:step/${what}`, ({ params }) => {
+    const m = missionFind(params.id)
+    if (m.phase !== 'paused') fail(409, 'busy', `Only a paused mission can ${what} a step.`)
+    const step = m.steps.find((s) => s.id === params.step)
+    if (!step || !states.includes(step.state)) fail(409, 'busy', `Only an interrupted, failed or rejected step can be ${verb}.`)
+    if (what === 'skip') step.state = 'skipped'; else { delete step.error; Object.assign(step, { state: 'pending', session: null }) }
+    m.reason = 'owner'; bus('missions')
+    return missionOut(m)
+  })
+}
 
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
