@@ -22,7 +22,7 @@ import crypto from 'node:crypto'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
-import { atelierState, installAtelier, serveDraftFrame } from './atelier.mjs'
+import { atelierHasExtension, atelierSetEnabled, atelierState, installAtelier, serveDraftFrame } from './atelier.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -4166,16 +4166,14 @@ for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) for (const patte
   return handler(req.method, p, body || {})
 })
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
-  // an extension listed by the Atelier (atelier() below) is turned on / off there too
-  const a = atelier().items.find((x) => x.kind === 'extension' && x.id === params.id && x.version)
-  const e = S.extensions.find((x) => x.id === params.id) || (a ? null : fail(404, 'not_found', 'Unknown extension'))
+  // an extension of the Atelier's seeded rows (web/mock/atelier.mjs) is turned on / off there too
+  const known = atelierHasExtension(S, params.id)
+  const e = S.extensions.find((x) => x.id === params.id) || (known ? null : fail(404, 'not_found', 'Unknown extension'))
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
   if (body.enabled && e?.error) fail(409, 'broken', `Cannot enable: ${e.error}`)
   if (e) e.enabled = body.enabled
-  if (a) {
-    a.state = body.enabled ? (a.error ? 'error' : 'active') : 'disabled'
-    a.actions = [...a.actions.filter((x) => x !== 'enable' && x !== 'disable'), body.enabled ? 'disable' : 'enable']
-    a.updated = now()
+  if (known) {
+    atelierSetEnabled(S, params.id, body.enabled)
     bus('atelier')
   }
   bus('extensions')
@@ -4215,86 +4213,6 @@ for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
     fail(404, 'not_found', 'Unknown extension route')
   })
 }
-
-/* ---- Atelier (API.md#atelier, server/maxxing/atelier.py): the creations of the agents, staged as drafts, approved,
-   versioned, rolled back. State created on first use (`S.atelier`); the `ready` and `maxxing` scenarios get the rows of
-   the design mock-up: two drafts (a new HTML widget, an update of a widget), a broken page, a customization to review
-   after an update, a block changed outside the Atelier, an applied theme, a skill, a pinned card, an extension from
-   before the Atelier (unknown origin) and a cron job turned off. Origins point at seeded sessions (by title).
-   Web PR 1: the list only. Drafts, approval, versions and rollback are added below by the server side. */
-function atelier() {
-  if (S.atelier) return S.atelier
-  const seeded = S.scenario === 'ready' || S.scenario === 'maxxing'
-  const t = now()
-  const from = (title, agent, ago, summary = null) => {
-    const s = S.sessions.find((x) => x.title === title)
-    return { agent, session: s ? s.id : null, session_title: s ? s.title : null, session_path: s ? s.path : null, at: t - ago, summary }
-  }
-  const unknown = (ago) => ({ agent: 'unknown', session: null, session_title: null, session_path: null, at: t - ago, summary: null })
-  const item = (kind, id, type, name, icon, state, extra = {}) => ({
-    kind, id, type, name, icon, state, version: null, version_label: null, versions: 0, pending: null, unreviewed: false,
-    unreviewed_since: null, origin: null, approval: null, error: null, updated: t, href: null, actions: [], ...extra,
-  })
-  const ext = (id, type, name, icon, state, version, extra = {}) => item('extension', id, type, name, icon, state, {
-    version, versions: version || 0, approval: version ? { by: 'user', at: t - 3 * DAY } : null,
-    actions: version ? ['rollback', state === 'disabled' ? 'enable' : 'disable'] : [], ...extra,
-  })
-  const weather = from('Editorial calendar for November', 'claude', 12 * MIN, 'An HTML widget with today and the next three days for the office, refreshed every hour. It calls api.open-meteo.com.')
-  const refunds = from('Keyword research: project management tools', 'codex', 40 * MIN, 'Adds the refunds of the day under the revenue, and a link to the orders to ship.')
-  const items = !seeded ? [] : [
-    ext('weather', 'html_widget', 'Weather', 'cloud-sun', 'pending', null, {
-      pending: { draft: 'd_5f2c8a91b3e4', at: weather.at, change: 'new', origin: weather }, origin: weather, updated: weather.at,
-      actions: ['approve', 'reject', 'request_change'],
-    }),
-    ext('shop-sales', 'widget', 'Shop sales', 'shopping-cart', 'active', 3, {
-      version_label: '1.3.0', pending: { draft: 'd_a41b09c7e2d0', at: refunds.at, change: 'update', origin: refunds },
-      origin: from('Draft: 5 ways to speed up checkout', 'claude', 3 * DAY, 'Orders and revenue of the day, with the orders to ship.'),
-      updated: refunds.at, href: '/?widget=shop-sales', actions: ['approve', 'reject', 'request_change', 'rollback', 'disable'],
-    }),
-    ext('notes', 'page', 'Notes', 'notebook-pen', 'error', 2, {
-      version_label: '0.2.0', origin: from('Add pricing page', 'claude', 2 * DAY, 'A page to jot down and search short notes.'),
-      error: { message: "TypeError: Cannot read properties of undefined (reading 'map')", where: 'page', at: t - 25 * MIN, count: 3 },
-      updated: t - 25 * MIN, href: '/x/notes',
-    }),
-    item('customization', 'c-20261020-7f3a', 'customization', 'Telegram threads limit', 'wrench', 'review', {
-      origin: from('Caddy: add security headers', 'codex', 5 * DAY, 'Up to 80 open threads in the Telegram group instead of 40.'),
-      updated: t - HOUR, href: '/settings/updates',
-    }),
-    ext('trip-map', 'block', 'Trip map', 'map', 'active', 1, {
-      version_label: '1.0.0', unreviewed: true, unreviewed_since: t - 2 * HOUR,
-      origin: from('Investigate high disk usage', 'claude', 4 * DAY, 'Draws the stops of a trip on a map in the conversation.'),
-      updated: t - 2 * HOUR, href: '/settings/blocks', actions: ['rollback', 'accept', 'disable'],
-    }),
-    item('theme', 'ember', 'theme', 'Ember', 'palette', 'active', {
-      origin: from('Fix hero image on mobile', 'claude', 6 * DAY, 'Warm dark palette with an orange accent.'), updated: t - 6 * DAY, href: '/settings/appearance',
-    }),
-    ext('morning-brief', 'pin', 'Morning brief', 'pin', 'active', 1, {
-      origin: { agent: 'user', session: null, session_title: null, session_path: null, at: t - 7 * DAY, summary: 'Pinned from a conversation.' },
-      updated: t - 7 * DAY, href: '/?widget=morning-brief',
-    }),
-    item('skill', 'invoice-pdf', 'skill', 'Invoice to PDF', 'file-text', 'active', {
-      origin: from('Categorise September expenses', 'codex', 9 * DAY, 'Turns an order into a printable invoice.'), updated: t - 9 * DAY,
-    }),
-    ext('server-clock', 'widget', 'Server clock', 'clock', 'active', 1, {
-      version_label: '1.0.0', origin: unknown(40 * DAY), approval: { by: 'migration', at: t - 40 * DAY }, updated: t - 40 * DAY, href: '/?widget=server-clock',
-    }),
-    item('cron', 'c_report', 'cron', 'Weekly SEO report', 'clock', 'disabled', { updated: t - 12 * DAY, href: '/crons?job=c_report' }),
-  ]
-  S.atelier = { items }
-  return S.atelier
-}
-const ATELIER_RANK = { pending: 0, error: 1, review: 2 }
-const atelierRank = (it) => (it.pending ? 0 : ATELIER_RANK[it.state] ?? (it.unreviewed ? 3 : 4))
-R('GET', '/api/atelier', async ({ q }) => {
-  await sleep(120)
-  const all = [...atelier().items].sort((a, b) => atelierRank(a) - atelierRank(b) || (b.updated ?? 0) - (a.updated ?? 0))
-  const kind = q.get('kind'), state = q.get('state')
-  const count = (f) => all.filter(f).length
-  return {
-    items: all.filter((it) => (!kind || it.kind === kind) && (!state || it.state === state)),
-    counts: { pending: count((it) => it.pending), error: count((it) => it.state === 'error'), unreviewed: count((it) => it.unreviewed), review: count((it) => it.state === 'review'), disabled: count((it) => it.state === 'disabled'), total: all.length },
-  }
-})
 
 /* =================================================================== feed (notifications) + web push */
 // docs/dev/API.md#feed-notifications and #web-push. In-memory: S.feed = {events, nextId, settings, hooks}, S.push.
