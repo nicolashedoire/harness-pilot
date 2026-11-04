@@ -88,6 +88,19 @@ def test_budget_stops_adapter(tmp_path, monkeypatch):
     assert job['status'] == 'error' and 'budget' in job['error']
 
 
+def test_command_files_are_hashed_whatever_their_size(tmp_path, monkeypatch):
+    """The command's files are hashed to detect a change, never stored: the storage budget does not apply. A file over
+    16 MiB (a statically linked interpreter, such as uv's Python on Linux, is 31 MB) ended every run in "error"."""
+    monkeypatch.delenv('MAXXING_STATE', raising=False)
+    adapter = tmp_path / 'large_adapter.py'
+    adapter.write_text((ROOT / 'examples/model-adapters/linear_calibration.py').read_text() + '#' + 'x' * (17 * 1024 * 1024) + '\n')
+    config, _ = experiment(tmp_path, command=[sys.executable, str(adapter)])
+    state = tmp_path / 'state'
+    job = wait(state, lab.start(state, config)['id'])
+    assert job['status'] == 'awaiting_review', job
+    assert lab.decide(state, job['id'], job['fingerprint'], 'approved')['decision']['value'] == 'approved'
+
+
 def test_extension_is_optional_and_uses_existing_host_contract(client, mx):
     for source, target in [(ROOT/'skills/pilot-model-evolution', mx['ws']/'.claude/skills/pilot-model-evolution'),
                            (ROOT/'examples/extensions/model-lab', mx['ws']/'extensions/model-lab')]:
