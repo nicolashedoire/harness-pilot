@@ -75,8 +75,73 @@ def get(sid: str) -> dict:
     for agent in team.get('agents', []):
         session = service.get_session(agent['id'])
         state = 'stopped' if agent.get('stopped') else (session or {}).get('state', 'missing')
-        agents.append({**agent, 'state': state, 'session': session})
-    return {'id': sid, 'phase': team.get('phase'), 'agents': agents}
+        running = state == 'running'
+        meta = store.read_cached(agent['id']) or {}
+        ended = None if running or not session else (meta.get('finished_at') or meta.get('updated'))
+        agents.append({**agent, 'state': state, 'session': session, 'started_at': team.get('created'),
+                       'finished_at': ended, **(_live_view(agent['id'], running) if session else
+                                                {'activity': [], 'report': None})})
+    return {'id': sid, 'phase': team.get('phase'), 'created': team.get('created'), 'agents': agents}
+
+
+# ---- what the team panel shows of each worker -----------------------------------------------
+ACTIVITY_MAX = 3            # last actions of a worker (tool calls, what it says)
+REPORT_MAX = 600            # characters of a finished worker's final answer
+LIVE_TAIL = 128 * 1024      # bytes read at the end of a worker's log for them, never the whole log
+_KINDS = {'Read': 'read', 'NotebookRead': 'read', 'Grep': 'search', 'Glob': 'search', 'Bash': 'run',
+          'Write': 'edit', 'Edit': 'edit', 'MultiEdit': 'edit', 'NotebookEdit': 'edit',
+          'WebFetch': 'web', 'WebSearch': 'web'}
+_live: dict[str, tuple] = {}   # worker sid -> ((log inode, size, running), view): read again only when its log changed
+
+
+def _live_view(agent_id: str, running: bool) -> dict:
+    """-> {activity: [{kind, target}] (the last ACTIVITY_MAX of its latest turn, oldest first), report: the start
+    of its final answer once it stopped, else None}. Polled by the team panel: cached until the log changes."""
+    from . import normalize, service
+    key = (service.log_ident(agent_id), running)
+    hit = _live.get(agent_id)
+    if hit and hit[0] == key:
+        return hit[1]
+    events = service._tail_events(agent_id, LIVE_TAIL) if key[0] else []
+    start = max((i for i, ev in enumerate(events) if ev['type'] == 'user'), default=-1) + 1
+    turn = events[start:]
+    activity = []
+    for ev in turn:
+        if ev['type'] == 'tool_use':
+            activity.append({'kind': _KINDS.get(ev['name'], 'other'), 'target': _target(agent_id, ev)})
+        elif ev['type'] == 'assistant' and ev['text'].strip():
+            activity.append({'kind': 'say', 'target': normalize._short(ev['text'].strip().splitlines()[0])})
+    report = None
+    if not running:
+        text = next((ev['text'] for ev in reversed(turn) if ev['type'] == 'assistant' and ev['text'].strip()), '')
+        report = (text.strip()[:REPORT_MAX] + ('…' if len(text.strip()) > REPORT_MAX else '')) or None
+    view = {'activity': activity[-ACTIVITY_MAX:], 'report': report}
+    _live[agent_id] = (key, view)
+    while len(_live) > 64:
+        _live.pop(next(iter(_live)))
+    return view
+
+
+def _target(agent_id: str, ev: dict) -> str:
+    """What a tool call worked on, short: a file path relative to the topic folder, a pattern, a command."""
+    from . import normalize
+    inp, name = ev.get('input') or {}, ev['name']
+    if name in ('Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'NotebookRead'):
+        path = str(inp.get('file_path') or inp.get('notebook_path') or inp.get('path') or '')
+        try:
+            from .. import workspace
+            base = str(workspace.topic_dir((store.read_cached(agent_id) or {}).get('path') or '')) + '/'
+            path = path[len(base):] if path.startswith(base) else path
+        except (ValueError, OSError):
+            pass
+        return normalize._short(path)
+    if name in ('Grep', 'Glob'):
+        return normalize._short(inp.get('pattern') or '')
+    if name == 'Bash':
+        return normalize._short(inp.get('command') or '')
+    if name in ('WebFetch', 'WebSearch'):
+        return normalize._short(inp.get('url') or inp.get('query') or '')
+    return ev.get('summary') or name
 
 
 def stop_agent(sid: str, agent_id: str) -> dict:
