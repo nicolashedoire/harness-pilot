@@ -3,7 +3,7 @@ import { History, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { useBackup, useBackupForget, useBackupHistory, useBackupPreview, useBackupRestore, useBackupSettings, useCronPreview } from '@/lib/queries'
 import { errorMessage } from '@/lib/api'
 import type { BackupRestoreResult } from '@/lib/types'
-import { fmtDate, fmtRelative } from '@/lib/format'
+import { fmtClockTimes, fmtDate, fmtRelative } from '@/lib/format'
 import { useLang, useT } from '@/i18n'
 import { useSettings } from '@/lib/queries'
 import { Badge, Button, EmptyState, FormField, Input, Sensitive, Skeleton, StatusDot, confirm, toast } from '@/components/ui'
@@ -21,6 +21,7 @@ function useDebounced<T>(v: T, ms = 350) {
 
 function ScheduleAndInclude() {
   const t = useT()
+  const lang = useLang()
   const { data: b } = useBackup()
   const save = useBackupSettings()
   const [schedule, setSchedule] = React.useState<string | null>(null)
@@ -50,7 +51,7 @@ function ScheduleAndInclude() {
       <FormField
         label={t('backup.schedule')}
         error={preview.data && !preview.data.valid ? preview.data.error || t('backup.scheduleInvalid') : undefined}
-        hint={preview.data?.valid ? preview.data.human : t('backup.scheduleHint')}
+        hint={preview.data?.valid ? fmtClockTimes(preview.data.human, lang) : t('backup.scheduleHint')}
       >
         <Input value={schedule} onChange={(e) => setSchedule(e.target.value)} className="max-w-xs font-mono" spellCheck={false} />
       </FormField>

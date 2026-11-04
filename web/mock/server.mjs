@@ -479,16 +479,39 @@ function fieldMatch(field, v, i) {
     return val >= lo && val <= hi && (val - lo) % step === 0
   })
 }
+// Minutes east of UTC of `zone` at instant `ms` (an unknown zone counts as UTC).
+const zoneFormats = new Map()
+function zoneOffset(ms, zone) {
+  let f = zoneFormats.get(zone)
+  if (f === undefined) {
+    try {
+      f = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
+    } catch {
+      f = null
+    }
+    zoneFormats.set(zone, f)
+  }
+  if (!f) return 0
+  const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, +x.value]))
+  return (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - Math.floor(ms / 60000) * 60000) / 60000
+}
+// Like the server (crons.iter_runs), schedules are evaluated in the configured timezone.
 function cronNext(expr, n = 5, from = Date.now()) {
   if (!cronValid(expr)) return []
   const f = expr.trim().split(/\s+/)
+  const zone = S?.settings?.timezone || 'UTC'
   const out = []
-  let d = new Date(Math.floor(from / 60000) * 60000 + 60000)
-  for (let i = 0; i < 366 * 24 * 60 && out.length < n; i++, d = new Date(d.getTime() + 60000)) {
+  let bucket = -1, offset = 0
+  for (let i = 0, t = Math.floor(from / 60000) * 60000 + 60000; i < 366 * 24 * 60 && out.length < n; i++, t += 60000) {
+    if (Math.floor(t / 900000) !== bucket) {
+      bucket = Math.floor(t / 900000)
+      offset = zoneOffset(t, zone)
+    }
+    const d = new Date(t + offset * 60000) // wall clock of the zone, read with the UTC getters
     const dowF = f[4], domF = f[2]
     const domOk = fieldMatch(domF, d.getUTCDate(), 2), dowOk = fieldMatch(dowF, d.getUTCDay(), 4)
     const dayOk = domF !== '*' && dowF !== '*' ? domOk || dowOk : domOk && dowOk
-    if (fieldMatch(f[0], d.getUTCMinutes(), 0) && fieldMatch(f[1], d.getUTCHours(), 1) && fieldMatch(f[3], d.getUTCMonth() + 1, 3) && dayOk) out.push(d.getTime() / 1000)
+    if (fieldMatch(f[0], d.getUTCMinutes(), 0) && fieldMatch(f[1], d.getUTCHours(), 1) && fieldMatch(f[3], d.getUTCMonth() + 1, 3) && dayOk) out.push(t / 1000)
   }
   return out
 }
