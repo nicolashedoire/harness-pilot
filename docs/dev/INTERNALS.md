@@ -421,9 +421,12 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.
   The run history is parsed once per file version (`_all_runs`, keyed on path + mtime + size); `read_runs`
   returns copies.
-- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid"}`; a normal end
-  empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the orphan
-  job shell (`pgid`), records a failed Run (`code -9`, "interrupted: …") and reports it.
+- While a job runs, its lock file (`<state>/crons/locks/<id>.lock`) holds `{"pid", "at", "pgid", "pgid_start"}`; a
+  normal end empties it. A run killed before its end (SIGKILL, out of memory) leaves it: the next `run_job` kills the
+  orphan job shell (`pgid`) when `_proc_start(pgid)` still equals `pgid_start`, records a failed Run (`code -9`,
+  "interrupted: …") and reports it. `_proc_start`: `<boot id>:<start ticks>` from /proc (Linux), else (`BOOT_ID`
+  unreadable: macOS) `_ps_start` = `ps:<ps -o lstart=, TZ=UTC LC_ALL=C>` (start to the second); None (never killed)
+  when the process is gone or `ps` fails.
 - Claude jobs call `sessions.service.create_session(..., source="cron", cron=True, env={MAXXING_CRON_ID, MAXXING_CRON_NAME},
   timeout_s)` (or `send_message` when `reuse_session`), then `wait_turn` + `last_result` + `last_assistant_text`.
 - Job units: `spawn_run(id)` ("Run now", and `maxxing cron run <id> --detach` = what every managed crontab line calls)
@@ -681,7 +684,9 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 
 ## CLI
 Command names: `pilot`, and `maxxing` as a permanent alias - the same entry point `maxxing.cli:main` twice in
-pyproject `[project.scripts]` (`uv run pilot` in a dev checkout). argparse `prog` = the name it was called by
+pyproject `[project.scripts]`. In the local setup `bash scripts/dev-local.sh cli <args>` runs it with the
+exports and preparation of the local server (`MAXXING_STATE`, workspace, skills dirs, local crontab file), from
+the caller's folder; a bare `uv run pilot` has no `MAXXING_STATE` and reads `/var/lib/claude-maxxing`. argparse `prog` = the name it was called by
 (`cli.prog_name()`, `pilot` for `python -m maxxing`). On a server, install.sh writes `/usr/local/bin/maxxing`
 (`cmd_core.BIN_LINK`: a link to the venv's script, or a wrapper exporting `MAXXING_STATE`) and every `init`
 (so every update) runs `cmd_core.ensure_cli_alias()`: `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing`, the
