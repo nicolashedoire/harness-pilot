@@ -266,7 +266,7 @@ function LinkStep({ status }: { status: TelegramStatus }) {
   )
 }
 
-/** Threads are off for this bot (BotFather "Threaded Mode"): how to turn them on, and Retry. Not an error. */
+/** Telegram refused thread creation: check the BotFather Mini App and retry after propagation. */
 export function TopicsNotice({ status }: { status: TelegramStatus }) {
   const t = useT()
   const sync = useTelegramSync()
