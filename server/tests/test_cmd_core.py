@@ -205,6 +205,22 @@ def test_skills_are_rendered_with_the_paths_of_this_install(env):
     assert all(s["state"] == "ok" for s in cmd_core.skills_status())
 
 
+def test_init_installs_the_theme_skill_with_its_checker(env):
+    """skills/pilot-theme (Settings -> Appearance -> Create) is a product skill like every pilot-* one: init installs
+    it and its check_theme.py (copied as is: only .md / .json / .txt files are rendered), update keeps it current."""
+    assert cmd_core.is_product_skill("pilot-theme")
+    assert "pilot-theme" in cmd_core.product_skill_names()
+    assert run_cli("init", "--workspace", str(env["ws"]), "--quiet") == 0
+    src, dst = config.SKILLS_DIR / "pilot-theme", env["home"] / ".claude" / "skills" / "pilot-theme"
+    assert (dst / "SKILL.md").read_text().startswith("---\nname: pilot-theme\n")
+    assert (dst / "check_theme.py").read_bytes() == (src / "check_theme.py").read_bytes()
+    assert "pilot-theme" in json.loads((env["state"] / "install.json").read_text())["skills"]
+    assert {s["name"]: s["state"] for s in cmd_core.skills_status()}["pilot-theme"] == "ok"
+    (dst / "check_theme.py").unlink()                     # a damaged copy is put back by the next init (update)
+    assert run_cli("init", "--quiet") == 0
+    assert (dst / "check_theme.py").read_bytes() == (src / "check_theme.py").read_bytes()
+
+
 def test_shipped_skills_use_placeholders_not_default_paths():
     for f in sorted(config.SKILLS_DIR.glob("*/SKILL.md")):
         text = f.read_text()

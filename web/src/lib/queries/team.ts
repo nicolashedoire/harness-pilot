@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, seg } from '../api'
+import type { Theme } from '../theme'
 import type { Ok, Profile, Session } from '../types'
 import { useMut } from './util'
 
@@ -13,7 +14,7 @@ export type TeamMessage = {
   at: number
   text: string
   /** info: a local line ("Léa left the group"), never sent */
-  kind: 'text' | 'summary' | 'poll' | 'info'
+  kind: 'text' | 'summary' | 'poll' | 'theme' | 'info'
   info?: 'joined' | 'removed' | 'left'
   reply_to?: string
   edited?: number
@@ -23,6 +24,8 @@ export type TeamMessage = {
   pending?: string[]
   poll?: { question: string; multi: boolean; options: TeamPollOption[] }
   summary?: { from: number; to: number; count: number; cost_usd: number; duration_ms: number }
+  /** kind theme: a colour theme (validated by both servers; normalizeTheme again before any preview, never applied by itself) */
+  theme?: Theme
   sent?: { session: string; title: string; at: number }[]
   reactions?: Record<string, string[]>
 }

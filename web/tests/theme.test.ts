@@ -127,3 +127,19 @@ test('styles/globals.css fallback = the default palette', async () => {
     }
   }
 })
+
+test('theme code: round trip, pasted JSON, refusals', async () => {
+  const { THEME_CODE_PREFIX, parseThemeText, sameLook, themeCode } = await import('../src/lib/theme/index')
+  const t = theme({ id: 'ember', name: 'Ember « braise »', base: 'custom', accent: '#e8915a', tokens: { light: {}, dark: { background: '#14100d', card: '#1c1612' } } })
+  const code = themeCode(t)
+  assert.ok(code.startsWith(THEME_CODE_PREFIX) && /^theme1:[A-Za-z0-9_-]+$/.test(code))
+  const back = parseThemeText(`  ${code.slice(0, 20)}\n${code.slice(20)}  `)
+  assert.ok(back.theme && sameLook(back.theme, t) && back.theme.name === t.name && back.report.errors.length === 0)
+  assert.ok(sameLook(parseThemeText(JSON.stringify(t)).theme!, t))
+  assert.ok(!sameLook(t, { ...t, accent: '#14b8a6' }))
+  // never trusted: unsafe values dropped and reported, junk and oversize refused
+  const evil = parseThemeText(themeCode(t).slice(0, 7) + Buffer.from(JSON.stringify({ ...t, tokens: { light: {}, dark: { card: 'url(https://x.example/a)' } } })).toString('base64url'))
+  assert.ok(evil.theme && !('card' in evil.theme.tokens.dark) && evil.report.errors.some((e) => e.includes('card')))
+  for (const bad of ['hello', 'theme1:%%%', 'theme1:' + 'A'.repeat(30000), 'theme1:' + Buffer.from('[1,2]').toString('base64url'), 'theme1:' + Buffer.from([0xff, 0xfe]).toString('base64url'), '{nope'])
+    assert.equal(parseThemeText(bad).theme, null, bad.slice(0, 20))
+})

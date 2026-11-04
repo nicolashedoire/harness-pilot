@@ -44,6 +44,7 @@ export const qk = {
   register: ['settings', 'register'] as const,
   feedback: ['settings', 'feedback'] as const,
   license: ['settings', 'license'] as const,
+  themes: ['themes'] as const,
   secrets: ['secrets'] as const,
   health: ['health'] as const,
   system: {
@@ -101,6 +102,8 @@ export const BUS_KEYS: Record<BusTopic, readonly (readonly unknown[])[]> = {
   mcp: [['mcp']],
   /** the palette changed on another device: the auth state carries the new one */
   look: [qk.authState],
+  /** the saved themes ("My themes") changed */
+  themes: [qk.themes],
 }
 
 /** Data the bus keeps fresh on its own (file watchers + every write path): no refetch when the tab is shown

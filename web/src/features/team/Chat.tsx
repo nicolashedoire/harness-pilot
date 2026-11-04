@@ -22,6 +22,7 @@ import { fmtBytes } from '@/lib/format'
 import { Markdown } from '@/components/ui/markdown'
 import { Avatar } from '@/features/profile/Avatar'
 import { projectColor } from '@/features/tasks/model'
+import { ThemeMessageCard } from '@/features/themes/TeamCard'
 import { ForwardDialog, GroupDialog, NewChatDialog, PollDialog } from './Dialogs'
 import { AddFriendDialog, useOpenDm } from './Friends'
 import { ChatAvatar, chatTitle, friendsOf, PersonAvatar, personOf, TypingDots, usePresence, useTypingLabel } from './people'
@@ -151,6 +152,8 @@ export function ChatList({
                             ? t('team.msg.deleted')
                             : last.kind === 'poll'
                               ? `📊 ${last.text}`
+                              : last.kind === 'theme'
+                                ? `🎨 ${last.text || t('themegen.team.label')}`
                               : last.kind === 'summary'
                                 ? `✨ ${t('team.summaryShort')}`
                                 : `${last.files ? '📎 ' : ''}${last.text}`}
@@ -268,6 +271,7 @@ export function ChatView({ team, chatId, onBack, compact, headerExtra }: { team:
   const sendLabel = (m: TeamMessage) => {
     const who = m.author === me ? t('team.you') : personOf(team, m.author).name
     if (m.kind === 'summary') return t('team.fwd.fromSummary', { chat: title }) + '\n\n' + m.text + '\n\n'
+    if (m.kind === 'theme' && m.theme) return t('themegen.team.fwd', { chat: title, name: who, theme: m.text || t('themegen.team.label') }) + '\n\n```json\n' + JSON.stringify(m.theme) + '\n```\n\n'
     if (m.kind === 'poll' && m.poll) {
       const lines = m.poll.options.map((o) => `- ${o.label} : ${o.votes.map((v) => (v === me ? t('team.you') : personOf(team, v).name)).join(', ') || '0'}`)
       return t('team.fwd.fromPoll', { chat: title, name: who }) + `\n\n**${m.poll.question}**\n${lines.join('\n')}\n\n`
@@ -703,7 +707,7 @@ function MessageRow({
                 <span className="min-w-0">
                   <span className="block font-medium">{quoted ? quotedName : t('team.msg.unknown')}</span>
                   <span className="line-clamp-2 text-muted-foreground [overflow-wrap:anywhere]">
-                    {!quoted ? '' : quoted.deleted ? t('team.msg.deleted') : quoted.kind === 'poll' ? `📊 ${quoted.poll?.question}` : quoted.text || `📎 ${quoted.files?.map((f) => f.name).join(', ')}`}
+                    {!quoted ? '' : quoted.deleted ? t('team.msg.deleted') : quoted.kind === 'poll' ? `📊 ${quoted.poll?.question}` : quoted.kind === 'theme' ? `🎨 ${quoted.text}` : quoted.text || `📎 ${quoted.files?.map((f) => f.name).join(', ')}`}
                   </span>
                 </span>
               </button>
@@ -717,6 +721,8 @@ function MessageRow({
               <SummaryCard m={m} />
             ) : m.kind === 'poll' ? (
               <PollCard team={team} chat={chat} m={m} />
+            ) : m.kind === 'theme' ? (
+              <ThemeMessageCard theme={m.theme} from={author.name} mine={mine} />
             ) : m.text ? (
               <div
                 className={cn(
