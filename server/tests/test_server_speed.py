@@ -91,9 +91,10 @@ def test_workspace_descriptions_and_settings_are_cached_until_they_change(mx, mo
 
 # ---- session ids and lock files ----------------------------------------------------------------
 def test_session_ids_are_kept_and_follow_the_folder(mx, monkeypatch):
+    """The ids are kept while the folder's mtime is unchanged and older than IDS_RACY_S: a file created in the same
+    timestamp tick as the last listing (1 to 10 ms on Linux) would not change it."""
     a = store.create(store.new_meta("", "a"))["id"]
     assert store.list_ids() == [a]
-    monkeypatch.setattr(store, "IDS_RACY_S", 0.0)
     listed = {"n": 0}
     real = os.scandir
 
@@ -101,6 +102,7 @@ def test_session_ids_are_kept_and_follow_the_folder(mx, monkeypatch):
         listed["n"] += 1
         return real(p)
     monkeypatch.setattr(store.os, "scandir", counting)
+    _old(store.sessions_dir(), 10)                                     # last changed 10 s ago: settled
     store.list_ids()
     n = listed["n"]
     for _ in range(20):
