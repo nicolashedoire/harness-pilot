@@ -16,7 +16,8 @@ def test_proposal_review_and_decision(client, topic, mx, monkeypatch):
     fake = mx['tmp'] / 'codex'
     fake.write_text('''#!/usr/bin/env python3
 import json, pathlib, subprocess, sys
-sys.stdin.read()
+prompt = sys.stdin.read()
+assert 'complete user journey' in prompt and 'visual design and accessibility' in prompt
 assert '--sandbox' in sys.argv and 'workspace-write' in sys.argv
 assert not subprocess.check_output(['git', 'remote']).strip()
 pathlib.Path('app.txt').write_text('improved\\n')

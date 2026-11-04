@@ -112,7 +112,12 @@ def run(ident: str, path: str, mission: str = '') -> dict:
                 "concrete improvement, implement a small change in this clone, run relevant tests, and report "
                 "the exact commands and outcomes. Explain if a test could not run. Do not push, merge, publish, "
                 "contact external services, modify files outside this clone, or change credentials. "
-                "The user must review and approve or reject your proposal. Respond in French.\n\n"
+                "Before proposing the result, evaluate it as a real user: identify missing functionality, "
+                "try the complete user journey where feasible, and assess clarity, visual design and accessibility. "
+                "For interface changes, visually inspect the result when tools permit. Run relevant tests and "
+                "report separately what was verified, what could not be verified, and remaining improvements. "
+                "Do not claim an unperformed check. The user must review and approve or reject your proposal. "
+                "Respond in French.\n\n"
                 f"Additional mission: {mission.strip() or 'Find a useful, small improvement.'}")
         service.send_message(sid, text, source='companion')
         bus.invalidate('companions', 'sessions')
