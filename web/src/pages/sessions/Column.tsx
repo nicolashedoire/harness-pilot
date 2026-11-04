@@ -1395,6 +1395,8 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
   const [durationMinutes, setDurationMinutes] = React.useState('')
+  // a mixed team's roles: null = the default one (shown, not sent)
+  const [teamRoles, setTeamRoles] = React.useState<{ claude: string | null; codex: string | null }>({ claude: null, codex: null })
   const [claudeRole, setClaudeRole] = React.useState('')
   const [codexRole, setCodexRole] = React.useState('')
   const [preset, setPreset] = React.useState('default')
@@ -1439,7 +1441,11 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
     try {
       if (plugin && attachments.length && !adapter?.capabilities.includes('attachments')) { toast.error(t('agentProviders.textOnly')); return false }
       if (provider === 'team') {
-        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined, attachments })
+        const role = (a: 'claude' | 'codex') => {
+          const v = teamRoles[a]?.trim()
+          return v !== undefined && v !== t(a === 'claude' ? 'modes.team.claudeRoleDefault' : 'modes.team.codexRoleDefault').trim() ? v : undefined
+        }
+        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined, attachments, claude_role: role('claude'), codex_role: role('codex') })
         await qc.invalidateQueries({ queryKey: ['sessions'] })
         saveDraft(`new:${col.path}`, '')
         becomeSession(col.key, s.id)
@@ -1529,8 +1535,18 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               </div>
               <ModePicker name={`provider-${col.key}`} value={provider} onChange={(v) => { setProvider(v); setModel(''); setPlanMode(false) }} plugins={agentProviders.filter((p) => !p.builtin)} swarmAgents={swarmAgents} />
             </div>
-            <ModePanel mode={provider} adapter={adapter} swarmAgents={swarmAgents} className="@3xl:sticky @3xl:top-0 @3xl:col-start-2 @3xl:row-span-3 @3xl:row-start-1 @3xl:self-start" />
+            <ModePanel mode={provider} adapter={adapter} swarmAgents={swarmAgents} teamRoles={teamRoles} className="@3xl:sticky @3xl:top-0 @3xl:col-start-2 @3xl:row-span-3 @3xl:row-start-1 @3xl:self-start" />
             <div className="grid min-w-0 content-start gap-4 @3xl:col-start-1">
+              {provider === 'team' && <div className="grid gap-1.5">
+                {(['claude', 'codex'] as const).map((a) => (
+                  <React.Fragment key={a}>
+                    <Label htmlFor={`team-${a}-role-${col.key}`}>{t(a === 'claude' ? 'sessions.claudeRole' : 'sessions.codexRole')}</Label>
+                    <Textarea id={`team-${a}-role-${col.key}`} value={teamRoles[a] ?? t(a === 'claude' ? 'modes.team.claudeRoleDefault' : 'modes.team.codexRoleDefault')} maxLength={2000} minRows={2} onChange={(e) => setTeamRoles((r) => ({ ...r, [a]: e.target.value }))} />
+                  </React.Fragment>
+                ))}
+                <p className="text-xs text-muted-foreground">{t('modes.team.rolesHint')}</p>
+                {(teamRoles.claude !== null || teamRoles.codex !== null) && <Button type="button" variant="ghost" className="justify-start" onClick={() => setTeamRoles({ claude: null, codex: null })}>{t('modes.team.rolesReset')}</Button>}
+              </div>}
               {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
                 <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
                 <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />

@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- The role of each agent of a mixed team can be changed when you create it; the default roles stay filled in.
 - A mixed team's mission can now include files and images: both agents and the coordinator receive them, and the mission shows them in the conversation.
 - A mixed team's panel now follows its steps (Starting, Agents working, Synthesis, Done) and shows, for each agent, how long it has worked, its last actions and the start of its report once it has finished. It folds to one line when the team is over.
 - Local setup: `pilot update` now refuses to run there, as the Update button already did, and says how to update instead (`git pull` in your clone, then start `scripts/dev-local.sh` again). Checking for updates still works.

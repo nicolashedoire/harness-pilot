@@ -1608,7 +1608,7 @@ const teamOut = (sid) => {
   return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
     const session = S.sessions.find((x) => x.id === a.id) || null
     const state = a.stopped ? 'stopped' : session ? session.state : 'missing'
-    return { ...a, state, session, started_at: team.created, finished_at: session && state !== 'running' ? session.updated : null,
+    return { ...a, state, session, started_at: team.created, custom_role: !TEAM_ROLES.some(([p, r]) => p === a.provider && r === a.role), finished_at: session && state !== 'running' ? session.updated : null,
       ...(session ? teamLive(session) : { activity: [], report: null }) }
   }) }
 }
@@ -1620,7 +1620,8 @@ R('POST', '/api/teams', ({ body }) => {
   addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
   const team = { phase: 'launching', goal, agents: [], created: now() }
   teamsState()[parent.id] = team
-  for (const [provider, role] of TEAM_ROLES) {
+  for (const [provider, fallback] of TEAM_ROLES) {
+    const role = String(body[`${provider}_role`] || '').trim() || fallback
     const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
     Object.assign(child, { team_parent: parent.id, team_turn: true })
     team.agents.push({ id: child.id, provider, role, stopped: false })
