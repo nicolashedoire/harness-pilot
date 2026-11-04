@@ -1556,6 +1556,12 @@ function teamTurn(s, text, answer, ms, done) {
   const model = s.provider === 'codex' ? 'gpt-5.5-codex' : S.claude.default_model
   s.state = 'running'; s.error = null; s.updated = now()
   addEvents(s, { type: 'user', text, attachments: [], at: now(), source: 'team' }, { type: 'init', model, cwd: `${ROOT}/${s.path}`, at: now() })
+  if (s.team_parent) { // a worker looks around first (the team panel shows its last actions)
+    const id = `toolu_${crypto.randomBytes(6).toString('hex')}`
+    addEvents(s, { type: 'assistant', text: 'Reading the files the mission touches.', at: now() },
+      { type: 'tool_use', id, name: 'Read', input: { file_path: `${ROOT}/${s.path}/CLAUDE.md` }, summary: 'Read CLAUDE.md', at: now() },
+      { type: 'tool_result', tool_use_id: id, text: '# Topic notes', is_error: false, at: now() })
+  }
   later(s, ms, () => {
     Object.assign(s, { state: 'idle', turns: s.turns + 1, real_model: model, updated: now(), unread: true, last_text: answer.slice(0, 200) })
     addEvents(s, { type: 'assistant', text: answer, at: now() },
@@ -1587,11 +1593,23 @@ const teamSession = (path, title, provider) => {
   S.sessions.push(s); S.events[s.id] = []
   return s
 }
+// a worker's last actions and the start of its report, from its events (teams._live_view)
+const TEAM_KINDS = { Read: 'read', Grep: 'search', Glob: 'search', Bash: 'run', Write: 'edit', Edit: 'edit', WebFetch: 'web', WebSearch: 'web' }
+const teamLive = (session) => {
+  const evs = S.events[session.id] || []
+  const turn = evs.slice(evs.map((e) => e.type).lastIndexOf('user') + 1)
+  const activity = turn.flatMap((e) => e.type === 'tool_use' ? [{ kind: TEAM_KINDS[e.name] || 'other', target: String(e.input?.file_path || e.input?.pattern || e.input?.command || e.summary || e.name).replace(`${ROOT}/${session.path}/`, '') }]
+    : e.type === 'assistant' ? [{ kind: 'say', target: e.text.split('\n')[0].slice(0, 120) }] : []).slice(-3)
+  const last = [...turn].reverse().find((e) => e.type === 'assistant')
+  return { activity, report: session.state !== 'running' && last ? last.text.slice(0, 600) : null }
+}
 const teamOut = (sid) => {
   const team = teamOf(sid)
-  return { id: sid, phase: team.phase, agents: team.agents.map((a) => {
+  return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
     const session = S.sessions.find((x) => x.id === a.id) || null
-    return { ...a, state: a.stopped ? 'stopped' : session ? session.state : 'missing', session }
+    const state = a.stopped ? 'stopped' : session ? session.state : 'missing'
+    return { ...a, state, session, started_at: team.created, finished_at: session && state !== 'running' ? session.updated : null,
+      ...(session ? teamLive(session) : { activity: [], report: null }) }
   }) }
 }
 R('POST', '/api/teams', ({ body }) => {
@@ -1600,7 +1618,7 @@ R('POST', '/api/teams', ({ body }) => {
   if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
   const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
   addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
-  const team = { phase: 'launching', goal, agents: [] }
+  const team = { phase: 'launching', goal, agents: [], created: now() }
   teamsState()[parent.id] = team
   for (const [provider, role] of TEAM_ROLES) {
     const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
@@ -2394,11 +2412,283 @@ R('GET', '/api/stats/tokens', () => {
 })
 R('GET', '/api/usage', () => ({ available: false, five_hour: null, seven_day: null, reason: 'disabled' }))
 
+/* ---- resident missions (server/maxxing/missions.py): a goal, a plan of companion steps the owner reviews, then runs
+   launched one by one as companion runs (the proposal of each waits for the owner's decision in Settings -> Companions).
+   The server's worker advances missions every 2 s; here each read does (the page polls). Cycles are not simulated. */
+const MISSION_FIELDS = ['title', 'path', 'goal', 'max_runs', 'max_seconds', 'max_tokens', 'concurrent', 'interval_seconds', 'max_cycles']
+const MISSION_PLAN = [ // what the architect proposes in the mock
+  { id: 'map', title: 'Map the keyboard paths of the Files page', role: 'architect', instruction: 'List every action of the Files page and how it is reached without a mouse. Name the components and files involved.', after: [] },
+  { id: 'focus', title: 'Fix the missing focus states', role: 'observer', instruction: 'Give every interactive element of the Files page a visible focus ring with the shared tokens, and add a test for the list.', after: ['map'] },
+  { id: 'check', title: 'Review the change for regressions', role: 'security', instruction: 'Check that the focus changes do not expose hidden actions and that the tests cover the list and the toolbar.', after: ['focus'] },
+]
+const missionStep = (s) => ({ id: s.id, title: s.title, role: s.role, instruction: s.instruction, after: [...s.after], state: 'pending', session: null })
+function missionFingerprint(m) {
+  const roles = companionsState().roles
+  const plan = Object.fromEntries(MISSION_FIELDS.map((k) => [k, m[k]]))
+  plan.steps = m.steps.map(({ id, title, role, instruction, after }) => ({ id, title, role, instruction, after }))
+  plan.roles = Object.fromEntries([...new Set(m.steps.map((s) => s.role))].sort().map((r) => { const p = roles.find((x) => x.id === r); return [r, p ? { role: p.role, engine: p.provider } : null] }))
+  return crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex')
+}
+function missionsState() {
+  if (S.missions) return S.missions
+  S.missions = []
+  if (S.scenario === 'ready' || S.scenario === 'maxxing') S.missions.push({ ...missionNew('Keyboard-friendly Files page', topicPath('acme', 'website'),
+    'Every action of the Files page works with the keyboard alone, with a visible focus, without changing how it looks for mouse users.', 6, 90, 2000000, 1, 0, 1),
+    steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready', created: now() - 3 * HOUR })
+  return S.missions
+}
+function missionNew(title, path, goal, runs, minutes, tokens, concurrent, interval, cycles) {
+  return { id: crypto.randomBytes(16).toString('hex'), title, path, goal, steps: [], phase: 'draft', reason: '', created: now(), origin_state: '/var/lib/claude-maxxing',
+    max_runs: runs, max_seconds: minutes * 60, max_tokens: tokens, concurrent, interval_seconds: interval * 60, max_cycles: cycles,
+    cycle: 1, spent_seconds: 0, active_since: null, next_cycle: null, launches: [], tokens: 0, planner: null }
+}
+function missionValidate(steps) {
+  const roles = new Set(companionsState().roles.map((p) => p.id)), seen = new Set()
+  if (!Array.isArray(steps) || steps.length < 1 || steps.length > 8) fail(400, 'bad_plan', 'A plan needs one to eight steps.')
+  return steps.map((v) => {
+    const id = String(v?.id || ''), title = String(v?.title || '').trim(), instruction = String(v?.instruction || '').trim(), after = v?.after || []
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || seen.has(id) || !title || title.length > 120 || !roles.has(v.role) || !instruction || instruction.length > 2000
+      || !Array.isArray(after) || after.some((d) => !seen.has(d)) || new Set(after).size !== after.length) fail(400, 'bad_plan', 'Use existing roles and distinct steps with earlier prerequisites.')
+    seen.add(id)
+    return missionStep({ id, title, role: v.role, instruction, after })
+  })
+}
+const missionOut = (m) => ({ ...clone(m), plan_fingerprint: missionFingerprint(m) })
+const missionFind = (id) => missionsState().find((m) => m.id === id) || fail(404, 'not_found', 'Mission not found.')
+const missionRuns = (m) => m.launches.filter((l) => !l.aborted).length
+const missionBank = (m) => { if (m.active_since) { m.spent_seconds += Math.max(0, now() - m.active_since); m.active_since = null } }
+// A launch is an ordinary companion run (its session carries `companion`), so its proposal is reviewed in Companions.
+function missionLaunch(m, step, purpose) {
+  const role = companionsState().roles.find((p) => p.id === step.role) || companionsState().roles[0]
+  const t = now()
+  const s = { id: uuid(), title: `${role.name} — platform review`, path: m.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '',
+    real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null,
+    provider: role.provider, companion: { id: role.id, name: role.name, decision: null } }
+  S.sessions.push(s); S.events[s.id] = []
+  if (purpose === 'experiment') S.companions.runs[s.id] = { base: sha(), decision: null, pull_request: null } // a plan proposes no change
+  m.launches.push({ key: uuid(), session: s.id, purpose })
+  Object.assign(step, { state: 'running', session: s.id })
+  if (purpose === 'experiment') return companionTurn(s, `Mission goal: ${m.goal}\nYour step: ${step.title}\n${step.instruction}`)
+  const plan = JSON.stringify({ steps: MISSION_PLAN.map(({ id, title, role: r, instruction, after }) => ({ id, title, role: r, instruction, after })) }, null, 2)
+  s.state = 'running'
+  addEvents(s, { type: 'user', text: `Design a small actionable plan for this goal, using existing roles only.\n${m.goal}`, attachments: [], at: now(), source: 'companion' })
+  later(s, 3000, () => {
+    Object.assign(s, { state: 'idle', turns: 1, updated: now(), unread: true, last_text: plan.slice(0, 200) })
+    addEvents(s, { type: 'assistant', text: '```json\n' + plan + '\n```', at: now() }, { type: 'result', ok: true, cost_usd: 0, duration_ms: 3000, model: 'gpt-5.5-codex', usage: { input: 9000, output: 700, cache_read: 0, cache_write: 0 }, at: now() })
+    bus('missions', 'sessions')
+  })
+}
+function missionAdvance(m) { // like missions.advance, one pass
+  const runs = companionsState().runs
+  for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+    if (!step.session || !['running', 'review'].includes(step.state)) continue
+    const s = S.sessions.find((x) => x.id === step.session)
+    if (!s) { Object.assign(step, { state: 'failed', error: 'missing_session' }); continue }
+    if (s.state === 'running') continue
+    if (!s.turns) { Object.assign(step, { state: 'failed', error: 'agent_failed' }); continue }
+    if (step === m.planner) { step.state = 'complete'; m.tokens += 9700; continue }
+    const decision = runs[s.id]?.decision
+    if (step.state === 'running') m.tokens += 40900
+    step.state = decision?.fingerprint === companionFingerprint() ? (decision.value === 'approved' ? 'complete' : 'rejected') : 'review'
+  }
+  if (!['active', 'planning'].includes(m.phase)) return
+  const busy = [...m.steps, ...(m.planner ? [m.planner] : [])].some((s) => s.state === 'running')
+  if (busy) m.active_since ||= now(); else missionBank(m)
+  if (m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) return Object.assign(m, { phase: 'budget', reason: m.tokens >= m.max_tokens ? 'tokens' : 'time' })
+  if ([...m.steps, ...(m.phase === 'planning' && m.planner ? [m.planner] : [])].some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) return Object.assign(m, { phase: 'paused', reason: 'step_failed' })
+  if (m.phase === 'planning') {
+    if (m.planner?.state === 'complete') Object.assign(m, { steps: MISSION_PLAN.map(missionStep), phase: 'plan_review', reason: 'plan_ready' })
+    else if (!m.planner) {
+      if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+      m.planner = { id: 'planner', title: 'Plan', role: 'architect', instruction: '', state: 'pending', after: [], session: null }
+      missionLaunch(m, m.planner, 'plan')
+    }
+    return
+  }
+  if (m.steps.every((s) => ['complete', 'skipped'].includes(s.state))) return Object.assign(m, { phase: 'completed', reason: 'completed' })
+  const ready = m.steps.find((s) => s.state === 'pending' && s.after.every((d) => m.steps.some((x) => x.id === d && ['complete', 'skipped'].includes(x.state))))
+  if (ready && m.steps.filter((s) => s.state === 'running').length < m.concurrent) {
+    if (missionRuns(m) >= m.max_runs) return Object.assign(m, { phase: 'budget', reason: 'runs' })
+    missionLaunch(m, ready, 'experiment')
+  }
+}
+const missionsRead = () => { for (const m of missionsState()) missionAdvance(m); return missionsState() }
+R('GET', '/api/missions', () => [...missionsRead()].sort((a, b) => b.created - a.created).map(missionOut))
+R('POST', '/api/missions', ({ body }) => {
+  const title = String(body.title || '').trim(), goal = String(body.goal || '').trim()
+  if (!title || title.length > 120 || !goal || goal.length > 2000) fail(400, 'bad_mission', 'A title and bounded goal are required.')
+  if (!S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose an existing topic.')
+  const n = (k, d) => (body[k] === undefined || body[k] === null ? d : Number(body[k]))
+  const [runs, minutes, tokens, concurrent, interval, cycles] = [n('max_runs', 8), n('max_minutes', 60), n('max_tokens', 1000000), n('concurrent', 1), n('interval_minutes', 0), n('max_cycles', 1)]
+  if (!(runs >= 1 && runs <= 32 && minutes >= 1 && minutes <= 1440 && tokens >= 1 && tokens <= 100000000 && [1, 2].includes(concurrent) && interval >= 0 && interval <= 10080 && cycles >= 1 && cycles <= 32)) fail(400, 'bad_budget', 'Mission limits are out of range.')
+  const steps = body.steps?.length ? missionValidate(body.steps) : []
+  if (missionsState().length >= 50) fail(400, 'limit', 'The mission list is full.')
+  const m = { ...missionNew(title, body.path, goal, runs, minutes, tokens, concurrent, interval, cycles), steps }
+  S.missions.push(m); bus('missions')
+  return missionOut(m)
+})
+R('GET', '/api/missions/:id', ({ params }) => { missionsRead(); return missionOut(missionFind(params.id)) })
+R('PUT', '/api/missions/:id/plan', ({ params, body }) => {
+  const m = missionFind(params.id), steps = missionValidate(body.steps)
+  if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.steps.some((s) => s.session)) fail(409, 'busy', 'A running or previously executed plan cannot be replaced.')
+  Object.assign(m, { steps, phase: 'plan_review', reason: '' }); bus('missions')
+  return missionOut(m)
+})
+R('POST', '/api/missions/:id/control', ({ params, body }) => {
+  const m = missionFind(params.id), action = body.action
+  if (!['start', 'pause', 'stop', 'plan'].includes(action)) fail(400, 'bad_action', 'Unknown mission action.')
+  if (action === 'plan') {
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || m.planner || m.steps.some((s) => s.session)) fail(409, 'busy', 'This mission already has a planner run.')
+    Object.assign(m, { phase: 'planning', active_since: null, reason: '' })
+  } else if (action === 'start') {
+    if (body.fingerprint !== missionFingerprint(m)) fail(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
+    if (!['draft', 'plan_review', 'paused'].includes(m.phase) || !m.steps.length) fail(409, 'busy', 'Review a plan before starting this mission.')
+    if (missionRuns(m) >= m.max_runs || m.spent_seconds >= m.max_seconds || m.tokens >= m.max_tokens) fail(409, 'budget', 'The authorized mission budget is exhausted.')
+    for (const s of m.steps) if (s.state === 'interrupted' && !s.session) Object.assign(s, { state: 'pending' })
+    if (m.steps.some((s) => ['failed', 'rejected', 'interrupted'].includes(s.state))) fail(409, 'unresolved', 'Retry or skip the steps that need your attention first.')
+    Object.assign(m, { phase: 'active', active_since: null, reason: '' })
+  } else {
+    if (action === 'stop' && ['completed', 'stopped', 'budget'].includes(m.phase)) fail(409, 'busy', 'A terminal mission cannot be stopped again.')
+    if (action === 'pause' && !['active', 'planning'].includes(m.phase)) fail(409, 'busy', 'Only an active mission can be paused.')
+    missionBank(m)
+    Object.assign(m, { phase: action === 'pause' ? 'paused' : 'stopped', reason: 'owner' })
+    for (const step of [...m.steps, ...(m.planner ? [m.planner] : [])]) {
+      if (!step.session || step.state !== 'running') continue
+      const s = S.sessions.find((x) => x.id === step.session)
+      if (s && s.state === 'running') { clearTimers(s); s.state = 'idle'; addEvents(s, { type: 'note', text: 'Turn stopped by user.', level: 'warn', at: now() }) }
+      step.state = 'interrupted'
+    }
+    bus('sessions')
+  }
+  missionAdvance(m) // the server's worker launches within 2 s
+  bus('missions')
+  return missionOut(m)
+})
+for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected'], 'skipped'], ['retry', ['interrupted', 'failed', 'rejected'], 'retried']]) {
+  R('POST', `/api/missions/:id/steps/:step/${what}`, ({ params }) => {
+    const m = missionFind(params.id)
+    if (m.phase !== 'paused') fail(409, 'busy', `Only a paused mission can ${what} a step.`)
+    const step = m.steps.find((s) => s.id === params.step)
+    if (!step || !states.includes(step.state)) fail(409, 'busy', `Only an interrupted, failed or rejected step can be ${verb}.`)
+    if (what === 'skip') step.state = 'skipped'; else { delete step.error; Object.assign(step, { state: 'pending', session: null }) }
+    m.reason = 'owner'; bus('missions')
+    return missionOut(m)
+  })
+}
+
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
 R('GET', '/api/docs/:slug', ({ params }) => {
   const d = DOCS.find((x) => x.slug === params.slug) || fail(404, 'not_found', 'No such doc page')
   return { slug: d.slug, title: d.title, markdown: d.markdown }
+})
+
+/* ---- pull request integration queue (server/maxxing/pr_queue.py): the owner reviews the exact diff, approves it, and
+   the worker merges approved entries in order once checks pass and prerequisites are merged. Starts paused. Here a
+   fake GitHub answers, and each read advances the queue like the worker (queued -> merging -> merged in a few s). */
+const PRQ_URL = /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9_.-]{1,100})\/pull\/([1-9][0-9]{0,9})$/
+const PRQ_TITLES = { 140: 'Refuse slashes in file names', 142: 'Keyboard focus on the Files page', 143: 'Test the Files toolbar with the keyboard' }
+function prqRemote(item) { // the fake GitHub pull request, stable per entry
+  const st = prqState()
+  return (st.remote[item.url] ||= { head: sha(), base_ref: 'main', base_sha: st.base, title: PRQ_TITLES[item.number] || `Improve ${item.repo.split('/')[1]} (#${item.number})`,
+    body: 'Proposed by a resident companion and reviewed in Harness Pilot.', draft: false, open: true, merged: false })
+}
+const prqPatch = (item) => `diff --git a/docs/user/notes.md b/docs/user/notes.md
+index 1a2b3c4..5d6e7f8 100644
+--- a/docs/user/notes.md
++++ b/docs/user/notes.md
+@@ -1,3 +1,4 @@
+ # Notes
+ 
+ Short notes about the product.
++- ${prqRemote(item).title}.
+`
+function prqState() {
+  if (S.prQueue) return S.prQueue
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.prQueue = { paused: true, base: sha(), remote: {}, items: [] }
+  if (ready) {
+    const add = (number, extra) => { const it = { id: crypto.randomBytes(16).toString('hex'), repo: 'acme/platform', number, url: `https://github.com/acme/platform/pull/${number}`, method: 'merge',
+      dependencies: [], state: 'awaiting_review', reason: 'approval', approval: null, created: t - (150 - number) * HOUR, checked_at: 0, revision: 0, ...extra }; S.prQueue.items.push(it); return it }
+    const merged = add(140, { state: 'merged', reason: 'merged', checked_at: t - 20 * HOUR })
+    const r = prqRemote(merged); Object.assign(r, { merged: true, open: false })
+    Object.assign(merged, { snapshot: { ...r }, approval: { fingerprint: crypto.randomBytes(32).toString('hex'), head: r.head, base_ref: 'main', base_sha: r.base_sha, dependencies: [], at: t - 21 * HOUR } })
+    const focus = add(142, {})
+    add(143, { dependencies: [focus.id], method: 'squash' })
+  }
+  return S.prQueue
+}
+const prqOut = () => { const st = prqState(); return { paused: st.paused, github_cli_available: true, items: clone(st.items) } }
+const prqFind = (id) => prqState().items.find((i) => i.id === id) || fail(404, 'not_found', 'Pull request queue item not found.')
+const prqBindings = (item) => item.dependencies.map((id) => {
+  const dep = prqFind(id)
+  return [id, dep.state === 'merged' ? dep.snapshot?.head || null : dep.approval?.head || null]
+})
+const prqFingerprint = (item, remote) => crypto.createHash('sha256').update(JSON.stringify([item.repo.toLowerCase(), item.number, remote.head, remote.base_ref,
+  remote.base_sha, item.method, prqBindings(item), crypto.createHash('sha256').update(prqPatch(item)).digest('hex')])).digest('hex')
+function prqAdvance() { // one worker pass
+  const st = prqState(), t = now()
+  for (const item of st.items) {
+    if (!['queued', 'blocked', 'merging'].includes(item.state)) continue
+    if (st.paused && item.state !== 'merging') { Object.assign(item, { state: 'queued', reason: 'paused' }); continue }
+    const waiting = item.dependencies.some((id) => prqFind(id).state !== 'merged')
+    if (item.state === 'merging') {
+      if (t - item.checked_at < 3) continue
+      const r = prqRemote(item); Object.assign(r, { merged: true, open: false })
+      Object.assign(item, { state: 'merged', reason: 'merged', snapshot: { ...r }, checked_at: t, revision: item.revision + 1 })
+    } else if (waiting) Object.assign(item, { state: 'blocked', reason: 'dependencies', checked_at: t })
+    else if (item.reason !== 'checks' || t - item.checked_at >= 3) Object.assign(item, item.reason === 'checks' ? { state: 'merging', reason: 'github_pending', checked_at: t } : { state: 'queued', reason: 'checks', checked_at: t })
+  }
+}
+R('GET', '/api/pr-queue', () => { prqAdvance(); return prqOut() })
+R('POST', '/api/pr-queue', ({ body }) => {
+  const m = String(body.url || '').trim().match(PRQ_URL), method = body.method || 'merge', deps = body.dependencies || []
+  if (!m || ['.', '..'].includes(m[2]) || !['merge', 'squash'].includes(method)) fail(400, 'bad_request', 'Use a canonical GitHub pull request URL and merge or squash.')
+  if (!Array.isArray(deps) || deps.length > 20 || new Set(deps).size !== deps.length) fail(400, 'bad_dependencies', 'Choose up to 20 distinct existing prerequisites.')
+  const st = prqState(), repo = `${m[1]}/${m[2]}`, number = Number(m[3])
+  if (st.items.length >= 100) fail(400, 'limit', 'The integration queue is full.')
+  if (st.items.some((i) => i.repo.toLowerCase() === repo.toLowerCase() && i.number === number && i.state !== 'cancelled')) fail(409, 'duplicate', 'This pull request is already in the queue.')
+  deps.forEach(prqFind)
+  const item = { id: crypto.randomBytes(16).toString('hex'), repo, number, url: `https://github.com/${repo}/pull/${number}`, method, dependencies: deps,
+    state: 'awaiting_review', reason: 'approval', approval: null, created: now(), checked_at: 0, revision: 0 }
+  st.items.push(item)
+  return clone(item)
+})
+R('PUT', '/api/pr-queue/pause', ({ body }) => { prqState().paused = !!body.paused; prqAdvance(); return prqOut() })
+R('POST', '/api/pr-queue/refresh', async () => { // reads the three oldest unchecked entries from GitHub, never merges
+  await sleep(600)
+  for (const item of prqState().items.filter((i) => i.state === 'awaiting_review').sort((a, b) => a.checked_at - b.checked_at).slice(0, 3)) {
+    Object.assign(item, { snapshot: { ...prqRemote(item) }, checked_at: now() })
+  }
+  prqAdvance()
+  return prqOut()
+})
+R('GET', '/api/pr-queue/:id/preview', async ({ params }) => {
+  const item = prqFind(params.id), remote = prqRemote(item)
+  await sleep(400)
+  return { item: clone(item), snapshot: { ...remote }, patch: prqPatch(item), fingerprint: prqFingerprint(item, remote), dependencies: prqBindings(item) }
+})
+R('POST', '/api/pr-queue/:id/approve', ({ params, body }) => {
+  const item = prqFind(params.id), remote = prqRemote(item)
+  if (body.fingerprint !== prqFingerprint(item, remote)) fail(409, 'changed', 'The reviewed commit or dependencies changed. Review the current diff.')
+  if (remote.merged || !remote.open || remote.draft) fail(409, 'not_open', 'Only a ready, open pull request can be approved for integration.')
+  if (prqBindings(item).some(([, head]) => !head)) fail(409, 'dependencies_unreviewed', 'Review and approve the prerequisite pull requests first.')
+  if (['merging', 'merge_requested', 'cancelled', 'merged'].includes(item.state)) fail(409, 'busy', 'This item cannot receive a new approval in its current state.')
+  Object.assign(item, { approval: { fingerprint: body.fingerprint, head: remote.head, base_ref: remote.base_ref, base_sha: remote.base_sha, dependencies: prqBindings(item), at: now() },
+    snapshot: { ...remote }, state: 'queued', reason: prqState().paused ? 'paused' : 'checks', checked_at: 0, revision: item.revision + 1 })
+  return prqOut()
+})
+R('POST', '/api/pr-queue/:id/cancel', ({ params }) => {
+  const item = prqFind(params.id)
+  if (['merging', 'merge_requested', 'merged'].includes(item.state)) fail(409, 'already_sent', 'An already initiated GitHub merge cannot be cancelled here.')
+  Object.assign(item, { state: 'cancelled', reason: 'cancelled', approval: null, revision: item.revision + 1 })
+  return prqOut()
+})
+R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
+  const item = prqFind(params.id)
+  if (item.state !== 'merge_failed' || !item.approval) fail(409, 'not_retryable', 'This item has no approved merge to retry.')
+  Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
+  return prqOut()
 })
 
 /* ---- dashboard & extensions */
