@@ -13,6 +13,7 @@ ROUTERS = [
     "space_labels",
     "sessions",
     "companions",
+    "pr_queue",
     "missions",
     "trash",
     "importer",

@@ -74,6 +74,8 @@ Organize bounded platform improvements with [resident missions](docs/user/33-res
 
 Companion roles can use Claude Code, Codex or a removable external agent adapter. See the [companion guide](docs/user/companions.md) and [provider plugin contract](docs/dev/AGENT-PROVIDERS.md).
 
+Coordinate reviewed code proposals with the optional [pull request integration queue](docs/user/32-pull-requests.md). It starts paused, follows explicit prerequisites and requires approval of the exact commit before merging.
+
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 
 Settings → Backup offers an encrypted local **complete instance backup** (settings, credentials, conversations, attachments, projects, files and labels), restored into a separate instance for review before services resume. The optional **GitHub memory backup** covers selected files and non-secret settings only. See the [backup guide](docs/user/10-backup.md) for both workflows, exclusions and recovery instructions.

@@ -885,3 +885,22 @@ Changed sources or active/queued sessions abort export. Restored instances defer
 allow authentication and reads, and reject mutations until explicit activation. Preview hashes are
 rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
 and recovery limits are documented in [the backup guide](../user/10-backup.md).
+
+## Pull request integration queue
+
+All routes require owner authentication. Work runs off the event loop.
+
+| Method | Path | Meaning |
+| --- | --- | --- |
+| GET | `/api/pr-queue` | `{paused, github_cli_available, items}`; local state only |
+| POST | `/api/pr-queue` | Add `{url, dependencies?: id[], method?: "merge" or "squash"}`; returns entry, no approval |
+| PUT | `/api/pr-queue/pause` | Set `{paused: bool}`; never recalls an already initiated request |
+| POST | `/api/pr-queue/refresh` | Read up to three oldest pending entries; never initiates a merge |
+| GET | `/api/pr-queue/{id}/preview` | `{item, snapshot, patch, fingerprint, dependencies}` |
+| POST | `/api/pr-queue/{id}/approve` | `{fingerprint}`; refetches and verifies the reviewed diff, prerequisite heads and target commit |
+| POST | `/api/pr-queue/{id}/cancel` | Remove an entry unless a merge was initiated |
+| POST | `/api/pr-queue/{id}/retry` | Explicit retry of a failed approved request; worker rechecks before writing |
+
+The default is paused. Approvals and current queue state live in private `<state>/pr-queue/queue.json`; `queue.lock` serializes edits and `worker.lock` elects a single worker across processes. Up to 100 entries, 20 immutable older prerequisites per entry. Responses from GitHub are capped at 2 MiB and each CLI call times out after 20 seconds. The worker checks at most three due entries per pass, with oldest checks first; normal minimum interval is 30 seconds per entry. `MAXXING_PR_QUEUE_WORKER=0` disables automatic processing for isolated tests. Startup/shutdown hooks cooperate with lifecycle suspension.
+
+A merge request pins the approved head SHA and selected merge method; GitHub repository rules remain authoritative. Approval binds the base commit too, but GitHub's merge endpoint has no atomic base-SHA condition: enforce required checks/reviews remotely. The host does not use force, rebase, admin bypass or branch-update APIs. Large/incomplete checks/reviews block integration. In-flight/uncertain writes are reconciled by reading GitHub, not automatically resent. Feed kinds: `pr_queue.review`, `pr_queue.merged`.
