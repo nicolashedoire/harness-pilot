@@ -1582,6 +1582,53 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
   return { files: out }
 })
 
+/* ---- side question, hidden messages, summary to memory (api/sessions.py): canned answers, real checks */
+const sideBusy = new Set()
+R('POST', '/api/sessions/:id/ask', async ({ params, body }) => {
+  const s = findSession(params.id), question = String(body.question || '').trim()
+  if (!question) fail(422, 'invalid', 'question is required')
+  if (!s.turns) fail(409, 'no_thread', 'This session has no answer yet')
+  if (sideBusy.has(s.id)) fail(409, 'busy', 'A side question is already running for this session')
+  if (sideBusy.size >= 2) fail(429, 'busy', 'Two side questions are already running')
+  sideBusy.add(s.id)
+  try { await sleep(1500) } finally { sideBusy.delete(s.id) }
+  return { answer: `From this conversation (“${s.title}”): ${s.last_text ? s.last_text.slice(0, 160) : 'nothing has been decided yet.'}\n\nNothing was changed and this answer is not saved in the thread.`, cost_usd: 0.012, duration_ms: 1500 }
+})
+R('POST', '/api/sessions/:id/hide', ({ params, body }) => {
+  const s = findSession(params.id), hidden = body.hidden !== false
+  const evs = S.events[s.id] || []
+  if (!evs.some((e) => e.type === 'user' && e.at === body.at)) fail(404, 'not_found', 'No user message at this time')
+  const last = evs.filter((e) => e.type === 'hide' && e.ref === body.at).at(-1)
+  if ((last ? last.hidden : false) !== hidden) addEvents(s, { type: 'hide', ref: body.at, hidden, at: now() })
+  return { ok: true }
+})
+const summaryBusy = new Set()
+R('POST', '/api/sessions/:id/summary', async ({ params }) => {
+  const s = findSession(params.id)
+  if (!(S.events[s.id] || []).some((e) => e.type === 'assistant' || e.type === 'user')) fail(400, 'empty_session', 'Nothing to summarize yet')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  if (summaryBusy.has(s.id)) fail(409, 'summary_busy', 'A summary is already being written for this session')
+  if (summaryBusy.size >= 2) fail(429, 'summary_limit', 'Two summaries are already being written')
+  summaryBusy.add(s.id)
+  try { await sleep(2200) } finally { summaryBusy.delete(s.id) }
+  return { summary: `The conversation “${s.title}” reviewed the current state and agreed on the next steps.${s.last_text ? ` Latest answer: ${s.last_text.slice(0, 140)}` : ''}`,
+    decisions: ['Keep the current structure and change one thing at a time.', 'Check the result on a phone before publishing.'],
+    actions: [{ title: `Follow up: ${s.title.slice(0, 60)}`, notes: 'Review the proposed change and confirm it in this topic.' }, { title: 'Add a test for the fixed case', notes: '' }], truncated: false }
+})
+R('POST', '/api/sessions/:id/summary/memory', ({ params, body }) => {
+  const s = findSession(params.id), text = String(body.text || '').trim()
+  if (!text || text.length > 12000) fail(400, 'empty_memory', 'Nothing to add to the memory')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  const file = `${ROOT}/${s.path}/memory.md`, node = S.fs.get(file)
+  if (!node) fail(409, 'memory_unavailable', 'The topic has no memory.md')
+  if (node.type !== 'file') fail(409, 'invalid_memory', 'memory.md is not a regular file')
+  const next = `${String(node.content || '').replace(/\n*$/, '\n')}\n## Discussion — ${new Date().toISOString().slice(0, 10)}\n\n${text}\n`
+  if (Buffer.byteLength(next) > 32768) fail(409, 'memory_full', 'memory.md would pass 32 KiB')
+  fsAdd(S, file, next, now(), 'text/markdown')
+  bus('workspace')
+  return { ok: true }
+})
+
 /* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
    sessions, then the coordinator session synthesises their reports. The team lives on the coordinator (team_phase). */
 const TEAM_ROLES = [['claude', 'Develop a practical approach and identify the main steps.'],
@@ -3045,6 +3092,66 @@ for (const [what, states, verb] of [['skip', ['interrupted', 'failed', 'rejected
     return missionOut(m)
   })
 }
+
+/* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
+   The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
+const IMPORT_HINTS = {
+  hermes: 'You are Hermes Agent: your memory lives in ~/.hermes/ (MEMORY.md, USER.md, memories/, skills/, sessions, cron jobs). Read all of it.',
+  'claude-code': 'You are Claude Code: read every CLAUDE.md and memory file you use (~/.claude/CLAUDE.md, the project folders, ~/.claude/projects/*/memory/), your skills (~/.claude/skills/, .claude/skills/) and anything the user keeps notes in.',
+  openclaw: 'You are OpenClaw: read your workspace (by default ~/.openclaw/workspace/: AGENTS.md, SOUL.md, USER.md, MEMORY.md, memory/*.md, skills/) and your scheduled jobs.',
+  other: 'Read every place where you keep memory, notes, instructions, skills and scheduled jobs.',
+}
+const importPrompt = (agent) => `I am moving to harness-pilot, a control room for Claude Code. Please export everything you know and keep about me and my work into ONE zip file that it can import. ${IMPORT_HINTS[agent]}
+
+Build a folder \`harness-pilot-export/\` with this layout (Markdown, UTF-8): memory.md, projects/<project>/CLAUDE.md and memory.md, projects/<project>/topics/<topic>/CLAUDE.md, memory.md and useful files, skills/<skill-name>/SKILL.md, tasks.md, crons.md, SECRETS.md (key NAMES only).
+
+NEVER write a secret value anywhere - only their names in SECRETS.md. Then zip it and give me the file.`
+const importsState = () => (S.imports ||= { uploads: {}, applying: false })
+R('GET', '/api/import/prompt', ({ q }) => {
+  const agent = Object.keys(IMPORT_HINTS).includes(q.get('agent')) ? q.get('agent') : 'other'
+  return { agent, agents: Object.keys(IMPORT_HINTS), prompt: importPrompt(agent) }
+})
+R('POST', '/api/import/upload', ({ req, rawBody }) => {
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!file || !file.data.length) fail(400, 'empty', 'The file is empty')
+  if (file.data.length > 600 * 1024 * 1024) fail(413, 'too_big', 'The archive is larger than 600 MB')
+  if (!file.data.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) fail(400, 'bad_zip', 'This is not a ZIP archive')
+  const exists = (p, t) => S.projects.some((x) => x.name === p && (!t || x.topics.some((y) => y.name === t)))
+  const plan = { id: crypto.randomBytes(12).toString('hex'), name: file.name,
+    projects: [{ name: 'freelance', exists: exists('freelance'), topics: [{ name: 'clients', source: 'projects/freelance/topics/clients', files: 6, exists: exists('freelance', 'clients') },
+      { name: 'invoices', source: 'projects/freelance/topics/invoices', files: 3, exists: exists('freelance', 'invoices') }] },
+    { name: 'acme', exists: exists('acme'), topics: [{ name: 'blog', source: 'projects/acme/topics/blog', files: 4, exists: exists('acme', 'blog') }] }],
+    skills: ['weekly-report'], aside: ['tasks.md', 'crons.md', 'SECRETS.md'], root_memory: true, files: 19, size: file.data.length,
+    skipped: [{ file: 'harness-pilot-export/.DS_Store', reason: 'hidden' }], secrets: [{ file: 'projects/freelance/topics/invoices/stripe.md', kinds: ['stripe_key'] }],
+    renamed: [{ from: 'projects/Freelance Work', to: 'projects/freelance' }] }
+  importsState().uploads[plan.id] = { plan, at: now() }
+  return plan
+})
+R('POST', '/api/import/:id/apply', async ({ params }) => {
+  const st = importsState(), up = st.uploads[params.id]
+  if (!up || now() - up.at > DAY) fail(404, 'not_found', 'This upload expired: upload the file again')
+  if (st.applying) fail(409, 'busy', 'Another import is being applied')
+  st.applying = true
+  try { await sleep(1200) } finally { st.applying = false }
+  const merged = [], topics = []
+  for (const p of up.plan.projects) {
+    let proj = S.projects.find((x) => x.name === p.name)
+    if (!proj) { proj = { name: p.name, description: '', topics: [] }; S.projects.push(proj); fsAdd(S, `${projPath(p.name)}/CLAUDE.md`, `# Project ${p.name}\n\n@memory.md\n`, now()) }
+    for (const t of p.topics) {
+      topics.push(`${p.name}/${t.name}`)
+      if (proj.topics.some((x) => x.name === t.name)) merged.push(`${topicPath(p.name, t.name)}/memory.md`)
+      else { proj.topics.push({ name: t.name, description: '' }); fsAdd(S, `${topicPath(p.name, t.name)}/memory.md`, `# ${t.name} — memory\n\n## Imported\n\nImported from the previous agent.\n`, now()) }
+    }
+  }
+  const stamp = new Date().toISOString().slice(0, 10), folder = `imports/${stamp}`, report = `${folder}/REPORT.md`
+  fsAdd(S, report, `# Import ${stamp}\n\n${up.plan.files} files from ${up.plan.name}.\n`, now(), 'text/markdown')
+  delete st.uploads[params.id]
+  bus('workspace')
+  return { ok: true, projects: up.plan.projects.map((p) => p.name), topics, files: up.plan.files - 1, merged, renamed: [{ from: 'skills/weekly-report', to: 'skills/weekly-report-imported' }],
+    skills: ['weekly-report-imported'], aside: up.plan.aside.map((a) => `${folder}/${a}`), secrets: up.plan.secrets, skipped: up.plan.skipped, folder, report,
+    finish_prompt: `An import from my previous agent was just applied. Read ${report} first, then finish it with me: merge duplicates in memory, create the open tasks from tasks.md, propose the jobs of crons.md (ask before creating any), list the keys of SECRETS.md to add in Settings -> Keys.` }
+})
+R('DELETE', '/api/import/:id', ({ params }) => { delete importsState().uploads[params.id]; return { ok: true } })
 
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
