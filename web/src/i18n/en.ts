@@ -122,6 +122,8 @@ export const en = {
   "resident.start": "Validate the plan and start",
   "resident.pause": "Pause and stop active agents",
   "resident.stop": "Stop this mission",
+  "resident.stopConfirm": "Stop this mission for good?",
+  "resident.stopConfirmDesc": "Stopping is final: running agents are stopped, no step starts again and the mission cannot be resumed. Their conversations and proposals stay available. To continue later, pause the mission instead.",
   "resident.plannerSession": "Read the architect’s conversation",
   "resident.adoptRole": "Create or adapt a persistent role",
   "resident.after": "After: {names}",
