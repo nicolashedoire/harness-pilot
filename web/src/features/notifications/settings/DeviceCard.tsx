@@ -158,8 +158,8 @@ export function DeviceCard() {
     const own = push.on ? await ownSubscription(push.info) : null
     if (own) return test.mutate(own.id, { onSuccess: () => toast.success(t('nset.testSent')) })
     previewSounds(useUI.getState().soundSet, useUI.getState().soundVolume, ['success'])
-    if (!showSystemNotification(t('notify.doneTitle'), t('notify.testBody'), undefined, 'mx-test', soundEnabled()))
-      notifyToast({ level: 'success', title: t('notify.doneTitle'), body: t('notify.testBody') })
+    if (!showSystemNotification(t('notify.doneTitle'), t('nset.device.testBody'), undefined, 'mx-test', soundEnabled()))
+      notifyToast({ level: 'success', title: t('notify.doneTitle'), body: t('nset.device.testBody') })
   }
 
   return (
@@ -217,7 +217,7 @@ export function DeviceCard() {
       )}
       {perm === 'unsupported' && (
         <Callout tone="info" className="mt-4">
-          {t('notify.unsupported')}
+          {t('nset.device.unsupported')}
         </Callout>
       )}
     </SettingsCard>
