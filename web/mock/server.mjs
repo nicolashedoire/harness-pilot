@@ -129,7 +129,10 @@ function buildState(scenario) {
     myThemes: ready ? [{ id: 'th_5a63e0b1c2', source: 'received', from: 'Acme team', saved: t - 2 * DAY,
       theme: { schema: 1, id: 'sauge', name: 'Sauge', description: 'Sage green on softly tinted greys.', base: 'zinc', accent: '#5f8f6b', buttons: 'accent', tint: 'tinted', tokens: { light: {}, dark: {} } } }] : [],
     team: {
-      people: { p_acme: { name: 'Acme team', emoji: '', color: 'green', server: 'https://acme.example.com', status: 'online', address: 'https://acme.example.com', peer: true, contact: true, last_seen: t - 60 } },
+      people: { p_acme: { name: 'Acme team', emoji: '', color: 'green', server: 'https://acme.example.com', status: 'online', address: 'https://acme.example.com', peer: true, contact: true, last_seen: t - 60 },
+        p_sam: { name: 'Sam', emoji: '🦊', color: 'violet', server: 'https://sam.example.net', status: 'away', address: 'https://sam.example.net', peer: true, contact: true, last_seen: t - 40 * MIN },
+        // asked to connect (Settings -> Team: accept or decline); not a contact yet
+        p_north: { name: 'North studio', emoji: '', color: 'amber', server: 'https://north.example.org', status: 'offline', address: 'https://north.example.org', peer: true, contact: false, request: true, last_seen: null } },
       chats: ready ? [{ id: 'd_acme', kind: 'dm', name: '', emoji: '', members: ['p_acme'], created: t - 3 * DAY, read_at: t - 2 * DAY, remote: true, admin: null, messages: [
         { id: 'm_00000001', author: 'p_acme', at: t - 2 * DAY - 300, text: 'Here is the palette we use for the client dashboards.', kind: 'text' },
         { id: 'm_00000002', author: 'p_acme', at: t - 2 * DAY - 240, text: 'Sauge', kind: 'theme',
@@ -2729,14 +2732,20 @@ const teamChatOut = (c) => {
     unread: msgs.filter((m) => m.author !== 'me' && m.at > (c.read_at || 0)).length, updated: last ? last.at : c.created }
 }
 const teamChat = (id) => S.team.chats.find((c) => c.id === id) || fail(404, 'not_found', 'Chat not found')
-R('GET', '/api/team', () => ({ me: 'me', people: { ...S.team.people, me: { name: 'Me', emoji: '', color: 'blue', server: '', status: 'online' } },
+R('GET', '/api/team', () => ({ me: 'me', people: { ...Object.fromEntries(Object.entries(S.team.people).filter(([, p]) => !p.request)), me: { name: 'Me', emoji: '', color: 'blue', server: '', status: 'online' } },
   chats: S.team.chats.map(teamChatOut).sort((a, b) => b.updated - a.updated), reactions: ['👍', '❤️', '😂', '🎉', '🤔', '👀'], typing: {} }))
 R('GET', '/api/team/connections', () => ({ ok: true, address: 'https://ui.example.com', reason: '', insecure: false, open_invites: 0,
-  contacts: Object.entries(S.team.people).map(([id, p]) => ({ address: p.address, id, name: p.name, emoji: p.emoji, color: p.color, status: 'accepted', fingerprint: '7F3A-91C2', since: now() - 9 * DAY, last_seen: p.last_seen })) }))
+  contacts: Object.entries(S.team.people).map(([id, p]) => ({ address: p.address, id, name: p.name, emoji: p.emoji, color: p.color, status: p.request ? 'request' : p.waiting ? 'waiting' : 'accepted', fingerprint: p.fingerprint || '7F3A-91C2', since: p.since || now() - 9 * DAY, last_seen: p.last_seen })) }))
 R('GET', '/api/team/chats/:id', ({ params }) => { const c = teamChat(params.id); return { chat: teamChatOut(c), messages: c.messages } })
 R('POST', '/api/team/chats', ({ body }) => {
-  const who = (body.members || []).filter((m) => S.team.people[m])
+  const who = (body.members || []).filter((m) => S.team.people[m] && S.team.people[m].contact)
   if (!who.length) fail(400, 'no_members', 'Choose at least one contact')
+  if (body.kind === 'group') {
+    const g = { id: 'g_' + crypto.randomBytes(8).toString('hex'), kind: 'group', name: String(body.name || '').trim().slice(0, 60) || who.map((m) => S.team.people[m].name).join(', '), emoji: String(body.emoji || ''),
+      members: who, created: now(), read_at: now(), remote: false, admin: 'me', messages: [] }
+    S.team.chats.push(g); bus('team')
+    return teamChatOut(g)
+  }
   let c = S.team.chats.find((x) => x.kind === 'dm' && x.members[0] === who[0])
   if (!c) { c = { id: 'd_' + crypto.randomBytes(8).toString('hex'), kind: 'dm', name: '', emoji: '', members: [who[0]], created: now(), read_at: now(), remote: true, admin: null, messages: [] }; S.team.chats.push(c); bus('team') }
   return teamChatOut(c)
@@ -2745,9 +2754,11 @@ for (const what of ['read', 'typing']) R('POST', `/api/team/chats/:id/${what}`, 
 R('POST', '/api/team/presence', () => ({ ok: true }))
 R('POST', '/api/team/chats/:id/messages', ({ params, body }) => {
   const c = teamChat(params.id)
+  if (c.left) fail(409, 'left', 'You left this group')
   const text = String(body.text || '').trim().slice(0, 8000)
-  if (!text) fail(400, 'empty', 'Empty message')
-  const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text, kind: 'text' }
+  const files = (Array.isArray(body.files) ? body.files : []).map((f) => S.fs.get(f.path) && { path: f.path, name: path.basename(f.path), size: S.fs.get(f.path).size, mime: S.fs.get(f.path).mime }).filter(Boolean)
+  if (!text && !files.length) fail(400, 'empty', 'Empty message')
+  const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text, kind: 'text', ...(body.reply_to ? { reply_to: body.reply_to } : {}), ...(files.length ? { files } : {}) }
   c.messages.push(m); c.read_at = m.at; bus('team')
   return m
 })
@@ -2757,6 +2768,127 @@ R('POST', '/api/team/chats/:id/themes', ({ params, body }) => {
   const m = { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text: String(body.theme.name || '').slice(0, 60), kind: 'theme', theme: body.theme }
   c.messages.push(m); c.read_at = m.at; bus('team')
   return m
+})
+
+// Groups, edits, reactions, polls, summaries, forwarding to a session, files, connections (team.py, teampeer.py).
+const teamMsg = (c, mid) => c.messages.find((m) => m.id === mid) || fail(404, 'not_found', 'Message not found')
+const teamMine = (m) => { if (m.author !== 'me') fail(403, 'not_yours', 'Only your own messages'); if (m.deleted) fail(409, 'deleted', 'This message was deleted'); return m }
+const teamPost = (c, m) => { c.messages.push(m); c.read_at = m.at; bus('team'); return m }
+R('POST', '/api/team/chats/:id/group', ({ params, body }) => {
+  const c = teamChat(params.id)
+  if (c.kind !== 'group') fail(400, 'not_a_group', 'Only a group can be changed')
+  if (c.admin !== 'me') fail(403, 'not_admin', 'Only the creator of the group can change it')
+  if (body.name !== undefined) c.name = String(body.name).trim().slice(0, 60) || c.name
+  if (body.emoji !== undefined) c.emoji = String(body.emoji).slice(0, 8)
+  for (const id of body.add || []) if (S.team.people[id]?.contact && !c.members.includes(id)) c.members.push(id)
+  c.members = c.members.filter((id) => !(body.remove || []).includes(id))
+  bus('team')
+  return teamChatOut(c)
+})
+R('POST', '/api/team/chats/:id/leave', ({ params }) => {
+  const c = teamChat(params.id)
+  if (c.kind !== 'group') fail(400, 'not_a_group', 'Only a group can be left')
+  c.left = 'self'; bus('team')
+  return teamChatOut(c)
+})
+R('POST', '/api/team/chats/:id/mute', ({ params, body }) => { const c = teamChat(params.id); c.muted = !!body.muted; bus('team'); return teamChatOut(c) })
+R('POST', '/api/team/chats/:id/messages/:mid/edit', ({ params, body }) => {
+  const m = teamMine(teamMsg(teamChat(params.id), params.mid))
+  if (m.kind !== 'text') fail(400, 'not_editable', 'Only text messages can be edited')
+  const text = String(body.text || '').trim().slice(0, 8000)
+  if (!text) fail(400, 'empty', 'Empty message')
+  Object.assign(m, { text, edited: now() }); bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/messages/:mid/delete', ({ params }) => {
+  const m = teamMine(teamMsg(teamChat(params.id), params.mid))
+  Object.assign(m, { text: '', deleted: now() }); delete m.files; delete m.theme; delete m.poll; bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/messages/:mid/react', ({ params, body }) => {
+  const m = teamMsg(teamChat(params.id), params.mid), emoji = String(body.emoji || '')
+  if (!emoji || [...emoji].length > 4) fail(400, 'bad_emoji', 'One emoji')
+  const who = ((m.reactions ||= {})[emoji] ||= [])
+  if (who.includes('me')) who.splice(who.indexOf('me'), 1); else who.push('me')
+  if (!who.length) delete m.reactions[emoji]
+  bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/polls', ({ params, body }) => {
+  const c = teamChat(params.id), question = String(body.question || '').trim(), options = (body.options || []).map((o) => String(o).trim()).filter(Boolean)
+  if (!question || options.length < 2 || options.length > 12) fail(400, 'bad_poll', 'A question and 2 to 12 options')
+  return teamPost(c, { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), text: question, kind: 'poll',
+    poll: { question, multi: !!body.multi, options: options.map((label, i) => ({ id: `o${i + 1}`, label: label.slice(0, 200), votes: [] })) } })
+})
+R('POST', '/api/team/chats/:id/messages/:mid/vote', ({ params, body }) => {
+  const m = teamMsg(teamChat(params.id), params.mid)
+  if (m.kind !== 'poll') fail(400, 'not_a_poll', 'This message is not a poll')
+  const opt = m.poll.options.find((o) => o.id === body.option) || fail(400, 'bad_option', 'Unknown option')
+  const had = opt.votes.includes('me')
+  if (!m.poll.multi) for (const o of m.poll.options) o.votes = o.votes.filter((v) => v !== 'me')
+  if (had) opt.votes = opt.votes.filter((v) => v !== 'me'); else opt.votes.push('me')
+  bus('team')
+  return m
+})
+R('POST', '/api/team/chats/:id/summarize', async ({ params, body }) => {
+  const c = teamChat(params.id), lastSummary = c.messages.filter((m) => m.kind === 'summary').at(-1)
+  const picked = c.messages.filter((m) => !m.deleted && m.kind !== 'summary' && (body.ids ? body.ids.includes(m.id) : m.at > (body.since ?? lastSummary?.at ?? 0)))
+  if (!picked.length) fail(400, 'nothing_to_summarize', 'No message to summarize')
+  await sleep(1500)
+  const names = [...new Set(picked.map((m) => (m.author === 'me' ? 'You' : S.team.people[m.author]?.name || 'Someone')))]
+  return teamPost(c, { id: 'm_' + crypto.randomBytes(4).toString('hex'), author: 'me', at: now(), kind: 'summary',
+    text: `**Summary of ${picked.length} message${picked.length > 1 ? 's' : ''}** (${names.join(', ')})\n\n- ${picked.slice(-4).map((m) => (m.kind === 'theme' ? `[colour theme] ${m.text}` : m.text.split('\n')[0].slice(0, 120))).join('\n- ')}` })
+})
+R('POST', '/api/team/chats/:id/messages/:mid/forward', ({ params, body }) => {
+  const c = teamChat(params.id), m = teamMsg(c, params.mid), text = String(body.text || '').trim()
+  if (!text) fail(400, 'empty', 'Empty message')
+  let s
+  if (body.session) s = findSession(body.session)
+  else {
+    if (!S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === body.path))) fail(400, 'bad_path', 'Choose a topic')
+    const t = now()
+    s = { id: uuid(), title: String(body.title || text).slice(0, 60), path: body.path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null,
+      context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+    S.sessions.push(s); S.events[s.id] = []
+  }
+  const author = m.author === 'me' ? 'You' : S.team.people[m.author]?.name || 'Someone'
+  startTurn(s, `${text}\n\n> ${author} wrote in Team:\n> ${m.text.split('\n').join('\n> ')}`, (m.files || []).map((f) => f.path))
+  ;(m.sent ||= []).push({ session: s.id, title: s.title, at: now() })
+  bus('team', 'sessions', 'workspace')
+  return { session: s, message: m }
+})
+R('POST', '/api/team/files', ({ req, rawBody }) => {
+  const files = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!files.length) fail(422, 'invalid', 'No file in the request')
+  const d = new Date(), dir = `${ROOT}/team/attachments/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  return { files: files.map((f) => { const p = uniquePath(`${dir}/${f.name}`); fsAdd(S, p, isText(f.mime) ? f.data.toString('utf8') : f.data, now(), f.mime); return { path: p, name: path.basename(p), size: f.data.length, mime: f.mime } }) }
+})
+R('POST', '/api/team/connections/invite', () => ({ invitation: `https://ui.example.com#${crypto.randomBytes(6).toString('base64url')}`, expires: now() + 15 * MIN }))
+R('POST', '/api/team/connections/join', ({ body }) => {
+  const m = /^(https:\/\/[a-z0-9.-]+(?::\d+)?)#[A-Za-z0-9_-]{6,}$/i.exec(String(body.invitation || '').trim())
+  if (!m) fail(400, 'bad_invitation', 'Paste the whole invitation: https://<address>#<code>')
+  const address = m[1].toLowerCase()
+  if (Object.values(S.team.people).some((p) => p.address === address)) fail(409, 'exists', 'Already connected to this address')
+  const id = 'p_' + crypto.createHash('sha1').update(address).digest('hex').slice(0, 8), fingerprint = crypto.randomBytes(4).toString('hex').toUpperCase().replace(/(....)(....)/, '$1-$2')
+  S.team.people[id] = { name: address.replace(/^https:\/\//, '').split('.')[0], emoji: '', color: 'teal', server: address, status: 'offline', address, peer: true, contact: false, waiting: true, fingerprint, since: now(), last_seen: null }
+  const g = GEN
+  setTimeout(() => { if (g === GEN && S.team.people[id]?.waiting) { Object.assign(S.team.people[id], { waiting: false, contact: true, status: 'online', last_seen: now() }); bus('team') } }, 4000).unref() // the other side accepts
+  bus('team')
+  return { address, fingerprint }
+})
+R('POST', '/api/team/connections/answer', ({ body }) => {
+  const [id, p] = Object.entries(S.team.people).find(([, x]) => x.address === body.address && x.request) || fail(404, 'not_found', 'No request from this address')
+  if (body.accept) Object.assign(p, { request: false, contact: true, status: 'online', since: now(), last_seen: now() }); else delete S.team.people[id]
+  bus('team')
+  return { ok: true }
+})
+R('POST', '/api/team/connections/remove', ({ body }) => {
+  const [id] = Object.entries(S.team.people).find(([, x]) => x.address === body.address) || fail(404, 'not_found', 'Unknown contact')
+  delete S.team.people[id]
+  S.team.chats = S.team.chats.filter((c) => !(c.kind === 'dm' && c.members[0] === id))
+  for (const c of S.team.chats) c.members = c.members.filter((m) => m !== id)
+  bus('team')
+  return { ok: true }
 })
 
 // Saved themes ("My themes") and the theme a session wrote (real validation: server/maxxing/themes.py clean_theme).
