@@ -1687,6 +1687,22 @@ R('GET', '/api/stream', ({ req, res }) => {
   return RAW
 })
 
+/* ---- space labels (server/maxxing/api/space_labels.py): the owner's personal / agents / shared marks on folders and
+   files, keyed by absolute path; `unclassified` removes the mark */
+const labelsState = () => (S.spaceLabels ||= S.scenario === 'ready' || S.scenario === 'maxxing'
+  ? { [`${ROOT}/projects/personal`]: 'personal', [`${ROOT}/projects/ops`]: 'agents' } : {})
+R('GET', '/api/space-labels', () => Object.fromEntries(Object.entries(labelsState()).filter(([p]) => S.fs.has(p))))
+R('PUT', '/api/space-labels', ({ body }) => {
+  if (!['personal', 'agents', 'shared', 'unclassified'].includes(body.label)) fail(422, 'invalid', 'label must be personal, agents, shared or unclassified')
+  const p = typeof body.path === 'string' && body.path.startsWith('/') ? path.posix.normalize(body.path).replace(/(.)\/$/, '$1') : fail(400, 'bad_path', 'An absolute path is required.')
+  const files = S.settings.files_root || ROOT
+  if (![ROOT, files].some((r) => p === r || p.startsWith(r + '/'))) fail(403, 'forbidden', 'Path is outside the workspace and files root.')
+  if (!S.fs.has(p)) fail(404, 'not_found', 'Item not found.')
+  if (body.label === 'unclassified') delete labelsState()[p]; else labelsState()[p] = body.label
+  bus('space-labels')
+  return { path: p, label: body.label }
+})
+
 /* ---- files */
 function absPath(p, { must = true } = {}) {
   const raw = p == null || p === '' ? ROOT : String(p)
@@ -1795,6 +1811,51 @@ R('GET', '/api/files/search', ({ q }) => {
   return out.sort((a, b) => a.path.length - b.path.length).slice(0, 50)
 })
 
+/* ---- trash (server/maxxing/trash.py): deleted files, folders, topics, projects and sessions, kept 30 days. The mock's
+   own delete routes still remove at once; the ready scenarios seed a few items that restore into the mock state. */
+function trashState() {
+  if (S.trash) return S.trash
+  const t = now(), ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  const item = (kind, name, original, ago, size, extra = {}) => ({ id: crypto.randomBytes(8).toString('hex'), kind, name, original, at: t - ago, size, sessions: 0, restorable: true, ...extra })
+  S.trash = ready ? [
+    item('file', 'old-draft.md', 'projects/acme/topics/blog/drafts/old-draft.md', 2 * HOUR, 2140),
+    item('session', 'Try a dark hero image', topicPath('acme', 'website'), 26 * HOUR, 48200),
+    item('topic', 'newsletter', 'projects/acme/topics/newsletter', 3 * DAY, 18400, { sessions: 2 }),
+    item('previous_versions', 'Backup: previous versions', '.backup/previous', 9 * DAY, 3200000, { restorable: false }),
+  ] : []
+  return S.trash
+}
+const trashFind = (id) => trashState().find((x) => x.id === id) || fail(404, 'not_found', 'Not in the trash')
+R('GET', '/api/trash', () => ({ items: [...trashState()].sort((a, b) => b.at - a.at), keep_days: 30 }))
+R('POST', '/api/trash/:id/restore', ({ params }) => {
+  const it = trashFind(params.id)
+  if (!it.restorable) fail(409, 'not_restorable', 'Previous versions are restored from the backup, not from the trash')
+  let to = it.original, sessions = 0
+  if (it.kind === 'file' || it.kind === 'folder') {
+    if (S.fs.has(`${ROOT}/${to}`)) to = to.replace(/(\.[^./]+)?$/, ' (restored)$1')
+    if (it.kind === 'file') fsAdd(S, to, '# Old draft\n\nRestored from the trash.\n', now(), 'text/markdown'); else fsMkdirp(S, `${ROOT}/${to}`)
+  } else if (it.kind === 'topic' || it.kind === 'project') {
+    const [, project, , topic] = to.split('/')
+    const p = S.projects.find((x) => x.name === project)
+    if (it.kind === 'topic' && p) {
+      let name = topic, n = 0
+      while (p.topics.some((x) => x.name === name)) name = `${topic}-restored${++n > 1 ? '-' + n : ''}` // -restored, -restored-2…
+      p.topics.push({ name, description: '' }); to = topicPath(project, name); fsMkdirp(S, `${ROOT}/${to}`)
+      sessions = it.sessions
+    }
+  } else if (it.kind === 'session') {
+    const s = { id: uuid(), title: it.name, path: S.projects.some((p) => p.topics.some((tp) => topicPath(p.name, tp.name) === to)) ? to : '', state: 'idle', queue: 0,
+      created: it.at - HOUR, updated: it.at, turns: 2, cost_usd: 0.18, model: '', real_model: S.claude.default_model, context_tokens: 24000, context_window: 1000000,
+      archived: false, notify: false, source: 'web', unread: false, last_text: 'The dark hero reads well on desktop; on mobile the text needs a stronger shadow.', error: null }
+    S.sessions.push(s); S.events[s.id] = []; to = s.path; sessions = 1
+  }
+  S.trash = S.trash.filter((x) => x !== it)
+  bus('workspace', 'sessions')
+  return { ok: true, kind: it.kind, restored_to: to, sessions }
+})
+R('DELETE', '/api/trash/:id', ({ params }) => { const it = trashFind(params.id); S.trash = S.trash.filter((x) => x !== it); return { ok: true } })
+R('DELETE', '/api/trash', () => { const deleted = trashState().length; S.trash = []; return { ok: true, deleted } })
+
 /* ---- tasks */
 const TASK_FIELDS = ['title', 'notes', 'status', 'priority', 'due', 'project_id', 'topic_path', 'labels', 'order']
 function applyTask(tk, body) {
@@ -1863,6 +1924,73 @@ R('DELETE', '/api/tasks/:id', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- voice (server/maxxing/voice.py): speech-to-text on the server (local faster-whisper or Groq / OpenAI keys). The
+   mock never decodes audio: every recording gives the same sentence. An install takes about 6 s. */
+const VOICE_MODELS = [['tiny', 75], ['base', 142], ['small', 466], ['medium', 1530]]
+function voiceState() {
+  if (S.voice) return S.voice
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.voice = { settings: { engine: ready ? 'local' : 'off', model: 'small', language: 'auto', auto_send: false, direct: true }, installed: ready,
+    present: new Set(ready ? ['small'] : []), install: { state: 'idle', step: null, progress: null, model: null, message: '', error: null, at: null } }
+  return S.voice
+}
+function voiceStatus() {
+  const v = voiceState(), st = v.settings, inst = v.install
+  if (inst.state === 'running') { // a background job: dependencies first (when missing), then the model download
+    const p = Math.min(1, (now() - inst.at) / 6)
+    if (p >= 1) { v.installed = true; v.present.add(inst.model); Object.assign(inst, { state: 'done', step: null, progress: 1, message: `Model ${inst.model} ready` }) }
+    else Object.assign(inst, v.installed || p > 0.4 ? { step: 'model', progress: p, message: `Downloading ${inst.model}…` } : { step: 'deps', progress: null, message: 'Installing faster-whisper…' })
+  }
+  const keys = { groq: S.secrets.some((s) => s.name === 'GROQ_API_KEY'), openai: S.secrets.some((s) => s.name === 'OPENAI_API_KEY') }
+  const reason = st.engine === 'off' ? 'off' : st.engine === 'local' ? (v.installed && v.present.has(st.model) ? null : 'not_installed') : keys[st.engine] ? null : 'no_key'
+  return { settings: { ...st }, ready: !reason, reason, ffmpeg: true,
+    local: { installed: v.installed, loaded: v.installed && reason === null && st.engine === 'local' ? st.model : null, recommended: 'small', ram_gb: 7.8, cpus: 4,
+      models: VOICE_MODELS.map(([id, size_mb]) => ({ id, size_mb, present: v.present.has(id) })) },
+    keys, key_names: { groq: 'GROQ_API_KEY', openai: 'OPENAI_API_KEY' }, install: { ...inst }, max_seconds: 900 }
+}
+const formField = (raw, name) => { const m = raw.toString('latin1').match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`)); return m ? Buffer.from(m[1], 'latin1').toString('utf8') : null }
+R('GET', '/api/voice', () => voiceStatus())
+R('PUT', '/api/voice/settings', ({ body }) => {
+  const st = voiceState().settings
+  if (body.engine !== undefined && !['off', 'local', 'groq', 'openai'].includes(body.engine)) fail(422, 'invalid', 'engine')
+  if (body.model !== undefined && !VOICE_MODELS.some(([id]) => id === body.model)) fail(422, 'invalid', 'model')
+  if (body.language !== undefined && body.language !== 'auto' && !/^[a-z]{2,3}$/.test(body.language)) fail(400, 'invalid_language', 'Use auto or an ISO 639-1 code')
+  for (const k of ['engine', 'model', 'language', 'auto_send', 'direct']) if (body[k] !== undefined) st[k] = body[k]
+  return { ok: true, settings: { ...st } }
+})
+R('POST', '/api/voice/install', ({ body }) => {
+  const v = voiceState()
+  if (v.install.state === 'running') fail(409, 'busy', 'An install is already running')
+  const model = body.model || v.settings.model
+  if (!VOICE_MODELS.some(([id]) => id === model)) fail(422, 'invalid', 'model')
+  v.install = { state: 'running', step: v.installed ? 'model' : 'deps', progress: v.installed ? 0 : null, model, message: '', error: null, at: now() }
+  return voiceStatus().install
+})
+R('DELETE', '/api/voice/models/:model', ({ params }) => {
+  if (!VOICE_MODELS.some(([id]) => id === params.model)) fail(422, 'invalid', 'model')
+  voiceState().present.delete(params.model)
+  return { ok: true }
+})
+R('POST', '/api/voice/transcribe', async ({ req, rawBody }) => {
+  const status = voiceStatus()
+  if (status.reason === 'off') fail(409, 'voice_off', 'Voice messages are turned off in Settings')
+  if (status.reason) fail(503, status.reason, status.reason === 'no_key' ? 'No API key for this engine in Secrets' : 'The local engine is not installed')
+  const [audio] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!audio) fail(422, 'bad_audio', 'No audio file in the request')
+  if (audio.data.length < 200) fail(422, 'empty_audio', 'Nothing was heard in this recording')
+  if (audio.data.length > 100 * 1024 * 1024) fail(413, 'too_large', 'Recordings are limited to 100 MB')
+  await sleep(900)
+  const topic = formField(rawBody, 'path'), lang = formField(rawBody, 'language') || status.settings.language
+  let audio_path = null
+  if (topic) {
+    const d = new Date(), ext = path.extname(audio.name) || '.webm'
+    audio_path = `${ROOT}/${topic}/attachments/voice/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}/voice-${Math.floor(now())}${ext}`
+    fsAdd(S, audio_path, audio.data, now(), audio.mime)
+  }
+  return { text: 'Draft a short reply thanking the client for the feedback, and propose a call next Tuesday.', language: lang === 'auto' ? 'en' : lang,
+    duration_s: Math.max(1, Math.round(audio.data.length / 4000)), engine: status.settings.engine, model: status.settings.engine === 'local' ? status.settings.model : status.settings.engine === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-4o-transcribe', ms: 900, audio_path }
+})
+
 /* ---- crons */
 const CRON_FIELDS = ['name', 'schedule', 'kind', 'command', 'topic_path', 'prompt', 'model', 'reuse_session', 'enabled', 'notify', 'timeout_s']
 function applyCron(c, body) {
@@ -1925,6 +2053,73 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
   bus('crons')
   return { ok: true }
 })
+
+/* ---- MCP servers (server/maxxing/mcp.py): Claude Code's servers per folder, checked with `claude mcp list` in the
+   background (here: 1.5 s), and the OAuth login of a server that needs one (here: any redirect with ?code= works). */
+const mcpWhere = (rel) => {
+  if (!rel) return { rel: null, project: null, topic: null, exists: true, path: null }
+  const [, project, , topic] = rel.split('/')
+  return { rel, project: project || null, topic: topic || null, exists: S.fs.has(`${ROOT}/${rel}`), path: `${ROOT}/${rel}` }
+}
+function mcpState() {
+  if (S.mcp) return S.mcp
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing', t = now()
+  const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
+    literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
+  S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
+    server('user', null, 'github', { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
+    server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
+    server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
+  ] : [] }
+  return S.mcp
+}
+function mcpCheck() {
+  const st = mcpState()
+  if (st.checking) return
+  st.checking = true
+  const g = GEN
+  setTimeout(() => { if (g !== GEN) return; st.checking = false; st.checked_at = now(); for (const x of st.servers) { x.checked_at = now(); if (x.state === 'pending') x.state = 'connected' } bus('mcp') }, 1500)
+}
+R('GET', '/api/mcp', () => { const st = mcpState(); if (st.checked_at === null) mcpCheck(); return { servers: st.servers, checking: st.checking, checked_at: st.checked_at, config_file: '/root/.claude.json', auto: st.auto } })
+R('PUT', '/api/mcp/auto', ({ body }) => { const st = mcpState(); st.auto = !!body.enabled; if (st.auto) mcpCheck(); return { ok: true, enabled: st.auto } })
+R('POST', '/api/mcp/check', () => { mcpCheck(); return { checking: true } })
+R('POST', '/api/mcp', ({ body }) => {
+  const st = mcpState(), name = String(body.name || ''), where = String(body.where || '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) fail(400, 'bad_name', 'Letters, digits, dot, dash and underscore')
+  if (!['http', 'sse', 'stdio'].includes(body.type)) fail(400, 'bad_type', 'type: http, sse or stdio')
+  if (where && !where.startsWith('projects/')) fail(400, 'bad_where', 'where: empty (all folders) or a projects/… folder')
+  if (where && !S.fs.has(`${ROOT}/${where}`)) fail(404, 'folder_missing', 'This folder does not exist')
+  if (body.type === 'stdio' ? !String(body.command || '').trim() : !/^https?:\/\/\S+$/.test(String(body.url || ''))) fail(400, body.type === 'stdio' ? 'bad_command' : 'bad_url', body.type === 'stdio' ? 'A command is required' : 'An http(s) URL is required')
+  if (JSON.stringify(body).length > 32768) fail(400, 'too_long', 'A value is too long')
+  const scope = where ? 'local' : 'user', id = `${scope}|${where}|${name}`
+  if (st.servers.some((x) => x.id === id)) fail(409, 'exists', 'A server with this name already exists here')
+  const def = { type: body.type, ...(body.type === 'stdio' ? { command: body.command.trim(), args: body.args || [] } : { url: body.url }), ...(body.headers ? { headers: body.headers } : {}), ...(body.env ? { env: body.env } : {}) }
+  const keys = [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1])
+  st.servers.push({ id, name, scope, where: mcpWhere(where || null), ...def, literal_secret: false, keys, state: 'pending', detail: '', checked_at: null })
+  mcpCheck(); bus('mcp')
+  return { id, exposed: keys.filter((k) => S.secrets.some((s) => s.name === k && !s.expose)) }
+})
+R('DELETE', '/api/mcp', ({ q }) => { const st = mcpState(); st.servers = st.servers.filter((x) => x.id !== q.get('id')); bus('mcp'); return { ok: true } })
+R('POST', '/api/mcp/login', ({ body }) => {
+  const x = mcpState().servers.find((s) => s.id === body.id) || fail(404, 'folder_missing', 'Server not found')
+  if (x.type === 'stdio') fail(400, 'no_login_url', 'This server does not offer a login')
+  const login = crypto.randomBytes(8).toString('hex')
+  S.mcp.logins[login] = { id: x.id, at: now() }
+  return { login, url: `https://mcp.example.com/oauth/authorize?client_id=claude-code&state=${login}&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback` }
+})
+R('POST', '/api/mcp/login/:login', async ({ params, body }) => {
+  const l = mcpState().logins[params.login] || fail(404, 'login_expired', 'This login expired: start it again')
+  if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(body.redirect || ''))) fail(400, 'bad_redirect', 'Paste the whole address of the page that failed to open (http://localhost:…/callback?code=…)')
+  await sleep(800)
+  if (!/[?&]code=/.test(body.redirect)) fail(400, 'login_failed', 'The address has no authorization code')
+  delete S.mcp.logins[params.login]
+  const x = S.mcp.servers.find((s) => s.id === l.id)
+  if (x) Object.assign(x, { state: 'connected', detail: '', checked_at: now() })
+  bus('mcp')
+  return { ok: true, message: `${x ? x.name : 'Server'}: authenticated` }
+})
+R('DELETE', '/api/mcp/login/:login', ({ params }) => { delete mcpState().logins[params.login]; return { ok: true } })
 
 /* ---- telegram */
 function tgStatus() {
