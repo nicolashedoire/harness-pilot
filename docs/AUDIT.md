@@ -36,5 +36,5 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
 - [x] **Tests isolés des tâches et sauvegardes** : 92 tests passent sur macOS avec un GitHub simulé ; un test de nom de fichier non UTF-8 est ignoré lorsque le système de fichiers l'interdit. Cela ne valide pas une sauvegarde réelle du compte utilisateur.
 - [x] **Tests isolés Telegram** : 43 tests de format, de synchronisation et de connexion passent avec des services simulés ; une connexion et une discussion réelles avec un bot restent à vérifier.
-- [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions. Le formulaire de discussion à deux a été contrôlé en largeur mobile ; les autres parcours restent à examiner.
+- [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions. Le formulaire de discussion à deux a été contrôlé visuellement en largeur mobile ; un premier contrôle de largeur a aussi été effectué sur les statistiques, Codex, Telegram, Soutenir et le guide des sessions. Les autres parcours restent à examiner.
 - [ ] Ajouter des tests ciblés pour les corrections, puis valider les parcours dans l'interface locale.
