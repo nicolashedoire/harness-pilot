@@ -1,6 +1,6 @@
 ---
 name: pilot-mcp
-description: Add, connect, check or remove an MCP server for Claude Code in harness-pilot (Settings -> MCP). Use when the user wants Claude to use a service through MCP ("connect the Google Ads MCP", "add the Notion MCP", "install this MCP server", a URL ending in /mcp or /sse, an `npx …-mcp` command), when an MCP tool is missing or "needs authentication", or asks which MCP servers exist.
+description: Add, connect, check or remove an MCP server for Claude Code and Codex sessions in harness-pilot (Settings -> MCP). Use when the user wants Claude or Codex to use a service through MCP ("connect the Google Ads MCP", "add the Notion MCP", "install this MCP server", a URL ending in /mcp or /sse, an `npx …-mcp` command), when an MCP tool is missing or "needs authentication", or asks which MCP servers exist.
 ---
 
 # MCP servers
@@ -8,6 +8,12 @@ description: Add, connect, check or remove an MCP server for Claude Code in harn
 harness-pilot lists every MCP server of Claude Code in **Settings -> MCP**: where it applies (every session, or one
 topic), its state (Connected / To connect / Error / To approve) and the buttons Connect and Remove.
 Docs: `docs/user/28-mcp.md` (Settings -> Docs -> MCP servers).
+
+Codex sessions (and Codex's turns in a discussion) get the same servers for their topic, passed at each turn
+(`~/.codex/config.toml` is not changed). Outside **Full access** Codex may only call the tools a server marks
+read-only. It does not get the **Connect** sign-ins, the claude.ai connectors nor the Browser of my PC, and some
+servers are skipped (a key in the URL or in the program's arguments, SSE / WebSocket): the conversation says
+which and why. Prefer `--header` and `--env` for keys. Details: `docs/user/28-mcp.md`, section Codex.
 
 ## Where to add it
 - Only the topic that needs it (most cases: an ads account for the `ads` topic): `--where projects/<p>/topics/<t>`.

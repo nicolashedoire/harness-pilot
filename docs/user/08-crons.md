@@ -90,7 +90,7 @@ pilot init --timezone Europe/Paris && systemctl restart claude-maxxing
 
 Built-in jobs are created once, at installation (or by the update that introduced them); a job
 you delete is never re-created. With notify "always", the report includes the job's output (the
-answer of a Claude job), so a reminder arrives as a readable message.
+answer of a prompt job), so a reminder arrives as a readable message.
 
 ## How it works
 
@@ -140,7 +140,7 @@ A shell job runs with the same Claude setup as your sessions (harness-pilot' Cla
 account connected in harness-pilot), so a script can call `claude -p "..."` itself - for example a script that
 prepares data, asks Claude for a text, then publishes it.
 
-## Tips for Claude jobs
+## Tips for prompt jobs
 
 Write the prompt as a complete instruction: what to produce, where to write it, which skill to use.
 The job has no previous conversation unless "Reuse session" is on.
