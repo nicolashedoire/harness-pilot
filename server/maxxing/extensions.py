@@ -207,12 +207,16 @@ async def call(fn: Callable[..., Any], *args: Any, timeout: float, key: str | No
 
 _registry: dict[str, Extension] = {}
 _scanned = False
+# `pilot ext check --dir` (a draft checked in the agent's own process): the extensions root and the extensions' data
+# folder of THIS process point at a temporary copy (never set in the server).
+_root_override: Path | None = None
+_state_override: Path | None = None
 _last_sig: tuple = ()
 _cards: dict[str, tuple[float, dict]] = {}
 
 
 def root() -> Path:
-    return config.workspace() / "extensions"
+    return _root_override or config.workspace() / "extensions"
 
 
 def disabled_ids() -> set[str]:
@@ -245,7 +249,9 @@ def _module_name(eid: str) -> str:
     return "mx_ext_" + eid.replace("-", "_")
 
 
-def _load_one(d: Path) -> Extension:
+def _load_one(d: Path, load_code: bool = True) -> Extension:
+    """`load_code=False`: validate the folder without importing api.py (an Atelier draft is never run before it is
+    approved: maxxing.atelier checks its code statically)."""
     ext = Extension(id=d.name, dir=d)
     try:
         if not ID_RE.match(d.name):
@@ -308,7 +314,7 @@ def _load_one(d: Path) -> Extension:
             raise ValueError("a page extension needs page.js")
         if ext.type == "widget" and not ext.has_api and not ext.has_html:
             raise ValueError("a widget extension needs api.py with card(ctx), or widget.html")
-        if ext.has_api and ext.enabled:
+        if ext.has_api and load_code and ext.enabled:
             ext.module = _import(ext)
             if ext.type == "widget" and not ext.has_html and not callable(getattr(ext.module, "card", None)):
                 raise ValueError("api.py must define card(ctx)")
@@ -318,8 +324,9 @@ def _load_one(d: Path) -> Extension:
     return ext
 
 
-def _import(ext: Extension) -> ModuleType:
-    name = _module_name(ext.id)
+def _import(ext: Extension, name: str | None = None) -> ModuleType:
+    """`name`: the module name (default `mx_ext_<id>`; an Atelier preview imports a draft under its own name)."""
+    name = name or _module_name(ext.id)
     sys.modules.pop(name, None)
     spec = importlib.util.spec_from_file_location(name, ext.dir / "api.py")
     if spec is None or spec.loader is None:
@@ -491,6 +498,14 @@ def page_version(ext: Extension) -> int | None:
 
 
 # ---- calling extension code -----------------------------------------------------------------
+def _ext_state(eid: str) -> Path:
+    if _state_override is not None:
+        p = _state_override / eid
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    return config.state_dir("extensions", eid)
+
+
 def make_ctx(ext: Extension, where: str | None = None, record: bool = True) -> dict[str, Any]:
     """`where`: what a refused key is recorded as (exterrors: card / api; default by the extension's kind); `record`
     False (pilot ext check): refusals and grandfathered keys are not recorded."""
@@ -499,7 +514,7 @@ def make_ctx(ext: Extension, where: str | None = None, record: bool = True) -> d
     if where is None:
         where = "card" if ext.type == "widget" and not ext.has_html else "api"
     return {"id": ext.id, "workspace": str(config.workspace()),
-            "state_dir": str(config.state_dir("extensions", ext.id)),
+            "state_dir": str(_ext_state(ext.id)),
             "secret": permissions.secret_reader(ext, where, record),
             "config": {"timezone": cfg.get("timezone", "UTC"), "language": cfg.get("language", "en"),
                        "public_url": cfg.get("public_url", "")}}

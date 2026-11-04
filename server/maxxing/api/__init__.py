@@ -33,6 +33,7 @@ ROUTERS = [
     "extframes",
     "extensions",
     "blocks",
+    "atelier",
     "voice",
     "memory",
     "stats",

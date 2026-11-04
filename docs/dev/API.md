@@ -827,8 +827,9 @@ AtelierItem = {
   approval: Approval|null,    // of the active version
   error: ErrorInfo|null,
   updated: float|null,        // last change (approval, rollback, files changed, draft proposed)
-  href: str|null,             // where it lives in the app: /ext/<id> (page), /?widget=<id> (widget), /crons?job=<id>,
-                              // /settings/appearance, /settings/updates (customizations); null when nowhere
+  href: str|null,             // where it lives in the app: /x/<id> (page), /?widget=<id> (widget, html_widget, pin),
+                              // /settings/blocks (block), /crons?job=<id>, /settings/appearance (theme),
+                              // /settings/updates (customization); null when nowhere (a pending one, an agent)
   actions: ["approve"|"reject"|"request_change"|"rollback"|"accept"|"enable"|"disable"]   // what the UI may offer
 }
 Version = {n: int, at: float, active: bool, origin: Origin, approval: Approval,
@@ -871,7 +872,9 @@ full check (code included) in the agent's own process before proposing.
 validation screen may call it when it opens: the user went there to review it; a conversation `proposal` block never
 calls it on render - it shows a Preview button). The draft runs with the same `ctx` as once installed (its
 `state_dir`, the configured time zone and language) except `ctx.secret()`, which only answers the secrets the draft
-declares (all of them when it declares no `permissions` at all, with a warning step). A page is never previewed in
+declares (without a `permissions` declaration: any key for an extension grandfathered by the permissions contract,
+none otherwise); a key it may not read is `None`. Approving a version grants the secrets it declares
+(`permissions.accept`). A page is never previewed in
 the app (its `page.js` would run in the app's origin with the user's session): its files and diff are the review.
 
 | Method | Path | Body | Response |
@@ -889,7 +892,7 @@ the app (its `page.js` would run in the app's origin with the user's session): i
 | GET | `/ext/_drafts/{id}/widget-frame` | – | the draft's HTML widget document, exactly as `/ext/{id}/widget-frame` serves an installed one (bridge, UI kit, same sandbox CSP) · `404 not_found` (unknown, decided, not an HTML widget) |
 | POST | `/api/atelier/drafts/{id}/approve` | `{base?: int\|null}` | installs the draft as the extension's new active version, in one step: its files replace `<workspace>/extensions/<id>/` (a new extension is created), the extension reloads, the version is recorded with its origin, `atelier.proposed` is resolved → `{ok, item, version: n}`. `base` = the `active_version` the user reviewed the diff against: another one is active now → `409 stale` `{active, base}` (nothing installed; refetch the draft). `409 not_pending` (already decided or superseded) · `422 check_failed` `{check}` (the check is run again first) · `404 not_found` |
 | POST | `/api/atelier/drafts/{id}/reject` | `{reason?: str}` (<= 500) | `{ok, draft, trash_id}`: the draft is rejected and its files go to the trash (a folder `<id>-draft-<draft>`, restored to the draft folder the agent wrote) · `409 not_pending` · `404 not_found` |
-| POST | `/api/atelier/drafts/{id}/request-change` | `{message: str}` (1-4000) | sends the change request to the session the draft came from (it continues there: `POST /api/sessions/{id}/messages` semantics, queued when it runs); when that session no longer exists (or the origin is unknown), a new session in the same topic (else the workspace root) gets it → `{ok, session: Session, created: bool, queued: bool}`. The message is the user's text inside a short instruction naming the draft folder and `pilot ext propose <id>`. The draft stays pending (`change_requests` + a `request_change` event) until the agent proposes again, which supersedes it · `409 not_pending` · `400 bad_message` · `404 not_found` |
+| POST | `/api/atelier/drafts/{id}/request-change` | `{message: str}` (1-4000) | sends the change request to the session the draft came from (it continues there: `POST /api/sessions/{id}/messages` semantics, queued when it runs); when that session no longer exists, is archived or refuses it (a team at work), or the origin is unknown, a new session in the Harness topic gets it (`extfix.deliver`, the path of "Ask for a fix") → `{ok, session: Session, created: bool, queued: bool}`. The message is the user's text inside a short instruction naming the draft folder and `pilot ext propose <id>`. The draft stays pending (`change_requests` + a `request_change` event) until the agent proposes again, which supersedes it · `409 not_pending` · `400 bad_message` · `404 not_found` |
 | GET | `/api/atelier/settings` | – | `{auto_activate_safe: false, keep_days: 90, keep_versions: 10}` (config `atelier`) |
 | PUT | `/api/atelier/settings` | `{auto_activate_safe?: bool, keep_days?: 1-3650, keep_versions?: 1-100}` | the settings · `400 bad_settings` |
 

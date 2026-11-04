@@ -1,5 +1,5 @@
 // Primary navigation — single source for the sidebar, the mobile tab bar, the palette and shortcuts.
-import { Clock, FolderOpen, GitBranch, LayoutDashboard, ListChecks, MessagesSquare, Network, Settings, UsersRound, type LucideIcon } from 'lucide-react'
+import { Clock, FolderOpen, GitBranch, LayoutDashboard, ListChecks, MessagesSquare, Network, Settings, UsersRound, WandSparkles, type LucideIcon } from 'lucide-react'
 import type { TKey } from '@/i18n'
 import { useSettings } from '@/lib/queries'
 
@@ -34,9 +34,17 @@ const FEATURE_NAV: (NavItem & { setting: 'git_page' | 'infra_page' | 'team_page'
   { to: '/infra', label: 'nav.infra', icon: Network, key: 'i', setting: 'infra_page', defaultOn: false },
 ]
 
-/** NAV plus the feature pages switched on (sidebar, palette, shortcuts). */
+/** The Atelier (Studio in English): everything the agents created for the platform, to validate, version and roll
+ *  back. Its own entry under the extension pages in the sidebar (and after them in the touch app menu); last in the
+ *  palette and the `g` shortcuts. */
+export const ATELIER_NAV: NavItem = { to: '/atelier', label: 'nav.atelier', icon: WandSparkles, key: 'a' }
+
+const BASE_NAV = [...NAV, ATELIER_NAV]
+
+/** NAV plus the feature pages switched on, then the Atelier (palette, shortcuts). The sidebar and the touch app menu
+ *  draw the Atelier on its own, after the extension pages. */
 export function useNav(): NavItem[] {
   const { data: s } = useSettings()
   const extra = FEATURE_NAV.filter((n) => (s ? !!s[n.setting] : n.defaultOn))
-  return extra.length ? [...NAV.slice(0, -1), ...extra, NAV[NAV.length - 1]] : NAV
+  return extra.length ? [...NAV.slice(0, -1), ...extra, NAV[NAV.length - 1], ATELIER_NAV] : BASE_NAV
 }
