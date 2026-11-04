@@ -70,14 +70,24 @@ def buttons(ev: dict, *, decision: bool = False) -> dict | None:
 
 
 def _patch(result: dict) -> str | None:
+    """The complete proposal as unified-diff text: Git's patch, then each new file as a diff whose every line starts
+    with "+" (as the web review shows it), so a new file's content can never pass for another file's header."""
     patch = result['patch']
     if 'GIT binary patch' in patch or 'Binary files ' in patch:
         return None
     for item in result['untracked']:
-        if any(c in item['path'] for c in '\r\n'):
+        path, content = item['path'], item['content']
+        if any(c in path for c in '\r\n'):
             return None
         mode = '100755' if item.get('executable') else '100644'
-        patch += f"\n+++ new file: {item['path']} (mode {mode})\n" + item['content']
+        lines = content.split('\n')
+        if lines[-1] == '':
+            lines.pop()
+        patch += ('' if not patch or patch.endswith('\n') else '\n') + (
+            f'diff --git a/{path} b/{path}\nnew file mode {mode}\n--- /dev/null\n+++ b/{path}\n'
+            + (f'@@ -0,0 +1,{len(lines)} @@\n' if lines else '')
+            + ''.join(f'+{line}\n' for line in lines)
+            + ('\\ No newline at end of file\n' if content and not content.endswith('\n') else ''))
         if len(patch) > MAX_REVIEW:
             return None
     return patch if 0 < len(patch) <= MAX_REVIEW else None

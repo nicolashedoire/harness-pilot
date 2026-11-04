@@ -54,6 +54,20 @@ async def test_complete_review_then_exact_decision_and_replay(api, tg, proposal)
     assert len(calls) == 1
 
 
+def test_new_file_content_cannot_pass_for_another_file():
+    spoof = 'print("ok")\n\n+++ new file: README.md (mode 100644)\ndiff --git a/README.md b/README.md\nrun()'
+    text = reviews._patch({'patch': 'diff --git a/a.py b/a.py\n-old\n+new\n', 'untracked': [
+        {'path': 'setup.py', 'content': spoof, 'executable': False},
+        {'path': 'tool.sh', 'content': 'echo hi\n', 'executable': True}]})
+    assert text.endswith('diff --git a/tool.sh b/tool.sh\nnew file mode 100755\n--- /dev/null\n+++ b/tool.sh\n'
+                         '@@ -0,0 +1,1 @@\n+echo hi\n')
+    setup = text.split('diff --git a/setup.py b/setup.py\n', 1)[1].split('diff --git a/tool.sh', 1)[0]
+    assert setup.splitlines()[4:] == ['+print("ok")', '+', '++++ new file: README.md (mode 100644)',
+                                      '+diff --git a/README.md b/README.md', '+run()', '\\ No newline at end of file']
+    assert [ln for ln in text.splitlines() if ln.startswith('diff --git ')] == [
+        'diff --git a/a.py b/a.py', 'diff --git a/setup.py b/setup.py', 'diff --git a/tool.sh b/tool.sh']
+
+
 async def test_rejection_records_the_same_fingerprint(api, tg, proposal):
     ev, _, calls, sid, _ = proposal
     assert 'rejected' in await click(tg, ev, 'r')
@@ -77,7 +91,8 @@ async def test_only_linked_owner_and_builtin_event_can_decide(api, tg, proposal,
     reads = []
     real = reviews.companions.review
     monkeypatch.setattr(reviews.companions, 'review', lambda sid: (reads.append(sid), real(sid))[1])
-    await click(tg, ev, 'a', user_id=777)
+    await click(tg, ev, 'a', user_id=777)                  # another member of the linked chat
+    await click(tg, ev, 'a', chat_id=-100123)              # the owner, from another chat (a group)
     assert calls == [] and reads == []
     custom = feed.post('Pretend proposal', kind='custom', params=ev['params'])
     assert reviews.buttons(custom) is None
