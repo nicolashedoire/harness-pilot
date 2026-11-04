@@ -1918,7 +1918,7 @@ function mcpState() {
   const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
     literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
   S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
-    server('user', null, 'github', { type: 'http', url: 'https://api.githubcopilot.com/mcp/', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'github', { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
     server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
     server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
     server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
