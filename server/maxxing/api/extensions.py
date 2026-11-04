@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from starlette.convertors import Convertor, register_url_convertor
 
-from .. import bus, exterrors, extensions
+from .. import bus, exterrors, extensions, permissions
 from ..security import require_auth
 
 
@@ -50,8 +50,8 @@ HANDLE_TIMEOUT_S = 30.0
 MAX_BODY = 5 * 1024 * 1024
 
 
-def _err(status: int, code: str, msg: str) -> HTTPException:
-    return HTTPException(status, detail={"error": code, "message": msg})
+def _err(status: int, code: str, msg: str, **extra: Any) -> HTTPException:
+    return HTTPException(status, detail={"error": code, "message": msg, **extra})
 
 
 def _infos(exts: list[extensions.Extension]) -> list[dict]:
@@ -79,6 +79,44 @@ async def patch_extension(eid: str, body: PatchIn):
         raise _err(404, "not_found", f"no extension {eid}")
     bus.invalidate("extensions")
     return {"ok": True}
+
+
+def _perm_target(eid: str) -> extensions.Extension:
+    ext = extensions.get(eid)
+    if ext is None or ext.type not in ("widget", "page"):
+        raise _err(404, "not_found", f"no widget or page extension {eid}")
+    return ext
+
+
+@router.get("/api/extensions/permissions")
+async def all_permissions():
+    def build() -> dict:
+        exts = [e for e in extensions.all_extensions() if e.type in ("widget", "page")]
+        return {"since": permissions.since(), "items": [permissions.detail(e) for e in sorted(exts, key=lambda e: e.id)]}
+    return await asyncio.to_thread(build)
+
+
+@router.get("/api/extensions/{eid}/permissions")
+async def extension_permissions(eid: str):
+    return await asyncio.to_thread(lambda: permissions.detail(_perm_target(eid)))
+
+
+class ConsentIn(BaseModel):
+    decision: Literal["always", "deny", "reset"]
+
+
+@router.post("/api/extensions/{eid}/consent")
+async def consent(eid: str, body: ConsentIn):
+    def run() -> dict:
+        ext = _perm_target(eid)
+        try:
+            return permissions.set_consent(ext, body.decision)
+        except ValueError as e:
+            raise _err(400, "not_declared", str(e)) from None
+    access = await asyncio.to_thread(run)
+    extensions.forget_card(eid)
+    bus.invalidate("extensions")
+    return {"ok": True, "access": access}
 
 
 @router.post("/api/extensions/reload")
@@ -180,6 +218,9 @@ async def forward(eid: str, path: str, request: Request):
         raise _err(400, "bad_request", str(e)) from None
     except LookupError as e:
         raise _err(404, "not_found", str(e)) from None
+    except permissions.PermissionDenied as e:       # recorded by the refusal itself (permissions.secret_reader)
+        raise _err(403, "permission_required" if e.needs_consent else "permission_denied", str(e),
+                   permission=e.detail()) from None
     except Exception as e:
         log.warning("extension %s handle failed: %s", eid, e, exc_info=True)
         await _record_api_error(ext, f"{type(e).__name__}: {e}", e)

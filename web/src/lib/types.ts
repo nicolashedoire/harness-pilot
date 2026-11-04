@@ -770,6 +770,8 @@ export type Widget = {
   hidden?: boolean
   /** Still computing when the dashboard answered: fetch it alone (GET /api/dashboard/widgets/{id}). */
   pending?: boolean
+  /** card() was stopped by a permission (a key it may not read); `not_allowed` = the user can allow it. */
+  permission?: ExtPermissionRefusal
 }
 export type DashboardPayload = { widgets: Widget[] }
 export type DashboardLayout = { order: string[]; hidden: string[] }
@@ -782,6 +784,21 @@ export type ExtensionPermissions = {
   secrets: string[]
   /** Workspace-relative files and folders its api.py reads ("." = all of it). */
   read: string[]
+}
+
+export type ExtPermissionRefusal = { kind: 'secret'; name: string; reason: 'undeclared' | 'not_allowed' | 'refused' }
+
+/** What an extension may use now and what waits for the user (GET /api/extensions `access`, docs/dev/API.md). */
+export type ExtensionAccess = {
+  /** declared: its manifest has "permissions" · legacy: none, but it existed before permissions (keeps working, what it
+   *  uses is recorded) · undeclared: none, created later (no key). */
+  state: 'declared' | 'legacy' | 'undeclared'
+  secrets: { name: string; status: 'allowed' | 'pending' | 'refused'; how: 'accepted' | 'legacy' | null; at: number | null }[]
+  /** Recorded as granted before permissions existed. */
+  legacy: { secrets: { name: string; at: number | null }[] }
+  pending: boolean
+  refused: boolean
+  denied: (ExtPermissionRefusal & { at: number; count: number })[]
 }
 
 export type Extension = {
@@ -803,6 +820,8 @@ export type Extension = {
   /** What its manifest declares it uses beyond its own folder (`"permissions"`); null = no `"permissions"` key.
    *  A block plugin: its block.json hosts. */
   permissions?: ExtensionPermissions | null
+  /** Widgets and pages: what it may use now (null for a block plugin or an agent; absent from an older server). */
+  access?: ExtensionAccess | null
   /** Errors recorded while it ran (browser and server), since its files last changed, newest first (at most 10). */
   runtime_errors?: ExtRuntimeError[]
 }

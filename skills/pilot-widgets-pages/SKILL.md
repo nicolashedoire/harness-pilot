@@ -57,6 +57,11 @@ authors to add something an extension can do.
   every key `api.py` reads with `ctx["secret"]`; `read`: workspace-relative files or folders `api.py` reads (no
   leading `/`, no `..`; `.` = the whole workspace). Declare exactly what the code uses, nothing more;
   `"permissions": {}` when it uses none. A mistake in it is the extension's error.
+- Keys are enforced: `ctx["secret"]("NAME")` raises `PermissionError` for a key not in `permissions.secrets`, and for a
+  declared key until the user allows it (the card shows Allow / Refuse; also Settings -> Extensions). Tell the user to
+  allow it; never catch that error to hide it. An extension that existed before permissions and has no
+  `permissions` block keeps its keys: when you change one, add the block with the keys it reads
+  (`pilot ext check <id>` prints them) - they stay allowed.
 - Persistent data: `ctx["state_dir"]` (a folder reserved for this extension).
 - `ctx` = `{"id", "workspace", "state_dir", "secret": fn(name), "config": {"timezone", "language", "public_url"}}`.
 - Widget results are cached `ttl` seconds (manifest, default 300); the card's refresh button forces it.

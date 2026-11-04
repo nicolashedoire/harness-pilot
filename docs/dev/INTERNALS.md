@@ -364,6 +364,28 @@ Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--exten
 - `view(perms) -> {network, secrets, read, declared}`: the Atelier's `Permissions` (API.md#atelier) of a declaration.
 - `summary(perms) -> str`: one line for people and `pilot ext check` ("network: a.example.com · keys: SHOP_TOKEN ·
   reads: projects/shop", "nothing" for an empty declaration).
+- Grants: `<state>/extension-permissions.json` = `{since, legacy: {id: at}, extensions: {id: {secrets: {NAME: {at,
+  how: "accepted"|"legacy"}}, refused: at|null, denied: [{kind, name, reason, at, count}]}}}`, read through a cache
+  keyed on the file's (mtime, size), written with `config.write_json` under a module RLock (read-modify-write).
+  `baseline(ids)` (called by `extensions.scan()` with every folder name, inside `publishing()`, before loading) sets
+  `since` and `legacy` the first time only; `is_legacy(id)` is also true while no baseline could be written (never
+  break an extension on an unwritable state).
+- `check_secret(ext, name) -> reason | None` and `secret_reader(ext, where, record)` = `ctx["secret"]`
+  (`extensions.make_ctx(ext, where=None, record=True)`; `where` defaults to `card` for a Card widget, `api`
+  otherwise). Allowed: `vault.get(name)`; a grandfathered extension without a declaration reading a valid key name
+  for the first time -> `_record_legacy` (how `legacy`, feed `extension.legacy_secrets` folded per extension, group
+  `ext-legacy:<id>`, params listing every recorded key). Refused: `PermissionDenied(eid, kind, name, reason,
+  message)` raised after `_record_denied` (state `denied`, one row per kind + name + reason, written again at most once
+  a minute; `exterrors.record(id, dir, where, "PermissionDenied: ...")`; bus `extensions`; a log warning).
+  `record=False` (`extcheck`) records neither refusals nor grandfathered keys, and still answers a grandfathered
+  extension.
+- `set_consent(ext, "always"|"deny"|"reset")`, `accept(id, perms=None)` (the Atelier calls it when the user approves
+  a version: every key `perms` declares becomes `accepted`, `refused` cleared), `forget(id)` (an extension deleted).
+  `deny` and `reset` drop the `accepted` keys and keep the `legacy` ones.
+- `access(ext)` (`Extension.info()["access"]` for a widget or page), `suggested(ext)`, `detail(ext)`, `since()`.
+- Call sites: `api/dashboard._render` catches `PermissionDenied` before the generic handler (no second exterrors
+  record; `permission` in the widget), `api/extensions.forward` maps it to 403, `extcheck._check_card` reports a
+  `not_allowed` refusal as a warning (the user has to allow it, the code is fine) and the others as errors.
 
 ## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
 Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported

@@ -4,6 +4,7 @@ import { useExtensions, usePinExtension, useReloadExtensions, useToggleExtension
 import { useT } from '@/i18n'
 import { Badge, Button, EmptyState, NamedIcon, Skeleton, Switch, toast } from '@/components/ui'
 import { RuntimeErrors } from '@/features/extensions/RuntimeErrors'
+import { ExtensionPermissions } from '@/features/extensions/Permissions'
 import { SettingsCard, SectionStack } from './ui'
 
 export function ExtensionsSection() {
@@ -60,6 +61,7 @@ export function ExtensionsSection() {
                       <span className="font-mono break-all">{x.error}</span>
                     </p>
                   )}
+                  {!x.error && <ExtensionPermissions ext={x} />}
                   <RuntimeErrors ext={x} />
                   {x.type === 'block' && (
                     <Link to="/settings/blocks" className="inline-flex w-fit items-center gap-1 pointer-coarse:min-h-10 text-[13px] font-medium text-primary hover:underline">

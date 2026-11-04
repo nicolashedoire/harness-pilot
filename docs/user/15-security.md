@@ -104,9 +104,16 @@ run in two places:
 
 Each widget and page declares in its manifest what it uses beyond its own folder: the sites it reaches, the keys of
 Settings -> Keys it reads and the workspace files it reads (`permissions`, see
-[Dashboard widgets](dashboard-widgets#permissions)). `pilot ext check` shows the declaration. It tells you what an
-extension is meant to use; it does not turn `api.py` or `page.js` into sandboxed code. Install only extensions you
-trust, and read their declaration before you turn them on.
+[Dashboard widgets](dashboard-widgets#permissions)). `pilot ext check`, Settings -> Extensions and the Atelier show it.
+
+- **Keys**: `ctx["secret"]` only hands an extension the keys it declares and you allowed. Extensions that existed
+  before permissions keep the keys they read; each one is recorded and you are told. This stops an extension from
+  reading a key by mistake or by a careless change; it is not a wall against code written to get around it, because
+  `api.py` runs inside the server process and could read the keys file itself.
+- **Files and sites** used by `api.py` are declared and shown, not enforced.
+
+It tells you what an extension is meant to use; it does not turn `api.py` or `page.js` into sandboxed code. Install
+only extensions you trust, and read their declaration before you turn them on.
 
 ### Telemetry
 

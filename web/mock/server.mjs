@@ -170,9 +170,15 @@ function buildState(scenario) {
           { where: 'api', message: "KeyError: 'notes'", stack: "api.py:9 in handle: return {\"notes\": data[\"notes\"]}", at: t - 2 * HOUR, count: 2 },
         ] },
       { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true, permissions: null },
+      // created after permissions came in: declares a key that waits for the user (the dashboard card asks)
+      { id: 'stock-levels', name: 'Stock levels', type: 'widget', icon: 'package', version: '1.0.0', enabled: true, error: null, has_api: true,
+        permissions: { network: [], secrets: ['STOCK_API_KEY'], read: [] } },
     ],
     fs: new Map(),
     blocks: blocksState(),
+    // what the user allowed (server: <state>/extension-permissions.json); legacy = existed before permissions
+    extPerms: { since: t - 2 * DAY, legacy: ['shop-sales', 'notes', 'broken-widget'],
+      grants: { 'shop-sales': { secrets: { SHOP_TOKEN: { at: t - 2 * DAY + 600, how: 'legacy' } }, refused: null, denied: [] } } },
   }
 
   if (scenario !== 'setup' && scenario !== 'onboarding') {
@@ -651,6 +657,8 @@ function seedFiles(st, t) {
   fsAdd(st, 'extensions/notes/page.js', NOTES_PAGE_JS, t - 10 * DAY)
   fsAdd(st, 'extensions/broken-widget/manifest.json', JSON.stringify({ id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0' }, null, 2), t - 4 * DAY)
   fsAdd(st, 'extensions/broken-widget/api.py', 'def card(ctx)\n    return {"blocks": []}\n', t - 4 * DAY)
+  fsAdd(st, 'extensions/stock-levels/manifest.json', JSON.stringify({ id: 'stock-levels', name: 'Stock levels', type: 'widget', icon: 'package', version: '1.0.0', api: 1, permissions: { secrets: ['STOCK_API_KEY'] } }, null, 2), t - 3 * HOUR)
+  fsAdd(st, 'extensions/stock-levels/api.py', 'import json\nimport urllib.request\n\n\ndef card(ctx):\n    key = ctx["secret"]("STOCK_API_KEY")\n    return {"blocks": [{"type": "list", "items": []}]}\n', t - 3 * HOUR)
 }
 
 function PLACEHOLDER_SVG(label = 'image', w = 640, h = 400) {
@@ -843,6 +851,7 @@ function widgetDefs() {
     { id: 'uptime', title: 'Website uptime', icon: 'radar', span: 2, source: 'builtin', card: cardUptime },
   ]
   if (ext && ext.enabled) defs.push({ id: 'shop-sales', title: 'Shop sales', icon: 'shopping-cart', span: 1, source: 'extension', card: cardShop })
+  if (S.extensions.find((e) => e.id === 'stock-levels')?.enabled) defs.push({ id: 'stock-levels', title: 'Stock levels', icon: 'package', span: 1, source: 'extension', card: cardStock })
   return defs
 }
 function renderWidget(d) {
@@ -854,7 +863,7 @@ function renderWidget(d) {
     const card = d.card()
     card.updated = S.widgetUpdated[d.id] || now() - 120
     return { ...base, card, error: null }
-  } catch (e) { return { ...base, card: null, error: String(e.message || e) } }
+  } catch (e) { return { ...base, card: null, error: String(e.message || e), ...(e.permission ? { permission: e.permission } : {}) } }
 }
 function dashboard() {
   const defs = widgetDefs()
@@ -926,6 +935,25 @@ function cardUsage() {
 function cardUptime() {
   return { title: 'Website uptime', status: 'warn', blocks: [{ type: 'table', columns: ['Site', 'Status', 'Response', 'Uptime 30 d'], rows: [
     ['www.example.com', '503', '10.0 s', '99.12 %'], ['ui.example.com', '200', '182 ms', '100 %'], ['shop.example.com', '200', '341 ms', '99.98 %']] }] }
+}
+// A key read through ctx["secret"], as permissions.secret_reader answers it (API.md, Permissions).
+function extSecret(id, name) {
+  const e = S.extensions.find((x) => x.id === id)
+  const a = extAccess(e)
+  const deny = (reason, message) => { const err = new Error(message); err.permission = { kind: 'secret', name, reason }; throw err }
+  if (a.refused) deny('refused', `reading the key ${name} was refused for this extension (Settings -> Extensions)`)
+  const s = a.secrets.find((x) => x.name === name)
+  if (a.state === 'legacy') return 'value'
+  if (!s) deny('undeclared', `the key ${name} is not in manifest.json "permissions.secrets": add it there to read it, then allow it (Settings -> Extensions)`)
+  if (s.status !== 'allowed') deny('not_allowed', `reading the key ${name} waits for your permission: Settings -> Extensions -> ${e.name} -> Allow`)
+  return 'value'
+}
+function cardStock() {
+  extSecret('stock-levels', 'STOCK_API_KEY')
+  return { title: 'Stock levels', blocks: [{ type: 'list', items: [
+    { title: 'Mug "Morning"', value: '14 left', status: 'warn', icon: 'package' },
+    { title: 'Tote bag', value: '86 left', status: 'ok', icon: 'package' },
+  ] }] }
 }
 function cardShop() {
   const r = rng(99), t = now()
@@ -4004,7 +4032,52 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
   S.layout = { order: body.order.map(String), hidden: body.hidden.map(String) }
   return { ok: true }
 })
-R('GET', '/api/extensions', () => S.extensions)
+// Access of a widget or page (API.md, Permissions): what it may use now and what waits for the user.
+function extAccess(e) {
+  if (!e || (e.type !== 'widget' && e.type !== 'page')) return null
+  const g = S.extPerms.grants[e.id] || { secrets: {}, refused: null, denied: [] }
+  const legacy = S.extPerms.legacy.includes(e.id)
+  const refused = !!g.refused
+  const state = e.permissions ? 'declared' : legacy ? 'legacy' : 'undeclared'
+  const secrets = e.permissions
+    ? e.permissions.secrets.map((name) => { const x = g.secrets[name]; return { name, status: refused ? 'refused' : x ? 'allowed' : 'pending', how: x?.how ?? null, at: x?.at ?? null } })
+    : state === 'legacy' ? Object.entries(g.secrets).map(([name, x]) => ({ name, status: refused ? 'refused' : 'allowed', how: x.how, at: x.at })) : []
+  return {
+    state, secrets, refused,
+    legacy: { secrets: Object.entries(g.secrets).filter(([, x]) => x.how === 'legacy').map(([name, x]) => ({ name, at: x.at })) },
+    pending: secrets.some((x) => x.status === 'pending'),
+    denied: g.denied || [],
+  }
+}
+const extPermDetail = (e) => {
+  const a = extAccess(e)
+  const base = e.permissions || { network: [], secrets: [], read: [] }
+  const keep = a.legacy.secrets.map((x) => x.name).filter((n) => !base.secrets.includes(n))
+  return { id: e.id, name: e.name, type: e.type, permissions: e.permissions ?? null, access: a, suggested: { ...base, secrets: [...base.secrets, ...keep] } }
+}
+const permTarget = (id) => {
+  const e = S.extensions.find((x) => x.id === id)
+  if (!e || (e.type !== 'widget' && e.type !== 'page')) fail(404, 'not_found', `no widget or page extension ${id}`)
+  return e
+}
+R('GET', '/api/extensions', () => S.extensions.map((e) => ({ ...e, access: extAccess(e) })))
+R('GET', '/api/extensions/permissions', () => ({ since: S.extPerms.since, items: S.extensions.filter((e) => e.type === 'widget' || e.type === 'page').sort((a, b) => a.id.localeCompare(b.id)).map(extPermDetail) }))
+R('GET', '/api/extensions/:id/permissions', ({ params }) => extPermDetail(permTarget(params.id)))
+R('POST', '/api/extensions/:id/consent', ({ params, body }) => {
+  const e = permTarget(params.id)
+  if (!['always', 'deny', 'reset'].includes(body.decision)) fail(422, 'invalid', 'decision must be always, deny or reset')
+  const g = (S.extPerms.grants[e.id] ||= { secrets: {}, refused: null, denied: [] })
+  if (body.decision === 'always') {
+    if (!e.permissions) fail(400, 'not_declared', 'this extension declares no "permissions": nothing to allow')
+    for (const n of e.permissions.secrets) g.secrets[n] ||= { at: now(), how: 'accepted' }
+    g.refused = null
+  } else {
+    g.secrets = Object.fromEntries(Object.entries(g.secrets).filter(([, x]) => x.how === 'legacy'))
+    g.refused = body.decision === 'deny' ? now() : null
+  }
+  bus('extensions')
+  return { ok: true, access: extAccess(e) }
+})
 installBlocks({ R, state: () => S, fail, bus })
 // The extensions' own API (`/api/ext/<id>[/<path>]`, forwarded to their api.py `handle()` on the server): the two
 // seeded extensions answer like their example code; a LookupError is 404, a ValueError 400.
