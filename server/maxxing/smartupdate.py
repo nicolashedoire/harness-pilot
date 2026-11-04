@@ -333,7 +333,9 @@ def after_update() -> dict | None:
         names = [x.get("name") or x.get("title") for x in rep["extensions"] + rep["checks"] if not x["ok"]]
         title = f"After the update to {m['to']}: {rep['problems']} thing(s) to fix"
         body = "Not working any more: " + ", ".join(names[:5]) + ". Ask harness-pilot to fix it (Settings -> System)."
-        feed.system(title, body, "warning", "system", "/settings/system")
+        feed.system(title, body, "warning", "system", "/settings/system", kind="update.broken",
+                    params={"version": m.get("to"), "problems": rep["problems"], "names": ", ".join(map(str, names[:5]))},
+                    actions=[feed.link("open", "Open", "/settings/system")])
         from .telegram import gateway
         gateway.system_alert(f"{title}\n{body}")
     notes = upgrade_notes_to_apply(m.get("from") or "", m.get("to") or "") if m.get("smart") else []
@@ -383,11 +385,11 @@ def assist_prompt(rep: dict) -> str:
                      "as a customization; the update moves these edits aside (git stash).")
     for e in rep.get("extensions") or []:
         lines.append(f"- Extension `{e['id']}`: {e['reason']}")
-    lines += ["", "How to do it (skill maxxing-customize):",
+    lines += ["", "How to do it (skill pilot-customize):",
               "1. Read CUSTOMIZATIONS.md (what each change is FOR) and the changelog (`maxxing update --check`).",
               "2. Included in the new version: check it really does the same, then `maxxing custom drop <id>`.",
               "3. Unsaved changes: save them first with a real title and reason (`maxxing custom save ... --why ...`).",
-              "4. Edits of the web UI: rebuild what they did as an extension (skill maxxing-extension), ask me "
+              "4. Edits of the web UI: rebuild what they did as an extension (skill pilot-widgets-pages), ask me "
               "before dropping anything.",
               f"5. Run `maxxing update`. On a conflict (exit 3): `cd {config.CODE} && git rebase origin/"
               f"{rep.get('branch') or 'main'}`, then for each conflicting file re-implement the INTENT of the "
@@ -418,6 +420,6 @@ def fix_prompt(rep: dict) -> str:
     bad += [f"- customization `{x['id']}` \"{x['title']}\": its check `{x['check']}` fails: {x['output'][-200:]}"
             for x in rep.get("checks", []) if not x["ok"]]
     return ("These stopped working after the update to " + str(rep.get("version")) + ":\n" + "\n".join(bad)
-            + "\n\nFix them (skills maxxing-extension / maxxing-customize), run `maxxing update --verify` until "
+            + "\n\nFix them (skills pilot-widgets-pages / pilot-customize), run `maxxing update --verify` until "
               "everything passes, then tell me what you changed." + _reply_in())
 

@@ -6,8 +6,9 @@ import { useSaveSettings, useSettings, useTelegram, useTelegramSettings } from '
 import { Skeleton, Switch, toast } from '@/components/ui'
 import { Callout, SettingRow } from '@/features/common'
 import { telegramStage } from '@/features/telegram/TelegramSetup'
-import { usePermission } from './Notifications'
+import { usePermission } from '@/features/notifications/permission'
 import { SettingsCard, SectionStack } from './ui'
+import { PREF_ROWS, rowOn } from '@/features/notifications/prefs'
 
 export function FeaturesSection() {
   const t = useT()
@@ -19,8 +20,9 @@ export function FeaturesSection() {
   const [perm, ask] = usePermission()
   const tgReady = telegramStage(tg) === 'done'
 
+  const doneOn = rowOn(ui.notifyPrefs, PREF_ROWS.find((r) => r.id === 'session.done')!)
   const toggleDone = async (on: boolean) => {
-    ui.setNotify({ notifyDone: on })
+    ui.setNotifyPrefs({ 'session.done': on })
     if (on && perm !== 'granted') {
       const p = await ask()
       if (p === 'denied') toast.error(t('notify.blocked'), t('notify.blockedDesc'))
@@ -40,7 +42,7 @@ export function FeaturesSection() {
             </div>
           )}
           <SettingRow label={t('notify.done')} description={t('notify.doneDesc')} htmlFor="ft-done">
-            <Switch id="ft-done" checked={ui.notifyDone} onCheckedChange={toggleDone} />
+            <Switch id="ft-done" checked={doneOn} onCheckedChange={toggleDone} />
           </SettingRow>
         </div>
       </SettingsCard>

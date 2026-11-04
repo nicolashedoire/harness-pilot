@@ -321,7 +321,7 @@ threshold, harness-pilot compacts the session by itself before your next message
 Long sessions then stop re-sending their whole history on every call, which roughly halves the tokens they use.
 Pick a higher threshold (or Off) for a session that needs every detail of a very long exchange. A single long turn
 (many tool calls in a row) is compacted along the way too, near the same threshold, instead of growing up to the
-model's limit. `maxxing sessions token-report` shows, on your own sessions, what each threshold would have saved.
+model's limit. `pilot sessions token-report` shows, on your own sessions, what each threshold would have saved.
 
 **Compact when you come back** (Settings -> Claude, 200k tokens by default): Claude keeps the start of a conversation
 in a cache for a few minutes (up to an hour). When you write to a session that has been quiet for longer and holds at least that

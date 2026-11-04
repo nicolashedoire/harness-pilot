@@ -24,6 +24,7 @@ import {
   ListTree,
   MoreHorizontal,
   PanelLeftClose,
+  Pause,
   Pencil,
   Plus,
   Search,
@@ -969,6 +970,8 @@ const SessionRow = React.memo(function SessionRow({
         <span className="flex size-3.5 shrink-0 items-center justify-center">
           {s.state === 'running' ? (
             <StatusDot tone="running" pulse label={t('sessions.state.running')} />
+          ) : s.debate_paused ? (
+            <Pause className="size-3 text-warning" role="img" aria-label={t(s.discussion_pause_reason === 'limit' ? 'sessions.discussionLimitReached' : 'sessions.discussionPaused')} />
           ) : s.state === 'error' ? (
             <StatusDot tone="error" label={t('sessions.state.error')} />
           ) : s.unread ? (
@@ -1010,6 +1013,7 @@ const SessionRow = React.memo(function SessionRow({
               </span>
             )}
             <span className="shrink-0 tabular-nums">{fmtRelative(s.updated, lang)}</span>
+            {s.debate_paused && s.discussion_pause_reason === 'limit' && <span className="shrink-0 text-warning">· {t('sessions.discussionLimitReached')}</span>}
             {model && !label && <span className="truncate">· {modelLabel(model, claude?.models)}</span>}
             {s.queue > 0 && <span className="shrink-0">· {t('sessions.queue.short', { count: s.queue })}</span>}
           </span>

@@ -10,10 +10,10 @@ Settings -> **Import** at any time.
 ## 1. Ask your old agent for a zip
 
 Pick your agent and press **Copy the prompt**, then send it to the old agent. It builds a folder
-and zips it (`maxxing import --prompt hermes` prints the same prompt in a terminal):
+and zips it (`pilot import --prompt hermes` prints the same prompt in a terminal):
 
 ```
-harness-maxxing-export/
+harness-pilot-export/
   memory.md                                      who you are, preferences, global facts
   projects/<project>/CLAUDE.md, memory.md        what the project is / its facts and decisions
   projects/<project>/topics/<topic>/CLAUDE.md, memory.md, useful files
@@ -55,7 +55,7 @@ creating them) and lists the keys to add. During the onboarding it starts by its
 ## From the terminal
 
 ```bash
-maxxing import --prompt openclaw          # the prompt for your old agent
-maxxing import export.zip --dry-run       # what would be imported
-maxxing import export.zip                 # import (same rules as the UI)
+pilot import --prompt openclaw          # the prompt for your old agent
+pilot import export.zip --dry-run       # what would be imported
+pilot import export.zip                 # import (same rules as the UI)
 ```

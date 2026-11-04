@@ -51,7 +51,7 @@ A link to one project: `/tasks?project=<workspace project name>`.
 ## Asking Claude
 
 In any session: "add a task to call the accountant on Friday", "what is due this week?", "close
-the launch tasks". The `maxxing-tasks` skill knows the file format and writes it safely. The page
+the launch tasks". The `pilot-tasks` skill knows the file format and writes it safely. The page
 refreshes by itself within seconds.
 
 When Claude changes the file while you edit a task on the page, both changes are kept: yours is applied

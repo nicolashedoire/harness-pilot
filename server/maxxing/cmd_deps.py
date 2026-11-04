@@ -56,7 +56,9 @@ def cmd_deps(a) -> int:
         if failed and a.notify:
             from . import feed
             body = "\n".join(f"{r['name']}: {r['text']}" for r in failed)[:2000]
-            feed.system("Dependency update failed", body, "warning", "system", "/settings")
+            feed.system("Dependency update failed", body, "warning", "system", "/settings", kind="deps.update_failed",
+                        params={"count": len(failed), "names": ", ".join(r["name"] for r in failed)[:300]},
+                        actions=[feed.link("open", "Open", "/settings/system")])
             from .telegram import gateway
             gateway.system_alert("Dependency update failed (harness-pilot):\n" + body)
         if a.quiet and failed:
@@ -120,7 +122,7 @@ def _cfg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--caches", action="store_true",
                    help="clean: also root's uv/npm/pip/npx caches (shared with the other tools of the server)")
     p.add_argument("--auto", action="store_true",
-                   help="update: as after `maxxing update` - keep a uv that is not ours and a venv that works")
+                   help="update: as after `pilot update` - keep a uv that is not ours and a venv that works")
 
 
 cli.register("deps", "external components: list, verify, update, remove, clean, check", _cfg, cmd_deps)

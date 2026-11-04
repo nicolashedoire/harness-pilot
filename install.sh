@@ -1850,11 +1850,11 @@ banner() {
       box_row "$C_W$C_B$link$C_0"
       box_row ""
       box_row "$C_Y!$C_0 $C_D""One-time link, valid 1 hour: whoever opens it first owns$C_0"
-      box_row "$C_D""  this server. Expired or lost? run: maxxing setup-link$C_0" ;;
+      box_row "$C_D""  this server. Expired or lost? run: pilot setup-link$C_0" ;;
     *)
       box_row "Already set up - sign in at:"
       box_row "$C_W$C_B${PUBLIC_URL:-http://127.0.0.1:$PORT}$C_0"
-      box_row "$C_D""Password lost? run: maxxing password$C_0" ;;
+      box_row "$C_D""Password lost? run: pilot password$C_0" ;;
   esac
   if [ "${FW_ON:-0}" = 0 ]; then
     box_row ""
@@ -1864,7 +1864,7 @@ banner() {
   box_row ""
   if [ "${TOOLS_BG:-0}" = 1 ]; then
     box_row "$C_D""Tools (browser, video, voice model) are installing in the$C_0"
-    box_row "$C_D""background - maxxing deps list shows them.$C_0"
+    box_row "$C_D""background - pilot deps list shows them.$C_0"
     box_row ""
   fi
   box_row "The web onboarding then connects Claude, your first project,"
@@ -1872,8 +1872,9 @@ banner() {
   box_row ""
   box_rule ╰ ╯
   echo
-  printf '  %smaxxing doctor%s   check everything      %smaxxing update%s   update\n' "$C_C" "$C_0" "$C_C" "$C_0"
-  printf '  %smaxxing status%s   summary               %smaxxing --help%s   all commands\n' "$C_C" "$C_0" "$C_C" "$C_0"
+  printf '  %spilot doctor%s     check everything      %spilot update%s     update\n' "$C_C" "$C_0" "$C_C" "$C_0"
+  printf '  %spilot status%s     summary               %spilot --help%s     all commands\n' "$C_C" "$C_0" "$C_C" "$C_0"
+  printf '  %s(maxxing, the earlier name of pilot, still works)%s\n' "$C_D" "$C_0"
   echo
   rm -f "$STATE_DIR/logs/install-init.log"
 }

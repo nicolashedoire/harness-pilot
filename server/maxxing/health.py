@@ -346,6 +346,49 @@ def mark_seen(iid: str, seen: bool = True) -> bool:
     return True
 
 
+# ---- issues in the notifications feed --------------------------------------------------------
+# A warning / error issue becomes one pending `health.issue` feed event (group `health:<issue id>`) when it appears, and
+# is resolved when it disappears - checked each time health is evaluated (collect(), cached CACHE_S: the UI asks every
+# minute while open). <state>/health-feed.json remembers the issues already posted (a deleted event is not re-posted
+# while its issue lasts). Not repeated: the issues the feed already has as their own events.
+FEED_SKIP = {"cron_failed", "login_failures"}       # cron.failed / signin.failed
+ISSUE_PAGE = {"claude_auth": "/settings/claude", "backup_never": "/settings/backup", "backup_old": "/settings/backup",
+              "backup_failed": "/settings/backup"}
+_feed_lock = config.ProcessLock("health-feed")
+
+
+def _feed_path() -> Path:
+    return config.STATE / "health-feed.json"
+
+
+def _to_feed(issues: list[dict]) -> None:
+    """Post the new issues, resolve the gone ones. Never raises."""
+    try:
+        from . import feed
+        cur = {i["id"]: i for i in issues if i.get("level") in ("warn", "error") and i.get("code") not in FEED_SKIP}
+        with _feed_lock:
+            d = config.read_json(_feed_path(), {})
+            posted = {k: v for k, v in d.items() if isinstance(v, (int, float))} if isinstance(d, dict) else {}
+            before = dict(posted)
+            for iid, i in cur.items():
+                if iid in posted:
+                    continue
+                url = ISSUE_PAGE.get(i["code"], "/settings/system")
+                feed.system(i["text"], "", "error" if i["level"] == "error" else "warning", "system", url,
+                            group=f"health:{iid}", kind="health.issue",
+                            params={"issue_id": iid, "code": i["code"], "text": i["text"], "level": i["level"]},
+                            actions=[feed.link("open", "Open", url)])
+                posted[iid] = time.time()
+            for iid in [k for k in posted if k not in cur]:
+                feed.system_resolve("system", f"health:{iid}")
+                posted.pop(iid)
+            if posted != before:
+                config.write_json(_feed_path(), posted)
+    except Exception:  # noqa: BLE001 - the health check never fails because of the feed
+        import logging
+        logging.getLogger("maxxing.health").warning("health issues -> feed failed", exc_info=True)
+
+
 def _collect() -> dict:
     issues: list[dict] = []
     mem = meminfo()
@@ -390,6 +433,7 @@ def _collect() -> dict:
             elif last.get("ok") is False:
                 issues.append(_issue("warn", "backup_failed", "The last memory backup failed"))
     _apply_seen(issues)
+    _to_feed(issues)
     return {"ok": not any(i['level'] in ('error', 'warn') for i in issues), "issues": issues, "cpu_pct": cpu_pct(), "load": loadavg(), "mem": mem,
             "disk": dsk, "uptime_s": uptime_s(), "claude_auth": auth, "claude_auth_error": ast.get("error"),
             "claude_checked_at": ast.get("checked_at"), "backup_age_h": age_h,

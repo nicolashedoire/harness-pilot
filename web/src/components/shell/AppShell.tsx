@@ -11,11 +11,16 @@ import { prefetchPages } from '@/pages/prefetch'
 import { ConnectionBanner } from './ConnectionBanner'
 import { useAuthState, useSettings } from '@/lib/queries'
 import { useDoneNotifier } from '@/features/notify/useDoneNotifier'
+import { useFeedNotifier } from '@/features/notifications/useFeedNotifier'
+import { usePushSync } from '@/features/notifications/push'
+import { unlockAudioOnGesture } from '@/features/notifications/sound'
+import { useCommandStore, useRegisterCommands } from '@/commands/registry'
+import { useNotificationCenter, useOpenNotifications } from '@/features/notifications/store'
+import { Bell, SlidersHorizontal } from 'lucide-react'
+import { useT, withGroups } from '@/i18n'
 import { checkVersion, useWhatsNew } from '@/features/whatsnew/store'
 import { useUI } from '@/stores/ui'
-import { withGroups } from '@/i18n'
 import { useHotkey } from '@/commands/shortcuts'
-import { useCommandStore } from '@/commands/registry'
 import { Sidebar } from './Sidebar'
 import { TouchDrawers } from './TouchNav'
 import { useCompact } from '@/stores/media'
@@ -81,6 +86,40 @@ const FileViewerHost = React.lazy(withGroups(['files'], () => import('@/features
 const TeamLive = React.lazy(() => import('@/features/team/Live').then((m) => ({ default: m.TeamLive })))
 const TeamPanel = React.lazy(withGroups(['team'], () => import('@/features/team/TeamPanel').then((m) => ({ default: m.TeamPanel }))))
 const FeedbackDialog = React.lazy(withGroups(['feedback'], () => import('./FeedbackDialog').then((m) => ({ default: m.FeedbackDialog }))))
+const NotificationCenter = React.lazy(() => import('@/features/notifications/NotificationCenter'))
+
+/** The notifications centre (desktop): its code loads the first time it opens, then it stays for its animations. */
+function NotificationCenterHost() {
+  const open = useNotificationCenter((s) => s.open)
+  const [ever, setEver] = React.useState(open)
+  React.useEffect(() => {
+    if (open) setEver(true)
+  }, [open])
+  return ever ? (
+    <React.Suspense fallback={null}>
+      <NotificationCenter />
+    </React.Suspense>
+  ) : null
+}
+
+/** Notices of new events (sessions, feed), push preferences, palette entries, audio unlocked on the first gesture. */
+function useNotifications() {
+  const t = useT()
+  const navigate = useNavigate()
+  const openNotifications = useOpenNotifications()
+  useDoneNotifier()
+  useFeedNotifier()
+  usePushSync()
+  React.useEffect(unlockAudioOnGesture, [])
+  useRegisterCommands(
+    'notifications',
+    [
+      { id: 'notif:open', title: t('feed.open'), group: t('feed.title'), icon: Bell, perform: () => openNotifications() },
+      { id: 'notif:settings', title: t('feed.settings'), group: t('feed.title'), icon: SlidersHorizontal, perform: () => navigate('/settings/notifications') },
+    ],
+    [t, openNotifications, navigate],
+  )
+}
 
 /** The Feedback dialog: its code (and words) load the first time it is opened, then it stays mounted for its animations. */
 function FeedbackHost() {
@@ -228,7 +267,7 @@ export function AppShell() {
   useShareLook()
   useBootEntrance()
   usePrefetch()
-  useDoneNotifier()
+  useNotifications()
   const main = React.useRef<HTMLElement>(null)
   useScrollReset(main)
   useMobileViewport()
@@ -269,6 +308,7 @@ export function AppShell() {
         <CommandPalette />
         <ShortcutsDialog />
         <FeedbackHost />
+        {!touch && <NotificationCenterHost />}
         <InstallDialog />
         <WhatsNew />
         <TourHost />

@@ -2,8 +2,38 @@
 
 ## Unreleased - 2026-11-04
 
+- Feed events carry `kind`, `params`, `category`, `actions` and `resolved_at`; unread warnings and errors stay pending until resolved (by hand or by the auto-resolution rules in `feed.py`). Post actions are only created by server code, for an allow-list of paths; anything else is `400 bad_action`. New built-in source `sessions` (`service.on_session_stop`, cron sessions excluded); Telegram rules per kind (`event_kinds`); health issues posted to the feed. Web Push (`push.py`, `api/push.py`): VAPID keys, subscriptions with per-kind `{enabled, sound}` prefs, RFC 8291 encryption, new dependency `cryptography` (+ `cffi`, `pycparser`). `push.dispatch()` drains the new rows in batches of `DISPATCH_BATCH`, since the watcher only calls it again when the feed changes. The service worker shows `push.test` even when the app is focused. See `API.md` and `INTERNALS.md`.
 - Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory and native-agent stop remains session-wide.
 - Mixed teams store their phase and two independent worker session IDs on a coordinator session. The session watcher resumes the transition to synthesis after worker completion; individual and team stop operate on the existing runner locks. Workers use plan/read-only modes; the coordinator retains topic permissions. This first version uses fixed complementary roles and accepts text missions only.
+- Product skills `maxxing-*` -> `pilot-*`, command `pilot` (`maxxing` kept as a permanent alias):
+  - Skills renamed (folders, front matter `name:`, every cross-reference in skills, templates, docs, code, tests):
+    setup, doctor, telegram, backup, tasks, mcp, customize, infra keep their suffix (`maxxing-x` -> `pilot-x`);
+    `maxxing-cron` -> `pilot-crons`, `maxxing-feed` -> `pilot-notifications`, `maxxing-extension` -> `pilot-widgets-pages`.
+    Mapping: `server/maxxing/renames.py` `SKILL_RENAMES` (keep every pair). The other skills keep their names.
+    Skill texts name the product `harness-pilot` and show `pilot ...` commands (one line per skill: `maxxing` still works).
+  - `cmd_core.install_skills()`: product skills = `PRODUCT_SKILL_PREFIXES` (`pilot-`, `maxxing-`) + `PRODUCT_SKILLS_EXTRA`
+    (`is_product_skill()`). Upgrade: the new folders are installed, the old copies listed in install.json `skills` are
+    deleted (as any obsolete product skill), an old-named folder that is not listed (manual copy, install older than the
+    manifest) is moved to `<state>/trash/skills/` (reported in `backed_up`). Test: `test_renames.py`.
+  - `renames.migrate(ws)`, run by every `init` after the default jobs (report key `renamed: {files, jobs}`, printed when
+    not empty): exact old skill names -> new ones, only in product text - a workspace line copied from a template whose
+    renamed text equals a line of the current rendered template (CLI name and product name ignored in the comparison;
+    starter packs mapped to `projects/<project>` and `<project>-N`), and job prompts equal, once renamed, to a shipped
+    prompt (`COMPACTION_JOB`, new `cmd_core.MORNING_TASKS_PROMPT`, packs' `crons[].prompt`). User-written lines and job
+    prompts are untouched (left to Claude with the user). Idempotent; atomic writes keep the file mode.
+  - Command `pilot`: pyproject `[project.scripts]` has `pilot` and `maxxing` -> `maxxing.cli:main` (no uv.lock change;
+    `uv sync` creates `.venv/bin/pilot`). argparse `prog` = the name called (`cli.prog_name()`, `pilot` for `python -m
+    maxxing`); description names the alias. `cmd_core.ensure_cli_alias()` (every init, report key `cli`): symlink
+    `/usr/local/bin/pilot` (`PILOT_LINK`) -> `maxxing` next to install.sh's `BIN_LINK` (venv link or state-dir wrapper:
+    same program, same state); never replaces a foreign `pilot`; skipped with `MAXXING_SPAWN=direct` or without
+    BIN_LINK. `uninstall` removes PILOT_LINK only when it is that link. Unchanged on purpose: crontab lines and default
+    job commands (`crons.maxxing_bin()`), `python -m maxxing`, the package, `MAXXING_*`, state paths, unit names
+    (`maxxing-cron-<id>`, `maxxing-<sid8>`), User-Agents. `scripts/dev-local.sh` runs `uv run pilot`; install.sh's
+    final hints show `pilot`; `conftest.py` points BIN_LINK / PILOT_LINK into tmp for every test.
+  - `web/src/features/infra/InfraPage.tsx` ("Ask Claude" text: `pilot infra list --json`, skill `pilot-infra`);
+    `web/dist` rebuilt with it.
+  - `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old skill name back
+    outside the history files (CHANGELOG.md, this file, docs/upgrade/<version>.md): re-apply the rename there.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users
 (what changes for them, plain language), shown in the app ("What's new" after an update) and by

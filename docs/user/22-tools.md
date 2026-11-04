@@ -9,7 +9,7 @@ or a batch of images in any session - no setup.
 | Installed | Used for |
 |---|---|
 | Node.js 22 + **Remotion** | motion design videos written in React (skill `video-motion-design`) |
-| Chromium (one for everything) | HTML -> PDF (`maxxing pdf`, skill `pdf-document`), video renders and Scrapling share the same browser |
+| Chromium (one for everything) | HTML -> PDF (`pilot pdf`, skill `pdf-document`), video renders and Scrapling share the same browser |
 | ImageMagick, ffmpeg | resize, convert, compress, thumbnails (skill `image-edit`) |
 | poppler-utils | read and preview PDFs (`pdftotext`, `pdftoppm`) |
 | **Scrapling** + Chromium | web scraping: static, JavaScript and protected pages -> Markdown, CSV, JSON (skill `web-scraping`) |
@@ -18,7 +18,7 @@ or a batch of images in any session - no setup.
 ## Videos
 
 Ask "make a 20-second vertical video announcing our summer sale". Claude creates a project
-(`maxxing video new <topic>/videos/<name>`), writes the scenes, checks a few frames, renders an MP4
+(`pilot video new <topic>/videos/<name>`), writes the scenes, checks a few frames, renders an MP4
 and gives you its path (open it in Files). Remotion is installed once in
 `/var/lib/claude-maxxing/tools/remotion`; each project links to it, so it takes a second to create
 and weighs a few MB.
@@ -26,7 +26,7 @@ and weighs a few MB.
 ## PDFs
 
 Ask "make a PDF quote for …" or "turn this report into a nice PDF": Claude writes an HTML page and
-prints it with `maxxing pdf page.html page.pdf` (A4, backgrounds, your fonts).
+prints it with `pilot pdf page.html page.pdf` (A4, backgrounds, your fonts).
 
 ## Web scraping
 
@@ -49,8 +49,8 @@ prioritized report in the topic.
 ## Check or repair
 
 ```bash
-maxxing video status                          # Node.js, Remotion, headless browser, Scrapling
-maxxing deps list                             # versions of every component
-maxxing deps update                           # (re)install the tools, as root
+pilot video status                          # Node.js, Remotion, headless browser, Scrapling
+pilot deps list                             # versions of every component
+pilot deps update                           # (re)install the tools, as root
 ```
-`maxxing doctor` warns (never fails) when they are missing.
+`pilot doctor` warns (never fails) when they are missing.
