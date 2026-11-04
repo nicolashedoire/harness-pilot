@@ -13,7 +13,7 @@ The setup and commands below describe the inherited Claude integration. Mirrorin
   (job reports), *Alerts* (sign-in alerts, and problems of the server itself: an update that failed or was
   rolled back, an update available, a known vulnerability, Claude Code that could not update; on by default,
   setting `notify_system` of `PUT /api/telegram/settings`) and *Notifications* (the [notifications feed](feed): sales, orders,
-  your scripts… per the rules you set, posted by the bot itself, with an *Ask Harness* button). A thread is named `<project>/<topic> · <session title>`, with the project's emoji in front when it has one (project **…** menu in Sessions -> *Set an emoji…*), e.g. `🛒 acme/blog · Launch plan`. Changing only the emoji does not rename existing threads (each rename posts a notice in the chat); new threads get it.
+  your scripts… per the rules you set, posted by the bot itself, with an *Ask harness-pilot* button). A thread is named `<project>/<topic> · <session title>`, with the project's emoji in front when it has one (project **…** menu in Sessions -> *Set an emoji…*), e.g. `🛒 acme/blog · Launch plan`. Changing only the emoji does not rename existing threads (each rename posts a notice in the chat); new threads get it.
 - A thread is the session itself: what you write on the phone appears in the web UI and you can
   continue there, and the other way round.
 - Write in the **main chat** (or create a thread) to start a new session: the bot asks in which topic.

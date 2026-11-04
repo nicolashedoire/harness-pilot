@@ -21,6 +21,7 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [x] **Mémoire partagée** : depuis la synthèse, le texte peut être relu et modifié avant ajout explicite à la mémoire du sujet. Codex la lit au prochain tour ; Claude la charge normalement au démarrage d'un nouveau fil. Les écritures refusent les liens symboliques et une mémoire trop volumineuse pour Codex.
 - [x] **Connexions des sessions** : les conversations utilisent des requêtes courtes ; les onglets compatibles partagent une connexion d'actualisation et prennent le relais si elle ferme. Essai local avec plusieurs onglets ; les navigateurs sans coordination conservent une connexion par onglet.
 - [ ] **Fonctions inégales** : plusieurs pages et indications supposent Claude ; vérifier pour chaque parcours si Codex, le dialogue et Telegram sont réellement pris en charge et signaler les limites.
+- [ ] **Navigateur de l'ordinateur** : aucun binaire d'agent n'est actuellement publié dans le manifeste ; son URL héritée pointe vers le projet d'origine. Construire et vérifier un agent propre au projet avant de proposer son installation.
 
 ## Priorité 3 — cohérence générale et documentation
 

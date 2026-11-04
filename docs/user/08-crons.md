@@ -127,8 +127,8 @@ the memory limits do not.
 Secrets flagged "expose" in Settings -> Keys are available as environment variables to shell jobs
 and Claude sessions.
 
-A shell job runs with the same Claude setup as your sessions (Harness' Claude Code folder and the Claude
-account connected in Harness), so a script can call `claude -p "..."` itself - for example a script that
+A shell job runs with the same Claude setup as your sessions (harness-pilot' Claude Code folder and the Claude
+account connected in harness-pilot), so a script can call `claude -p "..."` itself - for example a script that
 prepares data, asks Claude for a text, then publishes it.
 
 ## Tips for Claude jobs

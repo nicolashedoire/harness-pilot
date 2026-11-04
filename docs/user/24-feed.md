@@ -12,7 +12,7 @@ important e-mails, any script's result - in one place instead of chat messages.
   count and hides / shows the panel; on a phone it opens the list.
 - **See all** (page `/feed`): the last 30 days, filters per source, *Unread only*, *Mark all as read*.
 - **Telegram** (optional): the bot posts in the thread **Notifications** by itself - no Claude, instant.
-  Under each message, **Ask Harness** opens a session about it, and **Open** follows its link.
+  Under each message, **Ask harness-pilot** opens a session about it, and **Open** follows its link.
 
 Click an event to mark it read and open its link (the cron job's history, the Stripe payment, the
 GitHub run…). Its **…** menu marks it read or deletes it. Repeated routine events fold into one row
@@ -79,5 +79,5 @@ repeated in *Notifications* unless you choose so. The switch at the top turns th
 ## Good to know
 
 - Events are kept 30 days. They live on your server (`/var/lib/claude-maxxing/feed.db`).
-- A webhook's content comes from outside: *Ask Harness* treats it as data, never as instructions, and opens the
+- A webhook's content comes from outside: *Ask harness-pilot* treats it as data, never as instructions, and opens the
   session in plan mode (Claude explains, it changes nothing until you approve a plan).

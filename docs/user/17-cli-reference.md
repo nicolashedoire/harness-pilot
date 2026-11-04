@@ -163,7 +163,7 @@ Remotion, the Whisper models, Garage). As root.
 | `maxxing keys delete NAME` | remove a key |
 | `maxxing infra status` / `infra list [--kind K] [--json]` | the Infra inventory: sources, problems, every site / database / bucket / domain / server (last snapshot) |
 | `maxxing infra refresh` | read everything now (this server, other servers over SSH, Cloudflare, Hostinger, URL checks) |
-| `maxxing infra site add NAME (--dir D \| --port N) [--host H] [--dns] [--project P]` | put a site online: `https://<Harness address>/<NAME>/` (sandboxed) or its own host; `site remove`, `site list`, `reserved` |
+| `maxxing infra site add NAME (--dir D \| --port N) [--host H] [--dns] [--project P]` | put a site online: `https://<harness-pilot address>/<NAME>/` (sandboxed) or its own host; `site remove`, `site list`, `reserved` |
 | `maxxing infra db install` / `db create NAME` / `db sqlite PATH` / `db backup` | PostgreSQL on localhost, one database + user per app (URL in the vault as `DB_<NAME>_URL`), nightly backups |
 | `maxxing infra bucket install` / `bucket create NAME [--public]` | S3 buckets on this server (Garage), keys in the vault as `S3_<NAME>_*` |
 | `maxxing infra server add NAME HOST [--user U] [--key K]` | read another server over SSH (`server remove`, `server list`) |
@@ -180,7 +180,7 @@ Scripts read keys from the environment (`os.environ["NAME"]`, `$NAME`); a script
 | `maxxing mcp add NAME URL [--where projects/P/topics/T] [--header 'Name: value'] [--sse]` | add a server by address, for every session or one topic; secrets as `${KEY}` from the vault |
 | `maxxing mcp add NAME --command 'npx -y pkg' [--env KEY=VALUE] [--where …]` | add a local program |
 | `maxxing mcp remove NAME [--where …]` | remove it |
-| `maxxing mcp load NAME [--session ID]` | in a session (setting *Load MCP servers only when a session needs them*): load that server from the next turn on; Harness continues the turn by itself |
+| `maxxing mcp load NAME [--session ID]` | in a session (setting *Load MCP servers only when a session needs them*): load that server from the next turn on; harness-pilot continues the turn by itself |
 
 OAuth sign-ins (state "To connect") are done in Settings -> MCP -> **Connect**. See [MCP servers](28-mcp.md).
 

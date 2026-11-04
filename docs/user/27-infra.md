@@ -5,14 +5,14 @@ section: Using harness-pilot
 
 The **Infra page** answers "where is what, and is it working?": every site, database, bucket, domain and server -
 on this server, on your other servers, on Cloudflare and on Hostinger - with its status, its links (this domain ->
-this server -> this site -> this app -> this repository) and the Harness project it belongs to.
+this server -> this site -> this app -> this repository) and the harness-pilot project it belongs to.
 
 It is **off by default**: turn it on in **Settings -> Features -> Infra page**. An **Infra** entry appears in the
 sidebar (shortcut G then I).
 
 ## How it works
 
-1. **Harness reads everything**: this server directly, your other servers over SSH (read-only), Cloudflare and
+1. **harness-pilot reads everything**: this server directly, your other servers over SSH (read-only), Cloudflare and
    Hostinger with their API keys. It links what it finds: a domain to its site, a site to its app, its database and
    its git repository.
 2. **It watches it for you**: every address is checked (does it answer, is its certificate valid), so are domain
@@ -27,7 +27,7 @@ The page itself never changes your sites or databases; the only thing it does on
 ## The page
 
 - **Overview**: a "How it works" box (with a link to this page) (close it with ×, bring it back with **How it works** at the top right), the
-  count of each kind with what is down or to check, the list **To look at**, and **What Harness reads**: each
+  count of each kind with what is down or to check, the list **To look at**, and **What harness-pilot reads**: each
   source with what it gives and, when something is missing, the next step (**Add the key ...**, **Add these
   rights** for a Cloudflare token that cannot read everything, **Connect** for a VPS not read yet).
 - **Sites, Databases, Buckets, Domains**: grouped by where they live. **Domains -> Add a domain** watches a domain
@@ -52,7 +52,7 @@ The page itself never changes your sites or databases; the only thing it does on
 | Supabase *(beta)* | each project: its database (state, region, Postgres version; a paused free project shows "paused"), its Storage buckets, its Edge Functions, linked together | the key `SUPABASE_ACCESS_TOKEN` |
 | GitHub Pages *(beta)* | the Pages sites of your repositories, their address and build state | the GitHub tokens already in your keys (Git page) |
 
-Keys go in **Settings -> Keys** (the Infra page links to them). Harness only **reads** with them. Give read rights
+Keys go in **Settings -> Keys** (the Infra page links to them). harness-pilot only **reads** with them. Give read rights
 where the provider allows it (Cloudflare, GitHub); Vercel, Netlify and Supabase tokens cannot be limited to reading:
 leave them **not exposed** to sessions (the default in Keys) so only the Infra page uses them. A token without one of
 the rights only hides that part: the page says which.
@@ -67,7 +67,7 @@ names asked, nothing else. Each name is looked up at most every 6 hours.
   Storage, D1, Registrar; add **DNS Edit** if you want Claude to create DNS records for new sites.
 - **Hostinger**: hPanel -> Profile -> API -> new token.
 - **Vercel**: [vercel.com/account/settings/tokens](https://vercel.com/account/settings/tokens) -> Create token, scope
-  "Full account" to see every team (Vercel has no read-only token: Harness only reads).
+  "Full account" to see every team (Vercel has no read-only token: harness-pilot only reads).
 - **Netlify**: User settings -> Applications -> Personal access tokens -> New access token.
 - **Supabase**: [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) -> Generate
   new token.
@@ -88,8 +88,8 @@ seen on a real account: if a line shows an error, ask Claude from that line (it 
 ## Other servers
 
 - **A Hostinger VPS** shows up by itself once the Hostinger key is in the vault, named **VPS Hostinger**. If it
-  already accepts an SSH key of this server, Harness connects it on its own (the Hostinger API says which key, so
-  nothing is tried blindly). Otherwise open it and click **Connect**: Harness adds its own key
+  already accepts an SSH key of this server, harness-pilot connects it on its own (the Hostinger API says which key, so
+  nothing is tried blindly). Otherwise open it and click **Connect**: harness-pilot adds its own key
   (`harness-maxxing@<this server>`) to the VPS' `root` account through your Hostinger key, then reads it. That is the
   only change the Infra page makes on a provider; you can remove the key in hPanel -> VPS -> SSH keys.
 - **Any other server**: **Add a server** (top of the page) with its address, SSH user and port. If none of this
@@ -98,7 +98,7 @@ seen on a real account: if a line shows an error, ask Claude from that line (it 
   **Disconnect** it (nothing changes on the server).
 - From the terminal: `maxxing infra server connect <IP or Hostinger VPS id>`, `server rename NAME "Label"`.
 
-Harness only reads the other servers (sites, ports and services, Docker, databases, buckets, disk, memory). The
+harness-pilot only reads the other servers (sites, ports and services, Docker, databases, buckets, disk, memory). The
 server needs `python3` (every usual Linux has it).
 
 ## Statuses
@@ -117,9 +117,9 @@ auto-renewed).
 Ask Claude in plain words; it follows a fixed recipe (skill `maxxing-infra`, command `maxxing infra`) so everything
 is done the same way, checked before it is applied, and appears on the page:
 
-- **"Put this folder online"** -> `https://<your Harness address>/<name>/`, at once, no DNS. These pages run
-  **isolated** (sandboxed): they can never touch Harness or your session (an app behind such a path never receives
-  your Harness cookie and cannot set one; hidden files like `.env` or `.git` are never served; the workspace root,
+- **"Put this folder online"** -> `https://<your harness-pilot address>/<name>/`, at once, no DNS. These pages run
+  **isolated** (sandboxed): they can never touch harness-pilot or your session (an app behind such a path never receives
+  your harness-pilot cookie and cannot set one; hidden files like `.env` or `.git` are never served; the workspace root,
   the code, the state folder and `.ssh` cannot be published). Perfect for pages, demos, reports, static
   sites. An app with a login, a cart or cookies needs its **own address** (`shop.example.com`): Claude advises it,
   and creates the DNS record on Cloudflare when the key allows it.
@@ -127,7 +127,7 @@ is done the same way, checked before it is applied, and appears on the page:
   database and one user per app, its address stored in **Keys** (`DB_<NAME>_URL`), **backed up every night**
   (job "Infra: database backups", 7 copies kept in `/var/backups/maxxing-db`).
 - **"Create a bucket"** -> S3 storage on this server (Garage), its keys in **Keys** (`S3_<NAME>_...`), optionally
-  public at `https://<your Harness address>/<name>/`. Files stay on this disk: for big public files Cloudflare R2 is
+  public at `https://<your harness-pilot address>/<name>/`. Files stay on this disk: for big public files Cloudflare R2 is
   often better, Claude says so.
 - **"Add my other server 203.0.113.7"** -> Claude connects it (`maxxing infra server connect`); if it does not
   accept a key of this server yet, Claude tells you the line to run there.

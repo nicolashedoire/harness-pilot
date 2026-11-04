@@ -155,7 +155,7 @@ trash.
   directly in the files root, the home folder, the workspace root, `projects/`, a project or its `topics/` folder
   (or in a hidden folder) is shown alone: its images and styles next to it do not load - move it into its own
   folder.
-- **Ask Harness** on a notification opens a session in **plan mode**: Claude reads and explains, it changes nothing
+- **Ask harness-pilot** on a notification opens a session in **plan mode**: Claude reads and explains, it changes nothing
   until you approve a plan - a webhook's text cannot make it act.
 - **Webhooks** refuse unknown links before reading anything, and any request over 1 MB.
 - **Import** never brings Claude Code settings or hooks (`.claude/settings.json`, `.mcp.json`) from

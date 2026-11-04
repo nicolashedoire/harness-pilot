@@ -75,7 +75,7 @@ new topic's folder with that topic's context. Possible once Claude has finished 
 messages wait). Its Telegram thread is renamed. Files it created stay where they are.
 
 The project and the topic of a session show as two badges under its title. Hover one to see what it is (its
-description, what a project or a topic means for Harness, its folder); click them to move the session to
+description, what a project or a topic means for harness-pilot, its folder); click them to move the session to
 another topic.
 
 ## The sessions list
@@ -140,7 +140,7 @@ on its first message. A title you typed, a Telegram thread you named, or a renam
 - **Queue**: you can send while Claude is still working. Messages wait in a card above the
   composer, with their full text, and are sent one after the other; its **×** clears them. The card shows every
   waiting message, also after a reload or on another device; one that came from Telegram, a scheduled job or
-  Harness itself says so in front of its text.
+  harness-pilot itself says so in front of its text.
 - **Stop** interrupts the running turn.
 
 **Steer while Claude works.** A message sent during a turn waits in the queue above the composer.
@@ -238,17 +238,17 @@ commands that modify anything in this mode.
 - Plan mode applies to every message of the session, Telegram included; validate the plan from the web
   app or the HUD. Compact and hand off still work normally.
 
-## Maxxing mode
+## Pilot mode
 
 For many sessions at once: as soon as one finishes, it **comes to the front** so you type what comes next at once.
 
-**Beta, off by default.** First enable it for the installation in **Settings -> Features -> Maxxing mode (beta)**:
+**Beta, off by default.** First enable it for the installation in **Settings -> Features -> Pilot mode (beta)**:
 the switch, the bar and the shortcut below only appear then (turning it off there ends it in every browser).
 
-- Turn it on with **⚡ Maxxing** at the top right of the Sessions page (**Alt+M**), or **⚡** in a session's header
+- Turn it on with **⚡ Pilot** at the top right of the Sessions page (**Alt+M**), or **⚡** in a session's header
   on a phone. The setting belongs to this browser.
 - The session that comes to the front **replaces the other columns** on screen: it is alone on the strip, full
-  width. Your columns are not lost: turning Maxxing mode off puts them back.
+  width. Your columns are not lost: turning Pilot mode off puts them back.
 - A session that finishes its turn (or whose plan waits, or that stopped on an error) joins a queue. The first one
   takes the **whole width** (it slides in where the previous one was), its composer takes the focus and it
   glows briefly; on a phone it opens full screen.
@@ -305,7 +305,7 @@ When a conversation gets long, the context fills up and answers get slower and m
 | **Hand off** | Creates a **new session** seeded with a summary of this one; the old one is archived. Good when the work changes direction. You can write in the new session right away: your message waits for the summary, then runs with it. |
 
 **Automatic compaction** (Settings -> Claude, 400k tokens by default): when a turn ends with more context than the
-threshold, Harness compacts the session by itself before your next message - a note in the conversation says so.
+threshold, harness-pilot compacts the session by itself before your next message - a note in the conversation says so.
 Long sessions then stop re-sending their whole history on every call, which roughly halves the tokens they use.
 Pick a higher threshold (or Off) for a session that needs every detail of a very long exchange. A single long turn
 (many tool calls in a row) is compacted along the way too, near the same threshold, instead of growing up to the
@@ -313,7 +313,7 @@ model's limit. `maxxing sessions token-report` shows, on your own sessions, what
 
 **Compact when you come back** (Settings -> Claude, 200k tokens by default): Claude keeps the start of a conversation
 in a cache for a few minutes (up to an hour). When you write to a session that has been quiet for longer and holds at least that
-much context, the cache is gone and the whole history would be re-sent at full price - so Harness summarizes the
+much context, the cache is gone and the whole history would be re-sent at full price - so harness-pilot summarizes the
 session first (a note says "Back after 2 h: ...") and your message runs in a fresh thread seeded with the summary.
 You wait for one summary turn before the reply; every turn after it is much smaller. Messages from scheduled jobs
 never trigger it, nor does a session whose context is mostly what every new thread loads anyway (CLAUDE.md,
@@ -321,10 +321,10 @@ memory): summarizing it would save nothing. Pick Off to keep the full thread wha
 summary cancels only the summary, your message stays: it runs right after, in the full thread.
 
 **Smart resume** (Settings -> Claude, 100k tokens by default): when you come back to a session whose cache expired
-with at least that much context - or after 5 minutes or more with twice as much - Harness first has Claude summarize
+with at least that much context - or after 5 minutes or more with twice as much - harness-pilot first has Claude summarize
 the session **for the message you just sent**. The summary keeps exact what your message needs (the files, commands,
 values, errors, the plan in progress or the question Claude asked), then your message runs in a fresh, much smaller
-thread, with the note "Back after 2 h: Harness summarized the session ... for your message". Measured on real
+thread, with the note "Back after 2 h: harness-pilot summarized the session ... for your message". Measured on real
 returns: 38 to 67 % fewer tokens from 100k, and details kept better than with the plain summary. Below the threshold
 the full thread goes on. Off = the "Compact when you come back" rule alone.
 
@@ -392,7 +392,7 @@ A Telegram session can be continued from the web UI and the other way round.
 | Shift+P | presentation mode (hides sensitive data on screen) |
 | G then D / S / F / T / C | go to Dashboard / Sessions / Files / Tasks / Crons |
 | Alt+T | tabs view on / off (Sessions page) |
-| Alt+M | Maxxing mode on / off (Sessions page, once enabled in Settings -> Features) |
+| Alt+M | Pilot mode on / off (Sessions page, once enabled in Settings -> Features) |
 
 ## Good to know
 

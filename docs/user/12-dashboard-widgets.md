@@ -17,7 +17,7 @@ until you need them (**Edit layout** shows them); Shopify appears by itself once
 
 **Make it yours** is the card at the end: click an example ("Today's Shopify sales", "Visitors on my
 website"...) and a new session opens in `system/harness` with the request already typed - send it, and
-Harness writes the widget in your extensions. Any request works the same way from any session: "add a widget
+harness-pilot writes the widget in your extensions. Any request works the same way from any session: "add a widget
 that shows ...". Hide the card with **Edit layout** once you have yours.
 
 ## Built-in widgets
@@ -106,7 +106,7 @@ def card(ctx):
 
 `card(ctx)` runs inside the server: use only the Python standard library, keep network calls short
 (timeout ≤ 10 s). Extension code runs on 4 threads of its own: code that never returns (a network call without a
-timeout) only blocks other extensions ("extensions are busy" until it returns), never the rest of Harness. An
+timeout) only blocks other extensions ("extensions are busy" until it returns), never the rest of harness-pilot. An
 `api.py` must load in under 10 s (no network call at import time), or the extension shows an error. `ctx` contains:
 
 | Key | Value |
