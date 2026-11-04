@@ -54,6 +54,12 @@ The session menu can generate a reviewable summary, decisions, and suggested act
 
 Telegram is optional and configured separately under **Settings → Telegram**. The inherited Claude integration is documented in the [Telegram guide](docs/user/09-telegram.md); mirroring and control of Codex and two-agent discussions have not yet been validated.
 
+## Reverse engineering companion
+
+In **Settings → Companions**, select the reverse-engineering role and start an investigation on an isolated copy of the platform source. Follow its conversation, review its evidence and proposed changes, and approve or reject the proposal before publication.
+
+The companion can use an independently installed [REA](https://github.com/morluto/rea) CLI through the optional [`rea-investigation` workflow](skills/rea-investigation/SKILL.md). Configure its external executable, check its actual runtime, then retain analysis evidence and present verified findings. REA and native analysis providers are not platform dependencies; the platform continues to work without them. See [connection instructions and evidence handling](skills/rea-investigation/references/rea.md). Static analysis can be incomplete and does not establish that a runtime path is safe or vulnerable.
+
 ## Documentation and contributions
 
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.

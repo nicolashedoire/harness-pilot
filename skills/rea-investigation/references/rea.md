@@ -4,6 +4,24 @@ Sources checked: the official [repository](https://github.com/morluto/rea), [CLI
 
 REA exposes application and binary analysis through MCP and CLI. JavaScript/Electron static inspection can work without a native disassembler; native analysis depends on a configured provider such as Hopper, Ghidra, IDA or Kuna. Check the installed version's help and current runtime requirements; the companion definition does not install these tools.
 
+## Connect an independent installation
+
+Install a pinned official `rea-agents` package outside this repository, with a Node version supported by that release. A launcher may select a dedicated Node runtime without changing the system Node. No REA package belongs in the platform's Python or frontend dependency manifests. Native providers are separate optional installations.
+
+Set `REA_BIN` to the executable, or create `$XDG_CONFIG_HOME/harness-pilot/rea.json` (default `~/.config/harness-pilot/rea.json`):
+
+```json
+{"executable":"/absolute/path/to/external/rea"}
+```
+
+`REA_CONNECTION_FILE` can select a different connection file. Explicit `status.py --rea` and `REA_BIN` take precedence over the file. A configured file must name an absolute executable path. Paths containing spaces are supported; do not add shell quotes inside the JSON value.
+
+Run `python <skill>/scripts/status.py`, then `python <skill>/scripts/rea.py --help`. The status probes the selected executable's own version and runtime; it does not certify providers. Use the launcher in place of `rea` in the examples below. This only connects the companion workflow, not global Codex or Claude MCP settings. Removing the connection file disconnects it; the platform still starts without REA.
+
+On macOS, REA may compile its process-ownership helper before static JavaScript analysis. If the companion cannot write to the default compiler cache, select a task-writable cache using REA's `REA_DARWIN_MODULE_CACHE_PATH` setting in the external launcher. Keep the agent's sandbox permissions unchanged. Protected `.git` directories may also be unwritable inside an agent sandbox; use a private temporary evidence directory instead and retain its path. A failed command's structured partial observation is incomplete evidence, not a successful full analysis.
+
+## Retain evidence
+
 For an existing CLI, a documented static workflow is:
 
 ```sh
