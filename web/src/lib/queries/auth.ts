@@ -63,6 +63,12 @@ export function useTotpEnable() {
     errorToast: false,
   })
 }
+export function useTotpRecoveryCodes() {
+  return useMut((b: { password: string; code: string }) => api.post<{ ok: boolean; recovery_codes: string[] }>('/api/auth/totp/recovery-codes', b, { noAuthRedirect: true }), {
+    invalidate: [qk.totp],
+    errorToast: false,
+  })
+}
 export function useTotpDisable() {
   return useMut((b: { password: string; code: string }) => api.post<Ok>('/api/auth/totp/disable', b, { noAuthRedirect: true }), {
     invalidate: [qk.totp],
