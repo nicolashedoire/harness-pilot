@@ -8,7 +8,7 @@ import { api, errorMessage, isApiError } from '@/lib/api'
 import { fmtDate, fmtNumber } from '@/lib/format'
 import type { AgentProvider } from '@/lib/types'
 import { useSettings, useWorkspace } from '@/lib/queries'
-import { Badge, Button, Checkbox, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
+import { Badge, Button, Checkbox, EmptyState, FormField, Input, Select, Textarea, confirm } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 
 type Role = { id: string; name: string; role: string; provider?: string }
@@ -88,7 +88,7 @@ export function MissionsSection() {
           {editable && !data.planner && <Button variant="outline" loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'plan' })}>{t('resident.askArchitect')}</Button>}
           {!editable && ['draft', 'plan_review', 'paused'].includes(data.phase) && !!data.steps.length && <Button loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'start', fingerprint: data.plan_fingerprint })}><Play className="size-4" />{t('resident.start')}</Button>}
           {['active', 'planning'].includes(data.phase) && <Button variant="outline" loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'pause' })}><Pause className="size-4" />{t('resident.pause')}</Button>}
-          {!['completed', 'stopped', 'budget'].includes(data.phase) && <Button variant="outline" disabled={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'stop' })}><Square className="size-4" />{t('resident.stop')}</Button>}
+          {!['completed', 'stopped', 'budget'].includes(data.phase) && <Button variant="outline" disabled={control.isPending} onClick={async () => { if (await confirm({ title: t('resident.stopConfirm'), description: t('resident.stopConfirmDesc'), destructive: true, confirmText: t('resident.stop') })) control.mutate({ id: data.id, action: 'stop' }) }}><Square className="size-4" />{t('resident.stop')}</Button>}
         </div>
         {data.planner?.session && <Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(data.planner.session)}`}>{t('resident.plannerSession')}</Link>}
         {editable && <>

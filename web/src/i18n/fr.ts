@@ -124,6 +124,8 @@ export const fr: Record<keyof typeof en, string> = {
   "resident.start": "Valider le plan et démarrer",
   "resident.pause": "Mettre en pause et arrêter les agents actifs",
   "resident.stop": "Arrêter cette mission",
+  "resident.stopConfirm": "Arrêter définitivement cette mission ?",
+  "resident.stopConfirmDesc": "L’arrêt est définitif : les agents en cours sont arrêtés, aucune étape ne redémarre et la mission ne peut pas reprendre. Leurs conversations et propositions restent disponibles. Pour continuer plus tard, mettez plutôt la mission en pause.",
   "resident.plannerSession": "Lire la conversation de l’architecte",
   "resident.adoptRole": "Créer ou adapter un rôle permanent",
   "resident.after": "Après : {names}",
