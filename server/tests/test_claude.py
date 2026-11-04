@@ -59,7 +59,7 @@ def test_failing_test_reported(client, mx, monkeypatch, tmp_path):
     r = client.post("/api/claude/auth", json={"kind": "api_key", "value": "sk-ant-api-0123456789"}).json()
     assert r["ok"] is False and r["error"]
     auth = client.get("/api/claude/status").json()["auth"]
-    assert auth["ok"] is False and auth["detail"].startswith("Last test failed")
+    assert auth["ok"] is True and auth["checked_at"] is None   # the request failed, not authentication
 
 
 def test_settings(client):

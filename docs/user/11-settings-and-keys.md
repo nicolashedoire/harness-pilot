@@ -40,6 +40,12 @@ first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds the
 | **Docs** | this documentation |
 | **Starter pack** | add a starter project for your kind of work; an existing project is never overwritten - see [Starter projects](starter-projects) |
 
+**Claude → Test** sends one small real request with the credentials used by the app. It does not load your
+project instructions, skills, hooks or MCP tools, and it does not save a conversation. A network, context or
+quota error appears under the button without marking a valid sign-in as expired. A genuine authentication
+error still asks you to sign in again. On macOS, both the app and the doctor recognize Claude Code's Keychain
+sign-in; no token needs to be copied into the app.
+
 Changing the **time zone** here does not change the server clock: run
 `timedatectl set-timezone <Zone> && systemctl restart cron` too, so scheduled jobs follow (see
 [Crons](crons)).
