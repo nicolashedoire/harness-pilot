@@ -21,7 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
 const PORT = Number(process.env.MOCK_PORT || 8809)
 const HOST = '127.0.0.1'
-const ROOT = '/root/maxxing'
+const ROOT = '/root/harness-pilot'
 const VERSION = '2.0.0'
 const SETUP_TOKEN = 'dev-token'
 const DEFAULT_PASSWORD = 'password123'
@@ -91,7 +91,7 @@ const SECRET_SEED = [
 ]
 
 const SERVICES = [
-  ['claude-maxxing', 'Harness Maxxing'], ['caddy', 'Caddy web server'], ['tailscaled', 'Tailscale'], ['cron', 'Cron daemon'],
+  ['claude-maxxing', 'harness-pilot'], ['caddy', 'Caddy web server'], ['tailscaled', 'Tailscale'], ['cron', 'Cron daemon'],
 ]
 
 /* =================================================================== state */
@@ -171,12 +171,12 @@ function buildState(scenario) {
     seedFeed(st, t)
     // telegram
     st.telegram.token = '7412369850:AAH3kx9-Qw2Er4Ty6Ui8Op0As1Df3Gh5Jk7'
-    st.telegram.bot = { id: 7412369850, username: 'acme_maxxing_bot', name: 'Acme Maxxing' }
+    st.telegram.bot = { id: 7412369850, username: 'acme_pilot_bot', name: 'Acme Pilot' }
     st.telegram.chat = { id: 123456789, title: 'Alex', type: 'private' }
     st.telegram.topics_enabled = true
     st.telegram.threads = makeThreads(st)
     // backup
-    Object.assign(st.backup, { configured: true, repo: 'alex-dev/maxxing-memory', private: true })
+    Object.assign(st.backup, { configured: true, repo: 'alex-dev/pilot-memory', private: true })
     const r = rng(42)
     for (let i = 7; i >= 0; i--) {
       const failed = i === 3
@@ -549,7 +549,7 @@ function seedCrons(st, t) {
       last_run: { at: t - 2 * DAY, ok: true, code: 0, duration_s: 233.1 } },
     { ...base, id: 'c_uptime', name: 'Uptime check', schedule: '*/15 * * * *', kind: 'shell', command: 'curl -fsS --max-time 10 https://www.example.com/healthz', timeout_s: 30,
       last_run: { at: t - 9 * MIN, ok: false, code: 22, duration_s: 10.0 } },
-    { ...base, id: 'c_cleanup', name: 'Clean old attachments', schedule: '0 3 1 * *', kind: 'shell', command: 'find /root/maxxing -path "*/attachments/*" -mtime +90 -delete', enabled: false, notify: 'never',
+    { ...base, id: 'c_cleanup', name: 'Clean old attachments', schedule: '0 3 1 * *', kind: 'shell', command: 'find /root/harness-pilot -path "*/attachments/*" -mtime +90 -delete', enabled: false, notify: 'never',
       last_run: { at: t - 40 * DAY, ok: true, code: 0, duration_s: 1.4 } },
   ]
   st.external = [
@@ -587,7 +587,7 @@ function fsMkdirp(st, abs, mtime = now()) {
 
 function seedFiles(st, t) {
   st.fs.set(ROOT, { type: 'dir', mtime: t - 40 * DAY, mime: 'inode/directory', size: 4096 })
-  fsAdd(st, 'CLAUDE.md', '# Workspace\n\n@memory.md\n\nYou are working in the Harness Maxxing workspace. Projects live in `projects/<name>/`, topics in `projects/<name>/topics/<topic>/`.\n\n## Rules\n- Write durable facts in the closest `memory.md`.\n- Never print secrets.\n', t - 30 * DAY)
+  fsAdd(st, 'CLAUDE.md', '# Workspace\n\n@memory.md\n\nYou are working in the harness-pilot workspace. Projects live in `projects/<name>/`, topics in `projects/<name>/topics/<topic>/`.\n\n## Rules\n- Write durable facts in the closest `memory.md`.\n- Never print secrets.\n', t - 30 * DAY)
   fsAdd(st, 'memory.md', '# Global memory\n\n## Preferences\n- Answers in English, concise.\n- Timezone Europe/Paris.\n\n## Facts\n- Server: Ubuntu 24.04, 4 vCPU, 8 GB RAM.\n- Public URL: https://ui.example.com\n', t - 2 * DAY)
   fsAdd(st, 'tasks.json', JSON.stringify(st.tasks, null, 2), t - HOUR)
   for (const p of st.projects) {
@@ -958,7 +958,7 @@ const md = (s) => s.replace(/§/g, B)
 const DOCS = [
   { slug: 'getting-started', title: 'Getting started', section: 'Basics', order: 1, markdown: md(`# Getting started
 
-Harness Maxxing runs **Claude Code** on your server and gives you a web UI, a Telegram gateway and scheduled jobs around it.
+harness-pilot runs **Claude Code** on your server and gives you a web UI, a Telegram gateway and scheduled jobs around it.
 
 ## Concepts
 
@@ -1039,7 +1039,7 @@ See also [Telegram](telegram) and [Crons](crons).
 `) },
   { slug: 'files', title: 'Files', section: 'Features', order: 3, markdown: md(`# Files
 
-The Files page shows everything under the files root (by default §/root/maxxing§).
+The Files page shows everything under the files root (here §/root/harness-pilot§).
 
 ## Features
 
@@ -1062,7 +1062,7 @@ If a file changed on disk since you opened it (for example Claude edited it), sa
 
 ## Linking
 
-Any absolute path printed by Claude in a [session](sessions), like §/root/maxxing/memory.md§, becomes a link to this page.
+Any absolute path printed by Claude in a [session](sessions), like §/root/harness-pilot/memory.md§, becomes a link to this page.
 `) },
   { slug: 'crons', title: 'Crons', section: 'Features', order: 4, markdown: md(`# Crons
 
@@ -1789,7 +1789,7 @@ R('POST', '/api/telegram/token', async ({ body }) => {
   await sleep(600)
   const token = String(body.token || '').trim()
   if (!/^\d+:[\w-]{30,}$/.test(token)) return { ok: false, error: 'Unauthorized: invalid bot token' }
-  const bot = { id: parseInt(token.split(':')[0], 10), username: 'acme_maxxing_bot', name: 'Acme Maxxing' }
+  const bot = { id: parseInt(token.split(':')[0], 10), username: 'acme_pilot_bot', name: 'Acme Pilot' }
   Object.assign(S.telegram, { token, bot, last_error: null })
   bus('telegram')
   return { ok: true, bot }
@@ -2646,6 +2646,6 @@ const initial = SCENARIOS.includes(process.env.MOCK_SCENARIO) ? process.env.MOCK
 S = buildState(initial)
 startMaxxing()
 server.listen(PORT, HOST, () => {
-  console.log(`[mock] Harness Maxxing mock API on http://${HOST}:${PORT} — scenario "${initial}"${initial === 'setup' ? ` (setup token "${SETUP_TOKEN}")` : initial === 'login' ? ` (password "${DEFAULT_PASSWORD}")` : ''}`)
+  console.log(`[mock] harness-pilot mock API on http://${HOST}:${PORT} — scenario "${initial}"${initial === 'setup' ? ` (setup token "${SETUP_TOKEN}")` : initial === 'login' ? ` (password "${DEFAULT_PASSWORD}")` : ''}`)
   console.log(`[mock] SPA from ${DIST}${fs.existsSync(DIST) ? '' : ' (missing — 503 until built)'} · switch: POST /__mock/scenario {"name":"setup|login|onboarding|ready|maxxing"}`)
 })
