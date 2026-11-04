@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark" data-accent="violet" data-density="comfortable">
+<html lang="en" class="dark" data-density="comfortable">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icons/harness-pilot.png" />
@@ -18,7 +18,7 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>harness-pilot</title>
     <script>
-      // Apply theme/accent/density before first paint (no flash). Mirrors src/stores/ui.ts.
+      // Apply theme/palette/density before first paint (no flash). Mirrors src/stores/ui.ts.
       (function () {
         try {
           var s = JSON.parse(localStorage.getItem('mx-ui') || '{}').state || {};
@@ -26,14 +26,24 @@
           var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
           var r = document.documentElement;
           r.classList.toggle('dark', dark);
-          // Accent in sRGB (copy of src/lib/accent.ts), available from the first paint.
-          var hex = {
-            light: { blue: '#0076ed', clay: '#ea7e00', violet: '#a126d7', green: '#25931c', amber: '#e0bb00', rose: '#e62e1e' },
-            dark: { blue: '#3c91fd', clay: '#f8962d', violet: '#c25af3', green: '#55cc4b', amber: '#f1d025', rose: '#fc523a' }
-          };
-          var a = hex.dark[s.accent] ? s.accent : 'violet';
+          // The palette's tokens as CSS + sRGB summary, cached by src/stores/ui.ts applyPalette at each change
+          // (none yet: the default palette of styles/globals.css).
+          var c = null;
+          try { c = JSON.parse(localStorage.getItem('mx-theme') || 'null'); } catch (e) {}
+          if (c && c.v === 1 && typeof c.css === 'string') {
+            var st = document.createElement('style');
+            st.id = 'mx-theme';
+            st.textContent = c.css;
+            document.head.appendChild(st);
+          }
+          var sum = c && c.summary && c.summary[dark ? 'dark' : 'light'];
+          var bg = sum && /^#[0-9a-f]{6}$/i.test(sum.bg) ? sum.bg : dark ? '#09090b' : '#ffffff';
+          r.style.background = bg;
+          var metas = document.querySelectorAll('meta[name="theme-color"]');
+          for (var i = 0; i < metas.length; i++) metas[i].setAttribute('content', bg);
+          var accents = { blue: 1, clay: 1, violet: 1, green: 1, amber: 1, rose: 1 };
+          var a = c && accents[c.accent] ? c.accent : 'blue';
           r.dataset.accent = a;
-          r.dataset.tint = s.tint === 'neutral' ? 'neutral' : 'tinted';
           // Logo in the accent color (copy of src/lib/accent.ts applyAppIcons): tab icon, splash, installed app
           // (manifest icons and launch screen) and the iOS home-screen icon.
           var icon = document.querySelector('link[rel="icon"]');
@@ -48,7 +58,6 @@
           var mono = {"jetbrains": "'JetBrains Mono Variable', ui-monospace, monospace", "fira": "'Fira Code Variable', ui-monospace, monospace", "geist": "'Geist Mono Variable', ui-monospace, monospace", "cascadia": "'Cascadia Code Variable', ui-monospace, monospace", "sourcecode": "'Source Code Pro Variable', ui-monospace, monospace", "victor": "'Victor Mono Variable', ui-monospace, monospace", "martian": "'Martian Mono Variable', ui-monospace, monospace", "roboto": "'Roboto Mono Variable', ui-monospace, monospace", "redhat": "'Red Hat Mono Variable', ui-monospace, monospace", "atkinsonmono": "'Atkinson Hyperlegible Mono Variable', ui-monospace, monospace"};
           if (sans[s.font]) r.style.setProperty('--mx-font-sans', sans[s.font]);
           if (mono[s.monoFont]) r.style.setProperty('--mx-font-mono', mono[s.monoFont]);
-          r.style.setProperty('--mx-splash-accent', hex[dark ? 'dark' : 'light'][a]);
           r.dataset.density = s.density || 'comfortable';
           // Touch layout (copy of src/stores/media.ts isCompact): phones, tablets and narrow windows.
           var narrow = matchMedia('(max-width: 767px)').matches;
@@ -70,8 +79,6 @@
               if (l && !own) {
                 var r = document.documentElement;
                 r.classList.toggle('dark', l.theme === 'dark' || (l.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches));
-                r.dataset.accent = l.accent;
-                r.dataset.tint = l.tint;
               }
               return a;
             })

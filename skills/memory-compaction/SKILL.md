@@ -9,7 +9,7 @@ Goal: memory files stay **short, consistent and current**. Most days there is no
 is the expected outcome.
 
 ## Procedure
-1. Run `maxxing memory`: it lists every memory file (`memory.md`, `projects/*/memory.md`,
+1. Run `pilot memory`: it lists every memory file (`memory.md`, `projects/*/memory.md`,
    `projects/*/topics/*/memory.md`) with its line count, and the **line limit** set in
    Settings -> Memory (default 200; `none` = no limit). A limit given in the prompt wins.
 2. Compact a file **only if** at least one is true:
@@ -37,4 +37,4 @@ is the expected outcome.
 - Never paste secrets; if you find one in a memory file, replace it by the key name and tell the
   user to rotate it (Settings -> Keys).
 - The memory backup keeps history in git, so a past version can always be restored
-  (`maxxing-backup` skill).
+  (`pilot-backup` skill).

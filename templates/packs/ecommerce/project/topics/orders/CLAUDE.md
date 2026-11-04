@@ -12,7 +12,7 @@ to this customer asking where their parcel is".
   order number, what happened, what happens next, when.
 - Track shipping problems, returns and refunds; keep stock issues visible.
 - Never refund, cancel, edit an order or email a customer without an explicit "yes" from the user.
-- Turn follow-ups into tasks (`maxxing-tasks` skill), e.g. "check parcel #1042 again on Friday".
+- Turn follow-ups into tasks (`pilot-tasks` skill), e.g. "check parcel #1042 again on Friday".
 
 ## First session
 
@@ -57,4 +57,4 @@ to this customer asking where their parcel is".
 - "Orders report" (weekdays 17:00): end-of-day summary of orders, revenue, unfulfilled and refunded
   orders and low stock. Created disabled, enable it on the Crons page or ask here.
 - Urgent things (big order, payment failed, stock out) can go to the feed with
-  `maxxing feed post "Out of stock: Blue mug" --level warning --source shop`.
+  `pilot feed post "Out of stock: Blue mug" --level warning --source shop`.

@@ -26,7 +26,7 @@ export function notificationsSupported(): boolean {
 export function showSystemNotification(title: string, body: string, onClick?: () => void, tag?: string, silent = false) {
   if (!notificationsSupported() || Notification.permission !== 'granted') return false
   try {
-    const icon = appIconSrc(useUI.getState().accent)
+    const icon = appIconSrc()
     const n = new Notification(title, { body, tag, icon, badge: icon, silent })
     n.onclick = () => {
       window.focus()

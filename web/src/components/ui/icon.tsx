@@ -15,7 +15,8 @@ import {
   Trophy, Truck, Upload, User, Users, Wallet, Wifi, Wrench, Zap, DatabaseBackup, Radar, NotebookPen, TriangleAlert,
   BookOpen, CloudUpload, ChartColumn, Notebook, Bug, Image, Video, Music, Handshake, Clapperboard, GraduationCap, FolderPlus,
   CreditCard, AppWindow, ArrowRight, ExternalLink, Info, Plus, Check, X, Pencil, Trash, Funnel, RefreshCw, Phone, MapPin,
-  Building, MessageCircle, Lightbulb, FilePlus, Contact, WandSparkles, Gamepad2, StickyNote, type LucideIcon,
+  Building, MessageCircle, Lightbulb, FilePlus, Contact, WandSparkles, Gamepad2, StickyNote, Table, CalendarRange, FileDiff,
+  SlidersHorizontal, Kanban, Percent, Sigma, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -41,7 +42,8 @@ export const ICONS: Record<string, LucideIcon> = {
   'external-link': ExternalLink, info: Info, plus: Plus, check: Check, x: X, pencil: Pencil, trash: Trash, filter: Funnel,
   'refresh-cw': RefreshCw, phone: Phone, 'map-pin': MapPin, building: Building, 'message-circle': MessageCircle,
   lightbulb: Lightbulb, 'file-plus': FilePlus, contact: Contact, 'wand-sparkles': WandSparkles,
-  'gamepad-2': Gamepad2, 'sticky-note': StickyNote,
+  'gamepad-2': Gamepad2, 'sticky-note': StickyNote, table: Table, 'calendar-range': CalendarRange, 'file-diff': FileDiff,
+  'sliders-horizontal': SlidersHorizontal, kanban: Kanban, percent: Percent, sigma: Sigma,
 }
 
 export function NamedIcon({ name, className, ...props }: { name?: string | null; className?: string } & React.SVGProps<SVGSVGElement>) {

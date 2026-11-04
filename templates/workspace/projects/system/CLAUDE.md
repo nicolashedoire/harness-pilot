@@ -17,12 +17,12 @@ subscriptions live in `general/inbox`.
 ## Facts for every topic of this project
 
 - Product code (installed version): `{{CODE_DIR}}` · user documentation: `{{CODE_DIR}}/docs/user/`
-- Workspace: `{{WORKSPACE}}` · server CLI: `maxxing` (`maxxing --help`, reference in
-  `{{CODE_DIR}}/docs/user/17-cli-reference.md`).
+- Workspace: `{{WORKSPACE}}` · server CLI: `pilot` (`pilot --help`, reference in
+  `{{CODE_DIR}}/docs/user/17-cli-reference.md`; `maxxing`, its earlier name, still works).
 - Never write secrets (passwords, tokens, API keys) in any file of the workspace: they belong in
   Settings -> Keys.
 - Ask before anything destructive or disruptive (deleting data, restarting `claude-maxxing`,
   rebooting, changing the firewall).
 - Changing the product itself is allowed: extension first, otherwise a recorded customization
-  (skill `maxxing-customize`, list in `{{WORKSPACE}}/CUSTOMIZATIONS.md`). Never leave an unrecorded
+  (skill `pilot-customize`, list in `{{WORKSPACE}}/CUSTOMIZATIONS.md`). Never leave an unrecorded
   edit in `{{CODE_DIR}}`.

@@ -1,4 +1,4 @@
-"""Sites on this server, the standard way (`maxxing infra site add|remove|list`, skill `maxxing-infra`).
+"""Sites on this server, the standard way (`maxxing infra site add|remove|list`, skill `pilot-infra`).
 
 Two kinds:
 - **path site** (default): `https://<Harness address>/<name>/`, no DNS needed. One file per site in

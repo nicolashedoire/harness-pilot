@@ -26,8 +26,8 @@ export function useDayLabel() {
   return React.useCallback(
     (key: string, at: number) => {
       const now = Date.now() / 1000
-      if (key === dayKey(now, x.tz)) return t('feed.today')
-      if (key === dayKey(now - 86400, x.tz)) return t('feed.yesterday')
+      if (key === dayKey(now, x.tz)) return t('ncentre.today')
+      if (key === dayKey(now - 86400, x.tz)) return t('ncentre.yesterday')
       return x.date(at, { dateStyle: undefined, timeStyle: undefined, weekday: 'long', day: 'numeric', month: 'long' })
     },
     [t, x],
@@ -83,8 +83,8 @@ export function AllHandled({ className }: { className?: string }) {
       <span className="flex size-11 items-center justify-center rounded-xl bg-success/12 text-success">
         <Check className="size-[22px]" />
       </span>
-      <p className="font-semibold">{t('feed.allDone')}</p>
-      <p className="max-w-xs text-[13px] text-muted-foreground">{t('feed.allDoneDesc')}</p>
+      <p className="font-semibold">{t('ncentre.allDone')}</p>
+      <p className="max-w-xs text-[13px] text-muted-foreground">{t('ncentre.allDoneDesc')}</p>
     </div>
   )
 }
@@ -97,8 +97,8 @@ export function NoNotifications({ filtered, className }: { filtered?: boolean; c
       <span className="flex size-11 items-center justify-center rounded-xl border bg-muted/60 text-muted-foreground">
         <BellOff className="size-5" strokeWidth={1.7} />
       </span>
-      <p className="font-semibold">{filtered ? t('feed.emptyFilter') : t('feed.empty')}</p>
-      <p className="max-w-xs text-[13px] text-muted-foreground">{filtered ? t('feed.emptyFilterDesc') : t('feed.emptyDesc')}</p>
+      <p className="font-semibold">{filtered ? t('ncentre.emptyFilter') : t('ncentre.empty')}</p>
+      <p className="max-w-xs text-[13px] text-muted-foreground">{filtered ? t('ncentre.emptyFilterDesc') : t('ncentre.emptyDesc')}</p>
     </div>
   )
 }

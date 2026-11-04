@@ -1,0 +1,935 @@
+[
+ {
+  "type": "chart",
+  "icon": "chart-line",
+  "category": "data",
+  "pin": true,
+  "hint": "Numbers over time or across categories (line or bar), with a chart / table switch and CSV / PNG export.",
+  "fields": "{kind?: \"line\"|\"bar\", series: [{name, points: [[x, y]]}] (1-6 series), unit?, title?, source?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "series"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "kind": {
+     "enum": [
+      "line",
+      "bar"
+     ]
+    },
+    "unit": {
+     "type": "string",
+     "maxLength": 20
+    },
+    "series": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 6,
+     "items": {
+      "type": "object",
+      "required": [
+       "name",
+       "points"
+      ],
+      "properties": {
+       "name": {
+        "type": "string",
+        "maxLength": 80
+       },
+       "points": {
+        "type": "array",
+        "maxItems": 1000,
+        "items": {
+         "type": "array",
+         "minItems": 2,
+         "maxItems": 2,
+         "items": [
+          {
+           "type": [
+            "number",
+            "string"
+           ]
+          },
+          {
+           "type": "number"
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "table",
+  "icon": "table",
+  "category": "data",
+  "pin": true,
+  "hint": "Tabular data the user can sort, filter and export as CSV.",
+  "fields": "{columns: [label | {label, type?: \"text\"|\"number\"|\"percent\"|\"delta\"|\"bar\", align?}], rows: [[cell]], title?, source?, page_size?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "columns",
+    "rows"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "page_size": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 500
+    },
+    "columns": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 40,
+     "items": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 120
+       },
+       {
+        "type": "object",
+        "required": [
+         "label"
+        ],
+        "properties": {
+         "label": {
+          "type": "string",
+          "maxLength": 120
+         },
+         "align": {
+          "enum": [
+           "left",
+           "right",
+           "center"
+          ]
+         },
+         "type": {
+          "enum": [
+           "text",
+           "number",
+           "percent",
+           "delta",
+           "bar"
+          ]
+         }
+        }
+       }
+      ]
+     }
+    },
+    "rows": {
+     "type": "array",
+     "maxItems": 5000,
+     "items": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+       "type": [
+        "string",
+        "number",
+        "boolean",
+        "null"
+       ]
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "stats",
+  "icon": "gauge",
+  "category": "data",
+  "pin": true,
+  "hint": "A few key figures (KPIs), each with an optional change and tone.",
+  "fields": "{items: [{label, value, delta?, hint?, tone?: \"ok\"|\"warn\"|\"error\"}] (1-12), title?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "items"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "items": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 12,
+     "items": {
+      "type": "object",
+      "required": [
+       "label",
+       "value"
+      ],
+      "properties": {
+       "label": {
+        "type": "string",
+        "maxLength": 80
+       },
+       "value": {
+        "type": [
+         "number",
+         "string"
+        ]
+       },
+       "delta": {
+        "type": [
+         "number",
+         "string"
+        ]
+       },
+       "hint": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "tone": {
+        "enum": [
+         "ok",
+         "warn",
+         "error"
+        ]
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "list",
+  "icon": "list",
+  "category": "data",
+  "pin": true,
+  "hint": "A short list of items with an optional value, status, icon or link (grid: tiles).",
+  "fields": "{items: [{title, subtitle?, value?, status?: \"ok\"|\"warn\"|\"error\", icon?, href?}], grid?, title?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "items"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "grid": {
+     "type": "boolean"
+    },
+    "items": {
+     "type": "array",
+     "maxItems": 200,
+     "items": {
+      "type": "object",
+      "required": [
+       "title"
+      ],
+      "properties": {
+       "title": {
+        "type": "string",
+        "maxLength": 200
+       },
+       "subtitle": {
+        "type": "string",
+        "maxLength": 300
+       },
+       "value": {
+        "type": [
+         "number",
+         "string"
+        ]
+       },
+       "status": {
+        "enum": [
+         "ok",
+         "warn",
+         "error"
+        ]
+       },
+       "icon": {
+        "type": "string",
+        "maxLength": 40
+       },
+       "href": {
+        "type": "string",
+        "maxLength": 2000
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "timeline",
+  "icon": "calendar-range",
+  "category": "data",
+  "pin": true,
+  "hint": "Events on a time axis, one lane per thing (jobs, deploys, runs).",
+  "fields": "{lanes: [{name, sub?, events: [{at: unix seconds|ISO date, state?: \"ok\"|\"error\"|\"running\"|\"planned\", label?}]}], start?, end?, now?, title?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "lanes"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "start": {
+     "type": [
+      "number",
+      "string"
+     ]
+    },
+    "end": {
+     "type": [
+      "number",
+      "string"
+     ]
+    },
+    "now": {
+     "type": [
+      "number",
+      "string"
+     ]
+    },
+    "lanes": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 30,
+     "items": {
+      "type": "object",
+      "required": [
+       "name",
+       "events"
+      ],
+      "properties": {
+       "name": {
+        "type": "string",
+        "maxLength": 80
+       },
+       "sub": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "events": {
+        "type": "array",
+        "maxItems": 500,
+        "items": {
+         "type": "object",
+         "required": [
+          "at"
+         ],
+         "properties": {
+          "at": {
+           "type": [
+            "number",
+            "string"
+           ]
+          },
+          "label": {
+           "type": "string",
+           "maxLength": 120
+          },
+          "state": {
+           "enum": [
+            "ok",
+            "error",
+            "running",
+            "planned"
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "progress",
+  "icon": "percent",
+  "category": "data",
+  "pin": true,
+  "hint": "Progress or quota bars (value out of max).",
+  "fields": "{items: [{label, value, max, unit?, hint?, format?: \"percent\"|\"fraction\"}]} or one {label, value, max}",
+  "schema": {
+   "type": "object",
+   "anyOf": [
+    {
+     "required": [
+      "items"
+     ]
+    },
+    {
+     "required": [
+      "label",
+      "value",
+      "max"
+     ]
+    }
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "label": {
+     "type": "string",
+     "maxLength": 120
+    },
+    "value": {
+     "type": "number"
+    },
+    "max": {
+     "type": "number"
+    },
+    "unit": {
+     "type": "string",
+     "maxLength": 20
+    },
+    "hint": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "format": {
+     "enum": [
+      "percent",
+      "fraction"
+     ]
+    },
+    "items": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 20,
+     "items": {
+      "type": "object",
+      "required": [
+       "label",
+       "value",
+       "max"
+      ],
+      "properties": {
+       "label": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "value": {
+        "type": "number"
+       },
+       "max": {
+        "type": "number"
+       },
+       "unit": {
+        "type": "string",
+        "maxLength": 20
+       },
+       "hint": {
+        "type": "string",
+        "maxLength": 200
+       },
+       "format": {
+        "enum": [
+         "percent",
+         "fraction"
+        ]
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "terminal",
+  "icon": "terminal",
+  "category": "code",
+  "raw": "output",
+  "hint": "A command and its output with the exit code (the body may also be the raw output).",
+  "fields": "{output, command?, exit_code?, duration_ms?, cwd?, title?} or raw text",
+  "schema": {
+   "type": "object",
+   "required": [
+    "output"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "output": {
+     "type": "string",
+     "maxLength": 200000
+    },
+    "command": {
+     "type": "string",
+     "maxLength": 2000
+    },
+    "exit_code": {
+     "type": "integer"
+    },
+    "duration_ms": {
+     "type": "number",
+     "minimum": 0
+    },
+    "cwd": {
+     "type": "string",
+     "maxLength": 500
+    }
+   }
+  }
+ },
+ {
+  "type": "diff",
+  "icon": "file-diff",
+  "category": "code",
+  "raw": "diff",
+  "hint": "A code change as a unified diff (the body may also be the raw diff).",
+  "fields": "{diff, path?, title?} or a raw unified diff",
+  "schema": {
+   "type": "object",
+   "required": [
+    "diff"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "diff": {
+     "type": "string",
+     "maxLength": 200000
+    },
+    "path": {
+     "type": "string",
+     "maxLength": 1000
+    }
+   }
+  }
+ },
+ {
+  "type": "file",
+  "icon": "image",
+  "category": "media",
+  "hint": "Files of this server shown inline: image, PDF, video, audio or document, by absolute path in the files root.",
+  "fields": "{path, caption?, title?} or {items: [{path, caption?}] (gallery, up to 24)}",
+  "schema": {
+   "type": "object",
+   "anyOf": [
+    {
+     "required": [
+      "path"
+     ]
+    },
+    {
+     "required": [
+      "items"
+     ]
+    }
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "path": {
+     "type": "string",
+     "maxLength": 4096
+    },
+    "caption": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "items": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 24,
+     "items": {
+      "type": "object",
+      "required": [
+       "path"
+      ],
+      "properties": {
+       "path": {
+        "type": "string",
+        "maxLength": 4096
+       },
+       "caption": {
+        "type": "string",
+        "maxLength": 300
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "link",
+  "icon": "link",
+  "category": "media",
+  "hint": "A web page, repository or ticket you refer to, as a card (no fetch: give its title and description).",
+  "fields": "{url, title?, description?, site?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "url"
+   ],
+   "properties": {
+    "url": {
+     "type": "string",
+     "maxLength": 2000
+    },
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 500
+    },
+    "site": {
+     "type": "string",
+     "maxLength": 80
+    }
+   }
+  }
+ },
+ {
+  "type": "form",
+  "icon": "sliders-horizontal",
+  "category": "interactive",
+  "hint": "Ask several questions at once (choices, numbers, dates); the answers come back as the user's next message.",
+  "fields": "{fields: [{id, label, type: \"text\"|\"textarea\"|\"number\"|\"select\"|\"choice\"|\"multi\"|\"checkbox\"|\"range\"|\"date\"|\"time\", options?, min?, max?, step?, unit?, default?, required?, placeholder?, hint?}], title?, description?, submit?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "fields"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 500
+    },
+    "submit": {
+     "type": "string",
+     "maxLength": 40
+    },
+    "fields": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 20,
+     "items": {
+      "type": "object",
+      "required": [
+       "id",
+       "label",
+       "type"
+      ],
+      "properties": {
+       "id": {
+        "type": "string",
+        "maxLength": 40
+       },
+       "label": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "hint": {
+        "type": "string",
+        "maxLength": 200
+       },
+       "placeholder": {
+        "type": "string",
+        "maxLength": 120
+       },
+       "unit": {
+        "type": "string",
+        "maxLength": 20
+       },
+       "type": {
+        "enum": [
+         "text",
+         "textarea",
+         "number",
+         "select",
+         "choice",
+         "multi",
+         "checkbox",
+         "range",
+         "date",
+         "time"
+        ]
+       },
+       "options": {
+        "type": "array",
+        "maxItems": 30,
+        "items": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 120
+          },
+          {
+           "type": "object",
+           "required": [
+            "label"
+           ],
+           "properties": {
+            "label": {
+             "type": "string",
+             "maxLength": 120
+            },
+            "value": {
+             "type": "string",
+             "maxLength": 120
+            }
+           }
+          }
+         ]
+        }
+       },
+       "min": {
+        "type": "number"
+       },
+       "max": {
+        "type": "number"
+       },
+       "step": {
+        "type": "number"
+       },
+       "required": {
+        "type": "boolean"
+       },
+       "default": {}
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "checklist",
+  "icon": "list-checks",
+  "category": "interactive",
+  "hint": "Steps the user ticks before an action; they can send the result back.",
+  "fields": "{items: [label | {label, checked?, hint?}], title?, submit?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "items"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "submit": {
+     "type": "string",
+     "maxLength": 40
+    },
+    "items": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 50,
+     "items": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 200
+       },
+       {
+        "type": "object",
+        "required": [
+         "label"
+        ],
+        "properties": {
+         "label": {
+          "type": "string",
+          "maxLength": 200
+         },
+         "hint": {
+          "type": "string",
+          "maxLength": 200
+         },
+         "checked": {
+          "type": "boolean"
+         }
+        }
+       }
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "type": "app",
+  "icon": "app-window",
+  "category": "interactive",
+  "raw": "html",
+  "hint": "A small self-contained HTML mini-app (calculator, simulator, game) in an isolated frame, no network.",
+  "fields": "{html, title?, height?} or raw HTML (inline <style>/<script> only)",
+  "schema": {
+   "type": "object",
+   "required": [
+    "html"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "html": {
+     "type": "string",
+     "maxLength": 200000
+    },
+    "height": {
+     "type": "integer",
+     "minimum": 80,
+     "maximum": 1200
+    }
+   }
+  }
+ },
+ {
+  "type": "created",
+  "icon": "check-circle",
+  "category": "organisation",
+  "hint": "Cards for what you just created (task, cron, notification, file, session) with a link to it.",
+  "fields": "{items: [{kind: \"task\"|\"cron\"|\"notification\"|\"file\"|\"session\"|\"project\"|\"extension\"|\"other\", title, subtitle?, id?, path?, href?}], title?}",
+  "schema": {
+   "type": "object",
+   "required": [
+    "items"
+   ],
+   "properties": {
+    "title": {
+     "type": "string",
+     "maxLength": 200
+    },
+    "source": {
+     "type": "string",
+     "maxLength": 300
+    },
+    "items": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 12,
+     "items": {
+      "type": "object",
+      "required": [
+       "kind",
+       "title"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "task",
+         "cron",
+         "notification",
+         "file",
+         "session",
+         "project",
+         "extension",
+         "other"
+        ]
+       },
+       "title": {
+        "type": "string",
+        "maxLength": 200
+       },
+       "subtitle": {
+        "type": "string",
+        "maxLength": 300
+       },
+       "id": {
+        "type": "string",
+        "maxLength": 200
+       },
+       "path": {
+        "type": "string",
+        "maxLength": 4096
+       },
+       "href": {
+        "type": "string",
+        "maxLength": 2000
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+]

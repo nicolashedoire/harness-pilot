@@ -9,9 +9,9 @@ from typing import Literal, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-from .. import bus, config, memory
+from .. import bus, config, memory, themes
 from ..security import require_auth
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_auth)])
@@ -59,30 +59,127 @@ def current() -> dict:
             "donation_url": str(cfg.get("donation_url") or "")}
 
 
-ACCENTS = ("blue", "clay", "violet", "green", "amber", "rose")
+ACCENTS = themes.ACCENTS
 
 
 class LookIn(BaseModel):
     theme: Literal["dark", "light", "system"]
-    accent: Literal[ACCENTS]  # type: ignore[valid-type]
-    tint: Literal["neutral", "tinted"] = "neutral"
+    accent: Optional[Literal[ACCENTS]] = None  # type: ignore[valid-type]
+    tint: Optional[Literal["neutral", "tinted"]] = None
+    palette: Optional[dict] = None
 
 
 def look() -> dict | None:
-    """The look last chosen in a signed-in browser (theme, accent, tint): the sign-in page and browsers that never
-    chose one show it. Not a secret - /api/auth/state returns it before sign-in."""
+    """The look last chosen in a signed-in browser (theme + palette; `accent` / `tint` = the palette's nearest
+    swatch and tint for older clients; `rev` grows with every palette change, so every device takes the new one).
+    The sign-in page and browsers that never chose one show it. Not a secret - /api/auth/state returns it before
+    sign-in."""
     data = config.load_config().get("look")
-    try:
-        return LookIn(**data).model_dump() if isinstance(data, dict) else None
-    except ValueError:
+    if not isinstance(data, dict) or data.get("theme") not in ("dark", "light", "system"):
         return None
+    out = {"theme": data["theme"], "accent": data.get("accent") if data.get("accent") in ACCENTS else "blue",
+           "tint": "tinted" if data.get("tint") == "tinted" else "neutral", "palette": None,
+           "rev": data.get("rev") if isinstance(data.get("rev"), int) else 0}
+    try:
+        out["palette"] = themes.clean_theme(data["palette"]) if isinstance(data.get("palette"), dict) else None
+    except themes.ThemeError:
+        pass
+    return out
 
 
 @router.put("/look")
 def put_look(body: LookIn):
-    if body.model_dump() != look():
-        config.update_config(look=body.model_dump())
+    old = look() or {"accent": "blue", "tint": "neutral", "palette": None, "rev": 0}
+    new = {"theme": body.theme, "accent": old["accent"], "tint": old["tint"], "palette": old["palette"], "rev": old["rev"]}
+    if body.palette is not None:
+        try:
+            palette = themes.clean_theme(body.palette)
+        except themes.ThemeError as e:
+            raise HTTPException(422, detail={"error": "invalid_theme", "message": str(e)}) from None
+        new.update(palette=palette, accent=body.accent or themes.nearest_accent(palette), tint=palette["tint"])
+    elif (body.accent and body.accent != old["accent"]) or (body.tint and body.tint != old["tint"]):
+        # a client from before palettes: its accent + tint, the base and buttons kept
+        accent, tint = body.accent or old["accent"], body.tint or old["tint"]
+        new.update(palette=themes.legacy_theme(accent, tint, old["palette"]), accent=accent, tint=tint)
+    changed = new["palette"] != old["palette"]
+    if changed:
+        new["rev"] = old["rev"] + 1
+    if new != look():
+        config.update_config(look=new)
+    if changed:
+        bus.invalidate("look")
     return {"ok": True, "look": look()}
+
+
+# ---- saved themes ("My themes") and the theme a session wrote (Settings -> Appearance) ---------------------------
+def _theme_error(e: Exception) -> HTTPException:
+    if isinstance(e, themes.ThemeLimit):
+        return HTTPException(409, detail={"error": "too_many_themes", "message": str(e)})
+    if isinstance(e, themes.ThemeNotFound):
+        return HTTPException(404, detail={"error": "not_found", "message": "Theme not found"})
+    return HTTPException(422, detail={"error": "invalid_theme", "message": str(e)})
+
+
+class SavedThemeIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    theme: dict
+    source: Literal[themes.SOURCES] = "imported"  # type: ignore[valid-type]
+    from_: str = Field("", alias="from", max_length=200)
+
+
+class ThemeNameIn(BaseModel):
+    name: str = Field(max_length=200)
+
+
+@router.get("/themes")
+def get_themes():
+    return {"themes": themes.saved(), "max": themes.SAVED_MAX}
+
+
+@router.post("/themes")
+def post_theme(body: SavedThemeIn):
+    try:
+        return themes.save_theme(body.theme, body.source, body.from_)
+    except (themes.ThemeError, themes.ThemeLimit) as e:
+        raise _theme_error(e) from None
+
+
+@router.patch("/themes/{tid}")
+def patch_theme(tid: str, body: ThemeNameIn):
+    try:
+        return themes.rename_theme(tid, body.name)
+    except (themes.ThemeError, themes.ThemeNotFound) as e:
+        raise _theme_error(e) from None
+
+
+@router.delete("/themes/{tid}")
+def delete_theme(tid: str):
+    try:
+        themes.delete_theme(tid)
+    except themes.ThemeNotFound as e:
+        raise _theme_error(e) from None
+    return {"ok": True}
+
+
+@router.get("/themes/session/{sid}")
+def session_theme(sid: str, since: Optional[float] = None):
+    """The newest theme file the session wrote in its topic folder (theme generator), validated by clean_theme."""
+    from .. import workspace
+    from ..sessions import service
+    s = service.get_session(sid)
+    if not s:
+        raise HTTPException(404, detail={"error": "not_found", "message": "Session not found"})
+    try:
+        folder = workspace.topic_dir(s["path"])
+    except ValueError:
+        raise HTTPException(404, detail={"error": "no_theme", "message": "The session's topic is gone"}) from None
+    start = since if since is not None and since == since else float(s.get("created") or 0) - 2
+    try:
+        return themes.latest_file(folder, start)
+    except themes.ThemeNotFound:
+        raise HTTPException(404, detail={"error": "no_theme", "message": "No theme file written by this session yet"}) from None
+    except themes.ThemeError as e:
+        raise _theme_error(e) from None
 
 
 PROFILE_COLORS = ("clay", "blue", "violet", "green", "amber", "rose", "teal", "zinc")   # = the task project swatches

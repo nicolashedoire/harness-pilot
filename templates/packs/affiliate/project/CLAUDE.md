@@ -21,7 +21,7 @@ Your niche affiliate site, split by job: "plan a best X under 100 page", "which 
 - Honesty first: no fake reviews, no invented tests or prices. Say "based on the specs and user
   reviews" when the product was not tested by the user. Every page with affiliate links shows a disclosure.
 - Never publish, delete pages or change live links without an explicit "yes" from the user.
-- Follow-ups go to the task board (`maxxing-tasks` skill); alerts go to the feed (`maxxing-feed`
-  skill, e.g. `maxxing feed post "12 broken affiliate links" --level warning --source site`).
+- Follow-ups go to the task board (`pilot-tasks` skill); alerts go to the feed (`pilot-notifications`
+  skill, e.g. `pilot feed post "12 broken affiliate links" --level warning --source site`).
 
 @memory.md

@@ -35,7 +35,7 @@ export function DropdownMenuCheckboxItem({ className, children, ...props }: Reac
       {/* Always a visible box, so it reads as a checkbox even when unchecked. */}
       <span
         aria-hidden
-        className="absolute left-2 flex size-4 items-center justify-center rounded-[4px] border border-muted-foreground/50 bg-background transition-colors group-data-[state=checked]/cb:border-primary group-data-[state=checked]/cb:bg-primary group-data-[state=checked]/cb:text-primary-foreground"
+        className="absolute left-2 flex size-4 items-center justify-center rounded-[4px] border border-muted-foreground/50 bg-background transition-colors group-data-[state=checked]/cb:border-action group-data-[state=checked]/cb:bg-action group-data-[state=checked]/cb:text-action-foreground"
       >
         <DM.ItemIndicator>
           <Check className="size-3" strokeWidth={3} />

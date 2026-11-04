@@ -274,7 +274,7 @@ function AskClaude({ r }: { r: InfraResource }) {
   const send = () => {
     const ctx = [
       `Infra resource \`${r.id}\` (${r.kind} "${r.name}", ${locationLabel(r.location, t)}${r.urls[0] ? `, ${r.urls[0]}` : ''}).`,
-      `Status: ${r.status}${r.status_detail ? ` (${r.status_detail})` : ''}. Details: \`maxxing infra list --json\` (skill maxxing-infra).`,
+      `Status: ${r.status}${r.status_detail ? ` (${r.status_detail})` : ''}. Details: \`pilot infra list --json\` (skill pilot-infra).`,
       '',
       q.trim(),
     ].join('\n')

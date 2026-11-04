@@ -11,7 +11,7 @@ from . import cli
 def _configure(p) -> None:
     from . import feed
     sub = p.add_subparsers(dest="feed_cmd", required=True)
-    s = sub.add_parser("post", help="add an event to the feed (dashboard, and Telegram per its rules)")
+    s = sub.add_parser("post", help="add an event to the feed (notifications, push and Telegram per their rules)")
     s.add_argument("title")
     s.add_argument("--body", default="", help="details (a few lines)")
     s.add_argument("--level", default="info", choices=feed.LEVELS)
@@ -24,7 +24,8 @@ def _configure(p) -> None:
                    help="a value kept with the event (repeatable), e.g. --param site=blog")
     s.add_argument("--link", action="append", default=[], metavar="LABEL=URL",
                    help="a button under the event (repeatable, max 4): an app path (/...) or an https:// URL")
-    s.add_argument("--quiet", action="store_true", help="never post this one to Telegram")
+    s.add_argument("--quiet", action="store_true",
+                   help="in the feed only: no Telegram message and no push notification")
     s.add_argument("--json", action="store_true")
     s = sub.add_parser("list", help="latest events (! = needs attention)")
     s.add_argument("--unread", action="store_true")

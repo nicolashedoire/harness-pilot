@@ -12,7 +12,7 @@ Quotes, proposals and invoices as clean PDFs: "quote for Example Ltd: website re
 - Seller details, rates, currency, tax and payment terms come from the project `memory.md`; client
   details from `../clients/<client>.md`. Ask for anything missing, never invent it.
 - Build each document as HTML, then the PDF with the `pdf-document` skill
-  (`maxxing pdf in.html out.pdf`), and show the PDF path. The user reviews before sending.
+  (`pilot pdf in.html out.pdf`), and show the PDF path. The user reviews before sending.
 - Never edit an issued invoice: corrections are a credit note plus a new invoice.
 
 ## First session

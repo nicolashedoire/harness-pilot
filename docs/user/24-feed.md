@@ -15,7 +15,8 @@ deployments, important e-mails, any script's result - in one place instead of ch
   *System*, *Webhooks*), *Unread only*, *Mark all as read*. Open an event to see its details and, for a folded row,
   each occurrence.
 - **Dashboard**: a **To handle** card appears only when something needs you.
-- **In a session**: a discussion paused by its limit shows a banner with **Resume**.
+- **In a session**: a discussion paused by its limit shows a banner with the time it paused, **Change limits** and
+  **Resume**.
 - **In this browser**: a short sound per level (choose the sounds and the volume, or none) and, when the app is in
   the background, a system notification.
 - **Push notifications** (optional): allow them on a phone or a computer and the important events arrive even when
@@ -65,16 +66,17 @@ signing secret if you have it, **Create**: copy the URL into the service. The di
 ## From any script
 
 ```bash
-maxxing feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
+pilot feed post "Invoice from ACME: 39 EUR due Friday" --source mail --level warning \
   --body "From billing@acme.example" --dedupe "msg-1234"
 ```
 
 `--level` info | success | warning | error · `--source` short name · `--url` link · `--dedupe KEY`
-(the same key twice is ignored) · `--group KEY` (fold repeats) · `--quiet` (never to Telegram) ·
+(the same key twice is ignored) · `--group KEY` (fold repeats) · `--quiet` (in the feed only: no Telegram message,
+no push notification, no sound or notice in the app) ·
 `--kind NAME` (your own type of event, e.g. `backup.offsite`: it gets its own row in the Telegram and push settings) ·
 `--param NAME=VALUE` (details kept with the event) · `--link "Label=https://..."` (a button under the event, up to 4;
 an address starting with `https://` or a page of the app such as `/files?path=...`).
-`maxxing feed list` (`--pending`: what needs attention), `maxxing feed read-all`. Run the script with a cron job.
+`pilot feed list` (`--pending`: what needs attention), `pilot feed read-all`. Run the script with a cron job.
 
 Just ask Claude: *"notify me when an e-mail from my accountant arrives"*, *"tell me when the site is
 down"*, *"connect my Shopify orders"* - it writes the script and the job, or sets up the webhook.
@@ -101,7 +103,8 @@ Settings -> Notifications -> **On this device** -> **Receive even when the app i
 (phone or computer) where you want them; on an iPhone, add harness-pilot to the home screen first. **Send a test**
 checks that they arrive. By default warnings and errors are pushed; in **What and where**, the *Browser* and *Sound*
 columns choose per type of event whether it reaches this browser and whether it makes a sound (e.g. *Session
-finished: browser, silent*). Push needs HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is
+finished: browser, silent*). A webhook or a script is pushed with all its events while its *Browser* box is ticked
+(sales ring by default), and not at all once you untick it. Push needs HTTPS (domain mode, or Tailscale with HTTPS); a browser that unsubscribes is
 forgotten by itself.
 
 ## Good to know

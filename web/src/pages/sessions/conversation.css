@@ -1,0 +1,46 @@
+/* Conversation (pages/sessions): the answer's reading typography and the lanes of a discussion between two agents.
+ * Scoped to the sessions page (loaded with its chunk). Colours are theme tokens only: the agents' lanes use two
+ * chart series slots, named here once. */
+
+:root {
+  --agent-claude: var(--series-2);
+  --agent-codex: var(--series-3);
+}
+
+/* Answer text: 15 px / 1.7, modest headings, quiet tables. Direct children only: blocks rendered inside an answer
+ * keep their own look. */
+.mx-answer { font-size: 15px; line-height: 1.7; }
+.mx-answer > h1 { font-size: 1.125rem; font-weight: 620; letter-spacing: -0.01em; margin: 1.4rem 0 0.45rem; }
+.mx-answer > h2 { font-size: 1.05rem; font-weight: 600; margin: 1.3rem 0 0.4rem; padding-bottom: 0; border-bottom: 0; }
+.mx-answer > h3,
+.mx-answer > h4 { font-size: 1rem; font-weight: 600; margin: 1.1rem 0 0.3rem; }
+.mx-answer > p,
+.mx-answer > ul,
+.mx-answer > ol,
+.mx-answer > blockquote { margin: 0.65rem 0; }
+.mx-answer li { margin: 0.25rem 0; }
+.mx-answer strong { font-weight: 600; color: var(--color-foreground); }
+.mx-answer > table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0.9rem 0;
+  /* the frame hugs the table, which scrolls sideways when wider than the column (prose-mx makes tables blocks) */
+  width: fit-content;
+  max-width: 100%;
+}
+.mx-answer > table th,
+.mx-answer > table td { border: 0; border-top: 1px solid var(--color-border); padding: 0.55rem 0.875rem; text-align: left; }
+.mx-answer > table thead th { border-top: 0; background: var(--color-muted); color: var(--color-muted-foreground); font-weight: 500; }
+html[data-compact] .mx-answer { line-height: 1.65; }
+/* A conversation block (features/blocks) keeps the app's body type, not the answer's reading size it sits in. */
+.mx-answer [data-mx-block] { font-size: 14px; line-height: 1.5; }
+
+/* Discussion: each agent has its lane (left border) and its name in its colour. */
+.mx-lane[data-agent='claude'] { border-color: color-mix(in oklab, var(--agent-claude) 80%, transparent); }
+.mx-lane[data-agent='codex'] { border-color: color-mix(in oklab, var(--agent-codex) 80%, transparent); }
+.mx-lane[data-agent='claude'] .mx-agent-name { color: color-mix(in oklab, var(--agent-claude) 70%, var(--color-foreground)); }
+.mx-lane[data-agent='codex'] .mx-agent-name { color: color-mix(in oklab, var(--agent-codex) 70%, var(--color-foreground)); }

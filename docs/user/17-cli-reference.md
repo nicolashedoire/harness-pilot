@@ -5,25 +5,28 @@ section: Reference
 
 This reference describes inherited server commands. The Linux installer, service commands and update flow have not been validated for this repository. In the verified local setup, use the repository's `scripts/dev-local.sh`; the command is run from the project's Python environment rather than assumed to exist in `/usr/local/bin`. See [Local installation](installation).
 
+The command is `pilot`. `maxxing` is the same command under its earlier name and keeps working everywhere (scripts, scheduled jobs, habits): both names run the same program with the same settings. In the local setup, run it from the `server/` folder as `uv run pilot ...`; on a server installation, the installer and every `pilot init` link `/usr/local/bin/pilot` to `/usr/local/bin/maxxing` (an existing `pilot` command of another program is never replaced: use `maxxing` there).
+
 ## Server and setup
 
 | Command | Purpose |
 |---|---|
-| `maxxing serve [--host IP] [--port N]` | run the web server (used by the `claude-maxxing` service) |
-| `maxxing setup-link [--reset]` | print the one-time setup link; `--reset` forgets the password and starts the setup again |
-| `maxxing password` | set a new UI password (interactive) |
-| `maxxing 2fa status\|off\|forget-browsers` | two-step sign-in with Telegram: state, turn it off (the way back in when Telegram does not answer), make every browser ask again |
-| `maxxing status [--json]` | version, URL, service, Claude auth, Telegram, backup, paths |
-| `maxxing doctor [--json] [--live] [--offline] [--deps]` | check the installation; `--live` makes a real Claude call, `--offline` skips the update checks (GitHub, Claude Code release), `--deps` also looks up known vulnerabilities of the installed packages (osv.dev) |
-| `maxxing harden [--undo] [--no-restart]` | apply (or remove) the systemd sandbox of the service, then restart it; restores the previous settings if the service does not come back (see [Security](security)) |
+| `pilot serve [--host IP] [--port N]` | run the web server (used by the `claude-maxxing` service) |
+| `pilot setup-link [--reset]` | print the one-time setup link; `--reset` forgets the password and starts the setup again |
+| `pilot password` | set a new UI password (interactive) |
+| `pilot 2fa status\|off\|forget-browsers` | two-step sign-in with Telegram: state, turn it off (the way back in when Telegram does not answer), make every browser ask again |
+| `pilot status [--json]` | version, URL, service, Claude auth, Telegram, backup, paths |
+| `pilot doctor [--json] [--live] [--offline] [--deps]` | check the installation; `--live` makes a real Claude call, `--offline` skips the update checks (GitHub, Claude Code release), `--deps` also looks up known vulnerabilities of the installed packages (osv.dev) |
+| `pilot harden [--undo] [--no-restart]` | apply (or remove) the systemd sandbox of the service, then restart it; restores the previous settings if the service does not come back (see [Security](security)) |
 
-## maxxing init
+## pilot init
 
 Creates or refreshes the configuration, workspace, skills and default jobs. Safe to run again:
 existing values and files are kept unless you pass a flag.
 Workspace templates (default projects `general`, `system`, `tutorial`) are copied only when
 missing, and a default project or topic you deleted is never re-created. Default jobs are created
 once each (Memory compaction, Check for updates, Morning tasks and Renewal reminder disabled).
+Skills renamed by a version (the product skills were called `maxxing-…` before `pilot-…`) are installed under their new name and the old copies removed; the old names are also replaced in the lines of your workspace files that are still the product's own text and in the prompts of default jobs you never edited - text you wrote is never changed (see [Skills](skills)).
 
 | Option | Effect |
 |---|---|
@@ -40,12 +43,12 @@ once each (Memory compaction, Check for updates, Morning tasks and Renewal remin
 | `--no-crons` | do not create the default jobs |
 | `--quiet`, `--json` | output control |
 
-Example: `printf %s "$TOKEN" | maxxing init --quiet --secret-from-stdin claude_oauth_token`.
+Example: `printf %s "$TOKEN" | pilot init --quiet --secret-from-stdin claude_oauth_token`.
 
 Restart the service after changing the port, bind address or public URL:
 `systemctl restart claude-maxxing`.
 
-## maxxing update
+## pilot update
 
 | Option | Effect |
 |---|---|
@@ -69,68 +72,68 @@ instructions for Claude to adapt your workspace. The easiest path is the topic `
 say "update" and Claude checks, explains, updates after your yes, then applies these notes.
 
 **Signed updates only (optional).** Set `"update_verify_signature": true` in
-`/var/lib/claude-maxxing/config.json` and `maxxing update` installs a new version only if its commit, or a tag
+`/var/lib/claude-maxxing/config.json` and `pilot update` installs a new version only if its commit, or a tag
 pointing at it, carries a valid signature from a key git trusts on this server (`git verify-commit` /
 `git verify-tag`: import the maintainer's GPG key with `gpg --import`, or point `gpg.ssh.allowedSignersFile` at
 their SSH key). Otherwise the update stops before changing anything (exit code `1`, a warning in the
-notifications feed and on Telegram) and the current version keeps running. `maxxing doctor` tells whether the
+notifications feed and on Telegram) and the current version keeps running. `pilot doctor` tells whether the
 latest fetched version passes the check. Off by default.
 
 ## License
 
 This version uses the MIT license and does not require an enterprise key. Legacy license commands are inherited and are not needed; see [License](license).
 
-## maxxing video, maxxing pdf
+## pilot video, pilot pdf
 
 | Command | Effect |
 |---|---|
-| `maxxing video new DIR` | create a Remotion project in DIR (node_modules linked to the shared install) |
-| `maxxing video status` | Node.js, Remotion and the headless browser on this server (exit 1 if not ready) |
-| `maxxing pdf IN.html OUT.pdf` | print an HTML file or an `https://` URL to PDF (A4, backgrounds) |
+| `pilot video new DIR` | create a Remotion project in DIR (node_modules linked to the shared install) |
+| `pilot video status` | Node.js, Remotion and the headless browser on this server (exit 1 if not ready) |
+| `pilot pdf IN.html OUT.pdf` | print an HTML file or an `https://` URL to PDF (A4, backgrounds) |
 | `scrapling extract get\|fetch\|stealthy-fetch URL OUT.md` | fetch a page (HTTP / browser / stealthy browser) to Markdown, text or HTML |
 | `scrapling-python SCRIPT.py` | run a scraping script with Scrapling and its browser |
-| `bash /opt/claude-maxxing/install.sh --tools` | (re)install Node.js, Chromium, Remotion and Scrapling (= `maxxing deps update`) |
+| `bash /opt/claude-maxxing/install.sh --tools` | (re)install Node.js, Chromium, Remotion and Scrapling (= `pilot deps update`) |
 
-## maxxing import
+## pilot import
 
 | Command | Effect |
 |---|---|
-| `maxxing import --prompt [hermes\|claude-code\|openclaw\|other]` | print the prompt to give your old agent |
-| `maxxing import ZIP --dry-run [--json]` | show what would be imported |
-| `maxxing import ZIP [--json]` | import it (nothing overwritten; see [Import](import)) |
+| `pilot import --prompt [hermes\|claude-code\|openclaw\|other]` | print the prompt to give your old agent |
+| `pilot import ZIP --dry-run [--json]` | show what would be imported |
+| `pilot import ZIP [--json]` | import it (nothing overwritten; see [Import](import)) |
 
-## maxxing custom
+## pilot custom
 
 Changes made to the product code, recorded so updates carry them over (see [Customizing](customizing)).
 
 | Command | Effect |
 |---|---|
-| `maxxing custom` / `status [--json]` | customizations, unsaved changes in the code directory, pending update |
-| `maxxing custom save "TITLE" --why "REASON" [--files F…] [--check "CMD"]` | commit the uncommitted changes as one customization (refused under `web/`); `--check` = a command that succeeds while it works, run after every update |
-| `maxxing custom check ID "CMD"` | set (or clear with `""`) the check of a customization |
-| `maxxing custom drop ID` | remove one customization |
-| `maxxing custom export` | rewrite `<workspace>/CUSTOMIZATIONS.md` and `customizations/*.patch` |
-| `maxxing custom restore [--from DIR]` | re-apply the saved patches (new server) |
+| `pilot custom` / `status [--json]` | customizations, unsaved changes in the code directory, pending update |
+| `pilot custom save "TITLE" --why "REASON" [--files F…] [--check "CMD"]` | commit the uncommitted changes as one customization (refused under `web/`); `--check` = a command that succeeds while it works, run after every update |
+| `pilot custom check ID "CMD"` | set (or clear with `""`) the check of a customization |
+| `pilot custom drop ID` | remove one customization |
+| `pilot custom export` | rewrite `<workspace>/CUSTOMIZATIONS.md` and `customizations/*.patch` |
+| `pilot custom restore [--from DIR]` | re-apply the saved patches (new server) |
 
-## maxxing deps
+## pilot deps
 
 The external components (`server/maxxing/deps.toml`: uv, Python, Node.js, Claude Code, Caddy, Scrapling, Chromium,
 Remotion, the Whisper models, Garage). As root.
 
 | Command | Effect |
 |---|---|
-| `maxxing deps list [--json]` | installed and expected version of each one (exit 1 when one is missing or outdated) |
-| `maxxing deps verify [NAME...]` | checksums of the installed binaries, files not owned by root or writable by others |
-| `maxxing deps update [NAME...] [--notify]` | install the pinned versions next to the old ones, switch once they work (every `maxxing update` does it) |
-| `maxxing deps remove NAME [--force]` | delete what the manifest lists for it (`--force` for uv, Python, Claude Code) |
-| `maxxing deps clean [--dry-run] [--caches]` | old versions, unused browsers, leftovers, oversized logs (weekly job); `--caches` also empties root's uv / npm / pip / npx caches, shared with the other tools of the server |
-| `maxxing deps check [--notify]` | known vulnerabilities (osv.dev) in the lockfiles and components (weekly job, notification) |
+| `pilot deps list [--json]` | installed and expected version of each one (exit 1 when one is missing or outdated) |
+| `pilot deps verify [NAME...]` | checksums of the installed binaries, files not owned by root or writable by others |
+| `pilot deps update [NAME...] [--notify]` | install the pinned versions next to the old ones, switch once they work (every `pilot update` does it) |
+| `pilot deps remove NAME [--force]` | delete what the manifest lists for it (`--force` for uv, Python, Claude Code) |
+| `pilot deps clean [--dry-run] [--caches]` | old versions, unused browsers, leftovers, oversized logs (weekly job); `--caches` also empties root's uv / npm / pip / npx caches, shared with the other tools of the server |
+| `pilot deps check [--notify]` | known vulnerabilities (osv.dev) in the lockfiles and components (weekly job, notification) |
 
-## maxxing uninstall
+## pilot uninstall
 
 | Option | Effect |
 |---|---|
-| (none) | remove the service, Caddy site, managed crontab block, product skills and `/usr/local/bin/maxxing`; keep code, state and workspace |
+| (none) | remove the service, Caddy site, managed crontab block, product skills and the `/usr/local/bin/pilot` and `/usr/local/bin/maxxing` commands; keep code, state and workspace |
 | `--purge` | also delete the code (`/opt/claude-maxxing`), the state (`/var/lib/claude-maxxing`) and the external components of `deps.toml` (uv, Node.js, the tools; Claude Code and Caddy when the installer installed them; its swap file); a code or state directory that is a link is kept |
 | `--purge-workspace` | also delete the workspace (irreversible; kept if it is a link, a system directory or has no `CLAUDE.md` nor `projects/`) |
 | `--yes` | do not ask for confirmation |
@@ -139,48 +142,48 @@ Remotion, the Whisper models, Garage). As root.
 
 | Command | Purpose |
 |---|---|
-| `maxxing cron list` | jobs, schedules, last results |
-| `maxxing cron run <id>` | run a job now in your terminal and wait for it; `--detach` starts it in its own systemd unit with the memory limits and returns (what the crontab calls); `--if-due` runs it only if its schedule matches now in your zone (server clock kept) |
-| `maxxing cron sync` | rewrite the managed crontab block from the job list |
+| `pilot cron list` | jobs, schedules, last results |
+| `pilot cron run <id>` | run a job now in your terminal and wait for it; `--detach` starts it in its own systemd unit with the memory limits and returns (what the crontab calls); `--if-due` runs it only if its schedule matches now in your zone (server clock kept) |
+| `pilot cron sync` | rewrite the managed crontab block from the job list |
 
 ## Notifications feed
 
 | Command | Purpose |
 |---|---|
-| `maxxing feed post "Title" [--body] [--level info\|success\|warning\|error] [--source NAME] [--url] [--dedupe KEY] [--group KEY] [--quiet] [--json]` | add an event (dashboard, and Telegram per the source's rule); `--dedupe` ignores a repeat, `--group` folds repeats |
-| `maxxing feed list [--unread] [--source] [--limit] [--json]` | latest events |
-| `maxxing feed read-all` | mark everything read |
-| `maxxing packs list [--json]` | starter projects and whether they are installed |
-| `maxxing packs add ID [ID...] [--json]` | add starter projects (never overwrites: only missing files are added; jobs created disabled) |
+| `pilot feed post "Title" [--body] [--level info\|success\|warning\|error] [--source NAME] [--url] [--dedupe KEY] [--group KEY] [--quiet] [--json]` | add an event (notifications, and push / Telegram per your settings); `--dedupe` ignores a repeat, `--group` folds repeats, `--quiet` keeps it in the notifications only (no push, no Telegram) |
+| `pilot feed list [--unread] [--source] [--limit] [--json]` | latest events |
+| `pilot feed read-all` | mark everything read |
+| `pilot packs list [--json]` | starter projects and whether they are installed |
+| `pilot packs add ID [ID...] [--json]` | add starter projects (never overwrites: only missing files are added; jobs created disabled) |
 
 ## Keys
 
 | Command | Purpose |
 |---|---|
-| `maxxing keys list [--json]` | names, notes and whether each key is exposed (never the values) |
-| `maxxing keys get NAME` | print a value (exit code 1 when missing) |
-| `printf %s "$VALUE" \| maxxing keys set NAME [--note TEXT] [--no-expose]` | create or update a key; the value comes from stdin, never from the command line. A new key is exposed (environment variable of every session and shell job) unless `--no-expose`; an update keeps its note and exposure |
-| `maxxing keys delete NAME` | remove a key |
-| `maxxing infra status` / `infra list [--kind K] [--json]` | the Infra inventory: sources, problems, every site / database / bucket / domain / server (last snapshot) |
-| `maxxing infra refresh` | read everything now (this server, other servers over SSH, Cloudflare, Hostinger, URL checks) |
-| `maxxing infra site add NAME (--dir D \| --port N) [--host H] [--dns] [--project P]` | put a site online: `https://<harness-pilot address>/<NAME>/` (sandboxed) or its own host; `site remove`, `site list`, `reserved` |
-| `maxxing infra db install` / `db create NAME` / `db sqlite PATH` / `db backup` | PostgreSQL on localhost, one database + user per app (URL in the vault as `DB_<NAME>_URL`), nightly backups |
-| `maxxing infra bucket install` / `bucket create NAME [--public]` | S3 buckets on this server (Garage), keys in the vault as `S3_<NAME>_*` |
-| `maxxing infra server add NAME HOST [--user U] [--key K]` | read another server over SSH (`server remove`, `server list`) |
-| `maxxing infra annotate ID [--project P] [--note T] [--hide\|--show]` | attach a resource to a project, note it, hide it |
+| `pilot keys list [--json]` | names, notes and whether each key is exposed (never the values) |
+| `pilot keys get NAME` | print a value (exit code 1 when missing) |
+| `printf %s "$VALUE" \| pilot keys set NAME [--note TEXT] [--no-expose]` | create or update a key; the value comes from stdin, never from the command line. A new key is exposed (environment variable of every session and shell job) unless `--no-expose`; an update keeps its note and exposure |
+| `pilot keys delete NAME` | remove a key |
+| `pilot infra status` / `infra list [--kind K] [--json]` | the Infra inventory: sources, problems, every site / database / bucket / domain / server (last snapshot) |
+| `pilot infra refresh` | read everything now (this server, other servers over SSH, Cloudflare, Hostinger, URL checks) |
+| `pilot infra site add NAME (--dir D \| --port N) [--host H] [--dns] [--project P]` | put a site online: `https://<harness-pilot address>/<NAME>/` (sandboxed) or its own host; `site remove`, `site list`, `reserved` |
+| `pilot infra db install` / `db create NAME` / `db sqlite PATH` / `db backup` | PostgreSQL on localhost, one database + user per app (URL in the vault as `DB_<NAME>_URL`), nightly backups |
+| `pilot infra bucket install` / `bucket create NAME [--public]` | S3 buckets on this server (Garage), keys in the vault as `S3_<NAME>_*` |
+| `pilot infra server add NAME HOST [--user U] [--key K]` | read another server over SSH (`server remove`, `server list`) |
+| `pilot infra annotate ID [--project P] [--note T] [--hide\|--show]` | attach a resource to a project, note it, hide it |
 
 Scripts read keys from the environment (`os.environ["NAME"]`, `$NAME`); a script that renews a token
-(a 24-hour shop token, a webhook secret it just created) writes it back with `maxxing keys set`.
+(a 24-hour shop token, a webhook secret it just created) writes it back with `pilot keys set`.
 
 ## MCP servers
 
 | Command | Purpose |
 |---|---|
-| `maxxing mcp list [--json] [--no-check]` | every MCP server of Claude Code, where it applies and its state (asks Claude Code first, a few seconds) |
-| `maxxing mcp add NAME URL [--where projects/P/topics/T] [--header 'Name: value'] [--sse]` | add a server by address, for every session or one topic; secrets as `${KEY}` from the vault |
-| `maxxing mcp add NAME --command 'npx -y pkg' [--env KEY=VALUE] [--where …]` | add a local program |
-| `maxxing mcp remove NAME [--where …]` | remove it |
-| `maxxing mcp load NAME [--session ID]` | in a session (setting *Load MCP servers only when a session needs them*): load that server from the next turn on; harness-pilot continues the turn by itself |
+| `pilot mcp list [--json] [--no-check]` | every MCP server of Claude Code, where it applies and its state (asks Claude Code first, a few seconds) |
+| `pilot mcp add NAME URL [--where projects/P/topics/T] [--header 'Name: value'] [--sse]` | add a server by address, for every session or one topic; secrets as `${KEY}` from the vault |
+| `pilot mcp add NAME --command 'npx -y pkg' [--env KEY=VALUE] [--where …]` | add a local program |
+| `pilot mcp remove NAME [--where …]` | remove it |
+| `pilot mcp load NAME [--session ID]` | in a session (setting *Load MCP servers only when a session needs them*): load that server from the next turn on; harness-pilot continues the turn by itself |
 
 OAuth sign-ins (state "To connect") are done in Settings -> MCP -> **Connect**. See [MCP servers](28-mcp.md).
 
@@ -188,29 +191,29 @@ OAuth sign-ins (state "To connect") are done in Settings -> MCP -> **Connect**. 
 
 | Command | Purpose |
 |---|---|
-| `maxxing memory [--json]` | every memory.md with its line count and the line limit (Settings -> Memory) |
-| `maxxing sessions compact-logs [--dry-run]` | clip the tool outputs of existing session logs and drop the bulky Claude start-up lists and progress lines (frees disk space; `--dry-run` only reports what would be saved) |
-| `maxxing sessions token-report [--days N] [--json]` | where the tokens of your sessions go, read from Claude Code's transcripts: context size per call, cache rewritten after an idle hour or a model switch, the tools whose outputs fill the context, and what automatic compaction at 400k / 300k / 250k / 200k would have saved on the same calls |
+| `pilot memory [--json]` | every memory.md with its line count and the line limit (Settings -> Memory) |
+| `pilot sessions compact-logs [--dry-run]` | clip the tool outputs of existing session logs and drop the bulky Claude start-up lists and progress lines (frees disk space; `--dry-run` only reports what would be saved) |
+| `pilot sessions token-report [--days N] [--json]` | where the tokens of your sessions go, read from Claude Code's transcripts: context size per call, cache rewritten after an idle hour or a model switch, the tools whose outputs fill the context, and what automatic compaction at 400k / 300k / 250k / 200k would have saved on the same calls |
 
 ## Backup
 
 | Command | Purpose |
 |---|---|
-| `maxxing backup status [--json]` | configuration and last run |
-| `maxxing backup run` | back up now (exit code 2 if a secret was found) |
-| `maxxing backup restore [--ref COMMIT]` | restore the whitelisted files |
-| `maxxing backup restore --from OWNER/NAME [--token T]` | new server: configure an existing backup repository, then restore (token also from `$MAXXING_GITHUB_TOKEN`) |
+| `pilot backup status [--json]` | configuration and last run |
+| `pilot backup run` | back up now (exit code 2 if a secret was found) |
+| `pilot backup restore [--ref COMMIT]` | restore the whitelisted files |
+| `pilot backup restore --from OWNER/NAME [--token T]` | new server: configure an existing backup repository, then restore (token also from `$MAXXING_GITHUB_TOKEN`) |
 
 ## Telegram
 
 | Command | Purpose |
 |---|---|
-| `maxxing telegram status [--json]` | bot, chat, threads, settings, last error |
-| `maxxing telegram test` | send a test message |
-| `maxxing voice status [--json]` | voice messages: engine, model, readiness |
-| `maxxing voice set [--engine] [--model] [--language]` | change the voice settings |
-| `maxxing voice download [model]` | download a local speech model |
-| `maxxing voice transcribe <file>` | transcribe an audio file with the configured engine |
+| `pilot telegram status [--json]` | bot, chat, threads, settings, last error |
+| `pilot telegram test` | send a test message |
+| `pilot voice status [--json]` | voice messages: engine, model, readiness |
+| `pilot voice set [--engine] [--model] [--language]` | change the voice settings |
+| `pilot voice download [model]` | download a local speech model |
+| `pilot voice transcribe <file>` | transcribe an audio file with the configured engine |
 
 ## Installer
 
@@ -221,5 +224,5 @@ The inherited server installer and update commands have not yet been validated f
 | Variable | Use |
 |---|---|
 | `MAXXING_STATE` | state directory (default `/var/lib/claude-maxxing`); set by the service and the CLI wrapper |
-| `MAXXING_GITHUB_TOKEN` | token for `maxxing backup restore --from` |
+| `MAXXING_GITHUB_TOKEN` | token for `pilot backup restore --from` |
 | `NO_COLOR` | plain output |

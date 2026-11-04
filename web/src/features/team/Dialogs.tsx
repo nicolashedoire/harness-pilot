@@ -288,7 +288,7 @@ export function NewChatDialog({
                     <span
                       className={cn(
                         'inline-flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors',
-                        on ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                        on ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40',
                       )}
                     >
                       {on && <Check className="size-3" strokeWidth={3} />}
@@ -393,7 +393,7 @@ export function GroupDialog({ open, onOpenChange, team, chat }: { open: boolean;
               >
                 <PersonAvatar person={p} status />
                 <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{p.name}</span>
-                <span className={cn('inline-flex size-5 items-center justify-center rounded-full border', on ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40')}>
+                <span className={cn('inline-flex size-5 items-center justify-center rounded-full border', on ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40')}>
                   {on && <Check className="size-3" strokeWidth={3} />}
                 </span>
               </button>

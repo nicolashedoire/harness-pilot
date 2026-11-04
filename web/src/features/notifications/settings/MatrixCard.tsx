@@ -199,7 +199,7 @@ export function MatrixCard() {
                         label={
                           <span className="inline-flex items-center gap-2">
                             <Sensitive length={8}>{s.label}</Sensitive>
-                            <Badge variant="muted">{kind ? SERVICE[kind] : t('feed.script')}</Badge>
+                            <Badge variant="muted">{kind ? SERVICE[kind] : t('nset.hook.script')}</Badge>
                           </span>
                         }
                         name={s.label}

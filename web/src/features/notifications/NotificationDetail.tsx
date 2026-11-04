@@ -19,13 +19,13 @@ function Facts({ ev }: { ev: FeedEvent }) {
   const x = useEventText()
   const t = x.t
   const p = ev.params || {}
-  const rows: [string, React.ReactNode][] = [[t('feed.meta.source'), ev.source]]
-  if (typeof p.path === 'string') rows.push([t('feed.meta.where'), topicLabel(p.path, '~')])
-  if (p.code != null) rows.push([t('feed.meta.code'), String(p.code)])
-  if (typeof p.duration_s === 'number') rows.push([t('feed.meta.duration'), fmtDuration(p.duration_s)])
+  const rows: [string, React.ReactNode][] = [[t('ncentre.meta.source'), ev.source]]
+  if (typeof p.path === 'string') rows.push([t('ncentre.meta.where'), topicLabel(p.path, '~')])
+  if (p.code != null) rows.push([t('ncentre.meta.code'), String(p.code)])
+  if (typeof p.duration_s === 'number') rows.push([t('ncentre.meta.duration'), fmtDuration(p.duration_s)])
   if (ev.count > 1) {
-    rows.push([t('feed.meta.count'), String(ev.count)])
-    if (ev.first_at) rows.push([t('feed.meta.first'), x.date(ev.first_at)])
+    rows.push([t('ncentre.meta.count'), String(ev.count)])
+    if (ev.first_at) rows.push([t('ncentre.meta.first'), x.date(ev.first_at)])
   }
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3.5 rounded-xl border bg-card px-4.5 py-4 max-sm:grid-cols-1">
@@ -66,7 +66,7 @@ export function NotificationDetail({ ev, onDeleted }: { ev: FeedEvent; onDeleted
           </Badge>
           {e.resolved_at && (
             <Badge variant="success" className="h-6 px-2">
-              {t('feed.resolved')}
+              {t('ncentre.resolved')}
             </Badge>
           )}
           <span className="text-muted-foreground">
@@ -86,16 +86,16 @@ export function NotificationDetail({ ev, onDeleted }: { ev: FeedEvent; onDeleted
       <div className="flex flex-wrap items-center gap-2">
         <NotificationActions ev={e} layout="detail" />
         <Button variant="outline" onClick={() => actions.ask(e)}>
-          <MessageSquarePlus /> {t('feed.ask')}
+          <MessageSquarePlus /> {t('ncentre.ask')}
         </Button>
         {pending && e.kind !== undefined && (
           <Button variant="ghost" onClick={() => resolve.mutate([e.id])} loading={resolve.isPending}>
-            {t('feed.resolve')}
+            {t('ncentre.resolve')}
           </Button>
         )}
         {!e.read && (
           <Button variant="ghost" onClick={() => actions.markRead(e)}>
-            {t('feed.markRead')}
+            {t('ncentre.markRead')}
           </Button>
         )}
         <Tooltip content={t('common.delete')}>
@@ -109,7 +109,7 @@ export function NotificationDetail({ ev, onDeleted }: { ev: FeedEvent; onDeleted
 
       {body && (
         <section className="grid gap-2">
-          <h3 className="text-sm font-semibold">{output ? t('feed.output') : t('feed.message')}</h3>
+          <h3 className="text-sm font-semibold">{output ? t('ncentre.output') : t('ncentre.message')}</h3>
           {output ? (
             <pre className="max-h-80 overflow-auto rounded-lg border bg-muted/40 px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
               <Sensitive block>{body}</Sensitive>
@@ -125,7 +125,7 @@ export function NotificationDetail({ ev, onDeleted }: { ev: FeedEvent; onDeleted
       {occurrences.length > 1 && (
         <section className="grid gap-2">
           <h3 className="text-sm font-semibold">
-            {t('feed.occurrences')} <span className="font-normal text-muted-foreground">· {e.count}</span>
+            {t('ncentre.occurrences')} <span className="font-normal text-muted-foreground">· {e.count}</span>
           </h3>
           <ul className="divide-y overflow-hidden rounded-xl border">
             {occurrences.map((o, i) => {
@@ -151,5 +151,5 @@ export function NotificationDetail({ ev, onDeleted }: { ev: FeedEvent; onDeleted
 
 export function NotificationMissing() {
   const t = useEventText().t
-  return <EmptyState icon={BellOff} title={t('feed.notFound')} description={t('feed.notFoundDesc')} />
+  return <EmptyState icon={BellOff} title={t('ncentre.notFound')} description={t('ncentre.notFoundDesc')} />
 }

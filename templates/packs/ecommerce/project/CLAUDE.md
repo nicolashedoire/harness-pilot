@@ -20,7 +20,7 @@ Meta ad", "fix the add-to-cart button on mobile".
 - Never spend money, change prices, issue refunds, email customers or publish anything without an
   explicit "yes" from the user in the current conversation.
 - Numbers: always say the period and the currency, and compare with the previous period.
-- Follow-ups go to the task board (`maxxing-tasks` skill); alerts that matter go to the feed
-  (`maxxing-feed` skill, e.g. `maxxing feed post "Stock low: Blue mug" --level warning --source shop`).
+- Follow-ups go to the task board (`pilot-tasks` skill); alerts that matter go to the feed
+  (`pilot-notifications` skill, e.g. `pilot feed post "Stock low: Blue mug" --level warning --source shop`).
 
 @memory.md

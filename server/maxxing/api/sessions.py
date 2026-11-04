@@ -64,6 +64,12 @@ class CreateIn(_Text):
     voice: str | None = None          # absolute path of a voice message sent directly (transcribed afterwards)
 
 
+class TeamIn(_Text):
+    path: str
+    message: str = Field(min_length=1, max_length=24000)
+    title: str | None = Field(default=None, max_length=120)
+
+
 class DiscussionPresetIn(_Text):
     name: str = Field(min_length=1, max_length=80)
     claude_role: str = Field(default='', max_length=2000)
@@ -85,6 +91,12 @@ class PatchIn(_Text):
     favorite: bool | None = None
     path: str | None = None           # move to another topic (idle sessions only)
     plan_mode: bool | None = None
+
+
+class DiscussionLimitsIn(BaseModel):
+    """PATCH /discussion: a field left out keeps its limit, null removes it (same ranges as on create)."""
+    turn_limit: int | None = Field(default=None, ge=1, le=200, strict=True)
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440, strict=True)
 
 
 class AskIn(_Text):
@@ -136,6 +148,30 @@ async def shutdown() -> None:
 
 
 # ---- collection ----------------------------------------------------------------------------
+@router.post('/teams')
+async def create_team(body: TeamIn):
+    from ..sessions import teams
+    return await _call(teams.create, body.path, body.message, body.title)
+
+
+@router.get('/teams/{sid}')
+async def get_team(sid: str):
+    from ..sessions import teams
+    return await _call(teams.get, sid)
+
+
+@router.post('/teams/{sid}/agents/{agent_id}/stop')
+async def stop_team_agent(sid: str, agent_id: str):
+    from ..sessions import teams
+    return await _call(teams.stop_agent, sid, agent_id)
+
+
+@router.post('/teams/{sid}/stop')
+async def stop_team(sid: str):
+    from ..sessions import teams
+    return await _call(teams.stop, sid)
+
+
 @router.get('/discussion-presets')
 async def list_discussion_presets():
     return await asyncio.to_thread(presets.list_presets)
@@ -264,6 +300,16 @@ async def pause_discussion(sid: str):
 @router.post("/sessions/{sid}/discussion/resume")
 async def resume_discussion(sid: str):
     return await _call(service.resume_debate, sid)
+
+
+@router.patch("/sessions/{sid}/discussion")
+async def patch_discussion(sid: str, body: DiscussionLimitsIn):
+    given = body.model_fields_set
+    minutes = body.duration_minutes
+    return await _call(service.update_discussion, sid,
+                       turn_limit=body.turn_limit if "turn_limit" in given else service.UNSET,
+                       duration_s=(minutes * 60 if minutes is not None else None) if "duration_minutes" in given
+                       else service.UNSET)
 
 
 @router.post("/sessions/{sid}/compact")

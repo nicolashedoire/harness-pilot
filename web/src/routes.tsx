@@ -46,7 +46,7 @@ export const routes: RouteObject[] = [
           { path: 'files/*', lazy: page(() => import('./pages/files'), ['files', 'media']) },
           { path: 'tasks/*', lazy: page(() => import('./pages/tasks'), ['tasks']) },
           { path: 'crons/*', lazy: page(() => import('./pages/crons'), ['tasks']) },
-          { path: 'notifications', lazy: page(() => import('./pages/notifications')) },
+          { path: 'notifications', lazy: page(() => import('./pages/notifications'), ['ncentre']) },
           // the notifications page was /feed (links in Telegram messages, push payloads, bookmarks)
           { path: 'feed', element: <Navigate to="/notifications" replace /> },
           // Optional feature pages (Settings -> Features)
@@ -56,7 +56,7 @@ export const routes: RouteObject[] = [
           // Settings & docs
           { path: 'settings', element: <Navigate to="/settings/general" replace /> },
           { path: 'settings/docs', element: <Navigate to="/docs" replace /> },
-          { path: 'settings/:section', lazy: page(() => import('./pages/settings'), ['settings', 'auth', 'show']) },
+          { path: 'settings/:section', lazy: page(() => import('./pages/settings'), ['settings', 'auth', 'show', 'blocks']) },
           { path: 'docs', lazy: page(() => import('./pages/docs')) },
           { path: 'docs/:slug', lazy: page(() => import('./pages/docs')) },
           // Extension pages: /x/<id> loads /ext/<id>/page.js

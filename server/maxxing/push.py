@@ -6,8 +6,9 @@ new feed events their preferences ask for. See docs/dev/API.md#web-push.
 - Payload encryption (RFC 8291, `Content-Encoding: aes128gcm`): ECDH with the subscription's `p256dh`, HKDF with its
   `auth` secret, AES-128-GCM, one record. Only ECDH / ECDSA / AES-GCM come from `cryptography`; HKDF is hmac.
 - Subscriptions in <state>/push.json (mode 600): {subs: [{id, endpoint, keys: {p256dh, auth}, label, created, last_ok,
-  last_error, prefs: {levels, sound, kinds: {<kind>: {enabled, sound}}}}]}. A push service answering 404 / 410 means
-  the subscription is gone: removed. The payload says `silent` when the kind (or the default) has no sound.
+  last_error, prefs: {levels, sound, kinds: {<kind>: {enabled, sound}}, sources: {<source>: {enabled, sound}}}}]}.
+  A push service answering 404 / 410 means the subscription is gone: removed. The payload says `silent` when the
+  source / kind (or the default) has no sound. Quiet events (`maxxing feed post --quiet`) are never pushed.
 - dispatch() is called by the server's feed watcher (api/feed.py, in a thread) after any change of feed.db: it sends
   the rows added since the last pass (any process may have written them: cron runs, `maxxing feed post`). Rows that
   were there when the server started are never sent (prime()).
@@ -42,7 +43,7 @@ BODY_MAX = 500
 SUBS_MAX = 50
 LABEL_MAX = 80
 PREF_KINDS_MAX = 200
-DEFAULT_PREFS: dict = {"levels": ["warning", "error"], "sound": True, "kinds": {}}
+DEFAULT_PREFS: dict = {"levels": ["warning", "error"], "sound": True, "kinds": {}, "sources": {}}
 DISPATCH_BATCH = 50
 http_transport: Any = None               # tests: httpx.MockTransport
 
@@ -225,11 +226,28 @@ def _prefs(p: Any, base: dict | None = None, strict: bool = True) -> dict:
                 or any(not isinstance(k, str) or not feed.KIND_RE.match(k) for k in kinds):
             raise ValueError("prefs.kinds: {<kind>: {enabled: bool, sound: bool}}")
         kinds = {k: _kind_pref(v, sound) for k, v in kinds.items()}
+        sources = _source_prefs(p.get("sources", base.get("sources") or {}), sound)
     except ValueError as e:
         if strict:
             raise PushError(400, "bad_prefs", str(e)) from None
-        return {"levels": list(DEFAULT_PREFS["levels"]), "sound": True, "kinds": {}}
-    return {"levels": [x for x in feed.LEVELS if x in levels], "sound": sound, "kinds": kinds}
+        return {"levels": list(DEFAULT_PREFS["levels"]), "sound": True, "kinds": {}, "sources": {}}
+    return {"levels": [x for x in feed.LEVELS if x in levels], "sound": sound, "kinds": kinds, "sources": sources}
+
+
+def _source_prefs(v: Any, sound: bool) -> dict:
+    """prefs.sources = {<source>: {enabled, sound}} (feed source names: a webhook, a script's --source), like kinds."""
+    try:
+        if not isinstance(v, dict) or len(v) > PREF_KINDS_MAX \
+                or any(not isinstance(k, str) or not feed.SOURCE_RE.match(k) for k in v):
+            raise ValueError
+        return {k: _kind_pref(x, sound) for k, x in v.items()}
+    except ValueError:
+        raise ValueError("prefs.sources: {<source>: {enabled: bool, sound: bool}}") from None
+
+
+def _entry(p: dict, ev: dict) -> dict | None:
+    """The preference that decides for an event: its source's entry, else its kind's; None = by level."""
+    return p["sources"].get(ev.get("source") or "") or p["kinds"].get(ev.get("kind") or "")
 
 
 def _check_keys(endpoint: Any, keys: Any) -> tuple[str, dict]:
@@ -303,18 +321,20 @@ def remove(sid: str) -> None:
 
 # ---- sending -------------------------------------------------------------------------------
 def wants(prefs: dict | None, ev: dict) -> bool:
-    """A kind set in prefs.kinds decides (`enabled`); otherwise the event's level must be in prefs.levels."""
+    """Never a quiet event. Its source's or kind's entry decides (`enabled`); otherwise its level must be in
+    prefs.levels."""
+    if ev.get("quiet"):
+        return False
     p = _prefs(prefs, strict=False)
-    if ev.get("kind") in p["kinds"]:
-        return p["kinds"][ev["kind"]]["enabled"]
-    return ev.get("level") in p["levels"]
+    e = _entry(p, ev)
+    return e["enabled"] if e else ev.get("level") in p["levels"]
 
 
 def sound(prefs: dict | None, ev: dict) -> bool:
-    """Whether the notification rings: the kind's `sound`, else the subscription's default."""
+    """Whether the notification rings: the `sound` of its source's or kind's entry, else the subscription's default."""
     p = _prefs(prefs, strict=False)
-    k = p["kinds"].get(ev.get("kind") or "")
-    return k["sound"] if k else p["sound"]
+    e = _entry(p, ev)
+    return e["sound"] if e else p["sound"]
 
 
 def payload(ev: dict, silent: bool = False) -> bytes:
