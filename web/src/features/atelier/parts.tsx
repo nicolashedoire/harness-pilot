@@ -112,7 +112,7 @@ export function VersionTag({ version, label, className }: { version: number | nu
   if (!version) return <span className={cn('font-mono text-xs text-muted-foreground/60', className)}>–</span>
   return (
     <span className={cn('font-mono text-xs text-muted-foreground tabular-nums', className)} title={label ? label : undefined}>
-      v{version}
+      {`v${version}`}
     </span>
   )
 }
