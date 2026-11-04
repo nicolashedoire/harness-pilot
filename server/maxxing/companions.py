@@ -203,7 +203,7 @@ def _notify(session: dict) -> None:
     if session.get('state') == 'error':
         url = f'/settings/companions?run={sid}'
         feed.system('Companion review needs attention', 'The experiment stopped with an error. Open its conversation.',
-                    'warning', 'system', url, dedupe=f'companion-error:{sid}:{session.get("updated")}')
+                    'warning', 'system', url, dedupe=f'companion-error:{sid}:{session.get("updated")}', kind='companion.error')
         return
     if session.get('state') != 'idle' or not session.get('turns'):
         return
@@ -212,10 +212,11 @@ def _notify(session: dict) -> None:
         url = f'/settings/companions?run={sid}'
         text = 'A source-code proposal is ready for your review.' if result['has_changes'] else 'The review finished without a code change.'
         feed.system('Companion review ready', text, 'warning' if result['has_changes'] else 'info', 'system', url,
-                    dedupe=f"companion:{sid}:{session['turns']}", actions=[feed.link('review', 'Review', url)])
+                    dedupe=f"companion:{sid}:{session['turns']}", kind='companion.ready' if result['has_changes'] else 'companion.empty',
+                    actions=[feed.link('review', 'Review', url)])
     except service.SessionError:
         feed.system('Companion review needs attention', 'Open the companion session to inspect the result.',
-                    'warning', 'system', f'/settings/companions?run={sid}')
+                    'warning', 'system', f'/settings/companions?run={sid}', kind='companion.error')
 
 
 async def on_stop(session: dict) -> None:

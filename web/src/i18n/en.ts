@@ -1,6 +1,12 @@
 // English dictionary — the reference. Every key must also exist in fr.ts (TypeScript enforces it).
 // Variables: {name}. Plurals: add `key#one` next to `key`; it is used when vars.count is 1 (fr: 0 or 1).
 export const en = {
+  "feed.kind.companion.ready.title": "Companion proposal ready",
+  "feed.kind.companion.ready.body": "A source-code proposal is ready for your review.",
+  "feed.kind.companion.empty.title": "Companion review finished",
+  "feed.kind.companion.empty.body": "The review finished without a code change.",
+  "feed.kind.companion.error.title": "Companion review needs attention",
+  "feed.kind.companion.error.body": "Open the companion session to inspect the result.",
   "settings.companions": "Companions",
   "settings.companions.desc": "Persistent roles and reviewable platform improvements.",
   "companions.intro": "Start an observer in the background. It works on a copy of the committed platform source, then notifies you. Sound follows your notification settings.",
