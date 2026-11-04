@@ -1,6 +1,6 @@
 # External model adapter protocol v1
 
-The runner is standard-library Python. It does not import a model framework. An adapter is a trusted local executable in its own environment. This is process isolation and input copying, not a sandbox against hostile code. Time, output-file and log limits are monitored; GPU memory, network and writes outside the job are not OS-enforced.
+The runner is standard-library Python. It does not import a model framework. An adapter is a trusted local executable in its own environment. This is process isolation and input copying, not a sandbox against hostile code. Time, output-file and log limits are monitored; GPU memory, network and writes outside the job are not OS-enforced. Every absolute file named in the command (interpreter, adapter script) is hashed before and after the run to detect a change; these files are not copied, so the storage budget does not apply to them.
 
 An experiment spec is JSON:
 

@@ -193,6 +193,17 @@ def skills_target() -> Path:
     return Path(own) if own else config.claude_dir() / "skills"
 
 
+def codex_skills_target() -> Path:
+    """Where Codex reads the product skills: its documented personal folder `~/.agents/skills` (codex-cli 0.150.1 also
+    reads `.agents/skills` from a session's folder up to its Git root), or MAXXING_CODEX_SKILLS_DIR (the local setup's
+    `<local dir>/.agents/skills`, so the computer's personal skills stay untouched)."""
+    own = os.environ.get("MAXXING_CODEX_SKILLS_DIR")
+    if own:
+        return Path(own)
+    import pwd
+    return Path(os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir) / ".agents" / "skills"
+
+
 def _skill_vars() -> dict[str, str]:
     from . import blocks                       # pilot-blocks lists the conversation blocks enabled on this server
     return {**template_vars(config.workspace()), **blocks.skill_vars()}
@@ -209,22 +220,19 @@ def _render_skill_tree(dst: Path, variables: dict[str, str]) -> None:
                 f.write_text(rendered, encoding="utf-8")
 
 
-def install_skills() -> dict:
-    """Copy product skills to ~/.claude/skills (overwrite them only, text files rendered), drop obsolete ones.
-    A renamed skill (renames.SKILL_RENAMES) is obsolete under its old name: the copy we installed is deleted, a copy
-    we have no record of is moved to the trash (Claude must never see both names)."""
+def _install_skill_copies(dst_root: Path, names: list[str], previous: set[str], variables: dict[str, str],
+                          tag: str = "") -> dict:
+    """One agent's skills folder: copy `names`, drop the obsolete product skills listed in `previous`, move away the
+    folders we have no record of (a same-named skill, an old name of renames.SKILL_RENAMES) to
+    `trash/skills/<name><tag>-<time>`."""
     from .renames import SKILL_RENAMES
-    dst_root = skills_target()
     dst_root.mkdir(parents=True, exist_ok=True)
-    names = product_skill_names()
-    previous = set(_install_state().get("skills", []))
     installed, removed, backed_up = [], [], []
-    variables = _skill_vars()
     for n in names:
         dst = dst_root / n
         if dst.exists() and n not in previous:
             # a skill with the same name that we did not install: keep a copy, never lose user work
-            bak = config.state_dir("trash", "skills") / f"{n}-{int(time.time())}"
+            bak = config.state_dir("trash", "skills") / f"{n}{tag}-{int(time.time())}"
             shutil.move(str(dst), str(bak))
             backed_up.append(str(bak))
         if dst.is_symlink() or dst.is_file():
@@ -243,22 +251,42 @@ def install_skills() -> dict:
     for old, new in SKILL_RENAMES.items():
         dst = dst_root / old
         if old not in previous and old not in names and new in installed and dst.is_dir() and not dst.is_symlink():
-            bak = config.state_dir("trash", "skills") / f"{old}-{int(time.time())}"
+            bak = config.state_dir("trash", "skills") / f"{old}{tag}-{int(time.time())}"
             shutil.move(str(dst), str(bak))
             backed_up.append(str(bak))
-    _save_install_state(skills=installed)
     return {"installed": installed, "removed": removed, "backed_up": backed_up}
 
 
+def install_skills() -> dict:
+    """Copy product skills to Claude Code's skills folder and to Codex's (overwrite them only, text files rendered),
+    drop obsolete ones. Each folder has its own record in install.json (`skills`, `codex_skills`).
+    A renamed skill (renames.SKILL_RENAMES) is obsolete under its old name: the copy we installed is deleted, a copy
+    we have no record of is moved to the trash (the agent must never see both names)."""
+    names = product_skill_names()
+    state = _install_state()
+    variables = _skill_vars()
+    claude = _install_skill_copies(skills_target(), names, set(state.get("skills", [])), variables)
+    codex_root = codex_skills_target()
+    codex = _install_skill_copies(codex_root, names, set(state.get("codex_skills", [])), variables, "-codex")
+    _save_install_state(skills=claude["installed"], codex_skills=codex["installed"])
+    return {**claude, "codex": {"target": str(codex_root), **codex}}
+
+
+def _copy_state(dst: Path, want: str) -> str:
+    if not dst.is_file():
+        return "missing"
+    return "ok" if dst.read_text(encoding="utf-8", errors="replace") == want else "outdated"
+
+
 def skills_status() -> list[dict]:
+    """Per product skill: `state` of Claude Code's copy and `codex` of Codex's (ok | missing | outdated)."""
     out = []
     variables = _skill_vars()
     for n in product_skill_names():
-        src, dst = config.SKILLS_DIR / n / "SKILL.md", skills_target() / n / "SKILL.md"
-        state = "missing" if not dst.is_file() else (
-            "ok" if dst.read_text(encoding="utf-8", errors="replace")
-            == render_template(src.read_text(encoding="utf-8", errors="replace"), variables) else "outdated")
-        out.append({"name": n, "state": state})
+        want = render_template((config.SKILLS_DIR / n / "SKILL.md").read_text(encoding="utf-8", errors="replace"),
+                               variables)
+        out.append({"name": n, "state": _copy_state(skills_target() / n / "SKILL.md", want),
+                    "codex": _copy_state(codex_skills_target() / n / "SKILL.md", want)})
     return out
 
 
@@ -655,7 +683,10 @@ def cmd_init(a) -> int:
     sk = r["skills"]
     line(OK, f"skills     {len(sk['installed'])} installed in {skills_target()}"
              + (f", removed {', '.join(sk['removed'])}" if sk["removed"] else ""))
-    for b in sk["backed_up"]:
+    cx = sk["codex"]
+    line(OK, f"skills     {len(cx['installed'])} installed for Codex in {cx['target']}"
+             + (f", removed {', '.join(cx['removed'])}" if cx["removed"] else ""))
+    for b in sk["backed_up"] + cx["backed_up"]:
         line(WARN, f"an existing skill was replaced; previous copy kept in {b}")
     rn = r["renamed"]
     if rn["files"] or rn["jobs"]:
@@ -1467,11 +1498,12 @@ def check_workspace(cfg: dict) -> Check:
 def check_skills() -> Check:
     st = skills_status()
     bad = [s["name"] + " (" + s["state"] + ")" for s in st if s["state"] != "ok"]
+    bad += [s["name"] + " (Codex: " + s["codex"] + ")" for s in st if s["codex"] != "ok"]
     if not st:
         return _c("skills", WARN, "no product skills found in the code", str(config.SKILLS_DIR))
     if bad:
         return _c("skills", WARN, f"{len(bad)} skill(s) not up to date", ", ".join(bad), "pilot init")
-    return _c("skills", OK, f"{len(st)} skills installed", str(skills_target()))
+    return _c("skills", OK, f"{len(st)} skills installed", f"{skills_target()}, {codex_skills_target()} (Codex)")
 
 
 def check_web() -> Check:
@@ -2529,10 +2561,11 @@ def cmd_uninstall(a) -> int:
     line(OK, f"service {SERVICE} removed")
     line(OK, remove_caddy_site())
     line(OK, remove_crontab_block())
-    for n in _install_state().get("skills", []):
-        d = skills_target() / n
-        if d.is_dir() and not d.is_symlink():
-            shutil.rmtree(d, ignore_errors=True)
+    for key, root in (("skills", skills_target()), ("codex_skills", codex_skills_target())):
+        for n in _install_state().get(key, []):
+            d = root / n
+            if d.is_dir() and not d.is_symlink():
+                shutil.rmtree(d, ignore_errors=True)
     line(OK, "product skills removed")
     if _pilot_link_is_ours():
         PILOT_LINK.unlink()
