@@ -19,7 +19,7 @@ If you already cloned it, run the last command from the repository root. On firs
 bash scripts/dev-local.sh link
 ```
 
-Open that link and choose a password, then visit `http://127.0.0.1:8787`. The server listens only on the local computer. Its workspace, application state and local scheduler data are stored under `.harness-pilot-local/`, which is ignored by Git. Stop the server with `Ctrl+C` in its terminal.
+Open that link and choose a password, then visit `http://127.0.0.1:8787`. The server listens only on the local computer. Its workspace, application state, local scheduler data and the product's Claude Code skills (see [Skills](skills)) are stored under `.harness-pilot-local/`, which is ignored by Git. Stop the server with `Ctrl+C` in its terminal.
 
 To use an agent, sign in to its CLI on the computer and check its connection in **Settings → Claude** or **Settings → Codex**. A CLI or provider may have its own account, network and privacy settings.
 

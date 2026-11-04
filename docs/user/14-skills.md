@@ -3,7 +3,7 @@ section: Extending
 ---
 # Skills
 
-Skills are instructions Claude Code may load when a task matches their description. The inherited Linux setup installs project skills in Claude's skills directory. The local startup script does not install or overwrite your personal Claude skills; availability depends on your existing Claude configuration and workspace. Codex has its own skills mechanism, and parity with the Claude skills below has not been validated.
+Skills are instructions Claude Code may load when a task matches their description. The inherited Linux setup installs project skills in Claude's skills directory. The local startup script installs them in `.harness-pilot-local/.claude/skills` at every start: Claude Code reads them for the sessions of the local workspace only, and your personal Claude skills (`~/.claude/skills`) are never changed. A personal skill with the same name as a product skill wins. Codex has its own skills mechanism, and parity with the Claude skills below has not been validated.
 
 ## Shipped skills
 

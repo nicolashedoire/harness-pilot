@@ -757,6 +757,11 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
 - `MAXXING_STATE` state dir · `MAXXING_CLAUDE_BIN` claude executable (tests: server/tests/fake_claude.py)
 - `MAXXING_PC_BIN_DIR` folder of Harness PC agent binaries (tests, local builds of `pc-agent/`) instead of the release
 - `MAXXING_SPAWN=direct` run turns as detached subprocesses instead of systemd-run units
+- `MAXXING_SKILLS_DIR` where `init` installs the product skills (`cmd_core.skills_target()`, also read by the doctor,
+  uninstall and `blocks.sync_agent_files`) instead of `<claude dir>/skills`. `scripts/dev-local.sh` sets
+  `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
+  session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
+  personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
 - `MAXXING_CRONTAB_FILE` write the managed crontab block into this file instead of `crontab -`
 - `MAXXING_SYSTEM_TZ=0` never switch the system time zone when the time zone setting changes (also skipped when `MAXXING_CRONTAB_FILE` is set)
 - `MAXXING_TELEGRAM_API` Telegram API base URL (tests: local mock) · `MAXXING_GITHUB_API` GitHub API base URL
