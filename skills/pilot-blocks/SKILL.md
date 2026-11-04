@@ -36,6 +36,9 @@ Generated from Settings -> Conversation blocks (refreshed when a block is turned
    in the block header.
 7. A `form` / `checklist` answer comes back as the user's next message (plain text they confirmed): wait for it,
    do not assume the answer.
+8. **Figures as JSON numbers** (`12480`, not `"12 480"` or `"12,480"`), with their `unit` where the type has one
+   (`"€"`, `"GB"`, `"%"`): the UI writes them the way the user's language does (12,480 € in English, 12 480 € in
+   French). Text you write yourself (a label, a `delta` such as "+18% vs Sept") is shown as written.
 
 ## Built-in types
 
@@ -48,15 +51,17 @@ Generated from Settings -> Conversation blocks (refreshed when a block is turned
 
 ```table
 {"title": "Best products", "source": "sales-october.csv",
- "columns": ["Product", {"label": "Revenue", "type": "number"}, {"label": "Share", "type": "bar"}, {"label": "vs Sept", "type": "delta"}],
- "rows": [["Mug", 3120, 25, "+32 %"], ["Notebook", 2460, 20, "+9 %"]]}
+ "columns": ["Product", {"label": "Revenue", "type": "number", "unit": "€"}, {"label": "Share", "type": "bar"}, {"label": "vs Sept", "type": "delta", "unit": "%"}],
+ "rows": [["Mug", 3120, 25, 32], ["Notebook", 2460, 20, 9]]}
 ```
-Column `type`: `text`, `number` (right-aligned), `percent`, `delta` (green / red by sign), `bar` (0-100). The user
-can sort, filter and export CSV; `page_size` (default 10) rows show before "Show all".
+Column `type`: `text`, `number` (right-aligned), `percent`, `delta` (green / red by sign), `bar` (0-100); `unit`
+follows the numbers of a `number` or `delta` column. The user can sort, filter and export CSV; `page_size`
+(default 10) rows show before "Show all".
 
 ```stats
-{"items": [{"label": "Revenue", "value": "12 480 EUR", "delta": "+18 %"}, {"label": "Refunds", "value": 7, "delta": "+2", "tone": "warn"}]}
+{"items": [{"label": "Revenue", "value": 12480, "unit": "€", "delta": "+18% vs Sept"}, {"label": "Refunds", "value": 7, "delta": 2, "tone": "warn"}]}
 ```
+`value`: a number (with its `unit`) or a short text; `delta`: a number (its sign is shown) or a short text.
 
 ```list
 {"items": [{"title": "Nightly backup", "subtitle": "04:40", "status": "ok", "href": "/crons"}, {"title": "Disk", "value": "82 %", "status": "warn"}]}
