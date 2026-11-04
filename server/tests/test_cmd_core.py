@@ -844,6 +844,21 @@ def test_update_check_not_a_git_clone(env, tmp_path, monkeypatch, capsys):
     assert "not a git clone" in capsys.readouterr().out
 
 
+def test_update_is_refused_in_local_mode(env, released, monkeypatch, capsys):
+    """Like the Update button (POST /api/system/update -> 409): the local setup updates its clone with git, never by a
+    fetch, rebase and service restart. Checking, which changes nothing, still works."""
+    monkeypatch.setenv("HARNESS_PILOT_LOCAL_MODE", "1")
+    clone = released["clone"]
+    _release(released["work"], "1.2.0", "shiny feature")
+    head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True).stdout
+    for argv in (["update"], ["update", "--rollback"], ["update", "--resume"], ["update", "--branch", "main"]):
+        assert run_cli(*argv) == 1
+        out = capsys.readouterr().out
+        assert "unavailable in local mode" in out and f"git -C {clone} pull" in out, argv
+    assert subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True).stdout == head
+    assert run_cli("update", "--check") == 0 and "1.2.0" in capsys.readouterr().out
+
+
 def test_update_lists_upgrade_notes(env, released, monkeypatch, capsys):
     work, clone = released["work"], released["clone"]
     monkeypatch.setattr(cmd_core, "__version__", "1.0.1")
