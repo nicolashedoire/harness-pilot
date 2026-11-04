@@ -39,6 +39,68 @@ async def codex_status():
     return await asyncio.to_thread(codex.status)
 
 
+# ---- Codex sign-in from the web app (maxxing/codex_login.py) ------------------------------------------------------
+def _codex_missing() -> HTTPException:
+    return _err(409, "not_installed", "The Codex command was not found by this server")
+
+
+@router.get('/system/codex/login')
+async def codex_login_state():
+    from .. import codex_login
+    return codex_login.state()
+
+
+@router.post('/system/codex/login')
+async def codex_login_start():
+    from .. import codex_login
+    try:
+        return await asyncio.to_thread(codex_login.start)
+    except FileNotFoundError:
+        raise _codex_missing() from None
+    except OSError as e:
+        raise _err(502, "codex_failed", f"Codex could not start: {e.strerror or e}") from None
+
+
+@router.delete('/system/codex/login')
+async def codex_login_cancel():
+    from .. import codex_login
+    return await asyncio.to_thread(codex_login.cancel)
+
+
+class CodexKeyBody(BaseModel):
+    # no length rule here: the key is checked in the route, so that no error ever repeats it
+    value: str
+
+
+@router.post('/system/codex/auth')
+async def codex_api_key(body: CodexKeyBody):
+    from .. import codex_login
+    from ..sessions import codex
+    value = body.value.strip()
+    if not codex_login.valid_key(value):
+        raise _err(400, "invalid", "This does not look like an API key")
+    try:
+        error = await asyncio.to_thread(codex_login.with_api_key, value)
+    except FileNotFoundError:
+        raise _codex_missing() from None
+    if error:
+        raise _err(502, "login_failed", error)
+    return {"ok": True, **await asyncio.to_thread(codex.status)}
+
+
+@router.delete('/system/codex/auth')
+async def codex_logout():
+    from .. import codex_login
+    from ..sessions import codex
+    try:
+        error = await asyncio.to_thread(codex_login.logout)
+    except FileNotFoundError:
+        raise _codex_missing() from None
+    if error:
+        raise _err(502, "logout_failed", error)
+    return {"ok": True, **await asyncio.to_thread(codex.status)}
+
+
 class SeenBody(BaseModel):
     id: str
     seen: bool = True

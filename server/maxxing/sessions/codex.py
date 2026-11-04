@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -23,18 +24,34 @@ def privacy_args() -> list[str]:
     return args
 
 
+def binary() -> str | None:
+    """The Codex CLI sessions use: `MAXXING_CODEX_BIN`, else `codex` on the PATH; None when there is none."""
+    return os.environ.get('MAXXING_CODEX_BIN') or shutil.which('codex')
+
+
+def _login_method(text: str) -> str | None:
+    """How `codex login status` says it is signed in (codex-cli 0.150.1, on stderr): "Logged in using ChatGPT" or
+    "Logged in using an API key - sk-…***…" (masked). Only this word leaves the function, never the text."""
+    if 'ChatGPT' in text:
+        return 'chatgpt'
+    if 'API key' in text:
+        return 'api_key'
+    return None
+
+
 def status() -> dict:
     """Check the same CLI and account used by sessions without exposing its output."""
-    binary = os.environ.get('MAXXING_CODEX_BIN') or shutil.which('codex')
-    if not binary:
-        return {'installed': False, 'authenticated': False, 'reason': 'not_installed'}
+    path = binary()
+    if not path:
+        return {'installed': False, 'authenticated': False, 'reason': 'not_installed', 'method': None}
     try:
-        result = subprocess.run([binary, *privacy_args(), 'login', 'status'], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8)
-        return {'installed': True, 'authenticated': result.returncode == 0,
-                'reason': None if result.returncode == 0 else 'not_authenticated'}
+        result = subprocess.run([path, *privacy_args(), 'login', 'status'], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, errors='replace', timeout=8)
+        ok = result.returncode == 0
+        return {'installed': True, 'authenticated': ok, 'reason': None if ok else 'not_authenticated',
+                'method': _login_method(f'{result.stdout}\n{result.stderr}') if ok else None}
     except (OSError, subprocess.TimeoutExpired):
-        return {'installed': True, 'authenticated': None, 'reason': 'status_unavailable'}
+        return {'installed': True, 'authenticated': None, 'reason': 'status_unavailable', 'method': None}
 
 
 def workspace_context(root: Path, cwd: Path) -> str:
@@ -327,3 +344,108 @@ def events(event: dict, base: dict | None = None) -> list[dict]:
         message = err.get("message") if isinstance(err, dict) else str(err)
         return [{"type": "result", "subtype": "error", "is_error": True, "errors": [message or "Codex turn failed"]}]
     return []
+
+
+# ---- context size (Codex's own session file) --------------------------------------------------------------------
+# `codex exec --json` carries neither the context of a call nor the window; Codex writes both to its session file after
+# every model call (`token_count`). Checked with codex-cli 0.150.1: INTERNALS.md `maxxing.sessions.codex`.
+DEFAULT_WINDOW = 258_400       # Codex's window when it records none: 272 000 (every 0.150.1 model) x 95 % usable
+THREAD_ID_RE = re.compile(r"\A[0-9A-Za-z][0-9A-Za-z-]{7,63}\Z")
+SESSION_TAIL = 256 * 1024      # bytes read at the end of the file for the last call (more when none is there)
+SESSION_TAIL_MAX = 4 * 1024 * 1024
+
+
+def home(env: dict[str, str] | None = None) -> Path:
+    """Codex's folder for the process environment `env`: CODEX_HOME, else ~/.codex."""
+    env = os.environ if env is None else env
+    if env.get("CODEX_HOME"):
+        return Path(env["CODEX_HOME"]).expanduser()
+    return Path(env.get("HOME") or Path.home()) / ".codex"
+
+
+def session_file(thread_id: str, env: dict[str, str] | None = None) -> Path | None:
+    """Codex's record of a thread: `<home>/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl` (the day the
+    thread started; `exec resume` appends to it). Thread ids are UUIDv7: the day of their timestamp (+-1) is looked at
+    first, then every day folder."""
+    if not THREAD_ID_RE.match(thread_id or ""):
+        return None
+    root = home(env) / "sessions"
+    name = f"rollout-*-{thread_id}.jsonl"
+    days: list[str] = []
+    hexa = thread_id.replace("-", "")
+    if len(hexa) == 32 and hexa[12] == "7":
+        try:
+            at = int(hexa[:12], 16) / 1000
+            days = [time.strftime("%Y/%m/%d", time.localtime(at + d)) for d in (0, -86400, 86400)]
+        except (ValueError, OverflowError, OSError):
+            days = []
+    try:
+        for day in dict.fromkeys(days):
+            found = sorted((root / day).glob(name))
+            if found:
+                return found[-1]
+        found = sorted(root.glob(f"*/*/*/{name}"))
+    except OSError:
+        return None
+    return found[-1] if found else None
+
+
+def _token_counts(chunk: bytes) -> list[dict]:
+    out = []
+    for line in chunk.split(b"\n"):
+        if b'"token_count"' not in line:
+            continue
+        try:
+            ev = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        payload = ev.get("payload") if isinstance(ev, dict) else None
+        if isinstance(payload, dict) and payload.get("type") == "token_count" and isinstance(payload.get("info"), dict):
+            out.append(payload["info"])
+    return out
+
+
+def _input(info: dict) -> int:
+    last = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else {}
+    try:
+        return max(0, int(last.get("input_tokens") or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def context_usage(thread_id: str, env: dict[str, str] | None = None, first: bool = False) -> dict | None:
+    """{tokens, window, first} of a thread from its session file: `tokens` = the input of its last model call (cached
+    tokens included, as Claude's context), `window` = `model_context_window` (the usable window Codex measures
+    against, DEFAULT_WINDOW when it records none), `first` = the input of the file's first call (with `first`, for a
+    thread started by this turn: its fixed part). None when the file, or a call with a context, is not found."""
+    path = session_file(thread_id, env)
+    if path is None:
+        return None
+    try:
+        with path.open("rb") as f:
+            size = f.seek(0, os.SEEK_END)
+            infos: list[dict] = []
+            for want in (SESSION_TAIL, SESSION_TAIL_MAX):
+                start = max(0, size - want)
+                f.seek(start)
+                chunk = f.read(size - start)
+                if start:
+                    chunk = chunk.split(b"\n", 1)[-1]          # a cut first line
+                infos = _token_counts(chunk)
+                if infos or not start:
+                    break
+            head = None
+            if first:
+                f.seek(0)
+                chunk = f.read(SESSION_TAIL)
+                calls = _token_counts(chunk.rsplit(b"\n", 1)[0] if len(chunk) == SESSION_TAIL else chunk)
+                head = _input(calls[0]) if calls else None
+    except OSError:
+        return None
+    if not infos or not _input(infos[-1]):          # 0: Codex just compacted its thread, the next call tells
+        return None
+    try:
+        window = int(infos[-1].get("model_context_window") or 0)
+    except (TypeError, ValueError, OverflowError):
+        window = 0
+    return {"tokens": _input(infos[-1]), "window": window if window > 0 else DEFAULT_WINDOW, "first": head or None}

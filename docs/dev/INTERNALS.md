@@ -238,7 +238,7 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
   (its text names the agent; the pending entry of `state/telegram/new.json` keeps `provider`, default `claude`, and a
   later `/new` / `/codex` / `/discuss` before the answer changes it); threads off, the topic's new Telegram session.
   `/codex` and `/discuss` first run `sessions.codex.status()` in a worker thread: `authenticated: false` -> the chat
-  is told (not installed / not signed in, with `codex login`) and nothing is created or asked; `null` (status
+  is told (not installed / not signed in: Settings → Codex, or `codex login`) and nothing is created or asked; `null` (status
   unavailable) does not block. `/model` in a session whose provider is `codex` or `plugin:<id>` shows its model and
   changes nothing (`_set_model` refuses too: a Claude id would break its turns); `/status` adds the agent (and the
   replies of the current period for a discussion). A discussion answered on Telegram (`debate_telegram`) that pauses
@@ -292,7 +292,10 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
   sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
   stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
   `new_since(after_id, limit)` / `max_id()` (push), `last_id()` / `watch_id()` -> `(max id, sum read, sum count,
-  resolved count)` tuple (changes on posts, folds, reads, resolutions).
+  resolved count)` tuple (changes on posts, folds, reads, resolutions). `watch_id()` (the feed watcher: UI + Web Push)
+  reads it through one kept connection, again only when that connection's `PRAGMA data_version` changed; never from
+  the files' size / mtime (SQLite writes and syncs the WAL frames before it publishes the commit, and rewrites a
+  restarted WAL in place).
 - `feed.rule_for(source, level, s=None, kind=None)` (kind rule, else source rule, else `default_rule`), `event_kinds(s)`
   (rows of the settings matrix), `settings()` / `save_settings(telegram, rules, hooks, kind_rules)` (config `feed`:
   `rules`, `kind_rules`, `telegram`, `hooks`).
@@ -780,6 +783,57 @@ with the thread id `thread.started` gave. Tokens of a failed or stopped turn (no
 the thread's next turn. Turns recorded before this change keep the totals they were given (the log does not say
 where a Codex thread starts, so they are not recalculated).
 
+Context size. The JSON stream carries neither the context of a model call nor the window (nor the model's name):
+`turn.completed` only has the running totals above. Codex writes both to its own session file,
+`<CODEX_HOME, else ~/.codex>/sessions/YYYY/MM/DD/rollout-<local start time>-<thread id>.jsonl` (the day the thread
+started; `exec resume` appends to it; not written with `--ephemeral`): after every model call an `event_msg` line
+`{"type": "token_count", "info": {"total_token_usage": {...}, "last_token_usage": {"input_tokens", "cached_input_tokens",
+"output_tokens", ...}, "model_context_window": 258400}}`, and `task_started` / `turn_context` lines with the window and
+the model. Checked with codex-cli 0.150.1 against the stub: `last_token_usage.input_tokens` is the input of that call
+(102k, 103k... as served), `model_context_window` is the catalog's `context_window` x `effective_context_window_percent`
+(`codex debug models --bundled`: 272 000 x 95 % = 258 400 for every listed model, `gpt-5.6-sol` - the default -,
+`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.2`...; a model without metadata gets the same fallback;
+`-c model_context_window=150000` gives 142 500). Codex compacts its own thread at 90 % of the catalog window (244 800:
+a 240k call did not trigger it, a 245k one did); the file then has a `compacted` line and a `token_count` whose
+`last_token_usage` is 0 until the next call, and the JSON stream only an `error` item ("Heads up: Long threads and
+multiple compactions..."). The TUI's `/status` reads the same events; `codex exec` has no command or flag that prints
+them.
+`codex.session_file(thread, env)` finds the file in `codex.home(env)` (the Codex process environment: `CODEX_HOME`,
+else `$HOME/.codex`); thread ids are UUIDv7, so the day of their timestamp (+-1) is looked at first, then every day
+folder; an id that is not `THREAD_ID_RE` is never looked up. `codex.context_usage(thread, env, first)` reads the last
+`token_count` in the file's last 256 KB (4 MB when none is there) -> `{tokens: last_token_usage.input_tokens, window:
+model_context_window (DEFAULT_WINDOW 258 400 when missing), first: the input of the file's first call (with `first`)}`,
+None without file, without a call or when the last call is 0 (just compacted). `runner._codex_turn` calls it after the
+turn (not in discussions) and sets `Attempt.context_tokens`, `first_context` and `context_window`; `_record` stores
+meta `context_tokens`, `base_tokens` (a thread this turn started) and `context_window`, as for Claude. It is Codex's
+own count, not an estimate, measured against the window Codex itself uses; it depends on a file format internal to
+Codex: when the file is missing or its format changes, the session keeps its last values (none at first) and the gauge
+stays hidden rather than guessing. No setting overrides the window: Codex records the one it applies.
+
+## maxxing.codex_login - signing Codex in from the web app
+Settings → Codex and the wizard's Codex step sign the CLI of `sessions.codex.binary()` in, with the server's own
+environment (the same `CODEX_HOME` as `codex.status()` and the turns). Codex keeps the credentials in its folder
+(`auth.json`, 0600) as `codex login` in a terminal does; harness-pilot stores nothing. What codex-cli 0.150.1 offers
+(checked with a throw-away `CODEX_HOME`): `login --device-auth` (ChatGPT account), `login --with-api-key` and
+`--with-access-token` (read on stdin), `login status` (exit 0/1, one line on stderr), `logout`. Not used:
+`--with-access-token`, and the browser flow of plain `codex login`, which signs in through a browser on the machine
+that runs Codex (not tried: it would open one).
+- Device code: `start()` runs `codex <privacy_args> login --device-auth` (stdin closed, stdout+stderr piped,
+  `NO_COLOR=1`, own process group) once per server process; a second start joins it. A reader thread strips ANSI
+  and takes the first `https://` link (a later one with `/device` or `auth.` replaces a notice's link), then the first
+  code shaped `XXXX-XXXXX` after it, and "expires in N minutes": both seen → `waiting`. Exit 0 → `succeeded`
+  (`bus.invalidate("health")`), else `failed` with the CLI's last line (codes and `sk-…` masked). A watcher thread
+  stops the CLI (SIGTERM then SIGKILL on the group, then reaps it) with no code after `SHOW_TIMEOUT_S` (30 s) or
+  `GRACE_S` (30 s) after the expiry → `failed` / `expired`. `cancel()` → `cancelled`; the first final state wins.
+  Nothing of the output is logged; the code lives in memory until the flow ends.
+- API key: `with_api_key()` stops a device flow, then `codex login --with-api-key` with the key on stdin (30 s);
+  the error is the CLI's last line with the key and `sk-…` masked. The route checks the key itself (`valid_key`:
+  20-4096 printable ASCII characters, no spaces) so that no validation error repeats it. Codex does not verify a key
+  when it stores it. `logout()` = `codex logout` ("Not logged in" counts as done).
+- `codex.status()` now captures the status line (stderr) to tell `method` (`chatgpt` / `api_key`); the line itself
+  (a masked key) never leaves the function.
+- Tests: `tests/test_codex_login.py` (a fake `codex` with each subcommand, its state in the test folder).
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`
@@ -793,6 +847,10 @@ first call; `_idle_watch` (30 s) closes the browser (`close`) and stops the chil
 an agent disconnect ends every channel and the child. `BLOCKED_TOOLS` (upload_file, screencast, lighthouse) and
 unknown names are refused; the offline answer is a normal tool result (`isError`). One retry when the child dies
 mid-call. Agent binaries: `MAXXING_PC_BIN_DIR`, else `bin/`, else the release in `pc_agent.json` (sha256 checked);
+`pc_agent.json` = `{version, url ("…/releases/download/pc-agent-v{version}/{name}" of this repository), files:
+{<file name of TARGETS>: sha256}}`, written by `pc-agent/build.sh` (`dist/pc_agent.json`, docs/dev/PC-AGENT.md);
+empty `files` = nothing to download (`available()` false, `PcError 409 no_agent` / `404 no_agent`); a release file
+that cannot be fetched is `PcError 502 download_failed`, one that does not match is `502 checksum`.
 `personalised()` appends `<json><uint32 BE len>HMPCCFG1` (server, pairing code, browser, autostart).
 `pc_tools.json` = the tool list shipped for `tools/list` before the first start.
 Security boundaries: `pair()` stores a `candidate` (15 min); `WS /api/pc/ws` holds a candidate's socket

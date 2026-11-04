@@ -35,9 +35,14 @@ You may also review and edit the summary before saving it to the topic's `memory
 
 ## What works with Codex
 
+Codex must be installed and signed in where harness-pilot runs: sign it in from **Settings → Codex** with your ChatGPT
+account (a one-time code you enter on OpenAI's page, from any device) or an OpenAI API key, or with `codex login` in a
+terminal there ([Codex sign-in](settings-and-keys#codex-sign-in)).
+
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
 are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact**,
-**Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+**Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions, and shows the **context gauge** in its
+header (read from what Codex records after each answer). It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
 On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Codex discussion
@@ -56,8 +61,8 @@ These features are for Claude Code only for now:
   outside Full access, only their read-only tools), but not Claude's sign-ins, the claude.ai connectors nor the
   Browser of my PC.
 - **Claude swarm** and the **Agent map**.
-- The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
-  does not report its context size. Compact it yourself from the session menu.
+- The automatic compactions (when the context gets large, and after a long pause): watch the context gauge and
+  compact it yourself from the session menu.
 - The extra rules of Claude's permission settings (`claude_deny`): Codex only follows its own sandbox.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
 
@@ -283,7 +288,9 @@ into another app, the content arrives as plain text (a file as its path).
 - File paths are clickable and open the **file viewer**: ← / → go through every file of the conversation (see [Files](06-files.md#the-file-viewer)).
 - The header shows the **model that actually answered** and a **context gauge** (how full Claude's context window
   is, in %, measured against the real window of the model in use - it follows when you switch model); the session's
-  total **cost** is in the tooltip of the agent and model.
+  total **cost** is in the tooltip of the agent and model. In a Codex session the gauge shows the context of Codex's
+  last call against the window Codex itself works with (95 % of the model's, 258k for its current models), as Codex
+  records them after each answer (from its first answer on; a discussion shows no gauge).
 - The line under each answer shows the time it took and its **cost**; hover (or tap) them for the model, the tokens
   (input → output) and the share of input served from cache.
 - **About the amount**: Claude Code reports an indicative dollar amount; the display does not establish the actual bill and does not include Codex. Billing depends on your account, plan and credits. For example, [Anthropic's usage credits](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans) can incur additional charges after included usage is exhausted. Check your provider account for actual charges.
