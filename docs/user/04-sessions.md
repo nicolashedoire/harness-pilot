@@ -7,6 +7,12 @@ A **session** runs in a topic folder and can use Claude Code, Codex, or both in 
 close the browser, restart the server, come back next month – the conversation continues where it
 stopped.
 
+## Claude subagent team
+
+Choose **Claude Code — agent team** when creating a session and request two to six subagents. Claude acts as coordinator and is instructed to split suitable work into independent tasks, use its native subagents in parallel, and combine their results. This is a request to Claude, not a guarantee of the number of agents or a hard concurrency limit. The team uses Claude Code; a mixed Claude–Codex team is not available in this mode. Each agent's work consumes the relevant account's usage allowance and follows the session's permissions.
+
+Open **Agent map** from the session menu to inspect agent calls present in the loaded conversation, their status and their reported result. Load earlier messages to include older calls. Claude's internal subagent transcripts are not always available. Stop the session to interrupt the current turn; verify the displayed statuses and resulting files afterward.
+
 ## Claude Code and Codex together
 
 When creating a session, choose **Claude Code + Codex**, then select a collaborative discussion or a debate. Each agent retains its own conversation and receives the other agent's latest answer. Optional reply-count and duration limits pause the discussion after the current reply; resuming after a limit starts a new period. The pause button lets the current response finish, and the resume button continues the exchange. Sending a message during a turn interrupts that turn so the agent can take your intervention into account. Stop ends the automatic exchange. Each turn uses the corresponding agent's connected account.

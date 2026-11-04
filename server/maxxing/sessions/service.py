@@ -128,6 +128,7 @@ def public(meta: dict) -> dict:
             "turns": int(_num(m.get("turns"))), "cost_usd": round(_num(m.get("cost_usd")), 4),
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
+            "swarm_agents": m.get("swarm_agents"),
             "debate_telegram": bool(m.get("debate_telegram")),
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
@@ -300,7 +301,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
                    permission_mode: str = "", auto_title: bool = False, voice_path: str | None = None,
                    provider: str = "claude", discussion_turn_limit: int | None = None,
                    discussion_duration_seconds: int | None = None,
-                   claude_role: str = '', codex_role: str = '', codex_model: str | None = None) -> dict:
+                   claude_role: str = '', codex_role: str = '', codex_model: str | None = None,
+                   swarm_agents: int | None = None) -> dict:
     """`auto_title`: `title` was made from the first message by the caller (Telegram) - still worth a short title."""
     try:
         p = workspace.normalize_path(path)
@@ -311,6 +313,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
         raise SessionError(400, "bad_provider", "Unknown agent")
     if provider in ("discussion", "debate") and plan_mode:
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
+    if swarm_agents is not None and (provider != 'claude' or type(swarm_agents) is not int or not 2 <= swarm_agents <= 6):
+        raise SessionError(400, 'bad_swarm', 'Agent teams require Claude and a requested count between 2 and 6.')
     files = _check_attachments(attachments)
     audio = _check_voice(voice_path)
     given = (title or "").strip()[:120]
@@ -319,6 +323,8 @@ def create_session(path: str, message: str | None = None, title: str | None = No
     meta = store.new_meta(p, given or _default_title(p, message), model=model or "",
                           source=source, notify=notify, cron=cron, env=env, timeout_s=timeout_s, plan_mode=plan_mode,
                           permission_mode=permission_mode, provider=provider)
+    if swarm_agents is not None:
+        meta['swarm_agents'] = swarm_agents
     if provider in ("discussion", "debate"):
         if discussion_turn_limit is not None and not 1 <= discussion_turn_limit <= 200:
             raise SessionError(400, "bad_limit", "The response limit must be between 1 and 200.")
@@ -724,6 +730,8 @@ def handoff(sid: str) -> dict:
                          model=old["model"], source=old["source"], notify=old["notify"],
                          env=meta.get("env"), timeout_s=meta.get("timeout_s"),
                          provider=meta.get("provider") or "claude")
+    if type(meta.get('swarm_agents')) is int and 2 <= meta['swarm_agents'] <= 6:
+        new['swarm_agents'] = meta['swarm_agents']
     if meta.get("favorite"):                 # the continuation stays in the user's favorites
         new["favorite"] = True
     new["handoff_pending"] = time.time()     # messages sent to it wait for the summary seed (runner._handoff)

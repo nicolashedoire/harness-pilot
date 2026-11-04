@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate; mixed Claude–Codex teams are not yet available.
 - Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
 - View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.

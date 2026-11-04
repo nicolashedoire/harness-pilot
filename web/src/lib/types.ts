@@ -97,6 +97,7 @@ export type QueueItem = { text: string; attachments: number; source: 'web' | 'te
 export type Session = {
   id: string
   provider?: 'claude' | 'codex' | 'discussion' | 'debate'
+  swarm_agents?: number | null
   debate_paused?: boolean
   discussion_pause_reason?: string | null
   discussion_turns?: number
@@ -130,7 +131,7 @@ export type Session = {
   /** A plan-mode turn finished: its plan waits for the user's validation. */
   plan_ready: boolean
 }
-export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: 'claude' | 'codex' | 'discussion' | 'debate'; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
+export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: 'claude' | 'codex' | 'discussion' | 'debate'; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
 export type PatchSessionBody = { title?: string; model?: string; archived?: boolean; notify?: boolean; plan_mode?: boolean; favorite?: boolean; /** Move to another topic (idle sessions only). */ path?: string }
 export type SendMessageBody = { text: string; attachments?: string[]; hud?: boolean; /** Absolute path of a voice message sent directly: the server transcribes it, then sends it. */ voice?: string }
 export type SendMessageResult = { queued: boolean; session: Session }
