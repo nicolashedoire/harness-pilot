@@ -504,7 +504,8 @@ Between servers (public, no cookie, `404` while `team_page` is off; protocol in 
 ```
 Card = {title?, status?:"ok"|"warn"|"error", link?:string, blocks:[Block], updated?:float}
 Block =
-  {type:"stat", label, value, hint?, delta?, tone?:"ok"|"warn"|"error"}
+  {type:"stat", label, value, unit?, hint?, delta?, tone?:"ok"|"warn"|"error"}
+    // a number value / delta is written in the user's language (Intl.NumberFormat), `unit` after it ("%" as a percentage)
 | {type:"stats", items:[stat…]}
 | {type:"list", items:[{title, subtitle?, value?, href?, status?, icon?, emoji?}], empty?, grid?} (grid = tiles 2-3 per row; icon = lucide name drawn with the accent colour, preferred over emoji)
 | {type:"chart", kind:"bar"|"line", series:[{name, points:[[x,y]]}], unit?}

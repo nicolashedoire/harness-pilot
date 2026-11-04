@@ -13,20 +13,20 @@ export const SAMPLES: Record<string, Record<string, unknown>> = {
   table: {
     title: 'Best products',
     source: 'sales-october.csv',
-    columns: ['Product', { label: 'Revenue', type: 'number' }, { label: 'Sales', type: 'number' }, { label: 'Share', type: 'bar' }, { label: 'vs Sept', type: 'delta' }],
+    columns: ['Product', { label: 'Revenue', type: 'number', unit: '€' }, { label: 'Sales', type: 'number' }, { label: 'Share', type: 'bar' }, { label: 'vs Sept', type: 'delta', unit: '%' }],
     rows: [
-      ['Ceramic mug', 3120, 104, 25, '+32 %'],
-      ['A5 notebook', 2460, 164, 20, '+9 %'],
-      ['Canvas bag', 1980, 66, 16, '-4 %'],
-      ['Poster 30 × 40', 1450, 58, 12, '+21 %'],
+      ['Ceramic mug', 3120, 104, 25, 32],
+      ['A5 notebook', 2460, 164, 20, 9],
+      ['Canvas bag', 1980, 66, 16, -4],
+      ['Poster 30 × 40', 1450, 58, 12, 21],
     ],
   },
   stats: {
     items: [
-      { label: 'Revenue', value: '12 480 €', delta: '+18 % vs Sept' },
-      { label: 'Orders', value: 312, delta: '+11 %' },
-      { label: 'Average basket', value: '40.00 €', delta: '+6 %' },
-      { label: 'Refunds', value: 7, delta: '+2', tone: 'warn' },
+      { label: 'Revenue', value: 12480, unit: '€', delta: '+18% vs Sept' },
+      { label: 'Orders', value: 312, delta: '+11%' },
+      { label: 'Average basket', value: 40.25, unit: '€', delta: '+6%' },
+      { label: 'Refunds', value: 7, delta: 2, tone: 'warn' },
     ],
   },
   list: {

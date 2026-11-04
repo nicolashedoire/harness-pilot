@@ -7,14 +7,18 @@ import { cn } from '@/lib/utils'
 import { useLang } from '@/i18n'
 import { NamedIcon, ProgressBar, Sensitive, Skeleton, StatusDot } from '@/components/ui'
 import { reducedMotion } from '@/lib/presence'
+import { fmtQuantity } from '@/lib/format'
 import { Chart, compact } from './charts'
 
 const Markdown = React.lazy(() => import('@/components/ui/markdown').then((m) => ({ default: m.Markdown })))
 
 const toneText: Record<Tone, string> = { ok: 'text-success', warn: 'text-warning', error: 'text-destructive' }
 
-function fmtValue(v: string | number, lang: string) {
-  return typeof v === 'number' ? compact(v, lang) : v
+/** A figure in the user's language (compact past 10 000), its unit after it (`%` as the language writes it). */
+function fmtValue(v: string | number, lang: string, unit?: string) {
+  if (typeof v !== 'number') return unit ? `${v}\u00a0${unit}` : v
+  if (unit === '%') return fmtQuantity(v, lang, '%')
+  return unit ? `${compact(v, lang)}\u00a0${unit}` : compact(v, lang)
 }
 
 /** A number that glides to its value: from 0 when it first shows, from the old value when it changes (ease-out,
@@ -73,7 +77,8 @@ export function SmartLink({ href, className, children }: { href: string; classNa
 }
 
 function Delta({ delta }: { delta: string | number }) {
-  const s = String(delta)
+  const lang = useLang()
+  const s = typeof delta === 'number' ? fmtQuantity(delta, lang, null, true) : String(delta)
   const neg = s.trim().startsWith('-') || s.trim().startsWith('−')
   const pos = /^\+|^\d/.test(s.trim()) && !neg && s.trim() !== '0'
   const Icon = neg ? ArrowDownRight : ArrowUpRight
@@ -93,7 +98,7 @@ function Stat({ b, size = 'lg' }: { b: Omit<StatBlock, 'type'>; size?: 'lg' | 'm
       <span className="truncate text-[13px] text-muted-foreground">{b.label}</span>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className={cn('min-w-0 truncate font-semibold tracking-tight', size === 'lg' ? 'text-[28px] leading-9' : 'text-xl leading-7', b.tone && toneText[b.tone])}>
-          <Sensitive length={4}>{fmtValue(value, lang)}</Sensitive>
+          <Sensitive length={4}>{fmtValue(value, lang, b.unit)}</Sensitive>
         </span>
         {b.delta != null && b.delta !== '' && <Delta delta={b.delta} />}
       </div>
@@ -370,8 +375,8 @@ export function BlockView({ block }: { block: Block }) {
             <span className="font-medium tabular-nums">
               <Sensitive length={5}>
                 {block.format === 'percent'
-                  ? `${new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(pct)} %`
-                  : `${compact(block.value, lang)} / ${compact(block.max, lang)}${block.unit ? ` ${block.unit}` : ''}`}
+                  ? fmtQuantity(pct, lang, '%')
+                  : `${compact(block.value, lang)} / ${compact(block.max, lang)}${block.unit ? `\u00a0${block.unit}` : ''}`}
               </Sensitive>
             </span>
           </div>

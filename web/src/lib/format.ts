@@ -41,6 +41,16 @@ export function fmtNumber(n: number, lang: string, opts?: Intl.NumberFormatOptio
   return cached('n', lang, opts, () => new Intl.NumberFormat(lang, opts)).format(n)
 }
 
+/** A figure in the user's language with its unit: `%` is written the way the language writes percentages
+ *  (en "25%", fr "25 %"), any other unit follows the number ("12,480 €" / "12 480 €", "66 GB"). `signed`: a change,
+ *  its sign always shown ("+18%", "−4"). Up to 2 decimals (1 for a percentage) unless `opts` says otherwise. */
+export function fmtQuantity(n: number, lang: string, unit?: string | null, signed = false, opts?: Intl.NumberFormatOptions): string {
+  const sign: Intl.NumberFormatOptions = signed ? { signDisplay: 'exceptZero' } : {}
+  if (unit === '%') return fmtNumber(n / 100, lang, { style: 'percent', maximumFractionDigits: 1, ...sign, ...opts })
+  const s = fmtNumber(n, lang, { maximumFractionDigits: 2, ...sign, ...opts })
+  return unit ? `${s} ${unit}` : s
+}
+
 export function fmtDate(at: number, lang: string, tz?: string, opts?: Intl.DateTimeFormatOptions) {
   const o: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short', timeZone: tz || undefined, ...opts }
   return cached('d', lang, o, () => new Intl.DateTimeFormat(lang, o)).format(new Date(at * 1000))
