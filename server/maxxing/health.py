@@ -369,10 +369,14 @@ def _collect() -> dict:
         issues.append(_issue("warn", "login_failures", f"{fails} failed sign-ins in the last hour"))
     ast = claude_auth_state()
     auth = bool(ast["ok"])
+    codex_ready = False
+    if not auth:
+        from .sessions import codex
+        codex_ready = codex.status().get('authenticated') is True
     if ast["method"] is None:
-        issues.append(_issue("error", "claude_auth", "Claude is not connected (Settings > Claude)"))
+        issues.append(_issue("info" if codex_ready else "error", "claude_auth", "Claude is not connected (Settings > Claude)"))
     elif not auth:
-        issues.append(_issue("error", "claude_auth", "Claude sign-in expired - sign in again in Settings > Claude"
+        issues.append(_issue("info" if codex_ready else "error", "claude_auth", "Claude sign-in expired - sign in again in Settings > Claude"
                              + (f" ({ast['error'][:160]})" if ast.get("error") else "")))
     age_h = None
     if backup_configured():
@@ -386,7 +390,7 @@ def _collect() -> dict:
             elif last.get("ok") is False:
                 issues.append(_issue("warn", "backup_failed", "The last memory backup failed"))
     _apply_seen(issues)
-    return {"ok": not issues, "issues": issues, "cpu_pct": cpu_pct(), "load": loadavg(), "mem": mem,
+    return {"ok": not any(i['level'] in ('error', 'warn') for i in issues), "issues": issues, "cpu_pct": cpu_pct(), "load": loadavg(), "mem": mem,
             "disk": dsk, "uptime_s": uptime_s(), "claude_auth": auth, "claude_auth_error": ast.get("error"),
             "claude_checked_at": ast.get("checked_at"), "backup_age_h": age_h,
             "failed_logins_1h": fails, "at": time.time()}

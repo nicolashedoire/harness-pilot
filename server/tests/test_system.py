@@ -17,6 +17,14 @@ def test_local_mode_does_not_offer_unsupported_updates(client, monkeypatch):
     assert client.post('/api/system/update').status_code == 409
 
 
+def test_codex_can_be_used_when_claude_is_not_connected(client, monkeypatch):
+    from maxxing.sessions import codex
+    monkeypatch.setattr(health, 'claude_auth_state', lambda: {'ok': False, 'method': None, 'error': None, 'checked_at': None})
+    monkeypatch.setattr(codex, 'status', lambda: {'installed': True, 'authenticated': True, 'reason': None})
+    response = client.get('/api/system/health?force=1').json()
+    assert next(i for i in response['issues'] if i['code'] == 'claude_auth')['level'] == 'info'
+
+
 def _svc(states):
     def show(name):
         if name not in states:
@@ -57,6 +65,8 @@ def test_cpu_after_a_long_pause_is_measured_again(monkeypatch):
 
 
 def test_health(client, org, services, monkeypatch):
+    from maxxing.sessions import codex
+    monkeypatch.setattr(codex, 'status', lambda: {'installed': False, 'authenticated': False, 'reason': 'not_installed'})
     monkeypatch.setattr(health, "disk", lambda path=None: {"total": 100e9, "free": 5e9, "pct": 95.0})
     monkeypatch.setattr(health, "meminfo", lambda: {"total": 8 << 30, "avail": 100 << 20})
     crons.append_run({"id": "r1", "cron_id": "c_a", "name": "Nightly", "at": time.time() - 60, "ok": False, "code": 2})
