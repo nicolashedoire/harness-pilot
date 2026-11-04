@@ -55,7 +55,7 @@ export default function SetupPage() {
           <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-[13px]">
             <p className="text-destructive">{errors.token}</p>
             <p className="text-muted-foreground">{t('setup.newLink')}</p>
-            <CodeBlock inline code="maxxing setup-link" />
+            <CodeBlock inline code="pilot setup-link" />
           </div>
         )}
         <NewPasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} errors={errors} autoFocus={!!urlToken} />
