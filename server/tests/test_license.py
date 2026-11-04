@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from maxxing import config, license
+from maxxing import config, license, register
 from test_cmd_core import _git, env, repos, run_cli  # noqa: F401  (fixtures)
 from test_customs import _upstream_release, code  # noqa: F401  (fixture)
 
@@ -205,7 +205,8 @@ def test_activate_without_token_leaves_no_key(mx, monkeypatch):
     assert not (config.load_config().get("license") or {}).get("email")
 
 
-def test_the_key_from_the_api(server, client):
+def test_the_key_from_the_api(server, client, monkeypatch):
+    monkeypatch.setattr(register, "_offline", lambda: False)          # MAXXING_LICENSE_PING=1
     c = client
     assert c.get("/api/settings/license").json()["has_key"] is False
     assert c.put("/api/settings/license", json={"key": "nope"}).status_code == 400
@@ -366,6 +367,7 @@ def test_activate_with_a_license_that_is_not_an_object_leaves_no_key(mx, monkeyp
 
 def test_license_numbers_out_of_range_do_not_break_the_settings(mx, monkeypatch, client):
     """max_servers 1e999 (inf) was stored as is: GET /api/settings/license answered 500 until the key was removed."""
+    monkeypatch.setattr(register, "_offline", lambda: False)          # MAXXING_LICENSE_PING=1
     monkeypatch.setattr(license, "_post", lambda *a, **k: {
         "ok": True, "token": "tok", "activation_id": {"x": 1},
         "license": {"email": "boss@example.com", "max_servers": float("inf"), "expires_at": float("nan"),
