@@ -227,7 +227,7 @@ def day(force: bool = False) -> dict:
             nxt = (planned[0], j.get("name") or j["id"])
         if not ev and not dense:
             continue
-        lanes.append({"name": j.get("name") or j["id"], "sub": cr.humanize(j["schedule"]), "dense": dense,
+        lanes.append({"name": j.get("name") or j["id"], "sub": j["human"], "dense": dense,
                       "kind": j.get("kind"), "events": ev if not dense else ev[:MAX_PLANNED],
                       "first": min([e["at"] for e in ev] + planned[:1] or [end]), "href": f"/crons?job={j['id']}"})
     lanes.sort(key=lambda l: l["first"])

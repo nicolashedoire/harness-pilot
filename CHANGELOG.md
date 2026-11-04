@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Telegram companion notifications now show the exact proposed changes and let the linked owner approve, reject or reopen the companion conversation. Older buttons cannot approve a changed proposal; decisions never apply or publish code. Large changes stay in the application review. Thread creation no longer produces a spurious unsupported-message reply during synchronization. [Show me](#show:telegram-setup)
+- Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.
 - The Settings menu groups its sections under headings (You, Agents, Data, Integrations, Platform) with Support last, and a search above it on a computer finds a setting by name or keyword.
 - The agent map of a running agent team now says that its subagents cannot be stopped one by one, and that stopping the session interrupts the coordinator and all its subagents.
