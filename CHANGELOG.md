@@ -6,6 +6,11 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Scheduled prompts can now run with **Codex**: in a job's editor, choose the agent (Claude Code or Codex) under the prompt, with an optional Codex model; the job list marks Codex jobs.
+- Settings → Backup can create the encrypted instance archive every day or every week at the hour you choose, keeping the number of scheduled archives you set. Your passphrase is never stored: the server keeps a key derived from it, with your agreement, and the passphrase still opens every archive. A failure is notified.
+- Thumbnails and previews: when `ffmpeg` (with its WebP encoder) or `pdftoppm` is missing, Settings → System shows what does not work and the command that installs it, `pilot doctor` warns, and the local app says so in its terminal at start. Nothing is installed for you. On a Mac, Homebrew's plain `ffmpeg` cannot write WebP: run `brew install ffmpeg-full` (the local app uses it as soon as it is installed) and `brew install poppler`.
+- Settings → Stats marks the Claude plan usage as **Experimental** and explains where it comes from. When it cannot be read, Stats and the dashboard card say so in a plain sentence instead of showing an error code.
+- **Summary and actions** no longer needs Codex: without a signed-in Codex, Claude Code writes the summary, the dialog says which agent wrote it and its errors show in your language. The summary's tokens (and Claude's indicative amount) now count in the session's statistics.
 - **Summarise & restart** now works on a Claude Code and Codex discussion: a new discussion with the same objective, roles, models and limits continues from a summary of the exchanges, and a paused discussion stays paused on the reply it was waiting for.
 - Scheduled jobs can run **At startup** (`@reboot`) in the local app: they start each time the application starts. The Crons page shows *At the next start* for them.
 - Make a task repeat every day, every week on chosen days, or every month: when you mark it done, the next one is added to *To do* with its due date and reminder.
