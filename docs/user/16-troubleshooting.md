@@ -14,14 +14,22 @@ so they hold on every device.
 
 ## Local setup on macOS
 
-The local setup (`bash scripts/dev-local.sh`, see [Local installation](installation)) has no systemd, no
-`journalctl` and no service: the server is the process running in that terminal. The rest of this page, from
+The local setup (`bash scripts/dev-local.sh`, see [Local installation](installation)) has no systemd or
+`journalctl`: it runs in your terminal, or as an optional launchd background service. The rest of this page, from
 **Start with the doctor** on, describes a Linux server installation. On a Mac, use the commands below instead.
 
 **Check it.** From the repository root, `bash scripts/dev-local.sh cli doctor` runs the doctor with the settings
-of your local app (a plain `uv run pilot doctor` looks at the folders of a server installation instead). Some
-lines only concern a Linux server and can be ignored locally: systemd and the service, server hardening
-(firewall, fail2ban), and components that are expected to be owned by root.
+of your local app (a plain `uv run pilot doctor` looks at the folders of a server installation instead).
+On macOS, the doctor recognizes Claude's Keychain sign-in and reads listening addresses with `lsof`. A failed
+port inspection is a warning, not proof that nothing is listening. It describes the launchd configuration
+without claiming that an agent is stopped simply because the command runs in another terminal; use the printed
+`service status` command to inspect it. Linux firewall and service checks are marked as inapplicable.
+Local tool paths may belong to your account or root, but foreign ownership or writable code paths still fail
+verification. Linux package versions and package contents are not verified for these user-managed tools.
+
+Add `--live` for a small real Claude request, using the same isolated test as **Settings → Claude → Test**.
+A timeout, context or quota error is reported as a failed request, not an expired sign-in. Real authentication
+errors still fail. Missing optional tools and a publicly exposed listener remain diagnostic issues.
 
 **Where the logs are.**
 

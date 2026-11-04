@@ -19,6 +19,10 @@ The command is `pilot`. `maxxing` is the same command under its earlier name and
 | `pilot doctor [--json] [--live] [--offline] [--deps]` | check the installation; `--live` makes a real Claude call, `--offline` skips the update checks (GitHub, Claude Code release), `--deps` also looks up known vulnerabilities of the installed packages (osv.dev) |
 | `pilot harden [--undo] [--no-restart]` | apply (or remove) the systemd sandbox of the service, then restart it; restores the previous settings if the service does not come back (see [Security](security)) |
 
+`doctor --live` uses the same small, tool-free request as **Settings → Claude → Test**, without loading project
+instructions, skills, hooks or MCP servers or saving a conversation. An ordinary request failure does not mark
+the sign-in as expired. For macOS listener, launchd and local tool checks, see [Troubleshooting](troubleshooting#local-setup-on-macos).
+
 ## pilot init
 
 Creates or refreshes the configuration, workspace, skills and default jobs. Safe to run again:

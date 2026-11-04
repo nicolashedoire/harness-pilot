@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- **Settings → Claude → Test** now sends a small request without loading your projects or tools. A context, network or quota error no longer marks a valid sign-in as expired. On macOS, the doctor recognizes Claude's Keychain sign-in, checks listening ports with `lsof`, describes launchd instead of systemd, and checks local tool permissions without requiring Linux package versions or root ownership.
+
 - Agents use the current `pilot` command in the workspace instructions retained from older installations, including `pilot doctor`. Startup refreshes recognized product instructions while preserving your custom text; existing conversation messages stay in the history.
 
 - Codex sessions no longer count their tokens several times. Codex reports the running total of its conversation after each answer, and every answer added that whole total again: the tokens under each Codex answer and on the Stats page now show what that answer used. Totals recorded before this update stay as they were.
