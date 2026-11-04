@@ -8,7 +8,6 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 - On Telegram, a message sent while the previous answer was still arriving could leave the status message of its own turn stuck on "Working…" after the final summary, with "typing…" shown after the answer. Its turn now has a single status, which ends on the summary.
 - **Settings → MCP → Browser of my PC** no longer disappears while harness-pilot PC cannot be downloaded: it says the program is not available yet. Its downloads will come from this repository's releases, not the original project's. A download that fails now explains why instead of showing an internal error.
-
 - Agents use the current `pilot` command in the workspace instructions retained from older installations, including `pilot doctor`. Startup refreshes recognized product instructions while preserving your custom text; existing conversation messages stay in the history.
 
 - Codex sessions no longer count their tokens several times. Codex reports the running total of its conversation after each answer, and every answer added that whole total again: the tokens under each Codex answer and on the Stats page now show what that answer used. Totals recorded before this update stay as they were.
