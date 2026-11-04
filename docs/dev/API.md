@@ -889,6 +889,7 @@ and automatic Telegram notifications are dropped, the managed crontab block stay
 and scheduled `pilot cron run` invocations skip, and `POST /api/backup/run` returns `409 paused`, so two live
 copies never share one bot, run a job twice or push to the same repository. Manual "Run now", Telegram
 sign-in challenges and the explicit Telegram test still work. `/resume-integrations` clears the flag, rewrites
-the crontab block and starts the Telegram poller. Preview hashes are
+the crontab block and starts the Telegram poller; resident missions keep their own moved-state pause
+(`reason: restored`) and are never restarted by it. Preview hashes are
 rechecked; traversal, duplicate/conflicting paths and incomplete inventories are rejected. Data format
 and recovery limits are documented in [the backup guide](../user/10-backup.md).

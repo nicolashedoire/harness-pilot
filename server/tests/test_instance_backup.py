@@ -272,7 +272,7 @@ def test_restored_integrations_stay_paused_after_activation_until_resumed(mx, mo
     from fastapi.testclient import TestClient
     from _conn_helpers import GH_TOKEN, TG_TOKEN, FakeGitHub, FakeTelegram
     from conftest import wait_for
-    from maxxing import backup, cmd_cron, crons, localcron
+    from maxxing import backup, cmd_cron, companions, crons, localcron, missions
     from maxxing.app import create_app
     from maxxing.telegram import gateway
 
@@ -289,6 +289,15 @@ def test_restored_integrations_stay_paused_after_activation_until_resumed(mx, mo
     config.set_secret('telegram_token', TG_TOKEN)
     job = crons.create_job({'name': 'Every minute', 'schedule': '* * * * *', 'command': 'true', 'notify': 'never'})
     assert backup.configure('alice/memory', GH_TOKEN)['ok']
+    # A resident mission that was running in the original installation (#47's moved-state check pauses it).
+    workspace.create_project('acme')
+    topic = workspace.create_topic('acme', 'blog')['path']
+    mission = missions.create('Improve the platform', topic, 'Inspect and test one improvement.',
+                              [{'id': 'step-1', 'title': 'Review', 'role': 'observer', 'instruction': 'Inspect.', 'after': []}])['id']
+    missions.control(mission, 'start', missions.get(mission)['plan_fingerprint'])
+    with missions._edit(mission) as data:
+        data['origin_state'] = '/original/state'
+    monkeypatch.setattr(companions, 'run', lambda *a, **k: pytest.fail('a restored mission launched an agent'))
     started = []
     monkeypatch.setattr(crons, 'spawn_run', started.append)
     commits = lambda: int(sp.run(['git', '--git-dir', str(bare), 'rev-list', '--count', 'main'], capture_output=True,
@@ -314,6 +323,8 @@ def test_restored_integrations_stay_paused_after_activation_until_resumed(mx, mo
             assert refused.status_code == 409 and refused.json()['error'] == 'paused'
             assert commits() == 0 and backup.history() == []
             assert telegram.calls == [] and gateway.status()['last_poll_ok'] is None
+            missions.tick()                              # the worker's pass after activation (off in tests)
+            assert missions.get(mission)['phase'] == 'paused' and missions.get(mission)['reason'] == 'restored'
 
             resumed = c.post('/api/backup/instance/resume-integrations')
             assert resumed.status_code == 200, resumed.text
@@ -326,6 +337,8 @@ def test_restored_integrations_stay_paused_after_activation_until_resumed(mx, mo
             pushed = c.post('/api/backup/run')
             assert pushed.status_code == 200 and pushed.json()['ok'] is True, pushed.text
             assert commits() == 1
+            missions.tick()                              # resuming integrations never restarts a mission
+            assert missions.get(mission)['phase'] == 'paused'
     finally:
         telegram.close()
         github.close()

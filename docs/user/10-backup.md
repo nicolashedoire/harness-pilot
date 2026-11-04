@@ -40,7 +40,8 @@ are excluded. Those links are listed before restoration; reinstall their depende
    copies would otherwise answer the same bot, run every task twice and push to the same repository.
    Stop the original instance first, then choose **Resume integrations** in Settings → Backup.
    If two-step sign-in is on, type the code Telegram shows: its Allow button only answers once Telegram
-   is resumed on this copy.
+   is resumed on this copy. Resident missions that were running are paused as well (reason: restored);
+   resuming integrations does not restart them, start each one again after reviewing it.
 
 Restoration retargets stored application data paths and preserves historical attachment links.
 It resets active runtime process handles and native agent thread handles; conversation history
