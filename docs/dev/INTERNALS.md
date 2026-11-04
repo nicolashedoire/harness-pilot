@@ -97,12 +97,13 @@ Python modules call each other only through these functions. Keep signatures sta
 ## maxxing.sessions.teams  (owner: core) - mixed Claude + Codex teams
 API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a Claude
 coordinator (the parent, returned by `create`) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
-- State: coordinator meta `team: {phase, goal, agents: [{id, provider, role, stopped}], created}`, worker meta
+- State: coordinator meta `team: {phase, goal, attachments, agents: [{id, provider, role, stopped}], created}`, worker meta
   `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
   (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
-- `create(path, message, title=None)`: mission of 1-24 000 characters (else 400 `bad_mission`). Creates the
-  coordinator then the workers, logs the mission as the coordinator's `mx_user` line, then, inside the coordinator's
-  `store.edit`, sets `team_parent` on each worker and sends it its role and the mission (`source='team'`; asked not
+- `create(path, message, title=None, attachments=None)`: mission of 1-24 000 characters (else 400 `bad_mission`),
+  attachments checked by `service._check_attachments` (400 `bad_attachment`) before anything is created. Creates the
+  coordinator then the workers, logs the mission and its attachments as the coordinator's `mx_user` line, then, inside the coordinator's
+  `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
 - `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
@@ -122,7 +123,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   carries on after a server restart. `launching` for more than 30 s -> `error`, workers stopped. `working` with no
   worker running -> one synthesis prompt with each report (`service.last_assistant_text`, 20 000 characters, or a
   placeholder for a stopped, failed or silent worker; reports are framed as untrusted observations) queued on the
-  coordinator (`service._item(prompt, [], 'team')`, state `running`, `_spawn`), phase `synthesizing`; skipped when
+  coordinator (`service._item(prompt, team['attachments'], 'team')`, the mission's attachments, state `running`, `_spawn`), phase `synthesizing`; skipped when
   the phase or the agents changed meanwhile (a concurrent stop: rebuilt on the next pass). `synthesizing` and the
   coordinator no longer running -> `completed` (idle with turns) or `error`.
 - Notifications: a worker on its assignment (`team_turn`: `team_parent` set and no `last_turn` yet, or one whose
