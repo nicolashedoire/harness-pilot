@@ -1921,7 +1921,7 @@ const sessionUrl = (s) => `/sessions?path=${encodeURIComponent(s.path)}&session=
 function feedAdd(st, ev) {
   const t = ev.at ?? now()
   const e = { id: st.feed.nextId++, at: t, source: 'custom', level: 'info', title: '', body: '', url: '', count: 1, read: false,
-    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], ...ev }
+    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], quiet: false, ...ev }
   if (e.group) {
     const row = st.feed.events.find((x) => x.source === e.source && x.group === e.group && x.level === e.level && !x.read && !x.resolved_at && t - x.at < DAY)
     if (row) {
@@ -2150,7 +2150,7 @@ R('POST', '/api/feed', ({ body }) => {
   const source = String(body.source || 'custom').toLowerCase()
   if (body.dedupe && S.feed.events.some((e) => e.source === source && e.dedupe === body.dedupe)) return { event: null, duplicate: true }
   const ev = feedAdd(S, { source, level, title, body: String(body.body || ''), url: String(body.url || ''), dedupe: body.dedupe || undefined, group: body.group || null,
-    kind, params: feedParams(body.params), actions: feedActions(body.actions) })
+    kind, params: feedParams(body.params), actions: feedActions(body.actions), quiet: body.quiet === true })
   bus('feed')
   return { event: feedPublic(ev), duplicate: false }
 })
