@@ -70,7 +70,9 @@ proposes a new version) or **refuse** it (its files go to the trash). Nothing of
 it.
 
 Every approval is a **version**: the Atelier shows who made each one (which session, Claude or Codex, when, and
-what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. The widgets and pages you
+what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. **Back to this version**
+puts an earlier one back in one step (a version that ran without error is marked as working), and you can compare
+any two versions file by file. The widgets and pages you
 had before the Atelier are version 1, with an unknown origin. A file of an extension changed by hand (or by Claude
 working directly in `<workspace>/extensions/`) keeps working and is marked **changed outside the Atelier** until you
 accept it as a new version.

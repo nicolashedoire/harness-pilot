@@ -258,6 +258,28 @@ async def get_item(kind: str, iid: str):
     return await _call(atelier.detail, kind, iid)
 
 
+@router.get("/api/atelier/{kind}/{iid}/versions/{n}")
+async def get_version(kind: str, iid: str, n: int, against: Optional[str] = None):
+    return await _call(atelier.version_detail, kind, iid, n, against)
+
+
+@router.post("/api/atelier/{kind}/{iid}/rollback")
+async def rollback(kind: str, iid: str, request: Request):
+    raw = await request.body()
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        raise _err(400, "bad_request", "the body must be JSON") from None
+    res = await _call(atelier.rollback, kind, iid, data.get("version") if isinstance(data, dict) else None)
+    try:
+        await asyncio.to_thread(extensions.scan)
+    except Exception:  # noqa: BLE001 - the version is installed; a broken one shows its error
+        log.warning("extension scan after rollback failed", exc_info=True)
+    _changed(True)
+    item = await _call(_item_of, iid)
+    return {"ok": True, "item": item, "version": res["version"]}
+
+
 @router.post("/api/atelier/{kind}/{iid}/accept")
 async def accept(kind: str, iid: str):
     res = await _call(atelier.accept, kind, iid)
@@ -275,6 +297,7 @@ async def _on_turn_end(session: dict, _result: Any = None) -> None:
 
 async def _watch() -> None:
     last = await asyncio.to_thread(atelier.rev)
+    checked = 0.0
     while True:
         await asyncio.sleep(WATCH_S)
         try:
@@ -282,6 +305,10 @@ async def _watch() -> None:
             if cur != last:
                 last = cur
                 _changed(True)
+            if time.time() - checked > 3600:            # retention: once a day (checked every hour)
+                checked = time.time()
+                if await asyncio.to_thread(atelier.prune_due):
+                    await asyncio.to_thread(atelier.prune)
         except Exception:  # noqa: BLE001 - keep watching
             log.debug("atelier watcher pass failed", exc_info=True)
 
