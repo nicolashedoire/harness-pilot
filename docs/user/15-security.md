@@ -5,7 +5,7 @@ section: Reference
 
 harness-pilot gives its web interface access to the connected agent tools and, when configured, to Telegram. The verified local setup runs under the operating-system user who starts it, on `127.0.0.1:8787`. A newly initialized local workspace uses Claude's `default` permission mode; an existing configuration retains its own settings. Codex sessions use the CLI sandbox: read-only in default and plan modes, workspace-write for the other modes. Shell jobs run with the permissions of the application user.
 
-The rest of this page describes the inherited Linux server installation. That deployment and its hardening have **not** been validated for this repository and should not be assumed to apply to the local Mac setup. See [Local installation](installation) and check the actual permissions configured for your installation.
+The rest of this page describes a Linux server installation (see [Installation](installation)); it does not apply to the local Mac setup. Its installation has been verified in Debian 12 and Ubuntu 24.04 containers, where the firewall and SSH settings are left to the host: they have not yet been verified on a real server. See [Local installation](installation) and check the actual permissions configured for your installation.
 
 ## Privacy defaults
 
