@@ -43,14 +43,18 @@ Schedule and whitelist: Settings -> Backup. History: Settings -> Backup -> histo
   file) and copy the content back.
 
 ## Move to a new server
-On the new server run the installer with the restore variables:
+On the new server download this repository's installer (read it if you wish), then run it as root with the
+restore variables:
 ```bash
-curl --proto '=https' --tlsv1.2 -fsSL https://get.harness-maxxing.com | RESTORE_FROM=owner/name RESTORE_TOKEN=<token> bash   # no key needed (LICENSE=HM-… for signed releases)
+curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.com/nicolashedoire/harness-pilot/main/install.sh
+sudo RESTORE_FROM=owner/name RESTORE_TOKEN=<token> bash install.sh
 ```
-(or answer "yes" to the restore question). It installs, initialises an empty workspace, then
+(without `RESTORE_TOKEN` the installer asks for the token, which keeps it out of the shell history; or answer
+"yes" to the restore question). It installs, initialises an empty workspace, then
 restores the backup over it. Then: sign in with the new setup link, re-enter secrets that were not
 backed up (Claude token, Telegram bot token, Keys), re-link Telegram (a bot can only be polled by
-one server - stop the old one first), re-enable the backup.
+one server - stop the old one first), re-enable the backup. This procedure is not verified yet for this version:
+keep the old server and its backup until the new one works.
 
 ## Troubleshooting
 | Error | Fix |
