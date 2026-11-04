@@ -18,7 +18,8 @@ Loading (the enabled check + the import) runs under `publishing()` - a lock shar
 files: a scan never imports code the restore is still holding back.
 
 `ctx` passed to card()/handle(): {"id", "workspace", "state_dir", "secret": fn(name) -> str|None,
-"config": {"timezone", "language", "public_url"}}.
+"config": {"timezone", "language", "public_url"}}. `secret` only answers the keys the extension may read
+(permissions.secret_reader: declared and allowed, or grandfathered) and raises permissions.PermissionDenied otherwise.
 """
 from __future__ import annotations
 
@@ -89,6 +90,13 @@ class Extension:
             return self.names.get(lang) or self.names.get("en") or self.name or self.id
         return self.name or self.id
 
+    def access(self) -> dict | None:
+        """What it may use now and what waits for the user (permissions.access); None for a block plugin or an agent."""
+        if self.type not in ("widget", "page"):
+            return None
+        from . import permissions
+        return permissions.access(self)
+
     @property
     def enabled(self) -> bool:
         # Listing a restored instance must not import or run extension Python before review.
@@ -100,6 +108,7 @@ class Extension:
                 "api": self.api, "has_api": self.has_api, "has_page": self.has_page, "span": self.span,
                 "has_html": self.has_html, "height": self.height, "page_v": page_version(self),
                 "pinned": self.type == "page" and self.id in pinned_ids(), "permissions": self.permissions,
+                "access": self.access(),
                 **({"renders": (self.block or {}).get("renders") or []} if self.type == "block" else {})}
 
 
@@ -370,6 +379,9 @@ def scan(only_if_stale: bool = False) -> list[Extension]:
             with _lock:
                 if _scanned and sig == _last_sig:
                     return list(_registry.values())
+        from . import permissions               # the first scan of this version: what exists now is grandfathered
+        permissions.baseline(sorted(d.name for d in r.iterdir() if d.is_dir() and not d.name.startswith((".", "_")))
+                             if r.is_dir() else [])
         if r.is_dir():
             for d in sorted(p for p in r.iterdir() if p.is_dir() and not p.name.startswith((".", "_"))):
                 exts[d.name] = _load_one(d)
@@ -487,12 +499,16 @@ def _ext_state(eid: str) -> Path:
     return config.state_dir("extensions", eid)
 
 
-def make_ctx(ext: Extension) -> dict[str, Any]:
-    from . import vault
+def make_ctx(ext: Extension, where: str | None = None, record: bool = True) -> dict[str, Any]:
+    """`where`: what a refused key is recorded as (exterrors: card / api; default by the extension's kind); `record`
+    False (pilot ext check): refusals and grandfathered keys are not recorded."""
+    from . import permissions
     cfg = config.load_config()
+    if where is None:
+        where = "card" if ext.type == "widget" and not ext.has_html else "api"
     return {"id": ext.id, "workspace": str(config.workspace()),
             "state_dir": str(_ext_state(ext.id)),
-            "secret": vault.get,
+            "secret": permissions.secret_reader(ext, where, record),
             "config": {"timezone": cfg.get("timezone", "UTC"), "language": cfg.get("language", "en"),
                        "public_url": cfg.get("public_url", "")}}
 
@@ -529,7 +545,7 @@ def compute_card(ext: Extension) -> tuple[dict, str]:
     """card(ctx) now, without the cache: (the validated Card, card_error of what card() returned). Blocking."""
     if ext.module is None:
         raise RuntimeError("extension is disabled")
-    raw = ext.module.card(make_ctx(ext))
+    raw = ext.module.card(make_ctx(ext, "card"))
     card = clean_card(raw)
     card.setdefault("updated", time.time())
     return card, card_error(raw)
@@ -557,6 +573,12 @@ def widget_card(ext: Extension, force: bool = False) -> dict:
     with _lock:
         _cards[ext.id] = (time.time(), card)
     return card
+
+
+def forget_card(eid: str) -> None:
+    """Drop the cached card of `eid` (its permissions changed: the next dashboard computes it again)."""
+    with _lock:
+        _cards.pop(eid, None)
 
 
 def handler(ext: Extension) -> Callable[..., Any]:
