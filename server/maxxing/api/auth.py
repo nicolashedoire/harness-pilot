@@ -108,10 +108,10 @@ async def login(body: LoginIn, request: Request, response: Response):
         if twofactor.enabled() and not twofactor.device_trusted(request.cookies.get(twofactor.DEVICE_COOKIE)):
             return {"ok": False, "two_factor": await _challenge("login", request)}
         security.set_cookie(response, request)
-        _alert(request, "Signed in", loud=False)
+        _alert(request, "Signed in", loud=False, via="password")
         return {"ok": True}
     if n == 3:
-        _alert(request, f"{n} wrong passwords", loud=True)
+        _alert(request, f"{n} wrong passwords", loud=True, count=n)
     await asyncio.sleep(delay)
     raise HTTPException(401, detail={"error": "bad_password", "message": "Wrong password"})
 
@@ -158,7 +158,7 @@ async def two_factor(body: TwoFactorIn, request: Request, response: Response):
     if body.trust:
         twofactor.set_device_cookie(response, request)
     _alert(request, "Signed in (approved in Telegram)" if c.via == "telegram" else "Signed in (Telegram code)",
-           loud=False)
+           loud=False, via="telegram" if c.via == "telegram" else "code")
     return {"ok": True, "status": "approved"}
 
 
@@ -213,8 +213,9 @@ async def change_password(body: PasswordIn, request: Request, response: Response
     return {"ok": True}
 
 
-def _alert(request: Request, what: str, loud: bool) -> None:
-    """Sign-in alert to Telegram (no-op until the gateway is configured)."""
+def _alert(request: Request, what: str, loud: bool, via: str | None = None, count: int | None = None) -> None:
+    """Sign-in alert to Telegram (no-op until the gateway is configured) and to the feed (`signin.ok`, folded, or
+    `signin.failed` when `loud`)."""
     try:
         from ..telegram import gateway
         ua = request.headers.get("user-agent", "?")[:90]
@@ -225,7 +226,11 @@ def _alert(request: Request, what: str, loud: bool) -> None:
     try:
         from .. import feed
         ip = security.client_key(request)
-        feed.system(what, f"{ip} · {request.headers.get('user-agent', '?')[:90]}", "warning" if loud else "info",
-                    "security", group=None if loud else "signin")      # sign-ins fold into one row
+        ua = request.headers.get("user-agent", "?")[:90]
+        params = {"ip": ip, "ua": ua, **({"count": count} if loud else {"via": via or "password"})}
+        feed.system(what, f"{ip} · {ua}", "warning" if loud else "info", "security",
+                    group=None if loud else "signin",      # sign-ins fold into one row
+                    kind="signin.failed" if loud else "signin.ok", params=params,
+                    actions=[feed.link("open", "Open", "/settings/security")] if loud else None)
     except Exception:
         pass

@@ -56,7 +56,9 @@ def cmd_deps(a) -> int:
         if failed and a.notify:
             from . import feed
             body = "\n".join(f"{r['name']}: {r['text']}" for r in failed)[:2000]
-            feed.system("Dependency update failed", body, "warning", "system", "/settings")
+            feed.system("Dependency update failed", body, "warning", "system", "/settings", kind="deps.update_failed",
+                        params={"count": len(failed), "names": ", ".join(r["name"] for r in failed)[:300]},
+                        actions=[feed.link("open", "Open", "/settings/system")])
             from .telegram import gateway
             gateway.system_alert("Dependency update failed (harness-pilot):\n" + body)
         if a.quiet and failed:

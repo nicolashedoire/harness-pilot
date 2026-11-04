@@ -6,6 +6,10 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
+- Get notified when a session finishes or fails, and when a Claude Code + Codex discussion pauses on its limit. Notifications are shown in your language.
+- Choose per kind of event what reaches this browser (with or without sound), push notifications on a phone or computer, and Telegram. Push delivery has not yet been verified end to end. Repeated cron failures now fold into one row per job.
+- Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate; mixed Claude–Codex teams are not yet available.
 - Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
 - View recent token usage by agent and a separate count for turns without attribution. Amounts reported by Claude are indicative; check the provider for actual charges.

@@ -271,21 +271,30 @@ def _alerts(resources: list[dict], previous: dict | None) -> None:
             continue
         old = before.get(r["id"])
         url = f"/infra?id={r['id']}"
+        who = {"resource_id": r["id"], "name": r["name"]}
+        opener = [feed.link("open", "Open", url)]
         try:
             if r["kind"] in ("site", "worker", "pages", "server") and r["status"] == "down" and old in ("ok", "warn"):
-                feed.post(f"Down: {r['name']}", _why(r), "error", "infra", url, group=f"down:{r['id']}")
+                why = _why(r)
+                feed.post(f"Down: {r['name']}", why, "error", "infra", url, group=f"down:{r['id']}", kind="infra.down",
+                          params={**who, "reason": why}, actions=opener, trusted=True)
             elif r["kind"] in ("site", "worker", "pages", "server") and r["status"] == "ok" and old == "down":
-                feed.post(f"Back up: {r['name']}", "", "success", "infra", url, group=f"up:{r['id']}")
+                feed.system_resolve("infra", f"down:{r['id']}")
+                feed.post(f"Back up: {r['name']}", "", "success", "infra", url, group=f"up:{r['id']}", kind="infra.up",
+                          params=who, trusted=True)
             cert = r["details"].get("cert") or {}
             if cert.get("days_left") is not None and cert["days_left"] < CERT_WARN_DAYS:
                 feed.post(f"Certificate of {r['name']} expires in {cert['days_left']} days", "", "warning", "infra", url,
-                          dedupe=f"cert:{r['id']}:{cert.get('expires')}")
+                          dedupe=f"cert:{r['id']}:{cert.get('expires')}", kind="infra.cert_expiring",
+                          params={**who, "days": cert["days_left"]}, actions=opener, trusted=True)
             days = r["details"].get("days_left") if r["kind"] == "domain" else None
             if days is not None and not r["details"].get("auto_renew"):
                 for limit in DOMAIN_ALERT_DAYS:
                     if days < limit:
                         feed.post(f"Domain {r['name']} expires in {max(days, 0)} days", "", "warning" if days >= 0 else "error",
-                                  "infra", url, dedupe=f"domain:{r['name']}:{r['details'].get('expires')}:{limit}")
+                                  "infra", url, dedupe=f"domain:{r['name']}:{r['details'].get('expires')}:{limit}",
+                                  kind="infra.domain_expiring", params={**who, "days": max(days, 0)}, actions=opener,
+                                  trusted=True)
                         break
         except Exception:  # noqa: BLE001 - an alert never breaks a refresh
             pass

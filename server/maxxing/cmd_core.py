@@ -1656,9 +1656,11 @@ def check_update(branch: str | None = None) -> dict:
 def notify_update(info: dict) -> bool:
     """Telegram message ("Alerts" thread) about an available update; no-op when not configured."""
     from . import feed
+    url = f"/sessions?path=projects/{update_topic().replace('/', '/topics/')}"
     feed.system(f"Update available: {info['latest']}", f"Installed: {info['current']}. Open the topic {update_topic()} "
-                "and say: update.", "info", "system", f"/sessions?path=projects/{update_topic().replace('/', '/topics/')}",
-                dedupe=f"update-{info['latest']}")
+                "and say: update.", "info", "system", url, dedupe=f"update-{info['latest']}", kind="update.available",
+                params={"version": info["latest"], "current": info["current"], "topic": update_topic()},
+                actions=[feed.link("open", "Open", url)])
     url = (config.load_config().get("public_url") or "").rstrip("/")
     text = (f"Harness Maxxing {info['latest']} is available (installed: {info['current']}, "
             f"{info['behind']} new commit(s)).\nOpen the topic {update_topic()}"
@@ -1819,7 +1821,9 @@ def _rollback(old: str, reason: str, restart: bool, **info) -> None:
 
 def _notify(text: str) -> None:
     from . import feed
-    feed.system("Update needs attention", text, "warning", "system", f"/sessions?path=projects/{update_topic().replace('/', '/topics/')}")
+    url = f"/sessions?path=projects/{update_topic().replace('/', '/topics/')}"
+    feed.system("Update needs attention", text, "warning", "system", url, kind="update.attention",
+                actions=[feed.link("open", "Open", url)])
     try:
         from .telegram import gateway
         gateway.system_alert(text)

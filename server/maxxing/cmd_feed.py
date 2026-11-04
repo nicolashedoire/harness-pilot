@@ -19,10 +19,16 @@ def _configure(p) -> None:
     s.add_argument("--url", default="", help="link opened from the event (https://... or /files?path=...)")
     s.add_argument("--dedupe", help="unique key: a second post with the same key (and source) is ignored")
     s.add_argument("--group", help="fold repeats into one unread row (e.g. --group daily-ok)")
+    s.add_argument("--kind", default="custom", help="your own event type, e.g. backup.offsite (Telegram rule per kind)")
+    s.add_argument("--param", action="append", default=[], metavar="NAME=VALUE",
+                   help="a value kept with the event (repeatable), e.g. --param site=blog")
+    s.add_argument("--link", action="append", default=[], metavar="LABEL=URL",
+                   help="a button under the event (repeatable, max 4): an app path (/...) or an https:// URL")
     s.add_argument("--quiet", action="store_true", help="never post this one to Telegram")
     s.add_argument("--json", action="store_true")
-    s = sub.add_parser("list", help="latest events")
+    s = sub.add_parser("list", help="latest events (! = needs attention)")
     s.add_argument("--unread", action="store_true")
+    s.add_argument("--pending", action="store_true", help="only what needs attention")
     s.add_argument("--source")
     s.add_argument("--limit", type=int, default=20)
     s.add_argument("--json", action="store_true")
@@ -34,24 +40,35 @@ def _run(a) -> int:
     from .feed import FeedError
     try:
         if a.feed_cmd == "post":
+            params, actions = {}, []
+            for item in a.param:
+                name, sep, value = item.partition("=")
+                if not sep:
+                    raise FeedError(400, "bad_params", f"--param {item!r}: NAME=VALUE")
+                params[name.strip()] = value
+            for n, item in enumerate(a.link, 1):
+                label, sep, url = item.partition("=")
+                if not sep:
+                    raise FeedError(400, "bad_action", f"--link {item!r}: LABEL=URL")
+                actions.append({"id": f"link-{n}", "label": label.strip(), "type": "link", "url": url.strip()})
             ev = feed.post(a.title, a.body, a.level, a.source, a.url, dedupe=a.dedupe, group=a.group,
-                           notify=not a.quiet)
+                           notify=not a.quiet, kind=a.kind, params=params, actions=actions)
             if a.json:
                 print(json.dumps({"event": ev, "duplicate": ev is None}))
             else:
                 print("duplicate - already posted" if ev is None else f"posted #{ev['id']} ({ev['source']})")
             return 0
         if a.feed_cmd == "list":
-            r = feed.list_events(a.source, a.unread, None, a.limit)
+            r = feed.list_events(a.source, a.unread, None, a.limit, pending=a.pending)
             if a.json:
                 print(json.dumps(r, indent=2, ensure_ascii=False))
                 return 0
             for ev in r["events"]:
                 when = time.strftime("%m-%d %H:%M", time.localtime(ev["at"]))
-                mark = " " if ev["read"] else "*"
+                mark = "!" if ev["pending"] else " " if ev["read"] else "*"
                 count = f" x{ev['count']}" if ev["count"] > 1 else ""
                 print(f"{mark} {when}  {ev['level']:<7} {ev['source']:<12} {ev['title']}{count}")
-            print(f"{r['unread']} unread")
+            print(f"{r['unread']} unread, {r['pending']} need attention")
             return 0
         print(f"{feed.mark_read(everything=True)} unread")
         return 0
