@@ -110,6 +110,8 @@ class Attempt:
     oom: bool = False                                  # SIGKILLed while the unit's oom_kill counter went up
     mcp_used: set[str] = field(default_factory=set)    # MCP servers (tool form) whose tools were called
     connectors: list[str] | None = None                # claude.ai connectors listed by the init event
+    codex_base: dict | None = None                     # Codex: the thread's running totals before this turn
+    codex_total: dict | None = None                    # Codex: its running totals after it (turn.completed)
 
 
 class Runner:
@@ -468,8 +470,15 @@ class Runner:
         context = codex.workspace_context(root, Path(cwd))
         context_prefix = ("[Shared workspace and topic instructions/memory]\n" + context + "\n\n") if context else ""
         prompt = context_prefix + ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)
-        a = self.attempt(args, prompt, cwd, env, meta.get("timeout_s"), hold=False, protocol="codex")
+        # Codex reports the thread's running token totals: this turn's own are what they grew by since its last turn
+        counted = meta.get("codex_usage") if isinstance(meta.get("codex_usage"), dict) else {}
+        base = counted.get("total") if thread and counted.get("thread") == thread else None
+        a = self.attempt(args, prompt, cwd, env, meta.get("timeout_s"), hold=False, protocol="codex", codex_base=base)
         a.fresh = not bool(thread)
+        if a.codex_total is not None:
+            now_thread = (store.read(self.sid) or {}).get("codex_thread_id")
+            if now_thread:
+                store.update(self.sid, codex_usage={"thread": now_thread, "total": a.codex_total})
         if a.stopped:
             self.note("Stopped." if not a.timed_out else "Turn stopped (timeout).", "warn")
         store.append_log(self.sid, {"type": "mx_done", "code": a.rc, "stderr": a.stderr[-STDERR_TAIL:],
@@ -731,20 +740,23 @@ class Runner:
         return str(cwd) if cwd.is_dir() else None
 
     def attempt(self, args: list[str], prompt: str, cwd: str, env: dict, timeout_s: object,
-                hold: bool, csid: str = "", prev_total: float = 0.0, protocol: str = "claude") -> Attempt:
+                hold: bool, csid: str = "", prev_total: float = 0.0, protocol: str = "claude",
+                codex_base: dict | None = None) -> Attempt:
         """Run one claude process, streaming its stdout into the raw log. `prev_total`: the running cost Claude
-        last reported for thread `csid` (to tell this turn's own cost). Holds the Claude Code update lock (shared)
-        meanwhile: an automatic update never replaces the files of a running Claude, and waits for it."""
+        last reported for thread `csid` (to tell this turn's own cost); `codex_base`: the same for the token counters
+        of a resumed Codex thread. Holds the Claude Code update lock (shared) meanwhile: an automatic update never
+        replaces the files of a running Claude, and waits for it."""
         fd = _claude_in_use(self.note) if protocol == 'claude' else None
         try:
-            return self._attempt(args, prompt, cwd, env, timeout_s, hold, csid, prev_total, protocol)
+            return self._attempt(args, prompt, cwd, env, timeout_s, hold, csid, prev_total, protocol, codex_base)
         finally:
             if fd is not None:
                 os.close(fd)
 
     def _attempt(self, args: list[str], prompt: str, cwd: str, env: dict, timeout_s: object,
-                 hold: bool, csid: str = "", prev_total: float = 0.0, protocol: str = "claude") -> Attempt:
-        a = Attempt(csid=csid, prev_total=prev_total, t0=time.time())
+                 hold: bool, csid: str = "", prev_total: float = 0.0, protocol: str = "claude",
+                 codex_base: dict | None = None) -> Attempt:
+        a = Attempt(csid=csid, prev_total=prev_total, t0=time.time(), codex_base=codex_base)
         oom_before = _oom_kills()
         try:
             p = subprocess.Popen(args, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -778,7 +790,9 @@ class Runner:
                 if ev and ev.get("type") == "thread.started" and isinstance(ev.get("thread_id"), str):
                     if protocol == 'codex':
                         store.update(self.sid, codex_thread_id=ev["thread_id"])
-                mapped_events = codex.events(ev or {}) if protocol == 'codex' else agent_providers.events(ev)
+                if protocol == 'codex' and ev and ev.get("type") == "turn.completed":
+                    a.codex_total = codex.usage_totals(ev)
+                mapped_events = codex.events(ev or {}, a.codex_base) if protocol == 'codex' else agent_providers.events(ev)
                 for mapped in mapped_events:
                     self._observe(mapped, a)
                     if clip.keep_event(mapped):
