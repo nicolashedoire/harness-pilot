@@ -7,6 +7,25 @@ harness-pilot gives its web interface access to the connected agent tools and, w
 
 The rest of this page describes the inherited Linux server installation. That deployment and its hardening have **not** been validated for this repository and should not be assumed to apply to the local Mac setup. See [Local installation](installation) and check the actual permissions configured for your installation.
 
+## Privacy defaults
+
+The app explicitly disables native FastAPI request tracing, metrics, telemetry logs and automatic
+OTLP exporter setup, including when the parent environment enables automatic OpenTelemetry.
+The original project's registration/heartbeat service remains off by default, including for a
+restored legacy opt-in configuration. This does not remove your local conversation history,
+operational logs or token statistics; they remain useful application data on your machine.
+
+App-launched Codex turns, resumes and connection-status checks disable built-in analytics and OTLP log, metric and trace
+exporters, and do not opt into exporting raw prompts or answers. These are per-process settings;
+your personal Codex configuration is not rewritten. Claude Code's existing quiet-start default
+disables its nonessential traffic; an explicitly supplied environment or saved override remains
+an explicit operator choice. Trusted external agent plugins manage their own telemetry settings.
+
+Using a cloud agent still sends its working prompt/context to that agent's service, and configured
+integrations such as Telegram still contact their service. Disabling product telemetry does not
+turn a cloud model into an offline model. Codex's exporter options are documented in the
+[official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
 ## Legacy Linux installation: Claude permissions
 
 **Sessions, Claude jobs and shell jobs run as root, with full rights on the server.** By default `claude` runs

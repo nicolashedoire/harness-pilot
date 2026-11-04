@@ -63,6 +63,8 @@ def base_env() -> dict[str, str]:
     own_dir = config.load_config().get("claude_dir")
     if own_dir:
         env["CLAUDE_CONFIG_DIR"] = own_dir
+    if config.load_config().get('claude_quiet_start', True):
+        env.setdefault(QUIET_START_ENV, '1')  # status probes use this environment too
     return env
 
 
