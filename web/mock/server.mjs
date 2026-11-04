@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -150,6 +151,7 @@ function buildState(scenario) {
       { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true },
     ],
     fs: new Map(),
+    blocks: blocksState(),
   }
 
   if (scenario !== 'setup' && scenario !== 'onboarding') {
@@ -158,6 +160,8 @@ function buildState(scenario) {
   }
   if (ready) {
     seedSessions(st, t)
+    seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
+    seedDebate(st, t)
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -236,6 +240,42 @@ function seedSessions(st, t) {
     st.sessions.push(s)
     st.events[id] = conversation(s, d)
   }
+}
+
+/* A Claude Code + Codex debate in progress (conversation view: lanes, reply numbers, progress against the limits). The
+ * runner writes the name of the agent that answers next as an info note before its turn. */
+function seedDebate(st, t) {
+  const id = uuid()
+  const path = topicPath('acme', 'website')
+  const s = { id, title: 'One-page checkout?', path, state: 'running', queue: 0, created: t - 15 * MIN, updated: t - 20, turns: 5, cost_usd: 0.64,
+    model: '', real_model: 'claude-opus-5-5', context_tokens: 31000, context_window: 1000000, archived: false, notify: false, source: 'web', unread: false,
+    last_text: 'Noted. Revised version: Apple Pay first, then the two blocks Codex proposed, and a single pay button at the bottom.', error: null,
+    provider: 'debate', debate_paused: false, discussion_pause_reason: null, discussion_turns: 5, discussion_turn_limit: 20, discussion_duration_seconds: 1800, discussion_elapsed: 14 * MIN }
+  const cwd = `${ROOT}/${path}`
+  let k = 0
+  const at = () => s.created + (k += 30)
+  const turn = (agent, text, cost, extra = []) => [
+    { type: 'note', text: agent, level: 'info', at: at() },
+    { type: 'init', model: agent === 'Codex' ? 'gpt-5.5-codex' : 'claude-opus-5-5', cwd, at: at() },
+    ...extra,
+    { type: 'assistant', text, at: at() },
+    { type: 'result', ok: true, cost_usd: cost, duration_ms: 38000, model: agent === 'Codex' ? 'gpt-5.5-codex' : 'claude-opus-5-5', usage: { input: 900, output: 420, cache_read: 18000, cache_write: 600 }, at: at() },
+  ]
+  const read = `toolu_${crypto.randomBytes(6).toString('hex')}`
+  st.events[id] = [
+    { type: 'user', text: 'Should the shop checkout move to a single page? Debate the benefits and the risks, then end with a recommendation.', attachments: [], at: at(), source: 'web' },
+    ...turn('Claude Code', 'I suggest putting delivery and payment on one page. Today the cart reloads at every step and the address has to be typed again after going back.', 0.18),
+    ...turn('Codex', 'Agreed on the diagnosis, not on the whole cure. On mobile a single page makes the first render heavier: I would keep two collapsible blocks, validated one after the other.', 0),
+    { type: 'user', text: 'Keep Apple Pay at the top of the page, that is a constraint.', attachments: [], at: at(), source: 'web' },
+    ...turn('Claude Code', 'Noted. Revised version: **Apple Pay first**, then the two blocks Codex proposed, and a single pay button at the bottom.', 0.21, [
+      { type: 'tool_use', id: read, name: 'Read', input: { file_path: `${cwd}/src/checkout/steps.tsx` }, summary: 'Read src/checkout/steps.tsx', at: at() },
+      { type: 'tool_result', tool_use_id: read, text: 'export const steps = [delivery, payment]', is_error: false, at: at() },
+    ]),
+    { type: 'note', text: 'Codex', level: 'info', at: at() },
+    { type: 'init', model: 'gpt-5.5-codex', cwd, at: at() },
+    { type: 'assistant', text: 'That works for me. One point to check before concluding: the Apple Pay button must stay visible without scrolling on a small screen.', at: now() - 25 },
+  ]
+  st.sessions.push(s)
 }
 
 /* Maxxing scenario: 30 sessions spread over the topics, most of them running; each finishes after 5 to 40 s
@@ -318,6 +358,14 @@ function conversation(s, d) {
 
   if (s.state === 'running') {
     ev.push({ type: 'assistant', text: d.last, at: at() })
+    const td = tid()
+    ev.push({ type: 'tool_use', id: td, name: 'TodoWrite', input: { todos: [
+      { content: 'Read the topic memory', status: 'completed', activeForm: 'Reading the topic memory' },
+      { content: 'List the existing articles', status: 'completed', activeForm: 'Listing the existing articles' },
+      { content: 'Write the draft', status: 'in_progress', activeForm: 'Writing the draft' },
+      { content: 'Update the memory', status: 'pending', activeForm: 'Updating the memory' },
+    ] }, summary: 'TodoWrite', at: at() })
+    ev.push({ type: 'tool_result', tool_use_id: td, text: 'Todos have been modified successfully.', is_error: false, at: at() })
     const g = tid()
     ev.push({ type: 'tool_use', id: g, name: 'Grep', input: { pattern: 'checkout', path: `${cwd}/drafts` }, summary: 'Grep "checkout" in drafts/', at: at() })
     ev.push({ type: 'tool_result', tool_use_id: g, text: 'drafts/2026-09-cart-abandonment.md:14: …a slow checkout is the first reason…\ndrafts/2026-10-payment-methods.md:3: …one-page checkout…', is_error: false, at: at() })
@@ -337,6 +385,9 @@ function conversation(s, d) {
     ev.push({ type: 'tool_use', id: e1, name: 'Edit', input: { file_path: `${cwd}/memory.md`, old_string: '## Decisions', new_string: `## Decisions\n- 2026-10-11: ${s.title}` }, summary: `Edit ${s.path}/memory.md`, at: at() })
     ev.push({ type: 'tool_result', tool_use_id: e1, text: 'The file has been updated successfully.', is_error: false, at: at() })
     if (s.state === 'error') {
+      const t1 = tid()
+      ev.push({ type: 'tool_use', id: t1, name: 'Bash', input: { command: 'python3 scripts/categorise.py --month 2026-09', description: 'Categorise the rest' }, summary: 'Bash: python3 scripts/categorise.py --month 2026-09', at: at() })
+      ev.push({ type: 'tool_result', tool_use_id: t1, text: 'Traceback (most recent call last):\n  File "scripts/categorise.py", line 42\nKeyError: \'merchant\'\nExit code 1', is_error: true, at: at() })
       ev.push({ type: 'note', text: 'Turn failed: ' + s.error, level: 'error', at: at() })
       return ev
     }
@@ -722,6 +773,7 @@ function startTurn(s, text, attachments = []) {
     const cost = +(0.02 + Math.random() * 0.12).toFixed(4)
     s.turns += 1; s.cost_usd = +(s.cost_usd + cost).toFixed(4); s.real_model = model; s.context_tokens = 20000 + Math.floor(Math.random() * 30000)
     s.last_text = answer.replace(/[*`#]/g, '').slice(0, 200); s.updated = now(); s.unread = true; s.state = 'idle'
+    if (s.plan_mode) s.plan_ready = true // a plan-mode turn ends with a plan to approve (as the server does)
     addEvents(s, { type: 'assistant', text: answer, at: now() },
       { type: 'result', ok: true, cost_usd: cost, duration_ms: 3400, model, usage: { input: 820, output: 164, cache_read: 19870, cache_write: 512 }, at: now() })
     bus('sessions', 'workspace')
@@ -1999,6 +2051,7 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
   return { ok: true }
 })
 R('GET', '/api/extensions', () => S.extensions)
+installBlocks({ R, state: () => S, fail, bus })
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
   const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown extension')
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
@@ -2065,7 +2118,7 @@ const sessionUrl = (s) => `/sessions?path=${encodeURIComponent(s.path)}&session=
 function feedAdd(st, ev) {
   const t = ev.at ?? now()
   const e = { id: st.feed.nextId++, at: t, source: 'custom', level: 'info', title: '', body: '', url: '', count: 1, read: false,
-    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], ...ev }
+    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], quiet: false, ...ev }
   if (e.group) {
     const row = st.feed.events.find((x) => x.source === e.source && x.group === e.group && x.level === e.level && !x.read && !x.resolved_at && t - x.at < DAY)
     if (row) {
@@ -2139,7 +2192,8 @@ function seedFeed(st, t) {
   const disc = { id: uuid(), title: 'Compare hosting offers', path: topicPath('ops', 'server'), state: 'idle', queue: 0, created: t - 3 * HOUR, updated: t - 40 * MIN,
     turns: 12, cost_usd: 1.9, model: '', real_model: 'claude-opus-5-5', context_tokens: 64000, context_window: 1000000, archived: false, notify: false,
     source: 'web', unread: true, last_text: 'Codex: the managed option wins on maintenance, the VPS on price. Shall we write the decision record?', error: null,
-    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_turns: 12, discussion_turn_limit: 12, discussion_duration_seconds: null }
+    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_paused_at: t - 40 * MIN, discussion_turns: 12, discussion_turn_limit: 12,
+    discussion_duration_seconds: null, discussion_elapsed: 22 * MIN }
   st.sessions.push(disc)
   st.events[disc.id] = conversation(disc, { last: disc.last_text, turns: disc.turns })
   // ---- three days ago
@@ -2293,7 +2347,7 @@ R('POST', '/api/feed', ({ body }) => {
   const source = String(body.source || 'custom').toLowerCase()
   if (body.dedupe && S.feed.events.some((e) => e.source === source && e.dedupe === body.dedupe)) return { event: null, duplicate: true }
   const ev = feedAdd(S, { source, level, title, body: String(body.body || ''), url: String(body.url || ''), dedupe: body.dedupe || undefined, group: body.group || null,
-    kind, params: feedParams(body.params), actions: feedActions(body.actions) })
+    kind, params: feedParams(body.params), actions: feedActions(body.actions), quiet: body.quiet === true })
   bus('feed')
   return { event: feedPublic(ev), duplicate: false }
 })
@@ -2340,7 +2394,10 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be resumed.')
   if (!s.debate_paused) fail(409, 'not_paused', 'The conversation is not paused.')
-  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_turns: 0, updated: now() })
+  // after a limit pause: a new period only while a limit is still reached (API.md "Discussion periods")
+  const reached = (s.discussion_turn_limit && s.discussion_turns >= s.discussion_turn_limit) || (s.discussion_duration_seconds && (s.discussion_elapsed || 0) >= s.discussion_duration_seconds)
+  if (s.discussion_pause_reason === 'limit' && reached) Object.assign(s, { discussion_turns: 0, discussion_elapsed: 0 })
+  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_paused_at: null, updated: now() })
   feedResolve(S, 'sessions', `discussion:${s.id}`)
   bus('sessions', 'feed')
   return s
@@ -2348,7 +2405,19 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
 R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be paused.')
-  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', updated: now() })
+  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', discussion_paused_at: s.debate_paused ? s.discussion_paused_at : now(), updated: now() })
+  bus('sessions')
+  return s
+})
+R('PATCH', '/api/sessions/:id/discussion', ({ params, body }) => {
+  const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
+  if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations have limits.')
+  const ok = (v, hi) => v === null || (Number.isInteger(v) && v >= 1 && v <= hi)
+  if ('turn_limit' in body && !ok(body.turn_limit, 200)) fail(422, 'invalid', 'turn_limit: 1-200')
+  if ('duration_minutes' in body && !ok(body.duration_minutes, 1440)) fail(422, 'invalid', 'duration_minutes: 1-1440')
+  if ('turn_limit' in body) s.discussion_turn_limit = body.turn_limit
+  if ('duration_minutes' in body) s.discussion_duration_seconds = body.duration_minutes === null ? null : body.duration_minutes * 60
+  s.updated = now()
   bus('sessions')
   return s
 })
@@ -2356,20 +2425,24 @@ R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
 // ---- web push (the mock never sends anything: /test answers ok)
 const PUSH_KEY = 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM'
 const pushOut = (p) => ({ id: p.id, endpoint: p.endpoint, label: p.label, created: p.created, last_ok: p.last_ok, last_error: p.last_error, prefs: p.prefs })
-function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {} }) {
+function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {}, sources: {} }) {
   if (p == null) return clone(base)
-  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds}')
-  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true, kinds = p.kinds ?? base.kinds
+  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds, sources}')
+  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true
   if (!Array.isArray(levels) || levels.some((l) => !FEED_LEVELS.includes(l))) fail(400, 'bad_prefs', 'prefs.levels')
   if (typeof sound !== 'boolean') fail(400, 'bad_prefs', 'prefs.sound')
-  if (typeof kinds !== 'object' || Array.isArray(kinds)) fail(400, 'bad_prefs', 'prefs.kinds')
-  const out = {}
-  for (const [k, v] of Object.entries(kinds)) {
-    if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
-    if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.kinds.${k}: {enabled, sound}`)
-    out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+  // kinds / sources: {<name>: {enabled, sound}} (a bare boolean = enabled with the default sound)
+  const entries = (name, map) => {
+    if (typeof map !== 'object' || map === null || Array.isArray(map)) fail(400, 'bad_prefs', `prefs.${name}`)
+    const out = {}
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
+      if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.${name}.${k}: {enabled, sound}`)
+      out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+    }
+    return out
   }
-  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: out }
+  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: entries('kinds', p.kinds ?? base.kinds ?? {}), sources: entries('sources', p.sources ?? base.sources ?? {}) }
 }
 R('GET', '/api/push', () => ({ available: true, public_key: PUSH_KEY, subscriptions: S.push.subs.map(pushOut) }))
 R('POST', '/api/push/subscriptions', ({ body }) => {
@@ -2535,6 +2608,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true })
     }
     if (url.pathname.startsWith('/api/') || url.pathname === '/api') return await handleApi(req, res, url)
+    if (url.pathname.startsWith('/ext/_blocks/')) return serveBlockFrame(req, res, url, isAuthed(req), () => S)
     if (url.pathname.startsWith('/ext/')) return serveExt(req, res, url)
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method_not_allowed', message: 'Static files are read-only' })
     return serveStatic(req, res, url)

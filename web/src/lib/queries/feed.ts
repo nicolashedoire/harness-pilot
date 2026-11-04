@@ -142,8 +142,8 @@ export function useRunFeedAction() {
   return useMut((action: FeedAction) => api.post<unknown>(action.url), { invalidate: [qk.feed.all, qk.crons.all, qk.sessions.all] })
 }
 
-export function useFeedSettings() {
-  return useQuery({ queryKey: qk.feed.settings, queryFn: () => api.get<FeedSettings>('/api/feed/settings') })
+export function useFeedSettings(enabled = true) {
+  return useQuery({ queryKey: qk.feed.settings, queryFn: () => api.get<FeedSettings>('/api/feed/settings'), enabled })
 }
 export function useSaveFeedSettings() {
   return useMut((b: FeedSettingsBody) => api.put<FeedSettings>('/api/feed/settings', b), {

@@ -99,7 +99,17 @@ Session = {
   error: string|null,
   plan_mode: bool,                    // turns run read-only (`--permission-mode plan`) and end with a plan
   permission_mode: string,            // set by its cron ("" = the topic's, else the global mode)
-  plan_ready: bool                    // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  plan_ready: bool,                   // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  provider: "claude"|"codex"|"discussion"|"debate",
+  // Claude Code + Codex conversations (provider discussion / debate; null / 0 / false for the others), see
+  // "Discussion periods" below the table:
+  debate_paused: bool,                // the automatic exchange is paused (Resume continues it)
+  discussion_pause_reason: "limit"|"user"|null,   // why: a limit reached, or the pause button
+  discussion_paused_at: number|null,  // when it paused (limit or pause button); null while not paused
+  discussion_turns: int,              // replies of the current period
+  discussion_elapsed: int,            // seconds the current period has run, paused time excluded (live while it runs)
+  discussion_turn_limit: int|null,    // replies per period (1-200), null = no limit
+  discussion_duration_seconds: int|null   // duration of a period (60-86400 s), null = no limit
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
@@ -115,6 +125,9 @@ Session = {
 | POST | `/api/sessions/{id}/hide` | `{at, hidden=true}` | `{ok}` — hides (or shows again) the user message whose `at` is given: appends `{type:"mx_hide", ref, hidden}` to the raw log (nothing is erased; Claude's own thread is untouched), streamed as a `hide` event; 404 when no user message has that `at`, nothing written when it is already in that state. The UI offers it for a message whose turn ended without any answer (stopped) and drops that turn's rows |
 | POST | `/api/sessions/{id}/steer` | – | `{steered:bool, interrupted:bool, session}` — while a turn runs: the queued user messages become ONE message (`steer: true`) at the head of the queue and the runner gets SIGUSR1: it ends the current turn (only that one: meta `steer_turn` = `turn_id`) and runs that message next in the same Claude thread, prefaced so Claude continues the task with it. A compact / handoff turn is not interrupted (`interrupted:false`, the message runs right after it). `steered:false` when idle or nothing is queued |
 | POST | `/api/sessions/{id}/stop` | – | `{ok}` (clears the queue, aborts the running turn; returns once settled, ≤ ~10 s). During an idle-compaction summary only the summary is aborted: the message waiting behind it (queue item `held`) stays and runs |
+| POST | `/api/sessions/{id}/discussion/pause` | – | `Session` — a discussion / debate pauses after the current reply (reason `user`) · `400 unsupported` (not a discussion), `409 not_running` |
+| POST | `/api/sessions/{id}/discussion/resume` | – | `Session` — continues from the saved next prompt (see *Discussion periods*) · `400 unsupported`, `409 not_paused` |
+| PATCH | `/api/sessions/{id}/discussion` | `{turn_limit?: int\|null, duration_minutes?: int\|null}` | `Session` — changes the limits of a discussion / debate (running, paused or stopped): `turn_limit` 1-200 replies, `duration_minutes` 1-1440 (stored as `discussion_duration_seconds`); a field left out keeps its value, `null` removes that limit. They apply to the current period: while it runs, a limit already reached pauses it after the current reply; paused on its limit, Resume continues the period once no limit is reached any more · `400 unsupported` (not a discussion), `422 invalid` (out of range, not an integer) |
 | POST | `/api/sessions/{id}/compact` | – | `{ok}` summary → fresh Claude context, same session · `409 busy` while running · `400 empty_session` |
 | POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails) |
 | POST | `/api/sessions/{id}/seen` | – | `{ok}` |
@@ -124,6 +137,14 @@ Session = {
 | GET | `/api/sessions/{id}/stream?from=0` | – | **SSE**. `event: events` `data: {events, next}` · `event: state` `data: Session` · `event: reset` `data: {}` then end of stream when the log was rewritten or shrank (or `from` is stale): reload with `?tail=` · heartbeat comment every 15 s. New lines and state changes are pushed ~0.05-0.15 s after they are written (inotify on the sessions folder; without it the stream polls every 0.1 s while the session runs) |
 | GET | `/api/sessions/search?q=` | – | `[{id, title, path, snippet, at}]` (served by the full-text index, see Search; max 50) |
 | POST | `/api/uploads?path=<topic path>` | multipart `file` (multi) | `{files:[{path, name, size, mime}]}` saved in `<topic>/attachments/YYYY-MM/` · each file `413 too_large` over `upload_max_mb`, `507 disk_full` when it would leave less than `upload_min_free_mb` free on the destination disk (files saved before it in the same request are kept); the whole request is capped too (see Conventions) |
+
+**Discussion periods.** A Claude Code + Codex conversation counts its replies and its running time per *period*: the
+first message starts one, and the exchange pauses after the reply that reaches a limit (`debate_paused`, reason
+`limit`, feed event `discussion.paused`). Resume (or a new message) after a limit pause starts a new period (counters
+back to 0) when a limit is still reached, and continues the current one when the limits were changed so that none is
+reached any more; after the pause button the period always continues. Stop ends the exchange; the next message
+starts a new period. `discussion_paused_at` is set by both pauses and cleared by Resume, a new message and Stop (the
+thread can show it as a dated separator).
 
 `from`/`next`/`start`/`before` = byte offsets in the raw log (always line boundaries). Backward reads scan at
 most 64 MB per call (then `more_before` with the `start` reached). A `task` whose `task_started` line is before the
@@ -468,7 +489,7 @@ Block =
 | GET | `/api/dashboard` | – | `{widgets:[{id, title, icon, span:1\|2\|3, source:"builtin"\|"extension", card:Card\|null, error:string\|null, hidden:bool, pending?:true}]}` — hidden widgets are listed with `card:null` so the UI can show them again; a widget still computing after 1.5 s comes as `pending:true` (fetch it with the route below, which joins that computation); the `crons` and `day` cards are reused while jobs.json, runs.jsonl, the job locks and config.json are unchanged (10 s at most); `?force=1` recomputes everything |
 | GET | `/api/dashboard/widgets/{id}?force=1` | – | one widget (refresh) |
 | PUT | `/api/dashboard/layout` | `{order:[id], hidden:[id]}` | `{ok}` |
-| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page", icon, version, enabled, error, has_api, pinned, page_v}]` (pinned: page shown in the sidebar; page_v: page.js mtime in ms, the UI imports `page.js?v=<page_v>` so the module is reused until the file changes) |
+| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?}]` (pinned: page shown in the sidebar; page_v: page.js mtime in ms, the UI imports `page.js?v=<page_v>` so the module is reused until the file changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks) |
 | PATCH | `/api/extensions/{id}` | `{enabled?, pinned?}` | `{ok}` (`pinned` on a widget -> 400 `not_a_page`) |
 | POST | `/api/extensions/reload` | – | rescans `<workspace>/extensions` |
 | ANY | `/api/ext/{id}/{path}` | – | forwarded to the extension's `api.py` `handle()`: return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, other → 500 `extension_error`, 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
@@ -493,6 +514,106 @@ call `/api/ext/<id>/<path>` with the CSRF header and resolve to the parsed JSON 
 Built-in card links are SPA routes: `/sessions/<id>`, `/sessions`, `/tasks?task=<id>`, `/crons?job=<id>`,
 `/settings/{system,backup,telegram}`. Built-in card labels follow the configured language (en/fr).
 
+## Conversation blocks
+
+An assistant answer shows a **block** for each fenced code block whose info string is a block type and whose body is
+one JSON object, or `block:<type>` (always a block: a type no plugin draws shows "not installed"):
+
+````
+```chart
+{"kind": "line", "unit": "€", "series": [{"name": "October", "points": [["1 Oct", 320], ["8 Oct", 410]]}]}
+```
+````
+
+- Built-in types are blocks when the body looks like a JSON object (anything else stays code); `terminal`, `diff` and
+  `app` also take raw text (output, unified diff, HTML: field `raw` of the plugin). A plugin type is a block only when
+  an installed block extension draws it and the body is a JSON object; otherwise the fence stays ordinary code.
+- The web app (`web/src/features/blocks`) parses the body (512 kB at most), checks it against the type's `schema`
+  (the subset below) and draws it. Fallbacks, with the raw data on demand: unknown type ("not installed", link to the
+  catalogue), turned off ("Turn on"), plugin error, invalid data (the reasons + "Ask for a fix", which sends a message
+  to the conversation after a confirmation), render error, network consent (block extensions).
+- Every block has a header (type icon, title, source), a body, and actions: open beside (side panel; a
+  `mx-block-open` window event, and the conversation's `BlockHostProvider.openPanel`: the session column's panel,
+  docked beside the thread when there is room), pin to the dashboard (pinnable
+  types), copy / download (JSON, CSV, PNG, text, diff, HTML).
+- Forms, checklists, "Ask for a fix" and `maxxing.send()` from a frame send **text the user sees and confirms** as
+  their next message: `POST /api/sessions/{id}/messages` (session: `BlockHostProvider.sessionId`, else the nearest
+  `[data-mx-session]`, else the URL's `session=`).
+
+Built-in types (`maxxing/blocks.py` `BUILTINS`, the source of the schemas):
+
+| Type | Body |
+|---|---|
+| `chart` | `{kind?: "line"\|"bar", series: [{name, points: [[x, y]]}] (1-6), unit?, title?, source?}` - pinnable |
+| `table` | `{columns: [label \| {label, type?: "text"\|"number"\|"percent"\|"delta"\|"bar", align?}], rows: [[cell]], page_size?, title?, source?}` - sort, filter, CSV; pinnable |
+| `stats` | `{items: [{label, value, delta?, hint?, tone?: "ok"\|"warn"\|"error"}] (1-12), title?}` - pinnable |
+| `list` | `{items: [{title, subtitle?, value?, status?, icon?, href?}], grid?, title?}` - pinnable |
+| `timeline` | `{lanes: [{name, sub?, events: [{at: unix s \| ISO date, state?, label?}]}], start?, end?, now?, title?}` - pinnable |
+| `progress` | `{items: [{label, value, max, unit?, hint?, format?}]}` or `{label, value, max, …}` - pinnable |
+| `terminal` | `{output, command?, exit_code?, duration_ms?, cwd?, title?}` or raw text |
+| `diff` | `{diff, path?, title?}` or a raw unified diff |
+| `file` | `{path, caption?}` or `{items: [{path, caption?}]}` (absolute paths; the file viewer opens them) |
+| `link` | `{url (https:// or an app route), title?, description?, site?}` (nothing is fetched) |
+| `form` | `{fields: [{id, label, type: text\|textarea\|number\|select\|choice\|multi\|checkbox\|range\|date\|time, options?, min?, max?, step?, unit?, default?, required?, placeholder?, hint?}], title?, description?, submit?}` |
+| `checklist` | `{items: [label \| {label, checked?, hint?}], title?, submit?}` (ticks remembered by the browser) |
+| `app` | `{html, height?, title?}` or raw HTML: sandboxed frame, no network |
+| `created` | `{items: [{kind: task\|cron\|notification\|file\|session\|project\|extension\|other, title, subtitle?, id?, path?, href?}], title?}` |
+
+Schema subset (`blocks.check_schema` refuses anything else): `type` (string or list), `properties`, `required`,
+`additionalProperties` (bool or schema), `items` (schema or tuple), `enum`, `const`, `anyOf` / `oneOf` (= anyOf),
+`minItems` / `maxItems`, `minLength` / `maxLength`, `minimum` / `maximum`, plus the annotations `title`,
+`description`, `default`, `examples`, `format`, `$comment`, `$schema`. Depth <= 12. Error lines look like
+`series[0].points[1][1]: expected number` (same text on both sides).
+
+```
+BlockPlugin = {id, kind:"builtin"|"extension", name, names:{<lang>: name}, renders:[type], icon, category:
+  "data"|"code"|"media"|"interactive"|"organisation"|"other", hint, fields, schema, raw:string|null, version,
+  description, enabled, error:string|null, network:[host], consent:"granted"|"denied"|"ask"|null, pin:bool,
+  entry_v:int|null, height:int|null}
+// built-in: id = type, name = type (the UI names it), fields = body summary given to the agents
+// extension: id = extension id, consent null when it declares no network
+```
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/blocks` | – | `{plugins:[BlockPlugin], agents:{types:[type], count, skill, codex, reference, synced_at}}` — built-ins first (fixed order), then block extensions A-Z (a type already drawn by an earlier extension -> that plugin's `error`); also rewrites the agents' files when the enabled set changed |
+| PATCH | `/api/blocks/{id}` | `{enabled}` | `{ok, plugin}` · built-in: config `blocks.disabled`; extension: config `extensions.disabled` (the extension itself) · `404 not_found` · bus `extensions` |
+| POST | `/api/blocks/{id}/consent` | `{decision:"always"\|"once"\|"deny"\|"reset"}` | `{ok, consent, grant?}` — `always`: the declared hosts are allowed (config `blocks.consent.<id> = {state:"granted", hosts, at}`; a host added later asks again) · `deny`: never asked again · `reset`: asked again · `once`: `grant` = a token valid one hour for one frame (in memory) · `400 no_network` (declares none) · `404` (unknown or built-in) |
+| POST | `/api/blocks/pin` | `{type, data, title?}` | `{ok, id}` — writes the widget extension `extensions/pin-<slug>-<hex>/` (manifest + `card.json` snapshot + a fixed `api.py` that returns it); chart, table (50 rows), stats, list, progress, timeline · `400 not_pinnable` (type or invalid data, with the reasons) · `413 too_large` (data over 512 kB) · bus `extensions` |
+| GET | `/ext/_blocks/app-frame` | – | the `app` block's frame: a loader that receives the HTML by message and writes it over itself after the bridge and the UI kit · `404 block_disabled` |
+| GET | `/ext/_blocks/{id}/frame?grant=&v=` | – | a block extension's frame: bridge + UI kit + its entry (`block.html`) · `404` when unknown, off or broken |
+
+Both frames: auth cookie required, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, and
+`Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src
+'unsafe-inline'; img-src data: blob: [hosts]; media-src data: blob: [hosts]; font-src data: [hosts]; connect-src
+[hosts | 'none']; form-action 'none'; base-uri 'none'; frame-ancestors 'self'` where `[hosts]` = `https://<host>` of the
+declared hosts when consent is `granted`, or with a valid `grant` (never when `denied`). The UI frames them with
+`sandbox="allow-scripts"` (opaque origin: no cookie, no app API, no storage of the app) and `referrerpolicy=no-referrer`.
+
+Frame bridge (`window.maxxing`, injected first): `data` / `onData(fn)` (the block's JSON, by message), `type`,
+`theme` / `onTheme(fn)`, `lang`, `resize(px)` (automatic otherwise), `send(text)` (≤ 4 000 characters; the app shows
+it and sends it only if the user confirms), `error(message)` (the block shows the error state). Messages parent ->
+frame: `{mx:"data", data}`, `{mx:"theme", theme, vars}`, `{mx:"html", html}` (app loader); frame -> parent:
+`{mx:"ready"|"loader"|"resize"|"send"|"error"}`. The theme's CSS variables come in the URL fragment for the first paint,
+never the data. A frame whose document stops speaking the bridge (it navigated elsewhere) is stopped.
+
+Block extension: `<workspace>/extensions/<id>/block.json` (no `manifest.json`, no Python code):
+```
+{"type": "block", "name": "Map" | {"en": "Map", "fr": "Carte"}, "version": "1.2.0", "renders": ["map"],
+ "schema": {…} | "schema.json", "entry": "block.html", "permissions": {"network": ["tiles.example.com"]},
+ "hint": "Places, addresses and routes.", "icon": "map", "category": "data", "description": "…", "height": 320}
+```
+`renders`: 1-8 slugs `^[a-z][a-z0-9-]{1,31}$`, not a built-in type nor a reserved fence language (`json`, `js`, `ts`,
+`text`, `md`, `html`, `xml`, `yaml`, `toml`, `mermaid`, `git`, `infra`, `block`, `code`…). Folder name: not a built-in
+type. Limits: block.json 64 kB, schema 64 kB, entry 512 kB (one self-contained HTML file), 8 hosts (host names,
+optional `*.` and `:port`, no scheme or path). Listed by `GET /api/extensions` as `type: "block"` with `renders`;
+never a dashboard widget. Hot reload like other extensions (block.json, block.html, schema.json watched).
+
+What the agents get (never the user's own CLAUDE.md files): the product skill `pilot-blocks`, rendered with the
+enabled types (its description, listed in every Claude Code prompt, and its body); `<state>/blocks/agents.md`, added
+to every Codex turn's shared context; `<state>/blocks/reference.md` (full schemas). Rewritten on server start, on
+`GET /api/blocks`, on a toggle, after an extension rescan, and by `maxxing init`.
+
 ## Memory
 
 | Method | Path | Body | Response |
@@ -516,7 +637,9 @@ FeedEvent = {
   category: "sessions"|"crons"|"system"|"webhooks",   // the type filter, from the source (below)
   pending: bool,             // needs attention: level warning|error AND unread AND not resolved
   resolved_at: number|null,  // the problem went away (resolved by its producer, or POST /api/feed/resolve)
-  first_at: number           // first occurrence of a folded row (= at while count is 1)
+  first_at: number,          // first occurrence of a folded row (= at while count is 1)
+  quiet: bool                // posted with `quiet` (`maxxing feed post --quiet`): never sent to Telegram nor pushed,
+                             // and the web shows no notice / sound for it (it is in the feed like any other)
 }
 FeedAction = {id, label, type: "link"|"post", url}
 FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest first, at most 20 (body <= 300 chars);
@@ -551,7 +674,7 @@ FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest 
 | GET | `/api/feed?source=&category=&kind=&unread=1&pending=1&before=<id>&limit=50` | – | `{events: FeedEvent[], more, unread, pending, sources: [{source, total, unread, pending}], categories: {<category>: {total, unread, pending}}, kinds: {<kind>: {total, unread, pending}}}` newest first (`limit` <= 200). The counts cover the last 30 days and ignore the filters; every category is always present · `400 bad_category` |
 | GET | `/api/feed/summary` | – | `{unread, pending, sources, categories, kinds}` (the same counts, no events: badges) |
 | GET | `/api/feed/{id}` | – | `{event: FeedDetail}` · `404 not_found` |
-| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?}` | `{event, duplicate}` (`dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
+| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?, quiet?: bool}` | `{event, duplicate}` (`quiet`: in the feed only - no Telegram, no push, no notice in the web; `dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
 | POST | `/api/feed/read` | `{ids?: number[], source?, all?: bool}` | `{unread, pending}` |
 | POST | `/api/feed/resolve` | `{ids: number[]}` | `{pending}` (resolved by hand: out of "À traiter", read state unchanged) |
 | DELETE | `/api/feed/{id}` | – | `{ok}` |
@@ -568,7 +691,7 @@ event). `rule` = the kind's own rule (`"auto"` = none); `default` = what `"auto"
 the rule of its source when one is set, else `"off"` for the sources that have their own Telegram thread or are already
 mirrored (`crons`, `system`, `security`, `sessions`: `own_thread`), else by `level` (error -> loud, warning -> silent,
 else off). Effective rule of an event: its kind's rule unless auto, else its source's rule unless auto, else that
-default. Telegram posts only new rows (a fold never posts again).
+default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
 `open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
@@ -618,15 +741,19 @@ pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscripti
 ```
 PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}
 PushPrefs = {
-  levels: Level[],                                  // kinds not listed below are pushed when their level is here
-  sound: bool,                                      // the sound of the kinds not listed below
-  kinds: {<kind>: {enabled: bool, sound: bool}}     // per kind: pushed or not, with or without sound
-}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}}
+  levels: Level[],                                  // events not matched below are pushed when their level is here
+  sound: bool,                                      // the sound of the events not matched below
+  kinds: {<kind>: {enabled: bool, sound: bool}},    // per kind: pushed or not, with or without sound
+  sources: {<source>: {enabled: bool, sound: bool}} // per source (a webhook, a script's --source): every event of it
+}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}, sources: {}}
 ```
-An event is pushed to a subscription when `prefs.kinds[kind]` is set (its `enabled` decides), else when its level is
-in `prefs.levels`; it rings when that kind's `sound` (else `prefs.sound`) is true - the payload carries
-`silent: !sound` for `showNotification`. In a POST / PATCH, `levels`, `sound` and `kinds` left out keep their saved
-value; `kinds` given replaces the whole map (a bare `true` / `false` for a kind = `enabled` with the default sound).
+An event is pushed to a subscription when `prefs.sources[source]` is set (its `enabled` decides), else when
+`prefs.kinds[kind]` is set (same), else when its level is in `prefs.levels`; it rings when the `sound` of that same
+entry (else `prefs.sound`) is true - the payload carries `silent: !sound` for `showNotification`. A `quiet` event is
+never pushed. In a POST / PATCH, `levels`, `sound`, `kinds` and `sources` left out keep their saved value; `kinds` or
+`sources` given replaces that whole map (a bare `true` / `false` for an entry = `enabled` with the default sound; at
+most 200 entries per map; source names as in `POST /api/feed`). The web sets `kinds` for the built-in rows of
+Settings -> Notifications and `sources` for the webhooks and scripts listed there (columns *Browser* and *Sound*).
 Only new rows are pushed (a fold does not push again), whatever process posted them (cron runs and `maxxing feed post`
 too), within ~3 s; rows already there when the server starts are never pushed. A subscription the push service
 answers 404 / 410 is removed. Sounds inside an open tab are the web's business (per device), not the server's.

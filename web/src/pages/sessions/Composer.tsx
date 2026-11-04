@@ -56,6 +56,10 @@ export const Composer = React.forwardRef<ComposerHandle, {
   onStop?: () => void
   stopping?: boolean
   toolbar?: React.ReactNode
+  /** Right side of the toolbar, before dictation and send (the model picker). */
+  toolbarEnd?: React.ReactNode
+  /** One quiet line under the composer (keys, what a message does); computer layout only. */
+  hint?: React.ReactNode
   /** One-line notice tucked on top of the composer, like the waiting messages (which take priority). */
   notice?: React.ReactNode
   placeholder?: string
@@ -63,7 +67,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
   /** Lines the text grows to before it scrolls (fewer in a small grid pane, so the conversation stays visible). */
   maxRows?: number
 }>(function Composer(props, ref) {
-  const { colKey, draftKey, topicPath, running, immediateIntervention, disabledReason, queueCount = 0, queued = [], queueItems = NO_ITEMS, onClearQueue, clearingQueue, onSteer, steering, steerPending, onTakeQueue, onAsk, asking, onSend, onStop, stopping, toolbar, notice, placeholder, autoFocus, maxRows = 12 } = props
+  const { colKey, draftKey, topicPath, running, immediateIntervention, disabledReason, queueCount = 0, queued = [], queueItems = NO_ITEMS, onClearQueue, clearingQueue, onSteer, steering, steerPending, onTakeQueue, onAsk, asking, onSend, onStop, stopping, toolbar, toolbarEnd, hint, notice, placeholder, autoFocus, maxRows = 12 } = props
   const t = useT()
   const [text, setText] = React.useState(() => loadDraft(draftKey))
   const [quotes, setQuotes] = React.useState<string[]>(() => loadQuotes(draftKey))
@@ -501,8 +505,8 @@ export const Composer = React.forwardRef<ComposerHandle, {
   const removeQuote = (q: string) => setQuotes((cur) => cur.filter((x) => x !== q))
 
   return (
-    <div className="shrink-0 px-3 pt-1 pb-3 max-md:pb-[calc(0.5rem+var(--safe-bottom-ui))]">
-      <div className="mx-auto w-full max-w-(--mx-read,860px)">
+    <div className="@container shrink-0 px-6 pt-1 pb-3 max-md:px-2.5 max-md:pb-[calc(0.5rem+var(--safe-bottom-ui))]">
+      <div className="mx-auto w-full max-w-(--mx-read,740px)">
         <div className={cn('grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none', stackCount > 0 && !stack.leaving ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="min-h-0 overflow-hidden" inert={stackCount === 0 || stack.leaving ? true : undefined}>
         {stackCount > 0 && (
@@ -557,9 +561,9 @@ export const Composer = React.forwardRef<ComposerHandle, {
                   </Tooltip>
                 )}
                 {onAsk && running && (
-                  <Tooltip content={t('aside.askTip')}>
+                  <Tooltip content={t('sessions.queue.askTip')}>
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs max-md:h-8" onClick={onAsk} loading={asking} disabled={steerPending}>
-                      <MessageCircleQuestion className="size-3.5" /> <span className="max-sm:sr-only">{t('aside.ask')}</span>
+                      <MessageCircleQuestion className="size-3.5" /> <span className="max-sm:sr-only">{t('sessions.queue.ask')}</span>
                     </Button>
                   </Tooltip>
                 )}
@@ -636,7 +640,8 @@ export const Composer = React.forwardRef<ComposerHandle, {
         <div
           data-tour="composer"
           className={cn(
-            'relative z-10 rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20',
+            // a neutral frame: the focus darkens it, the accent stays for the send button
+            'relative z-10 rounded-2xl border border-foreground/15 bg-card shadow-xs transition-[border-color] focus-within:border-foreground/35',
             disabledReason && 'opacity-80',
           )}
         >
@@ -658,9 +663,9 @@ export const Composer = React.forwardRef<ComposerHandle, {
             maxRows={maxRows}
             placeholder={placeholder || t('sessions.composer.placeholder')}
             aria-label={t('sessions.composer.label')}
-            className="border-0 bg-transparent px-3.5 pt-3 pb-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+            className="border-0 bg-transparent px-4 pt-3 pb-1 text-[15px] shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
-          <div className="@container flex min-w-0 items-center gap-1 px-1.5 pb-1.5">
+          <div className="flex min-w-0 items-center gap-1 px-2 pb-2">
             <input
               ref={fileInput}
               type="file"
@@ -676,19 +681,20 @@ export const Composer = React.forwardRef<ComposerHandle, {
                 <Paperclip />
               </Button>
             </Tooltip>
-            {toolbar}
-            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">{toolbar}</div>
+            <div className="ml-auto flex min-w-0 items-center gap-1">
               {reason && <span className="truncate text-[11px] text-muted-foreground max-sm:hidden">{reason}</span>}
+              {!reason && toolbarEnd}
               {running && onStop && (
                 <Tooltip content={t('sessions.stop')}>
-                  <Button variant="outline" size="icon-sm" aria-label={t('sessions.stop')} onClick={onStop} loading={stopping} className="max-md:size-11 max-md:rounded-full">
+                  <Button variant="outline" size="icon-sm" aria-label={t('sessions.stop')} onClick={onStop} loading={stopping} className="rounded-full max-md:size-11">
                     <Square className="fill-current" />
                   </Button>
                 </Tooltip>
               )}
               <VoiceButton onTranscript={onVoice} onVoiceMessage={props.onSendVoice ? onVoiceMessage : undefined} />
               <Tooltip content={running ? t(immediateIntervention ? 'sessions.discussionIntervene' : 'sessions.composer.queue') : t('sessions.composer.send')}>
-                <Button size="icon-sm" aria-label={running ? t(immediateIntervention ? 'sessions.discussionIntervene' : 'sessions.composer.queue') : t('sessions.composer.send')} disabled={!!blocked || empty} onClick={() => send()} className="rounded-lg max-md:size-11 max-md:rounded-full max-md:[&_svg]:size-5">
+                <Button size="icon-sm" aria-label={running ? t(immediateIntervention ? 'sessions.discussionIntervene' : 'sessions.composer.queue') : t('sessions.composer.send')} disabled={!!blocked || empty} onClick={() => send()} className="rounded-full max-md:size-11 max-md:[&_svg]:size-5" data-testid="composer-send">
                   {sending ? <Spinner className="size-4" /> : <ArrowUp />}
                 </Button>
               </Tooltip>
@@ -696,6 +702,7 @@ export const Composer = React.forwardRef<ComposerHandle, {
           </div>
         </div>
         {reason && <p className="mt-1 truncate text-[11px] text-muted-foreground sm:hidden">{reason}</p>}
+        {hint && !reason && <p className="mt-2 truncate text-center text-[11px] text-muted-foreground max-md:hidden pointer-coarse:hidden">{hint}</p>}
       </div>
     </div>
   )

@@ -191,7 +191,8 @@ def skills_target() -> Path:
 
 
 def _skill_vars() -> dict[str, str]:
-    return template_vars(config.workspace())
+    from . import blocks                       # pilot-blocks lists the conversation blocks enabled on this server
+    return {**template_vars(config.workspace()), **blocks.skill_vars()}
 
 
 def _render_skill_tree(dst: Path, variables: dict[str, str]) -> None:
@@ -601,6 +602,11 @@ def do_init(a: argparse.Namespace) -> dict:
     ws = Path(raw["workspace"])
     report["workspace_created"] = copy_templates(ws)
     report["skills"] = install_skills()
+    try:                                     # the enabled conversation block types, where the agents read them
+        from . import blocks
+        blocks.sync_agent_files()
+    except Exception:  # noqa: BLE001
+        pass
     report["claude_settings"] = "defaults set (transcripts kept, no AI credit in commits)" if claude_settings_defaults() else "unchanged"
     report["crons"] = "skipped (--no-crons)" if a.no_crons else ensure_default_crons()
     from . import renames                         # old skill names in what earlier versions generated

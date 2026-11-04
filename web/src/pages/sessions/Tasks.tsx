@@ -30,6 +30,23 @@ export function useOpenTaskLine(toolUseId: string | undefined, open: () => void,
   }, [toolUseId, open, el])
 }
 
+/** For a folded activity group: `open(id)` when the bar asks for one of its tool lines (`ids` = their tool_use ids,
+ *  space separated, so the listener only changes when the set does). */
+export function useOpenTaskLines(ids: string, open: (id: string) => void, el: React.RefObject<HTMLElement | null>) {
+  React.useEffect(() => {
+    if (!ids) return
+    const set = new Set(ids.split(' '))
+    const on = (e: Event) => {
+      const id = (e as CustomEvent).detail as string
+      if (!set.has(id)) return
+      open(id)
+      requestAnimationFrame(() => el.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+    }
+    window.addEventListener(OPEN_EVENT, on)
+    return () => window.removeEventListener(OPEN_EVENT, on)
+  }, [ids, open, el])
+}
+
 /** Seconds since `Date.now()`, re-rendered every second while `active`. */
 function useNow(active: boolean): number {
   const [now, setNow] = React.useState(() => Date.now() / 1000)

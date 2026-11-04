@@ -383,6 +383,7 @@ class Runner:
             if err or attempt.stopped or not answer:
                 m["debate_active"] = False
                 m["debate_paused"] = False
+                m.pop("discussion_paused_at", None)
                 return
             if not m.get("debate_active") and not m.get("debate_paused"):
                 return
@@ -404,7 +405,7 @@ class Runner:
             if m.get("debate_active") and ((turns_limit and m["discussion_turns"] >= turns_limit)
                                            or (seconds_limit and elapsed >= seconds_limit)):
                 m.update(debate_active=False, debate_paused=True, discussion_pause_reason="limit",
-                         discussion_elapsed=elapsed, discussion_started=None)
+                         discussion_elapsed=elapsed, discussion_started=None, discussion_paused_at=time.time())
             if m.get("debate_paused"):
                 m["debate_pending"] = {"text": prompt, "attachments": [], "source": "debate", "kind": "debate", "at": time.time()}
                 return

@@ -1,0 +1,1 @@
+.prose-mx .mx-block :is(h1,h2,h3,h4,p,ul,ol,li,blockquote,table,thead,tbody,tr,th,td,img,a,code,pre,hr,figure,figcaption),.prose-mx a.mx-block{all:revert-layer}
