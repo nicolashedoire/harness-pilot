@@ -227,27 +227,87 @@ def mcp_config(cwd: str, env: dict[str, str], mode: str = "default") -> tuple[li
 
 # ---- sandbox ---------------------------------------------------------------------------------------------------
 PROFILE = "protected"                          # Codex permission profile name (":..." names are Codex's built-ins)
-# Kept read-only inside the writable folder, as `--sandbox workspace-write` does: a profile extending ":workspace"
-# loses that (checked with codex-cli 0.150.1), so they are listed again.
-WORKSPACE_READ_ONLY = (".git", ".codex", ".agents")
+# Kept read-only inside the writable folder: `.git` / `.codex` / `.agents` as `--sandbox workspace-write` does (a
+# profile extending ":workspace" loses that, checked with codex-cli 0.150.1, so they are listed again), and the
+# folder's SESSION_CONFIG.
+WORKSPACE_READ_ONLY = (".git", ".codex", ".agents", ".claude", ".mcp.json", ".maxxing.json")
+# What the server or Claude runs or obeys outside Codex's sandbox, as the server's user (root on a server
+# installation): a write-mode Codex turn never changes it, whatever folder it runs in (the workspace root included).
+# - SERVER_CODE, read-only: `extensions/` (api.py the server imports, agent providers it starts, block plugins),
+#   `customizations/` (patches `pilot custom restore` applies to the product code), `infra.json` (servers the server
+#   reaches over ssh; Claude's deny rules have it too).
+# - SESSION_CONFIG of every folder a session runs in (the root, projects/<p>, projects/<p>/topics/<t>): its
+#   permission mode (`.maxxing.json`: bypass would free Claude there), Claude Code's settings (hooks, MCP servers,
+#   helpers) and hook scripts, the folder's `.mcp.json`. Read-only at the root and in the turn's own folder
+#   (WORKSPACE_READ_ONLY); in the other folders through patterns, which a profile only accepts as "deny"
+#   (codex-cli 0.150.1): Codex can neither read nor change those files there.
+SERVER_CODE = ("extensions", "customizations", "infra.json")
+SESSION_CONFIG = (".maxxing.json", ".claude/settings.json", ".claude/settings.local.json", ".claude/hooks/**",
+                  ".mcp.json")
+SESSION_FOLDERS = ("projects/*", "projects/*/topics/*")
+
+
+_GLOB_CHARS = re.compile(r"([*?\[\]{}])")
+
+
+def _glob_literal(path: str) -> str:
+    """`path` as a literal inside a Codex filesystem pattern: codex-cli 0.150.1 reads any path holding * ? [ ] { }
+    as a glob (so `/srv/ws [2]/x` would not match itself), and a glob only takes "deny"."""
+    return _GLOB_CHARS.sub(r"[\1]", path)
+
+
+def _read_only(path: str) -> tuple[str, str]:
+    """A "read" entry for `path` (and below); for a path holding glob characters, which Codex refuses as "read",
+    a "deny" of the literal path and everything under it: never readable then, but never writable either."""
+    if not _GLOB_CHARS.search(path):
+        return path, "read"
+    lit = _glob_literal(path)
+    return (f"{lit}/**" if os.path.isdir(path) or not os.path.splitext(path)[1] else lit), "deny"
+
+
+def _deny(path: str) -> dict[str, str]:
+    """"deny" entries for a secret path: the path itself; written as a pattern (glob characters in it), a pattern
+    of a folder does not cover what is inside, so `<folder>/**` is denied too."""
+    if not _GLOB_CHARS.search(path):
+        return {path: "deny"}
+    lit = _glob_literal(path)
+    return {lit: "deny", **({f"{lit}/**": "deny"} if os.path.isdir(path) else {})}
+
+
+def _server_side(ws: str) -> dict[str, str]:
+    """The filesystem entries that keep SERVER_CODE and every SESSION_CONFIG out of a write-mode turn's reach."""
+    try:                                               # an existing folder: its rule never depends on Codex's handling
+        os.makedirs(os.path.join(ws, "extensions"), exist_ok=True)   # of a missing path
+    except OSError:
+        pass
+    fs = dict(_read_only(os.path.join(ws, p)) for p in (*SERVER_CODE, ".maxxing.json", ".claude", ".mcp.json"))
+    base = _glob_literal(ws)
+    fs.update({f"{base}/{d}/{c}": "deny" for d in SESSION_FOLDERS for c in SESSION_CONFIG})
+    return fs
 
 
 def sandbox_args(mode: str) -> list[str]:
     """Codex's sandbox for a permission mode: read-only in default / plan, workspace-write otherwise - never
-    unrestricted machine access, even when Claude's mode is bypass. With config `protect_secrets` (default on), the
-    same sandbox as a permission profile that also denies `spawn.secret_paths()`: Codex's OS sandbox then refuses
-    reading or changing them to every command it runs. No `--sandbox` with it: that flag silently replaces the
-    profile. Only existing paths are passed (nothing to protect otherwise); none: plain `--sandbox`.
+    unrestricted machine access, even when Claude's mode is bypass. Workspace-write is always a permission profile
+    that also keeps the server's code and the sessions' settings read-only (SERVER_CODE, SESSION_CONFIG): changing
+    them would run code outside Codex's sandbox. With config `protect_secrets` (default on), the profile also denies
+    `spawn.secret_paths()` (read-only modes too): Codex's OS sandbox then refuses reading or changing them to every
+    command it runs. No `--sandbox` with a profile: that flag silently replaces it. Only existing secret paths are
+    passed; read-only with none: plain `--sandbox read-only`.
     INTERNALS.md `maxxing.sessions.codex` has what was checked and what it does not cover (MCP servers)."""
     from .. import config
     from . import spawn
     write = mode not in ("default", "plan")
     paths = [os.path.abspath(p) for p in spawn.secret_paths() if os.path.lexists(p)] \
         if config.load_config().get("protect_secrets", True) else []
-    if not paths:
-        return ["--sandbox", "workspace-write" if write else "read-only"]
-    fs: dict = {":workspace_roots": {".": "write", **{d: "read" for d in WORKSPACE_READ_ONLY}}} if write else {}
-    fs.update({p: "deny" for p in paths})
+    if not paths and not write:
+        return ["--sandbox", "read-only"]
+    fs: dict = {}
+    if write:
+        fs[":workspace_roots"] = {".": "write", **{d: "read" for d in WORKSPACE_READ_ONLY}}
+        fs.update(_server_side(os.path.abspath(str(config.workspace()))))
+    for p in paths:
+        fs.update(_deny(p))
     profile = {"extends": ":workspace" if write else ":read-only", "filesystem": fs}
     return ["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}={_toml(profile)}"]
 

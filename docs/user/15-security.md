@@ -79,7 +79,13 @@ no operating-system isolation between harness-pilot and the agents it starts. Wh
 - **Codex**: its own sandbox, chosen from the same mode: read-only in `default` and `plan`, workspace-write
   (writes limited to the working folder and temporary folders) otherwise. harness-pilot never starts Codex with
   unrestricted access. Reads are not limited, except `secrets.json`, `~/.ssh` and the agents' sign-in files with
-  **Protect the secrets**.
+  **Protect the secrets**. In every mode and every folder, the workspace root included, Codex cannot change what
+  harness-pilot or Claude would run outside Codex's sandbox: the extensions (their `api.py` runs inside the server,
+  as its user), the saved customization patches and `infra.json`, nor the settings of any topic or project folder:
+  its permission mode (`.maxxing.json`), Claude Code's settings and hooks (`.claude/settings.json`,
+  `.claude/settings.local.json`, `.claude/hooks/`) and `.mcp.json`. In the folders other than its own, Codex cannot
+  read those settings either. So Codex cannot build or fix an extension: ask Claude. Claude in `bypass` can still
+  write anywhere as your user, extensions included: that is what `bypass` means, so keep it for topics you trust.
 - **Resident companions and missions**: each experiment works in a disposable copy of the committed source
   (`<state>/companions/runs/<id>/repo`, mode 700), with Claude's `acceptEdits` mode or Codex's workspace-write
   sandbox; an architect's plan runs read-only. The copy keeps ordinary edits away from the running app, but it is
@@ -140,7 +146,8 @@ forwarded messages are the ones to put in a stricter mode.
 **Protect the secrets** (Settings -> Claude, on by default) makes Claude's tools refuse to read or edit
 `secrets.json`, `~/.ssh` and the agents' sign-in files (Codex's `auth.json`, Claude Code's `.credentials.json`) in
 every mode. It is a speed bump, not a wall: a script written on purpose to open the file still can. Codex sessions
-get the same paths denied by Codex's own sandbox, which a script does not get around.
+get the same paths denied by Codex's own sandbox, which a script does not get around. Codex's sandbox also keeps the
+extensions and every folder's settings out of its reach in all modes (see [What agents can do](#what-agents-can-do)).
 
 ## Who can reach the UI
 
