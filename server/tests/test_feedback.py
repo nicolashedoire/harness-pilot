@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from maxxing import config, license, register
+from maxxing import config, feedback, license, register
 
 
 class FakeCloud:
@@ -111,8 +111,11 @@ def test_unreachable_or_offline_cloud(client, mx, monkeypatch):
     monkeypatch.setattr(register, "_offline", lambda: False)
     r = client.post("/api/settings/feedback", json={"email": "a@b.io", "message": "hello"})
     assert r.status_code == 502 and r.json()["error"] == "unreachable"
-    monkeypatch.setattr(register, "_offline", lambda: True)
-    assert client.post("/api/settings/feedback", json={"email": "a@b.io", "message": "hello"}).json()["error"] == "offline"
+    monkeypatch.setattr(register, "_offline", lambda: True)              # the route itself is gone
+    assert client.post("/api/settings/feedback", json={"email": "a@b.io", "message": "hello"}).status_code == 404
+    with pytest.raises(feedback.FeedbackError) as e:                     # the module still refuses on its own
+        feedback.send("a@b.io", "bug", "hello")
+    assert e.value.code == "offline"
 
 
 class _Answer:

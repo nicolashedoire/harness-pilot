@@ -75,7 +75,20 @@ def os_name() -> str:
     return platform.platform()
 
 
+OFFLINE = ("harness-pilot does not contact the original project's license server "
+           "(MAXXING_LICENSE_PING is not 1)")
+
+
+def offline() -> bool:
+    """The original project's services (license server, registration, its git repository) are not this project's
+    backend: never contacted unless MAXXING_LICENSE_PING=1. One switch for every caller: register._offline()."""
+    from . import register
+    return register._offline()
+
+
 def _post(path: str, body: dict, timeout: float = 25) -> dict:
+    if offline():                                     # before anything is built: no request leaves this machine
+        raise LicenseError(OFFLINE, "offline")
     req = urllib.request.Request(API + path, data=json.dumps(body).encode(), method="POST",
                                  headers={"content-type": "application/json", "user-agent": USER_AGENT})
     try:
@@ -229,6 +242,9 @@ def _move_to_git(code: Path | None) -> dict:
     code = code or config.CODE
     if not enabled():
         return {"ok": True, "moved": False, "skipped": "not a licensed install"}
+    if offline():                                     # the move fetches the original project's repository (GIT_URL)
+        return {"ok": False, "error": "harness-pilot does not fetch the original project's repository "
+                                      "(MAXXING_LICENSE_PING is not 1)"}
     if not (code / ".git").exists():
         return {"ok": False, "error": "no git directory in the code folder"}
     if customs.rebase_in_progress() or customs.pending():

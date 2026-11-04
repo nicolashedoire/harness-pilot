@@ -369,6 +369,9 @@ def playwright_revisions(py: Path | None = None) -> dict[str, str]:
     return out
 
 
+CHROMIUM_DIRS = ("chrome-linux64", "chrome-linux-arm64", "chrome-linux")   # Playwright's folder: x86_64, arm64, older builds
+
+
 def chromium_bin(rev: str | None = None) -> Path | None:
     """Playwright's Chromium (Scrapling, Remotion renders and PDFs all use this one)."""
     revs = [rev] if rev else sorted(set(playwright_revisions().values()), reverse=True)
@@ -376,7 +379,8 @@ def chromium_bin(rev: str | None = None) -> Path | None:
     if not revs and base.is_dir():
         revs = sorted((d.name.split("-", 1)[1] for d in base.glob("chromium-*")), reverse=True)
     for r in revs:
-        for p in (base / f"chromium-{r}" / "chrome-linux64" / "chrome", base / f"chromium-{r}" / "chrome-linux" / "chrome"):
+        for sub in CHROMIUM_DIRS:
+            p = base / f"chromium-{r}" / sub / "chrome"
             if p.is_file():
                 return p
     return None
