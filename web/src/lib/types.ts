@@ -587,6 +587,8 @@ export type TokenStats = {
   totals: TokenCounts
   providers: Record<string, Omit<TokenCounts, 'cost_usd' | 'sessions'> & {name?:string}>
   unattributed_turns: number
+  /** Older Codex turns recalculated because they counted cached input twice, and the tokens removed. */
+  corrected?: { turns: number; tokens: number }
   projects: (TokenCounts & { name: string })[]
   topics: (TokenCounts & { path: string })[]
   sessions: (Omit<TokenCounts, 'sessions'> & { id: string; title: string; path: string; archived: boolean; updated: number })[]

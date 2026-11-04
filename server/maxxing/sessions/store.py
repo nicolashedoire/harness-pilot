@@ -4,7 +4,8 @@ Meta (`<id>.json`, internal - service.public() turns it into the API.md Session)
   id, title, path (topic path), state ("idle"|"running"|"error"), queue [QueueItem],
   created, updated, turns, cost_usd, tokens {input, output, cache_read, cache_write} (absent on
   sessions created before 2.0.0a6 until stats.py backfills it from the log), days {YYYY-MM-DD:
-  {tokens, cost}} (last 90 days), model, real_model, context_tokens, base_tokens (context of the
+  {tokens, cost}} (last 90 days), usage_fixes {codex_cached: {turns, tokens}} (stats.py recalculated the Codex
+  turns recorded before cached input was split out), model, real_model, context_tokens, base_tokens (context of the
   first call of the current thread: the fixed part), context_window (from the last result), archived, notify,
   source, cron, last_text, error, csid (Claude session id), fresh (next turn uses --session-id),
   pid (runner), unit, spawned_at, finished_at, seen_at, cache_at (last side question: it warmed the
