@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import hashlib
 import inspect
 import json
 import logging
@@ -16,7 +17,7 @@ import shutil
 import signal
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 from .. import bus, config, voice, workspace
 from . import clip, normalize, spawn, store, titles, voicejobs, wake
@@ -1344,7 +1345,19 @@ def trash_sessions(ids: list[str], dest: Path) -> None:
 _turn_cbs: list[Callable[..., Any]] = []
 _stop_cbs: list[Callable[..., Any]] = []
 _watch_task: asyncio.Task | None = None
-_known: dict[str, tuple[int, int, str, bool]] = {}      # sid -> (mtime_ns, turns, state, unread)
+
+
+class _Seen(NamedTuple):
+    """What the watcher last read of a session (`_known`)."""
+    sig: tuple[int, int, int] | None    # (inode, size, mtime_ns) of the meta file
+    turns: int
+    state: str
+    unread: bool
+    digest: bytes | None                # of the meta's content
+    racy: bool                          # read less than RACY_S after its mtime: read again next pass
+
+
+_known: dict[str, _Seen] = {}
 
 
 def on_turn_end(cb: Callable[[dict, dict | None], Any]) -> None:
@@ -1371,8 +1384,27 @@ WATCH_WAKE_RUNNING_S = 2.0
 RUNNING_RECHECK_S = 1.0
 _checked: dict[str, float] = {}
 
+# A meta save is an atomic rename (new inode, size, mtime), but two saves within one timestamp tick (1 to 10 ms on
+# Linux) keep the mtime, and the second can get the inode number the first freed, at the same size: the (inode, size,
+# mtime) of the meta file only says "unchanged" for a file read RACY_S or more after its mtime. A file read sooner is
+# read again on the next pass, and the digest of its content tells whether it changed.
+RACY_S = 1.0
 
-_damaged: dict[str, int] = {}          # session -> mtime of a meta file public() could not read
+
+def _sig(st: os.stat_result) -> tuple[int, int, int]:
+    return st.st_ino, st.st_size, st.st_mtime_ns
+
+
+def _racy(st: os.stat_result) -> bool:
+    return time.time() - st.st_mtime < RACY_S
+
+
+def _digest(m: dict) -> bytes:
+    return hashlib.blake2b(json.dumps(m, sort_keys=True, ensure_ascii=False).encode(), digest_size=16).digest()
+
+
+# session -> (sig, racy) of a meta file public() could not read: logged once, read again only when it changes
+_damaged: dict[str, tuple[tuple[int, int, int], bool]] = {}
 
 
 _held: dict[str, float] = {}           # continuation with queued messages -> when its hand-off hold expires
@@ -1415,14 +1447,17 @@ def _scan(primed: bool, stops: list | None = None) -> tuple[list[tuple[dict, dic
     for sid in store.list_ids():
         alive.add(sid)
         try:
-            mt = (d / f"{sid}.json").stat().st_mtime_ns
+            st = (d / f"{sid}.json").stat()
         except OSError:
             continue
+        sig = _sig(st)
         prev = _known.get(sid)
-        if prev and prev[0] == mt and (prev[2] != "running" or now - _checked.get(sid, 0) < RUNNING_RECHECK_S):
+        if prev and prev.sig == sig and not prev.racy and (
+                prev.state != "running" or now - _checked.get(sid, 0) < RUNNING_RECHECK_S):
             continue
-        if _damaged.get(sid) == mt:
+        if _damaged.get(sid) == (sig, False):
             continue
+        racy = _racy(st)
         _checked[sid] = now
         m = store.read(sid)
         if m is None:
@@ -1434,14 +1469,16 @@ def _scan(primed: bool, stops: list | None = None) -> tuple[list[tuple[dict, dic
         try:
             s = public(m)
         except Exception:                     # one damaged session file never stops the others' turn ends
-            log.warning("session %s: unreadable meta", sid, exc_info=True)
-            _damaged[sid] = mt                         # logged once: read again only when the file changes
+            if (_damaged.get(sid) or (None,))[0] != sig:
+                log.warning("session %s: unreadable meta", sid, exc_info=True)
+            _damaged[sid] = (sig, racy)
             continue
-        try:
-            mt = (d / f"{sid}.json").stat().st_mtime_ns
+        try:                                  # public() repairs the meta of a dead runner
+            st = (d / f"{sid}.json").stat()
+            sig, racy = _sig(st), _racy(st)
         except OSError:
             pass
-        cur = (mt, s["turns"], s["state"], s["unread"])
+        cur = _Seen(sig, s["turns"], s["state"], s["unread"], _digest(m), racy)
         if prev is None:
             if not primed:                    # first pass: baseline - except turns that ended while the server was down
                 _known[sid] = cur
@@ -1450,21 +1487,22 @@ def _scan(primed: bool, stops: list | None = None) -> tuple[list[tuple[dict, dic
                     if stops is not None:
                         stops.append(_stopped(s, m))
                 continue
-            prev = (0, 0, "idle", False)      # new session: its turns all happened since
+            prev = _Seen(None, 0, "idle", False, None, True)      # new session: its turns all happened since
             ws_changed = True
-        elif prev[0] == mt:
+        elif prev[1:5] == cur[1:5]:           # read again (racy, or a running session's recheck): nothing changed
+            _known[sid] = cur
             continue
         _known[sid] = cur
         changed = True
-        if (prev[2], prev[3]) != (cur[2], cur[3]):
+        if (prev.state, prev.unread) != (cur.state, cur.unread):
             ws_changed = True
         # a turn ended, or failed to start (error without a new turn - also when it failed before this watcher
         # ever saw it running: systemd-run refusing within one pass)
-        if cur[1] > prev[1] or (prev[2] != "error" and cur[2] == "error" and cur[1] == prev[1]):
+        if cur.turns > prev.turns or (prev.state != "error" and cur.state == "error" and cur.turns == prev.turns):
             ends.append((_ended(s, m), last_result(sid)))
         # stopped running: seen running before, or turns that ran (or failed to start) between two passes
-        if stops is not None and cur[2] != "running" and (
-                prev[2] == "running" or cur[1] > prev[1] or (cur[2] == "error" and prev[2] != "error")):
+        if stops is not None and cur.state != "running" and (
+                prev.state == "running" or cur.turns > prev.turns or (cur.state == "error" and prev.state != "error")):
             stops.append(_stopped(s, m))
     for sid in [k for k, until in _held.items() if k not in alive or until <= time.time()]:
         _held.pop(sid, None)
