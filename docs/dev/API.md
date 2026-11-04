@@ -745,6 +745,8 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `deps.vulnerable` | system | warning | `count` | `open` | – |
 | `deps.update_failed` | system | warning | `count, names` | `open` | – |
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
+| `mission.completed` | system | info | `title` | `open` | – |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
 | `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |

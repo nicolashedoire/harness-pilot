@@ -58,8 +58,6 @@ POST_ACTIONS = (re.compile(r"^/api/crons/[A-Za-z0-9_-]{1,64}/run$"),
 # kind -> (source, typical level). Source "" = the webhook kinds (any hook name; not reserved). The kinds of a built-in
 # source (sessions, crons, system, security, infra) are reserved: an external post cannot use them.
 KINDS: dict[str, tuple[str, str]] = {
-    "mission.review": ("system", "warning"),
-    "mission.completed": ("system", "info"),
     "session.done": ("sessions", "success"),
     "session.failed": ("sessions", "error"),
     "discussion.paused": ("sessions", "warning"),
@@ -75,6 +73,8 @@ KINDS: dict[str, tuple[str, str]] = {
     "deps.vulnerable": ("system", "warning"),
     "deps.update_failed": ("system", "warning"),
     "health.issue": ("system", "warning"),
+    "mission.review": ("system", "warning"),
+    "mission.completed": ("system", "info"),
     "signin.ok": ("security", "info"),
     "signin.failed": ("security", "warning"),
     "signin.denied": ("security", "warning"),
