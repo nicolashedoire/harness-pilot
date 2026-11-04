@@ -117,3 +117,40 @@ def test_a_mission_planning_run_raises_no_companion_review_notice(client, topic)
             assert companion_notices() == []
     # the experiment run is still reported (its copy is missing here, so as needing attention)
     assert [e['kind'] for e in companion_notices()] == ['companion.error']
+
+
+def _claude_settings(mx) -> list[dict]:
+    import json
+    f = mx['fake_dir'] / 'calls.jsonl'
+    rows = [json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
+    return [json.loads(r['argv'][r['argv'].index('--settings') + 1]) for r in rows if '--settings' in r['argv']]
+
+
+def test_the_companion_sandbox_option_confines_claude_companion_commands(client, topic, mx, monkeypatch):
+    """Off by default; on, only companion sessions get Claude Code's OS sandbox, with no way out and no new approval."""
+    from maxxing.sessions import spawn
+    source = mx['tmp'] / 'source'
+    source.mkdir()
+    subprocess.run(['git', 'init', '-q', str(source)], check=True)
+    (source / 'app.txt').write_text('original\n')
+    subprocess.run(['git', '-C', str(source), 'add', 'app.txt'], check=True)
+    subprocess.run(['git', '-C', str(source), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'initial'], check=True)
+    monkeypatch.setattr(config, 'CODE', source)
+    assert client.get('/api/settings').json()['companion_sandbox'] is False
+    role = client.post('/api/companions', json={'name': 'Claude auditor', 'role': 'Inspect', 'provider': 'claude'}).json()
+
+    def run() -> dict:
+        r = client.post(f"/api/companions/{role['id']}/runs", json={'path': topic, 'mission': 'NOTOOL'})
+        assert r.status_code == 200, r.text
+        wait_idle(client, r.json()['id'])
+        return _claude_settings(mx)[-1]
+
+    assert 'sandbox' not in run()                                             # off by default
+    assert client.put('/api/settings', json={'companion_sandbox': True}).json()['companion_sandbox'] is True
+    s = run()
+    assert s['sandbox'] == {'enabled': True, 'failIfUnavailable': True, 'allowUnsandboxedCommands': False,
+                            'autoAllowBashIfSandboxed': False} == spawn.COMPANION_SANDBOX
+    assert s['permissions']['deny']                                           # the deny rules stay
+    plain = client.post('/api/sessions', json={'path': topic, 'message': 'NOTOOL'}).json()   # not a companion
+    wait_idle(client, plain['id'])
+    assert 'sandbox' not in _claude_settings(mx)[-1]

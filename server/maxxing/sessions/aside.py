@@ -1,10 +1,11 @@
-"""Side questions: ask Claude about a session without interrupting it.
+"""Side questions: ask the session's agent about it without interrupting it.
 
-The question runs in a throwaway copy of the session's Claude thread (`--resume <csid> --fork-session
---no-session-persistence`): Claude knows the whole conversation, but nothing is written - the running turn,
-the queue and the thread are untouched, and the exchange is not added to the session log. Read-only
-(`--permission-mode plan`). One side question at a time per session, two in all (each is a claude
-process next to the running turn: memory on a small server).
+The question runs in a throwaway copy of the agent's thread - Claude: `--resume <csid> --fork-session
+--no-session-persistence`, read-only (`--permission-mode plan`); Codex: `exec --ephemeral --sandbox read-only
+fork <thread>`. The agent knows the whole conversation, but nothing is written - the running turn, the queue and
+the thread are untouched, and the exchange is not added to the session log. A discussion or debate asks the agent
+that answered last. One side question at a time per session, two in all (each is an agent process next to the
+running turn: memory on a small server).
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import threading
 import time
 
 from .. import config
-from . import spawn, store
+from . import codex, spawn, store
 from .runner import Runner
 from .service import SessionError, _require
 
@@ -32,18 +33,32 @@ _lock = threading.Lock()
 _busy: set[str] = set()
 
 
+def _agent(m: dict) -> tuple[str, str] | None:
+    """(agent, thread id) to ask, None when no thread answered yet. A discussion asks its last speaker first."""
+    provider = str(m.get("provider") or "claude")
+    claude = str(m.get("csid") or "") if m.get("csid") and not m.get("fresh", True) else ""
+    threads = {"claude": claude, "codex": str(m.get("codex_thread_id") or "")}
+    if provider in ("discussion", "debate"):
+        last = "codex" if m.get("turn_provider") == "codex" else "claude"
+        order = [last, "claude" if last == "codex" else "codex"]
+    else:
+        order = [provider]
+    return next(((a, threads[a]) for a in order if threads.get(a)), None)
+
+
 def ask(sid: str, question: str) -> dict:
-    """-> {answer, cost_usd, duration_ms}. 409 when the session has no Claude thread yet or is already
+    """-> {answer, agent, cost_usd, duration_ms}. 409 when the session has no thread yet or is already
     answering a side question, 429 when two side questions are running."""
     m = _require(sid)
-    if m.get("provider") in ("codex", "discussion", "debate"):
-        raise SessionError(409, "unsupported", "Side questions are not yet available for this session.")
+    if str(m.get("provider") or "").startswith("plugin:"):
+        raise SessionError(409, "unsupported", "Side questions are not available for agent plugin sessions.")
     question = (question or "").strip()[:QUESTION_MAX]
     if not question:
         raise SessionError(400, "empty", "Empty question")
-    csid = m.get("csid")
-    if not csid or m.get("fresh", True):
+    target = _agent(m)
+    if target is None:
         raise SessionError(409, "no_thread", "Nothing to ask about yet: this session has not answered once.")
+    agent, thread = target
     cfg = config.load_config()
     cwd = Runner._cwd(cfg, m)
     if cwd is None:
@@ -55,7 +70,9 @@ def ask(sid: str, question: str) -> dict:
             raise SessionError(429, "throttled", "Two side questions are already running - try again in a moment.")
         _busy.add(sid)
     try:
-        out = _run(m, csid, cwd, cfg, question)
+        if agent == "codex":
+            return _run_codex(m, thread, cwd, question)
+        out = _run(m, thread, cwd, cfg, question)
         try:
             store.update(sid, cache_at=time.time())      # the fork read the thread: its prompt cache is warm again
         except KeyError:                                 # the session was deleted while Claude answered
@@ -98,4 +115,37 @@ def _run(m: dict, csid: str, cwd: str, cfg: dict, question: str) -> dict:
     ms = res.get("duration_ms")
     if not (isinstance(ms, (int, float)) and math.isfinite(ms) and ms):
         ms = (time.time() - t0) * 1000
-    return {"answer": answer, "cost_usd": round(cost, 4), "duration_ms": int(ms)}
+    return {"answer": answer, "agent": "claude", "cost_usd": round(cost, 4), "duration_ms": int(ms)}
+
+
+def _run_codex(m: dict, thread: str, cwd: str, question: str) -> dict:
+    debate = m.get("provider") in ("discussion", "debate")
+    model = str((m.get("codex_model") if debate else m.get("model")) or "").strip()
+    env = spawn.base_env()
+    env.update({str(k): str(v) for k, v in (m.get("env") or {}).items() if spawn.ENV_NAME_RE.match(str(k))})
+    t0 = time.time()
+    try:
+        p = subprocess.run(codex.fork_command(thread, model), input=ASK_PREFACE + question, capture_output=True,
+                           text=True, cwd=cwd, env=env, timeout=ASK_TIMEOUT_S, start_new_session=True)
+    except subprocess.TimeoutExpired:
+        raise SessionError(504, "timeout", f"No answer after {ASK_TIMEOUT_S} s.") from None
+    except OSError as e:
+        raise SessionError(500, "spawn_failed", f"Codex could not start: {e}") from None
+    answer, failure = "", ""
+    for line in p.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        item = ev.get("item")
+        if ev.get("type") == "item.completed" and isinstance(item, dict) and item.get("type") == "agent_message":
+            answer = str(item.get("text") or "").strip()
+        elif ev.get("type") in ("turn.failed", "error"):
+            err = ev.get("error") if isinstance(ev.get("error"), dict) else {}
+            failure = str(err.get("message") or ev.get("message") or "")
+    if p.returncode != 0 or not answer:
+        detail = failure or (p.stderr or "").strip()[-300:] or f"exit code {p.returncode}"
+        raise SessionError(502, "ask_failed", f"The side question failed: {detail}")
+    return {"answer": answer, "agent": "codex", "cost_usd": 0.0, "duration_ms": int((time.time() - t0) * 1000)}

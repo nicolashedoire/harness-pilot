@@ -222,6 +222,17 @@ def command(thread_id: str, mode: str, model: str = "", images: list[str] | None
     return args + (["resume", thread_id, "-"] if thread_id else ["-"])
 
 
+def fork_command(thread_id: str, model: str = "") -> list[str]:
+    """A throwaway, read-only copy of a Codex thread (side questions): `exec fork` with `--ephemeral` writes no
+    session file, the original thread is not touched."""
+    binary = os.environ.get("MAXXING_CODEX_BIN") or shutil.which("codex") or "codex"
+    args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--ephemeral",
+            "--sandbox", "read-only", *privacy_args()]
+    if model:
+        args += ["--model", model]
+    return args + ["fork", thread_id, "-"]
+
+
 def events(event: dict) -> list[dict]:
     """Map completed CLI events into the existing Claude-compatible log format."""
     kind = event.get("type")

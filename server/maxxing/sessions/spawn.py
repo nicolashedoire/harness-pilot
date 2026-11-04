@@ -166,10 +166,26 @@ def agents_args(cfg: dict, extra: str = "") -> list[str]:
     return ["--append-system-prompt", "\n\n".join(parts)] if parts else []
 
 
-def settings_args(cfg: dict) -> list[str]:
+# Claude Code's OS sandbox for its Bash tool (Seatbelt on macOS, bubblewrap on Linux), used for companion sessions when
+# config `companion_sandbox` is on (docs/dev/COMPANION-SANDBOX.md). Commands can only write in the working directory
+# (the companion's disposable clone) and temporary folders; the turn fails instead of running unsandboxed; the model
+# cannot ask to leave the sandbox; no command is approved just because it is sandboxed (the permission mode decides).
+COMPANION_SANDBOX = {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+                     "autoAllowBashIfSandboxed": False}
+
+
+def settings_args(cfg: dict, sandbox: bool = False) -> list[str]:
     """`--settings` for the turn: deny rules (they apply in every permission mode, bypass included, and add to
-    the user's own settings files)."""
-    return ["--settings", json.dumps({"permissions": {"deny": deny_rules(cfg)}}, separators=(",", ":"))]
+    the user's own settings files), plus COMPANION_SANDBOX when `sandbox`."""
+    s: dict = {"permissions": {"deny": deny_rules(cfg)}}
+    if sandbox:
+        s["sandbox"] = COMPANION_SANDBOX
+    return ["--settings", json.dumps(s, separators=(",", ":"))]
+
+
+def companion_sandbox(cfg: dict, meta: dict) -> bool:
+    """A companion experiment or mission step (`meta.companion`) while config `companion_sandbox` is on."""
+    return bool(cfg.get("companion_sandbox")) and isinstance(meta.get("companion"), dict)
 
 
 def claude_env(extra: dict | None = None, permission_mode: str = "bypass") -> dict[str, str]:

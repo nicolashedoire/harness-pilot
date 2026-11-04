@@ -6,7 +6,8 @@
 //   curl -X POST localhost:8809/__mock/scenario -d '{"name":"login"}'   # reset state at runtime
 //   curl -X POST localhost:8809/__mock/bus -d '{"topics":["sessions","workspace"]}'   # emit a bus event
 //
-// Implements every endpoint of docs/dev/API.md with in-memory state and fake, product-neutral data.
+// Implements the endpoints of docs/dev/API.md with in-memory state and fake, product-neutral data (the routes left out
+// are listed in docs/dev/DESIGN.md, "Mock & visual checks").
 // Serves the built SPA from ../dist (web/dist). Scenarios: setup | login | onboarding | ready | maxxing.
 // maxxing: 30 more sessions that keep finishing at random (Maxxing mode); MOCK_PASSWORD=... asks for that password.
 
@@ -1705,10 +1706,10 @@ const teamLive = (session) => {
 }
 const teamOut = (sid) => {
   const team = teamOf(sid)
-  return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
+  return { id: sid, phase: team.phase, created: team.created, coordinator: findSession(sid).provider === 'codex' ? 'codex' : 'claude', agents: team.agents.map((a) => {
     const session = S.sessions.find((x) => x.id === a.id) || null
     const state = a.stopped ? 'stopped' : session ? session.state : 'missing'
-    return { ...a, state, session, started_at: team.created, finished_at: session && state !== 'running' ? session.updated : null,
+    return { ...a, state, session, started_at: team.created, custom_role: !TEAM_ROLES.some(([p, r]) => p === a.provider && r === a.role), finished_at: session && state !== 'running' ? session.updated : null,
       ...(session ? teamLive(session) : { activity: [], report: null }) }
   }) }
 }
@@ -1716,11 +1717,12 @@ R('POST', '/api/teams', ({ body }) => {
   if (typeof body.path !== 'string') fail(422, 'invalid', 'path is required')
   const goal = String(body.message || '').trim()
   if (!goal || goal.length > 24000) fail(400, 'bad_mission', 'A mission of up to 24000 characters is required.')
-  const parent = teamSession(body.path, body.title || goal.slice(0, 100), 'claude')
+  const parent = teamSession(body.path, body.title || goal.slice(0, 100), body.coordinator === 'codex' ? 'codex' : 'claude')
   addEvents(parent, { type: 'user', text: goal, attachments: [], at: now(), source: 'web' })
   const team = { phase: 'launching', goal, agents: [], created: now() }
   teamsState()[parent.id] = team
-  for (const [provider, role] of TEAM_ROLES) {
+  for (const [provider, fallback] of TEAM_ROLES) {
+    const role = String(body[`${provider}_role`] || '').trim() || fallback
     const child = teamSession(body.path, `Team: ${provider === 'codex' ? 'Codex' : 'Claude'}`, provider)
     Object.assign(child, { team_parent: parent.id, team_turn: true })
     team.agents.push({ id: child.id, provider, role, stopped: false })
