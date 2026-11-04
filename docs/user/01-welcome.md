@@ -27,7 +27,7 @@ The project is under active development. The [local macOS setup](installation) i
 
 See [Sessions](sessions) for models, roles, pause and stop controls, summaries and Claude's native agent team. Provider accounts and their usage limits apply to their respective turns.
 
-In a terminal, the `pilot` command looks after the installation: `pilot doctor` checks it and `pilot status` sums it up (in the local setup, run `uv run pilot ...` from the `server/` folder; `maxxing`, its earlier name, is the same command). See the [command reference](cli-reference). harness-pilot also ships skills for Claude Code, named `pilot-...` (`pilot-crons`, `pilot-notifications`, `pilot-theme`...), that Claude uses when a request matches; see [Skills](skills).
+In a terminal, the `pilot` command looks after the installation: `pilot doctor` checks it and `pilot status` sums it up (in the local setup, run `bash scripts/dev-local.sh cli doctor` from the repository root, so that the command uses the settings of your local app; `maxxing`, its earlier name, is the same command). See the [command reference](cli-reference). harness-pilot also ships skills for Claude Code, named `pilot-...` (`pilot-crons`, `pilot-notifications`, `pilot-theme`...), that Claude uses when a request matches; see [Skills](skills).
 
 ## Optional integrations and privacy
 
