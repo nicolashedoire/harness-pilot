@@ -17,7 +17,9 @@ const DEMO_DIAGRAM = `flowchart LR
 
 export const SHOWCASES: Record<string, TourStep[]> = {
   'backup-preview': [{ id: 'backup-preview', targets: [], title: 'show.backupPreview.title', body: 'show.backupPreview.body', route: (c) => (c.pathname === '/settings/backup' ? null : '/settings/backup') }],
-  look: [{ id: 'look', targets: ['accent'], title: 'show.look.title', body: 'show.look.body', route: (c) => (c.pathname === '/settings/general' ? null : '/settings/general') }],
+  look: [{ id: 'look', targets: ['accent'], title: 'show.look.title', body: 'show.look.body', route: (c) => (c.pathname === '/settings/appearance' ? null : '/settings/appearance') }],
+  palettes: [{ id: 'palettes', targets: ['color-palette'], title: 'show.palettes.title', body: 'show.palettes.body', route: (c) => (c.pathname === '/settings/appearance' ? null : '/settings/appearance') }],
+  'theme-agent': [{ id: 'theme-agent', targets: ['my-themes'], title: 'themegen.show.title', body: 'themegen.show.body', route: (c) => (c.pathname === '/settings/appearance' && !c.search.has('create') ? null : '/settings/appearance') }],
   diagram: [{ id: 'diagram', targets: [], title: 'show.diagram.title', body: 'show.diagram.body', cta: 'show.try', after: () => showDiagram(DEMO_DIAGRAM) }],
   'text-zoom': [{ id: 'text-zoom', targets: [], title: 'show.textZoom.title', body: 'show.textZoom.body' }],
   'file-menu': [{ id: 'file-menu', targets: [], title: 'show.fileMenu.title', body: 'show.fileMenu.body' }],

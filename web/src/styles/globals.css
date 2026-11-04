@@ -4,7 +4,10 @@
 
 /* ------------------------------------------------------------------------------------------
  * harness-pilot design tokens. Documented in docs/dev/DESIGN.md — change both together.
- * Neutrals = zinc. One accent (data-accent on <html>). Dark default (.dark on <html>).
+ * Colours come from the user's palette (a Theme, src/lib/theme): src/stores/ui.ts writes every token into
+ * <style id="mx-theme"> (`html:root` / `html:root.dark`, so it outranks this file), index.html injects the cached
+ * copy before the first paint. The values below are the default palette (Zinc & blue, `DEFAULT_THEME`), painted
+ * when there is no palette yet; web/tests/theme.test.ts checks they match. Dark default (.dark on <html>).
  * ---------------------------------------------------------------------------------------- */
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -25,23 +28,26 @@
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  --muted-foreground: oklch(0.535 0.016 285.938);
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.56 0.235 27.3);
+  --destructive-foreground: oklch(0.99 0 0);
   --success: oklch(0.6 0.15 155);
-  --warning: oklch(0.72 0.16 70);
+  --warning: oklch(0.64 0.16 68);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --sidebar: oklch(0.985 0 0);
   --sidebar-border: oklch(0.92 0.004 286.32);
-  --overlay: oklch(0 0 0 / 0.45);
+  --overlay: oklch(0 0 0 / 45%);
 
-  /* accent (overridden per data-accent) */
-  --primary: oklch(0.58 0.2 258);
-  --primary-foreground: oklch(0.985 0 0);
-  --ring: var(--primary);
+  /* accent: links, focus ring, selection, active nav, unread / running dots */
+  --primary: oklch(0.56 0.19 256);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.56 0.19 256);
+  /* filled buttons and checked controls: the accent, or foreground-on-background with monochrome buttons */
+  --action: oklch(0.565 0.192 256);
+  --action-foreground: oklch(0.99 0 0);
 
   --shadow-pop: 0 10px 38px -10px rgb(0 0 0 / 0.35), 0 10px 20px -15px rgb(0 0 0 / 0.2);
 
@@ -76,68 +82,21 @@ html[data-kbd] {
   --muted-foreground: oklch(0.705 0.015 286.067);
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.637 0.208 25.331);
-  --destructive-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.66 0.2 25.3);
+  --destructive-foreground: oklch(0.16 0.012 25.3);
   --success: oklch(0.72 0.15 155);
   --warning: oklch(0.8 0.15 80);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 13%);
   --sidebar: oklch(0.16 0.005 285.823);
   --sidebar-border: oklch(1 0 0 / 7%);
-  --overlay: oklch(0 0 0 / 0.6);
+  --overlay: oklch(0 0 0 / 60%);
+  --primary: oklch(0.66 0.18 256);
+  --primary-foreground: oklch(0.16 0.012 256);
+  --ring: oklch(0.66 0.18 256);
+  --action: oklch(0.565 0.18 256);
+  --action-foreground: oklch(0.99 0 0);
   --shadow-pop: 0 10px 38px -10px rgb(0 0 0 / 0.7), 0 10px 20px -15px rgb(0 0 0 / 0.5);
-}
-
-/* Accent palette — 6 choices matching the colored logos (hue of each mascot). Light values first, dark after. */
-[data-accent='blue'] { --accent-h: 256; --primary: oklch(0.58 0.2 256); --primary-foreground: oklch(0.99 0 0); }
-[data-accent='clay'] { --accent-h: 58; --primary: oklch(0.7 0.17 58); --primary-foreground: oklch(0.2 0.03 55); }
-[data-accent='violet'] { --accent-h: 312; --primary: oklch(0.55 0.25 312); --primary-foreground: oklch(0.99 0 0); }
-[data-accent='green'] { --accent-h: 142; --primary: oklch(0.58 0.18 142); --primary-foreground: oklch(0.99 0 0); }
-[data-accent='amber'] { --accent-h: 95; --primary: oklch(0.8 0.17 95); --primary-foreground: oklch(0.22 0.04 95); }
-[data-accent='rose'] { --accent-h: 30; --primary: oklch(0.6 0.22 30); --primary-foreground: oklch(0.99 0 0); }
-.dark[data-accent='blue'] { --primary: oklch(0.66 0.18 256); }
-.dark[data-accent='clay'] { --primary: oklch(0.76 0.16 62); --primary-foreground: oklch(0.2 0.03 55); }
-.dark[data-accent='violet'] { --primary: oklch(0.79 0.13 309); --primary-foreground: oklch(0.2 0.03 309); }
-.dark[data-accent='green'] { --primary: oklch(0.75 0.2 142); --primary-foreground: oklch(0.2 0.05 142); }
-.dark[data-accent='amber'] { --primary: oklch(0.86 0.17 97); --primary-foreground: oklch(0.22 0.04 95); }
-.dark[data-accent='rose'] { --primary: oklch(0.67 0.21 31); }
-
-/* Tinted background (Settings > General > Background): neutral surfaces take a shade of the accent hue. */
-[data-tint='tinted'] {
-  --background: oklch(0.985 0.012 var(--accent-h));
-  --foreground: oklch(0.16 0.02 var(--accent-h));
-  --card: oklch(0.995 0.007 var(--accent-h));
-  --card-foreground: oklch(0.16 0.02 var(--accent-h));
-  --popover: oklch(0.995 0.007 var(--accent-h));
-  --popover-foreground: oklch(0.16 0.02 var(--accent-h));
-  --secondary: oklch(0.95 0.02 var(--accent-h));
-  --secondary-foreground: oklch(0.22 0.03 var(--accent-h));
-  --muted: oklch(0.955 0.018 var(--accent-h));
-  --muted-foreground: oklch(0.52 0.035 var(--accent-h));
-  --accent: oklch(0.945 0.024 var(--accent-h));
-  --accent-foreground: oklch(0.22 0.03 var(--accent-h));
-  --border: oklch(0.9 0.025 var(--accent-h));
-  --input: oklch(0.9 0.025 var(--accent-h));
-  --sidebar: oklch(0.965 0.02 var(--accent-h));
-  --sidebar-border: oklch(0.9 0.025 var(--accent-h));
-}
-.dark[data-tint='tinted'] {
-  --background: oklch(0.16 0.024 var(--accent-h));
-  --foreground: oklch(0.975 0.008 var(--accent-h));
-  --card: oklch(0.195 0.028 var(--accent-h));
-  --card-foreground: oklch(0.975 0.008 var(--accent-h));
-  --popover: oklch(0.21 0.03 var(--accent-h));
-  --popover-foreground: oklch(0.975 0.008 var(--accent-h));
-  --secondary: oklch(0.285 0.035 var(--accent-h));
-  --secondary-foreground: oklch(0.975 0.008 var(--accent-h));
-  --muted: oklch(0.25 0.032 var(--accent-h));
-  --muted-foreground: oklch(0.72 0.03 var(--accent-h));
-  --accent: oklch(0.285 0.035 var(--accent-h));
-  --accent-foreground: oklch(0.975 0.008 var(--accent-h));
-  --border: oklch(0.85 0.06 var(--accent-h) / 11%);
-  --input: oklch(0.85 0.06 var(--accent-h) / 15%);
-  --sidebar: oklch(0.175 0.026 var(--accent-h));
-  --sidebar-border: oklch(0.85 0.06 var(--accent-h) / 8%);
 }
 
 @theme inline {
@@ -153,6 +112,8 @@ html[data-kbd] {
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-action: var(--action);
+  --color-action-foreground: var(--action-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -225,6 +186,9 @@ html[data-kbd] {
   /* No zoom on touch screens, like a native app: no double-tap zoom, no pinch (with the viewport's
      user-scalable=no and the iOS gesture guard of lib/mobile-viewport.ts). Scrolling stays. */
   html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-x pan-y; }
+  /* Native controls (checkbox, radio, range, scrollbars, date pickers) follow the theme and the palette. */
+  html { color-scheme: light; accent-color: var(--action); }
+  html.dark { color-scheme: dark; }
   html, body, #root { height: 100%; }
   body {
     background: var(--color-background);

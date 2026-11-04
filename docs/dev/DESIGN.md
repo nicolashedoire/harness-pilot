@@ -5,7 +5,7 @@ page. Code lives in `web/` (React 19 + TypeScript strict + Vite + Tailwind v4 + 
 
 ```
 web/
-  index.html               theme bootstrap script (no flash) — mirrors src/stores/ui.ts
+  index.html               theme bootstrap script (no flash): theme, cached palette CSS (`mx-theme`) — mirrors src/stores/ui.ts
   vite.config.ts           dev proxy /api + /ext → MAXXING_API (default http://127.0.0.1:8801)
   mock/server.mjs          zero-dependency mock of the whole API (port 8809, scenarios) — see "Mock"
   src/
@@ -20,7 +20,8 @@ web/
     lib/api.ts types.ts    HTTP client + every API.md payload type
     lib/queries/*.ts       React Query hooks per domain, query keys in keys.ts
     lib/sse.ts             useEventSource() + global bus (/api/stream)
-    stores/ui.ts           persisted UI prefs (theme, accent, tint, density, fonts, language, sidebar, presentation, tourDone)
+    stores/ui.ts           persisted UI prefs (theme, palette, density, fonts, language, sidebar, presentation, tourDone)
+    lib/theme/             the theme engine (pure: tokens, bases, accents, derive, validate, css, share) - see §1 "Themes"
     pwa/                   service worker registration, update toast, install prompt / iOS dialog
     tour/                  guided tour (steps.ts = the script, Tour.tsx = overlay + card)
   sw/sw.js                 service worker source (emitted as dist/sw.js by the `maxxing-sw` plugin)
@@ -29,7 +30,7 @@ web/
     styles/globals.css     tokens (CSS variables) + markdown + highlight theme
 ```
 
-Commands: `npm ci`, `npm run dev` (Vite on :5173, `MAXXING_API=http://127.0.0.1:8809 npm run dev` for the mock),
+Commands: `npm ci`, `npm test` (unit tests of `src/lib/theme` in `web/tests`, plain Node), `npm run dev` (Vite on :5173, `MAXXING_API=http://127.0.0.1:8809 npm run dev` for the mock),
 `npm run build` (`tsc -b` + `vite build` → `web/dist`, committed), `npm run mock` (serves `dist` + fake API on :8809).
 
 ## 1. Tokens
@@ -44,15 +45,25 @@ exceptions are chart series (`--series-1..6`) and brand-neutral swatches in the 
 | `card`, `popover` (+ `-foreground`) | raised surfaces (cards / menus, dialogs) |
 | `muted` / `muted-foreground` | subtle fills, secondary text |
 | `accent` / `accent-foreground` | hover & selected rows (neutral, NOT the brand colour) |
-| `primary` / `primary-foreground` | the user's accent colour: primary buttons, links, active nav, focus ring |
+| `primary` / `primary-foreground` | the accent colour: links, focus ring (`ring`), selection, active nav indicator, unread / running dots, accent-tinted highlights (`bg-primary/10`); `primary-foreground` = text on a solid `bg-primary` (badges, counts) |
+| `action` / `action-foreground` | filled buttons and checked controls: `Button` default variant, `Switch` (checked), `Checkbox` (checked), custom checkboxes / radios, the toast action button, `accent-color` of native checkboxes / radios / range inputs. The accent (`primary`, or a deeper / lighter step that carries its label at 4.5:1) or monochrome (`foreground` on `background`) with the palette's neutral buttons |
 | `secondary` | secondary buttons, segmented/tab active background |
 | `destructive`, `success`, `warning` | status (use at /10–/15 opacity for fills, solid for dots & text) |
 | `border`, `input`, `ring` | hairlines, input borders, focus |
 | `sidebar`, `sidebar-border`, `overlay` | shell & modal backdrop |
 
-- **Neutrals = zinc.** Dark is the default (`.dark` on `<html>`), light and system are available.
-- **Accent**: one of `blue` (default) · `clay` (shown as Orange) · `violet` (Purple) · `green` · `amber` (Yellow) · `rose` (Red), each on the hue of its colored logo (`data-accent` on `<html>`, a light and a dark step each; stored per browser, an unknown value falls back to `blue`). The logo follows it: `public/icons/logo-<accent>-{64,128}.png` (sidebar, sign-in, splash, browser tab; `logoSrc()` in `lib/accent.ts`).
-- **Background**: `data-tint` on `<html>` = `neutral` (default, zinc greys) or `tinted` (surfaces, borders and muted text take a low-chroma shade of `--accent-h`, the hue set by each `[data-accent]` rule; light and dark overrides in `globals.css`).
+- **Colours come from the user's palette** (a Theme object, "Themes" below): `src/stores/ui.ts` writes every token
+  into `<style id="mx-theme">` (`html:root` / `html:root.dark`, which outranks `:root` / `.dark`) and caches that CSS
+  (localStorage `mx-theme`) for the inline script of `index.html`, which injects it before the first paint.
+  `globals.css` keeps the default palette (Zinc & blue) as the fallback before any palette exists; `web/tests` checks
+  that both stay equal. Dark is the default (`.dark` on `<html>`), light and system are available. `data-base`,
+  `data-buttons`, `data-tint` and `data-accent` (the nearest named accent) on `<html>` say what is shown; no CSS
+  depends on them.
+- **Never pick between `primary` and `action` by look**: a filled control the user clicks or checks is `action`;
+  a mark that points at something (link, dot, focus, current item) is `primary`. The notification marks keep their
+  tokens (unread / activity dots and the selected row `primary`, "To handle" counts `destructive`); their buttons,
+  switches, checkboxes and the volume slider are controls (`action`).
+
 - **Fonts**: 23 interface fonts in groups (`FONT_GROUPS`: modern, character, rounded, serif, readable, mono, system; default `inter`) and 11 code fonts (default `system`) (`lib/fonts.ts`, mirrored in the `index.html` inline script, all bundled with `@fontsource-variable`; only Inter is in the entry CSS, the others are loaded on demand by `loadFont`, applied as `--mx-font-sans` / `--mx-font-mono` on `<html>`).
 - **Radius**: `--radius` 10 px → `rounded-sm/md/lg/xl`. Cards `rounded-xl`, controls `rounded-md`.
 - **Spacing**: Tailwind's 4-px scale only (`gap-2` = 8 px…). Card padding = `var(--pad-card)` (20 px comfortable,
@@ -67,14 +78,105 @@ exceptions are chart series (`--series-1..6`) and brand-neutral swatches in the 
   Widgets/extensions name icons in kebab-case; `<NamedIcon name>` renders the curated set in
   `components/ui/icon.tsx` (unknown → puzzle). Add names there when needed (keeps the bundle small).
 
+### Themes (palettes)
+
+A palette is a versioned, serializable **Theme** object (`src/lib/theme/model.ts`; the presets, the user's choice,
+exported / imported files, the server's `look.palette`):
+
+```json
+{ "schema": 1, "id": "night-owl", "name": "Night owl", "description": "…", "author": "…",
+  "base": "zinc" | "graphite" | "marine" | "custom", "accent": "blue" | … | "#14b8a6",
+  "buttons": "accent" | "neutral", "tint": "neutral" | "tinted",
+  "tokens": { "light": { "background": "#f3fbfa" }, "dark": { "card": "#0b1f29" } } }
+```
+
+- **Tokens** (`tokens.ts`, mirrored by `server/maxxing/themes.py` `TOKENS`): `background foreground card
+  card-foreground popover popover-foreground primary primary-foreground action action-foreground secondary
+  secondary-foreground muted muted-foreground accent accent-foreground destructive destructive-foreground success
+  warning border input ring sidebar sidebar-border overlay`. `tokens` holds explicit values only; every missing token
+  is derived (`derive.ts`): base surfaces (tinted with the accent hue or not) -> status colours -> accent -> action.
+  A fill set without its foreground gets black or white.
+- **Bases** (`bases.ts`, light and dark each): `zinc` (the historical neutrals, default), `graphite` (deeper, slightly
+  cooler greys, hue 260; dark: bg `oklch(0.15 0.003 260)`, sidebar 0.179, card 0.201, hover 0.245, border 0.287),
+  `marine` (navy: dark bg `#0b1220`, sidebar `#0e1628`, card `#121c32`, hover `#18243d`, border `#1f2c47`, text
+  `#eef3fb`, muted text ≈`#94a3b8`; light: bg `oklch(0.98 0.007 255)`, white cards, navy text), `custom` (surfaces
+  from `tokens`, zinc for the missing ones). **Tinted** keeps the base's lightness ladder and takes the accent hue
+  at low chroma (dark borders: a tinted white at 8-15 % alpha).
+- **Accents** (`accents.ts`): the 6 named swatches (a seed per mode + the label each prefers on a fill) or any colour
+  (`#rrggbb`, seed = that colour in both modes, white label when white reaches 3:1 on it). One rule for both:
+  `primary` = the seed with its OKLCH lightness moved (darker in light, lighter in dark) until it reads at 4.5:1 on
+  background / card / popover / sidebar; `primary-foreground` = white when it reaches 4.5:1 on primary, else the one
+  of black / white that contrasts most; `action` (accent buttons) = the seed under its preferred label, lightness
+  moved until the label reaches 4.5:1; `ring` = primary. The settings warn (never block) when the picked colour
+  itself is under 3:1 on the light or dark background. Manifest / app icon of a custom accent: the nearest named
+  accent (`nearestAccent`); `theme-color` = the palette's page background.
+- **Buttons**: `accent` (action = the accent step above) or `neutral` (action = `foreground`, action-foreground =
+  `background`).
+- **Presets** (`model.ts` `PRESETS`, names in i18n `colors.preset.<id>`): `zinc` = Zinc & blue (zinc, blue, accent
+  buttons; the default), `graphite` = Graphite (graphite, blue, neutral buttons), `marine` = Marine (marine,
+  `#2d6efd` from the logo, accent buttons), all with a neutral background. Changing any part in the settings makes
+  the palette `custom` (or the preset it now equals) and drops the explicit tokens of that part (`stores/ui.ts`
+  `editedPalette`); the last custom palette is kept per browser ("Custom" brings it back).
+- **Validation** (`validate.ts` `normalizeTheme`, mirrored for the structure by `server/maxxing/themes.py`
+  `clean_theme`): unknown keys dropped; `schema` must be 1 (missing = 1); `id` `[a-z0-9-]{1,48}` else `custom`;
+  `name` ≤ 60, `description` ≤ 280, `author` ≤ 60 characters, control characters and `< >` removed; `base`,
+  `buttons`, `tint`: known values else the default; `accent`: a named accent or a colour (stored `#rrggbb`); a file is
+  16 KB at most. **Token values are colours only**: `#rgb #rgba #rrggbb #rrggbbaa`, `rgb()/rgba()`, `hsl()/hsla()`,
+  `oklch()` with numbers (`%`, `deg`, an optional `/ alpha`), 64 characters at most; anything else (`url(`, `var(`,
+  keywords, `;`, braces…) is refused and reported (the browser drops it; the server answers 422).
+- **Contrast** (`CONTRAST_PAIRS`, light and dark): text ≥ 4.5:1 (foreground on background / sidebar, card and
+  popover foregrounds, muted-foreground on background / card / muted / sidebar, secondary and accent foregrounds,
+  primary / action / destructive foregrounds on their fills, primary on background / card (links), destructive on
+  background / popover); UI parts ≥ 3:1 (ring on background, primary on sidebar, success and warning on
+  background). A failing primary / action / destructive foreground is replaced by black or white (`report.fixed`);
+  every other failure is reported (`report.issues`, shown in the settings and the import dialog), never blocking.
+  Every preset combination (3 bases × 6 accents + the Marine blue × 2 button styles × 2 backgrounds × light / dark)
+  passes: `web/tests/theme.test.ts`.
+- **Storage and sync**: the palette lives in the UI store (`mx-ui`, `palette`, compacted: explicit tokens equal to the
+  derived ones are dropped) and in the server's `look` (`PUT /api/settings/look`, API.md). `look.rev` grows with each
+  palette change; a signed-in browser adopts a palette with a higher `rev` unless its own change is still pending
+  (`palettePending`, sent again on the next start), at boot and live (bus topic `look` -> the auth state is
+  refetched). A browser keeps its palette until the user changes one somewhere (migrated browsers start at `rev` 0).
+  Theme, fonts and density stay per browser.
+- **Untrusted themes, one door** (`src/features/themes/`): a theme from a file, a pasted code, a model (the theme
+  generator) or a Team contact is always `normalizeTheme`d before it is previewed, saved or applied, shown in the
+  review dialog (`ReviewDialog.tsx`: scoped `PalettePreview` in light / dark + `ThemeChecks` = colours only / contrast /
+  automatic fixes in words) and applied only by the user's click (`setPalette`). Previews put the tokens as CSS
+  variables on the preview element's `style` (`tokenStyle`), never into a `<style>` built from strings. The server
+  validates the structure again (`themes.clean_theme`) wherever it stores, returns or relays one.
+- **Export / import** (Settings -> Appearance): export writes `<name>.theme.json` with every token of both modes
+  (`expandTheme`: the file does not depend on this version's tables, `downloadTheme`); import (button or drop zone of
+  My themes) = `parseThemeFile` (16 KB) -> review dialog. **Theme code** (`lib/theme/share.ts`): `theme1:` +
+  base64url of the compact theme JSON (explicit tokens only: short enough for a chat), `themeCode()` /
+  `parseThemeText()` (also takes raw JSON; the decoded text goes through `parseThemeFile`); "Copy the theme code" in
+  the share dialog, "Paste a code" in My themes. `sameLook(a, b)` = the same derived colours in both modes (the
+  "Active" mark).
+- **My themes** (`MyThemes.tsx`): the presets + the saved themes of the server (`/api/settings/themes`, 50 at most,
+  the same on every device, bus `themes`), each with apply (click on its drawing), share, rename, delete; "Save the
+  current palette" when the palette is neither a preset nor saved. Sources: `created` (theme generator), `imported`
+  (file or code), `received` (Team, with the sender's name), `custom` (composed in the settings).
+- **Share** (`ShareDialog.tsx`): to a Team contact or group (`POST /api/team/chats/{cid}/themes`, the DM created if
+  needed; the theme normalized and named before it leaves), the file, the theme code; "Publish to the public gallery"
+  is shown disabled with a *Soon* badge. In a chat, a theme message is a card (`TeamCard.tsx`: light + dark
+  drawings, name, description, contrast line, **Install** -> the review dialog); it never applies itself.
+- **Theme generator** (`Creator.tsx`, `/settings/appearance?create=1&session=<id>`): the user's words (+ up to 3
+  images, uploaded to the topic) start a session in the topic `projects/system/topics/themes` (created on first use,
+  with its project) whose first message asks for the skill `pilot-theme` (`skills/pilot-theme`: schema, tokens,
+  rules, contrast, `check_theme.py`); refinements (chips More contrast / Neutral buttons / Cooler / Light version, or
+  free text) are follow-up messages to the same session. When the turn ends, `GET
+  /api/settings/themes/session/{id}?since=` returns the newest `*.theme.json` the session wrote (validated);
+  `since` = the shown proposal's file time (server clock), so a refinement only shows a newer file. States: empty,
+  working (skeleton + "Open the session"), proposal (`ThemeSample` with the navigation column, `SwatchStrip`, the
+  agent's summary, Apply / Save to my themes / Discard), none / refused / session error (with Ask again).
+
 ## 2. Components (`@/components/ui`)
 
 | Component | Notes |
 |---|---|
-| `Button` | variants `default · secondary · outline · ghost · destructive · link`, sizes `default · sm · lg · icon · icon-sm`. `loading` shows a spinner **without changing the width**. 44 px tall on mobile automatically. |
+| `Button` | variants `default` (filled, `action` tokens) `· secondary · outline · ghost · destructive · link`, sizes `default · sm · lg · icon · icon-sm`. `loading` shows a spinner **without changing the width**. 44 px tall on mobile automatically. |
 | `Input`, `Textarea` (autosize `minRows/maxRows`), `SecretInput` (show/hide), `Label` | inputs are 16 px on touch screens (no iOS zoom), 14 px with a fine pointer. |
 | `FormField` | label + one control + hint/error; wires `id`, `aria-describedby`, `aria-invalid`. |
-| `Select` (shorthand `options`), `Combobox` (`@/components/ui/combobox`, not in the barrel: searchable, long lists; `options` may be a function built on open), `Segmented` (2–5 exclusive options), `Switch`, `Checkbox` | |
+| `Select` (shorthand `options`), `Combobox` (`@/components/ui/combobox`, not in the barrel: searchable, long lists; `options` may be a function built on open), `Segmented` (2–5 exclusive options), `Switch`, `Checkbox` | `Switch` / `Checkbox` checked = `action` tokens (the palette's button style) |
 | `Card*`, `Badge` (`default · secondary · outline · success · warning · destructive · muted`), `Separator`, `Kbd` + `MOD` | |
 | `Dialog*` | centered on desktop, **bottom sheet on mobile** (swipe down to close, `ui/sheet-drag.ts`). |
 | `AlertDialog*` + `confirm({title, description, destructive, confirmText, typeToConfirm})` | `await confirm(...)` → boolean. `typeToConfirm` for irreversible actions (restore…). |
@@ -88,7 +190,7 @@ exceptions are chart series (`--series-1..6`) and brand-neutral swatches in the 
 | `Avatar`, `NamedIcon`, `initials()` | |
 | `Sensitive`, `useMask()`, `usePresentation()` | presentation mode, see §6. |
 
-Shared feature blocks (`src/features`): `Callout` (inline result/explanation, tones success/error/warning/info),
+Shared feature blocks (`src/features`): the theme blocks of `features/themes` (§1 "Themes"), `Callout` (inline result/explanation, tones success/error/warning/info),
 `Steps` (numbered instructions), `OptionCard` (radio card), `SettingRow` (label left, control right), and the
 domain components reused by onboarding **and** settings: `ClaudeConnect`, `ClaudeDefaults`, `CreateProjectTopic`
 (+ `SlugPreview`), `TelegramSetup` (+ `ThreadList`), `BackupSetup` (+ `BackupWhy`), `RegionFields`.
@@ -276,7 +378,8 @@ is skipped — the tour never blocks. Keep these attributes when refactoring the
 onboarding (`mx-tour-pending` in sessionStorage, `tourDone` in the UI store) and is replayable from the Help
 group of the user menu, the palette and Settings › General. The closing card links to the
 `projects/tutorial/topics/1-first-steps` topic when it exists (else to the docs).
-- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round, sky for unread, accent for running; they
+- Counters: `CountBadge` / `CountDot` (`@/components/ui`) - round, green for unread answers, accent for running, red
+  for notifications to handle (`attention`), an accent dot for unread activity (`notice`); they
   pulse (`.mx-badge-pulse`) only when the user turned on Settings -> Notifications -> "Pulsing badge".
 
 ## 11. Motion & performance
@@ -340,7 +443,7 @@ group of the user menu, the palette and Settings › General. The closing card l
 - Build output: `maxxing-precompress` (vite.config.ts) writes `<asset>.br` (Brotli 11) next to each JS/CSS file
   and preloads the Latin Inter font; the server (`app.py`, `_mount_spa`) sends the `.br` twin with
   `Content-Encoding: br` when the browser accepts it.
-- Accent in images: `src/lib/accent.ts` (sRGB copy of the accent palette, mirrored in `index.html` and
-  `offline.html`) drives every logo: favicon, splash, installed-app manifest and icons, iOS home-screen icon,
+- Accent in images: `src/lib/accent.ts` (manifest per named accent; colours before the stylesheet come from the
+  palette cache `mx-theme`, read by `index.html` and `offline.html`) drives every logo: favicon, splash, installed-app manifest and icons, iOS home-screen icon,
   notifications. A new accent or a new logo: change the drawing in `web/scripts/gen-icons.py` and rerun it; never hard-code a
   blue icon, and use the SVG (`logoSrc`) wherever a browser draws it.

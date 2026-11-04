@@ -64,6 +64,10 @@ class VoteIn(BaseModel):
     option: str
 
 
+class ThemeIn(BaseModel):
+    theme: dict
+
+
 class SummarizeIn(BaseModel):
     ids: Optional[list[str]] = None
     since: Optional[float] = None
@@ -172,6 +176,12 @@ async def react(cid: str, mid: str, body: ReactIn):
 @router.post("/chats/{cid}/polls")
 async def poll(cid: str, body: PollIn):
     return await _call(team.create_poll, cid, body.question, body.options, body.multi)
+
+
+@router.post("/chats/{cid}/themes")
+async def theme(cid: str, body: ThemeIn):
+    """A colour theme as a card (validated by themes.clean_theme here and again by every receiving server)."""
+    return await _call(team.send_theme, cid, body.theme)
 
 
 @router.post("/chats/{cid}/messages/{mid}/vote")

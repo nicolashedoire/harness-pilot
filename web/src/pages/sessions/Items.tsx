@@ -356,7 +356,7 @@ function VoiceNote({ paths, heard, pending }: { paths: string[]; heard?: { text:
         data-mx-file={paths[0]}
         className={cn(
           'relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 max-md:size-10 pointer-coarse:size-10 text-primary transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60',
-          playing && 'bg-primary text-primary-foreground hover:bg-primary/90',
+          playing && 'bg-action text-action-foreground hover:bg-action/90',
         )}
       >
         {playing ? <Pause className="size-3.5 fill-current" /> : <Mic className="size-4" />}

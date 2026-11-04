@@ -6,6 +6,7 @@ import * as React from 'react'
 import { useNavigate } from 'react-router'
 import { translate, type TKey } from '@/i18n'
 import { appIconSrc } from '@/lib/accent'
+import { nearestAccent } from '@/lib/theme'
 import { usePatchPush, usePushInfo } from '@/lib/queries'
 import type { PushInfo, PushPrefs, PushSubscribeBody } from '@/lib/types'
 import { useUI } from '@/stores/ui'
@@ -94,14 +95,14 @@ function templates(lang: 'en' | 'fr', suffix: string) {
 
 /** What the service worker reads to show a push (see sw/sw.js). */
 export function swPrefs() {
-  const { language, accent, soundSet, soundPrefs } = useUI.getState()
+  const { language, palette, soundSet, soundPrefs } = useUI.getState()
   const sound: Record<string, boolean> = {}
   for (const r of PREF_ROWS) for (const k of r.kinds) sound[k] = rowSound(soundPrefs, r)
   const sources: Record<string, boolean> = {}
   for (const [k, v] of Object.entries(soundPrefs)) if (k.startsWith(sourceKey(''))) sources[k.slice(sourceKey('').length)] = v
   return {
     lang: language,
-    icon: appIconSrc(accent),
+    icon: appIconSrc(nearestAccent(palette.accent)),
     sound: soundSet === 'none' ? {} : sound,
     soundSources: soundSet === 'none' ? {} : sources,
     muted: soundSet === 'none',
@@ -143,7 +144,7 @@ export function usePushSync() {
   const soundPrefs = useUI((s) => s.soundPrefs)
   const soundSet = useUI((s) => s.soundSet)
   const language = useUI((s) => s.language)
-  const accent = useUI((s) => s.accent)
+  const accent = useUI((s) => s.palette.accent)
   const { data: info } = usePushInfo(pushOn)
   const patch = usePatchPush()
   const patchRef = React.useRef(patch.mutate)
