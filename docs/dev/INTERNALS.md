@@ -256,7 +256,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
-  cron sessions; a discussion / debate paused with `discussion_pause_reason == "limit"` -> `discussion.paused`; state
+  cron sessions, nor for a mixed-team worker on its assignment (`team_turn`: the coordinator's own stop is the team's
+  one notice); a discussion / debate paused with `discussion_pause_reason == "limit"` -> `discussion.paused`; state
   `error` -> `session.failed`; else (unless the last turn was a summary: compact / handoff / seed) resolve
   `session:<sid>` and post `session.done`. Source `sessions` (in `feed.OWN_THREAD`: Telegram off by default).
 
