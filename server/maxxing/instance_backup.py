@@ -423,7 +423,6 @@ def restore(ident: str, fingerprint: str) -> dict:
                     elif entry['kind'] == 'file':
                         with bundle.open('data/' + entry['path']) as src, path.open('xb') as dest:
                             shutil.copyfileobj(src, dest, CHUNK)
-                        path.chmod(entry['mode'])
             for entry in manifest['entries']:
                 if entry['kind'] == 'symlink' and entry.get('link_to'):
                     path, target = destination / entry['path'], destination / entry['link_to']
@@ -433,7 +432,7 @@ def restore(ident: str, fingerprint: str) -> dict:
                 path = destination / entry['path']
                 if path.is_symlink() or path.exists():
                     if not path.is_symlink():
-                        path.chmod(entry['mode'])
+                        path.chmod(0o600 if entry['path'] in ('state/config.json', 'state/secrets.json') else entry['mode'])
                     if isinstance(entry.get('mtime_ns'), int):
                         os.utime(path, ns=(entry['mtime_ns'], entry['mtime_ns']), follow_symlinks=False)
             result = {'destination': str(destination), 'state': str(destination / manifest['roots']['state']['archive']),
@@ -484,6 +483,8 @@ def _retarget(destination: Path, manifest: dict):
             if changed != original:
                 config.write_json(path, changed, mode=0o600)
         except (OSError, ValueError, UnicodeError):
+            if path == state / 'config.json':
+                raise SnapshotError('restore_config', 'The restored configuration could not be prepared safely.') from None
             continue  # opaque plugin JSON is preserved byte-for-byte
     labels = {}
     for name, label in manifest.get('space_labels', {}).items():
