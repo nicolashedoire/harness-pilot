@@ -162,6 +162,7 @@ function buildState(scenario) {
     seedSessions(st, t)
     seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
     seedDebate(st, t)
+    seedTeam(st, t)
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -276,6 +277,29 @@ function seedDebate(st, t) {
     { type: 'assistant', text: 'That works for me. One point to check before concluding: the Apple Pay button must stay visible without scrolling on a small screen.', at: now() - 25 },
   ]
   st.sessions.push(s)
+}
+
+/* A mixed team at work (GET /api/teams/:sid): the Claude worker still reading, Codex done with its report; the
+ * coordinator waits for both before its synthesis. */
+function seedTeam(st, t) {
+  const path = topicPath('acme', 'website')
+  const base = { path, queue: 0, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null, context_window: null, archived: false,
+    notify: false, source: 'web', unread: false, last_text: '', error: null }
+  const goal = 'Review the checkout funnel: can it become a single page without losing the customers who pay in three instalments? I want a recommendation and the list of risks.'
+  const sid = uuid(), claude = uuid(), codex = uuid()
+  st.sessions.push({ ...base, id: sid, title: 'One-page payment?', state: 'idle', created: t - 4 * MIN, updated: t - 4 * MIN, provider: 'claude', team_phase: 'working' })
+  st.sessions.push({ ...base, id: claude, title: 'Team: Claude', state: 'running', created: t - 4 * MIN, updated: t - 5, provider: 'claude', team_parent: sid, team_turn: true })
+  st.sessions.push({ ...base, id: codex, title: 'Team: Codex', state: 'idle', turns: 1, created: t - 4 * MIN, updated: t - 70, provider: 'codex', team_parent: sid, team_turn: true })
+  st.events[sid] = [{ type: 'user', text: goal, attachments: [], at: t - 4 * MIN, source: 'web' }]
+  st.events[claude] = []
+  st.events[codex] = []
+  st.teams = { [sid]: { created: t - 4 * MIN, phase: 'working', agents: [
+    { id: claude, provider: 'claude', role: 'Develop a practical approach and identify the main steps.', stopped: false, finished_at: null,
+      activity: [{ kind: 'read', target: 'src/checkout/Steps.tsx' }, { kind: 'search', target: 'installments' }, { kind: 'say', target: 'Drafting the approach on one page…' }], report: null },
+    { id: codex, provider: 'codex', role: 'Independently examine risks, alternatives and how to verify the result.', stopped: false, finished_at: t - 70,
+      activity: [{ kind: 'run', target: 'rg -n installments src' }],
+      report: '3 risks found\n1. Paying in three instalments redirects to an external page: the single page must keep that return.\n2. The address is validated between two steps today.\n3. The order summary reloads after each step.' },
+  ] } }
 }
 
 /* Maxxing scenario: 30 sessions spread over the topics, most of them running; each finishes after 5 to 40 s
@@ -1416,6 +1440,31 @@ R('POST', '/api/sessions', ({ body }) => {
   return s
 })
 R('GET', '/api/sessions/:id', ({ params }) => findSession(params.id))
+// Mixed teams: the seeded one only (seedTeam)
+const findTeam = (sid) => (S.teams || {})[sid] || fail(404, 'not_found', 'Team not found')
+const teamView = (sid) => {
+  const team = findTeam(sid)
+  return { id: sid, phase: team.phase, created: team.created, agents: team.agents.map((a) => {
+    const session = S.sessions.find((x) => x.id === a.id) || null
+    return { ...a, state: a.stopped ? 'stopped' : session ? session.state : 'missing', session, started_at: team.created }
+  }) }
+}
+R('GET', '/api/teams/:sid', ({ params }) => teamView(params.sid))
+R('POST', '/api/teams/:sid/agents/:agent/stop', ({ params }) => {
+  const agent = findTeam(params.sid).agents.find((a) => a.id === params.agent) || fail(404, 'not_found', 'Team agent not found')
+  agent.stopped = true; agent.finished_at = now()
+  const s = S.sessions.find((x) => x.id === agent.id); if (s) s.state = 'idle'
+  bus('sessions')
+  return teamView(params.sid)
+})
+R('POST', '/api/teams/:sid/stop', ({ params }) => {
+  const team = findTeam(params.sid)
+  team.phase = 'stopped'
+  for (const a of team.agents) { const s = S.sessions.find((x) => x.id === a.id); if (s && s.state === 'running') { s.state = 'idle'; a.stopped = true; a.finished_at = now() } }
+  const c = S.sessions.find((x) => x.id === params.sid); if (c) c.team_phase = 'stopped'
+  bus('sessions')
+  return teamView(params.sid)
+})
 R('PATCH', '/api/sessions/:id', ({ params, body }) => {
   const s = findSession(params.id)
   for (const k of ['title', 'model', 'archived', 'notify', 'plan_mode']) if (body[k] !== undefined) s[k] = body[k]
