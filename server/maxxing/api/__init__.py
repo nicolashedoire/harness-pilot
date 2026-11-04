@@ -23,6 +23,7 @@ ROUTERS = [
     "telegram",
     "pc",
     "backup",
+    "instance_backup",
     "settings",
     "secrets",
     "system",

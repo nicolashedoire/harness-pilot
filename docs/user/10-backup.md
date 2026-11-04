@@ -1,7 +1,62 @@
 ---
 section: Connectivity
 ---
-# Memory backup
+# Backup and restore
+
+Settings → Backup offers two independent workflows: a **complete encrypted instance archive**
+for recovery, and a **selected-file GitHub memory backup** for versioned memory.
+
+## Complete instance archive
+
+The archive includes the configured application state, workspace and files directories:
+settings and credentials, conversations and logs, attachments, projects, ordinary files,
+and valid personal/agent/shared labels. Expand **Included data directories** to check the scope.
+It does not contain the application itself or provider binaries. Temporary runtime files,
+derived search indexes, state-managed tool binaries and targets of external symbolic links
+are excluded. Those links are listed before restoration; reinstall their dependencies separately.
+
+1. Finish or stop active and queued sessions and wait for scheduled tasks to finish.
+2. Enter a separate backup passphrase of at least 12 characters and create the archive.
+   Application mutations and background services pause briefly while the snapshot is built.
+   If source files change during the snapshot, export fails without publishing an incomplete backup.
+3. Download the `.pilotbackup` file and keep the passphrase separately. The application does not
+   save it. This workflow does not upload the archive to GitHub. Credentials are included inside
+   the encrypted archive, so store it as a private recovery copy.
+4. To recover, install a compatible version of the application, open Settings → Backup,
+   select the archive, enter its passphrase and choose **Inspect before restoring**.
+5. Review the verified inventory and external dependencies, then choose **Create the restored instance**.
+   A new `pilot-restored-…` directory is created next to the current state directory. The current
+   installation is never overwritten. Copy the displayed launch command into a terminal;
+   choose another available port if 8790 is already used. The command gives the copy its own
+   crontab file inside the new directory, so it never changes the system crontab or the current
+   instance's scheduled jobs.
+6. Sign in to the recovered copy with the backed-up **application password**. Review conversations,
+   files and settings. The copy starts on loopback in read-only review mode with background services
+   paused. **Enable this instance’s services** in Settings → Backup when ready. Reconnect external
+   agent tools and review integrations/schedules before enabling them.
+
+Restoration retargets stored application data paths and preserves historical attachment links.
+It resets active runtime process handles and native agent thread handles; conversation history
+is retained, while the next agent turn starts a fresh provider conversation. Arbitrary shell
+commands and prose are not rewritten: update absolute paths in custom commands if needed.
+The restore report is stored in the new directory.
+
+Archives use scrypt-derived keys and AES-256-GCM authenticated encryption. The entire encrypted
+stream must authenticate before its ZIP inventory is examined; file hashes and paths are checked
+again before extraction. The default uncompressed data limit is 2048 MiB (`instance_backup_max_mb`);
+`upload_max_mb` and available-disk reserves also apply. Large archives are streamed rather than
+loaded into browser memory. A dedicated workspace and files directory is required; the filesystem
+root or the whole home directory cannot be used as a complete-backup root.
+
+Verified previews temporarily contain decrypted data in the private state directory (mode 0700).
+They expire after 24 hours and are removed on the next backup operation or when Settings → Backup is
+next opened; successful restores delete that staged plaintext immediately, and the unencrypted staging
+of an interrupted export is removed at the next backup operation. Encrypted exports remain in `instance-backups/exports` until
+removed by the owner. Keep a downloaded recovery copy outside the machine you are backing up.
+This is a file-based application snapshot, not an operating-system snapshot of unrelated services
+or a guarantee against external writers deliberately bypassing filesystem modification metadata.
+
+## GitHub memory backup
 
 Your CLAUDE.md and memory.md files are the most valuable part of the installation: months of
 decisions, preferences and context. The backup pushes them every day to a **private GitHub
