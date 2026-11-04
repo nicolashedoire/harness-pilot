@@ -42,11 +42,11 @@ export function EngineChoice({ status, compact }: { status: VoiceStatus; compact
   const opts: { id: VoiceEngine; badge?: React.ReactNode }[] = [
     {
       id: 'local',
-      badge: <Badge variant="muted">{t('voice.badge.private')}</Badge>,
+      badge: <Badge variant="muted">{t('vset.badge.private')}</Badge>,
     },
     {
       id: 'groq',
-      badge: <Badge variant="muted">{t('voice.badge.fast')}</Badge>,
+      badge: <Badge variant="muted">{t('vset.badge.fast')}</Badge>,
     },
     { id: 'openai' },
     { id: 'off' },
@@ -60,8 +60,8 @@ export function EngineChoice({ status, compact }: { status: VoiceStatus; compact
           value={o.id}
           selected={engine === o.id}
           onSelect={() => pick(o.id)}
-          title={t(`voice.engine.${o.id}` as 'voice.engine.local')}
-          description={compact ? undefined : t(`voice.engine.${o.id}.desc` as 'voice.engine.local.desc')}
+          title={t(`vset.engine.${o.id}` as 'vset.engine.local')}
+          description={compact ? undefined : t(`vset.engine.${o.id}.desc` as 'vset.engine.local.desc')}
           badge={o.badge}
         />
       ))}
@@ -83,13 +83,13 @@ export function LocalEngine({ status }: { status: VoiceStatus }) {
     <div className="grid gap-4">
       <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
         <Cpu className="size-4" />{' '}
-        {t('voice.server', {
+        {t('vset.server', {
           cpus: status.local.cpus,
           ram: status.local.ram_gb,
         })}
       </p>
       <div className="divide-y">
-        <SettingRow label={t('voice.model')} description={t('voice.modelDesc')} htmlFor="voice-model">
+        <SettingRow label={t('vset.model')} description={t('vset.modelDesc')} htmlFor="voice-model">
           <Select
             id="voice-model"
             className="w-56"
@@ -97,7 +97,7 @@ export function LocalEngine({ status }: { status: VoiceStatus }) {
             onValueChange={(v) => save.mutate({ model: v as VoiceModel })}
             options={status.local.models.map((m) => ({
               value: m.id,
-              label: `${t(`voice.model.${m.id}` as 'voice.model.small')} · ${m.size_mb} MB${m.id === status.local.recommended ? ` · ${t('voice.recommended')}` : ''}${m.present ? ' ✓' : ''}`,
+              label: `${t(`vset.model.${m.id}` as 'vset.model.small')} · ${m.size_mb} MB${m.id === status.local.recommended ? ` · ${t('vset.recommended')}` : ''}${m.present ? ' ✓' : ''}`,
             }))}
           />
         </SettingRow>
@@ -105,30 +105,30 @@ export function LocalEngine({ status }: { status: VoiceStatus }) {
       {running ? (
         <div className="grid gap-2 rounded-lg border p-3.5" data-voice-install>
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Spinner className="size-4" /> {job.step === 'deps' ? t('voice.installing') : t('voice.downloading', { model: job.model || model })}
+            <Spinner className="size-4" /> {job.step === 'deps' ? t('vset.installing') : t('vset.downloading', { model: job.model || model })}
           </div>
           {job.step === 'model' && job.progress != null ? (
-            <ProgressBar value={job.progress * 100} label={t('voice.downloading', { model: job.model || model })} />
+            <ProgressBar value={job.progress * 100} label={t('vset.downloading', { model: job.model || model })} />
           ) : (
             <ProgressBar value={15} className="animate-pulse" />
           )}
-          <p className="text-[12px] text-muted-foreground">{job.step === 'model' && job.progress != null ? `${Math.round(job.progress * 100)} %` : t('voice.installHint')}</p>
+          <p className="text-[12px] text-muted-foreground">{job.step === 'model' && job.progress != null ? `${Math.round(job.progress * 100)} %` : t('vset.installHint')}</p>
         </div>
       ) : !status.local.installed || !present ? (
         <Callout
           tone={job.state === 'error' ? 'error' : 'info'}
-          title={!status.local.installed ? t('voice.notInstalled') : t('voice.modelMissing', { model })}
+          title={!status.local.installed ? t('vset.notInstalled') : t('vset.modelMissing', { model })}
           action={
             <Button size="sm" onClick={() => install.mutate(undefined)} loading={install.isPending}>
-              <Download /> {!status.local.installed ? t('voice.install') : t('voice.download')}
+              <Download /> {!status.local.installed ? t('vset.install') : t('vset.download')}
             </Button>
           }
         >
-          {job.state === 'error' ? job.error : !status.local.installed ? t('voice.notInstalledDesc') : t('voice.modelMissingDesc')}
+          {job.state === 'error' ? job.error : !status.local.installed ? t('vset.notInstalledDesc') : t('vset.modelMissingDesc')}
         </Callout>
       ) : (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Check className="size-4 text-success" /> {t('voice.modelReady', { model })}
+          <Check className="size-4 text-success" /> {t('vset.modelReady', { model })}
           <Button
             variant="ghost"
             size="sm"
@@ -137,8 +137,8 @@ export function LocalEngine({ status }: { status: VoiceStatus }) {
             onClick={async () => {
               if (
                 await confirm({
-                  title: t('voice.deleteModel', { model }),
-                  description: t('voice.deleteModelDesc'),
+                  title: t('vset.deleteModel', { model }),
+                  description: t('vset.deleteModelDesc'),
                   destructive: true,
                   confirmText: t('common.delete'),
                 })
@@ -146,7 +146,7 @@ export function LocalEngine({ status }: { status: VoiceStatus }) {
                 del.mutate(model)
             }}
           >
-            <Trash2 /> {t('voice.deleteModel', { model })}
+            <Trash2 /> {t('vset.deleteModel', { model })}
           </Button>
         </div>
       )}
@@ -163,10 +163,10 @@ export function ApiEngine({ status, engine }: { status: VoiceStatus; engine: 'gr
   const has = status.keys[engine]
   return (
     <div className="grid gap-3">
-      <p className="text-[13px] text-muted-foreground">{t(`voice.${engine}.how` as 'voice.groq.how')}</p>
+      <p className="text-[13px] text-muted-foreground">{t(`vset.${engine}.how` as 'vset.groq.how')}</p>
       {has && (
         <p className="flex items-center gap-2 text-sm">
-          <Check className="size-4 text-success" /> {t('voice.keyFound', { name })}
+          <Check className="size-4 text-success" /> {t('vset.keyFound', { name })}
         </p>
       )}
       <form
@@ -177,7 +177,7 @@ export function ApiEngine({ status, engine }: { status: VoiceStatus; engine: 'gr
             saveKey.mutate(
               { name, value: value.trim() },
               {
-                onSuccess: () => (setValue(''), toast.success(t('voice.keySaved', { name }))),
+                onSuccess: () => (setValue(''), toast.success(t('vset.keySaved', { name }))),
               },
             )
         }}
@@ -186,7 +186,7 @@ export function ApiEngine({ status, engine }: { status: VoiceStatus; engine: 'gr
           className="min-w-0 flex-1 basis-60"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={has ? t('voice.keyReplace', { name }) : name}
+          placeholder={has ? t('vset.keyReplace', { name }) : name}
           aria-label={name}
         />
         <Button type="submit" variant={has ? 'outline' : 'default'} disabled={!value.trim()} loading={saveKey.isPending}>
@@ -194,7 +194,7 @@ export function ApiEngine({ status, engine }: { status: VoiceStatus; engine: 'gr
         </Button>
       </form>
       <p className="text-[12px] text-muted-foreground">
-        {t('voice.keyVault')}{' '}
+        {t('vset.keyVault')}{' '}
         <Link to="/settings/keys" className="font-medium text-primary hover:underline">
           {t('settings.keys')}
         </Link>
@@ -209,20 +209,20 @@ export function VoiceOptions({ status }: { status: VoiceStatus }) {
   const s = status.settings
   return (
     <div className="divide-y">
-      <SettingRow label={t('voice.language')} description={t('voice.languageDesc')} htmlFor="voice-lang">
+      <SettingRow label={t('vset.language')} description={t('vset.languageDesc')} htmlFor="voice-lang">
         <Select
           id="voice-lang"
           className="w-56"
           value={s.language}
           onValueChange={(v) => save.mutate({ language: v })}
-          options={[{ value: 'auto', label: t('voice.languageAuto') }, ...VOICE_LANGUAGES.map((l) => ({ value: l.id, label: l.label }))]}
+          options={[{ value: 'auto', label: t('vset.languageAuto') }, ...VOICE_LANGUAGES.map((l) => ({ value: l.id, label: l.label }))]}
         />
       </SettingRow>
-      <SettingRow label={t('voice.direct')} description={t('voice.directDesc')} htmlFor="voice-direct">
+      <SettingRow label={t('vset.direct')} description={t('vset.directDesc')} htmlFor="voice-direct">
         <Switch id="voice-direct" checked={s.direct !== false} onCheckedChange={(v) => save.mutate({ direct: v })} />
       </SettingRow>
       {s.direct === false && (
-        <SettingRow label={t('voice.autoSend')} description={t('voice.autoSendDesc')} htmlFor="voice-auto">
+        <SettingRow label={t('vset.autoSend')} description={t('vset.autoSendDesc')} htmlFor="voice-auto">
           <Switch id="voice-auto" checked={s.auto_send} onCheckedChange={(v) => save.mutate({ auto_send: v })} />
         </SettingRow>
       )}
@@ -267,7 +267,7 @@ export function RecordTest({ status }: { status: VoiceStatus }) {
         {recording ? (
           <>
             <Button variant="destructive" onClick={() => void stop()} disabled={rec.state === 'starting'}>
-              <Square className="fill-current" /> {t('voice.stopTest')}
+              <Square className="fill-current" /> {t('vset.stopTest')}
             </Button>
             <Button variant="ghost" size="icon" aria-label={t('voice.cancel')} onClick={rec.cancel}>
               <X />
@@ -277,19 +277,19 @@ export function RecordTest({ status }: { status: VoiceStatus }) {
           </>
         ) : (
           <Button onClick={() => void start()} disabled={!status.ready || busy} loading={busy}>
-            <Mic /> {busy ? t('voice.transcribing') : t('voice.startTest')}
+            <Mic /> {busy ? t('voice.transcribing') : t('vset.startTest')}
           </Button>
         )}
-        {!status.ready && !recording && <span className="text-[13px] text-muted-foreground">{t('voice.testNeedsEngine')}</span>}
+        {!status.ready && !recording && <span className="text-[13px] text-muted-foreground">{t('vset.testNeedsEngine')}</span>}
       </div>
       {err && <Callout tone="error">{err}</Callout>}
       {res && (
         <div className="grid gap-2 rounded-lg border bg-muted/30 p-3.5" data-voice-result>
           <p className="text-sm whitespace-pre-wrap">{res.text || <span className="text-muted-foreground">{t('voice.noSpeech')}</span>}</p>
           <p className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground tabular-nums">
-            <span>{t('voice.stat.audio', { s: res.duration_s.toFixed(1) })}</span>
-            <span>{t('voice.stat.time', { s: (res.ms / 1000).toFixed(1) })}</span>
-            {res.language && <span>{t('voice.stat.lang', { lang: res.language })}</span>}
+            <span>{t('vset.stat.audio', { s: res.duration_s.toFixed(1) })}</span>
+            <span>{t('vset.stat.time', { s: (res.ms / 1000).toFixed(1) })}</span>
+            {res.language && <span>{t('vset.stat.lang', { lang: res.language })}</span>}
             <span>
               {res.engine}
               {res.model ? ` · ${res.model}` : ''}
@@ -320,33 +320,33 @@ export function VoiceQuickSetup() {
     <div className="grid gap-3 rounded-lg border p-4" data-voice-quick>
       <div className="grid gap-1">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Mic className="size-4" /> {t('voice.onb.title')} <Badge variant="muted">{t('voice.optional')}</Badge>
+          <Mic className="size-4" /> {t('vset.onb.title')} <Badge variant="muted">{t('vset.optional')}</Badge>
         </h3>
-        <p className="text-[13px] text-muted-foreground">{t('voice.onb.desc')}</p>
+        <p className="text-[13px] text-muted-foreground">{t('vset.onb.desc')}</p>
       </div>
       <Segmented
         value={s.settings.engine}
         onChange={pick}
-        aria-label={t('voice.engine')}
+        aria-label={t('vset.engine')}
         options={(['off', 'local', 'groq', 'openai'] as VoiceEngine[]).map((e) => ({
           value: e,
-          label: t(`voice.engine.${e}` as 'voice.engine.local'),
+          label: t(`vset.engine.${e}` as 'vset.engine.local'),
         }))}
       />
       <p className="text-[12px] text-muted-foreground">
         {s.install.state === 'running'
-          ? `${s.install.step === 'deps' ? t('voice.installing') : t('voice.downloading', { model: s.install.model || s.settings.model })}${s.install.progress != null ? ` ${Math.round(s.install.progress * 100)} %` : ''}`
+          ? `${s.install.step === 'deps' ? t('vset.installing') : t('vset.downloading', { model: s.install.model || s.settings.model })}${s.install.progress != null ? ` ${Math.round(s.install.progress * 100)} %` : ''}`
           : s.settings.engine === 'off'
-            ? t('voice.onb.offHint')
+            ? t('vset.onb.offHint')
             : s.ready
-              ? t('voice.onb.ready')
+              ? t('vset.onb.ready')
               : s.reason === 'no_key'
-                ? t('voice.onb.needKey', {
+                ? t('vset.onb.needKey', {
                     name: s.key_names[s.settings.engine as 'groq' | 'openai'],
                   })
                 : t('voice.notReadyHint')}{' '}
         <Link to="/settings/voice" className="font-medium text-primary hover:underline">
-          {t('voice.onb.more')}
+          {t('vset.onb.more')}
         </Link>
       </p>
     </div>

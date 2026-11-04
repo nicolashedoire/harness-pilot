@@ -18,7 +18,7 @@ export const SETTINGS_SECTIONS: { id: SettingsSectionId; label: TKey; descriptio
   { id: 'security', label: 'settings.security', description: 'settings.security.desc', icon: Shield, keywords: 'password sign out' },
   { id: 'claude', label: 'settings.claude', description: 'settings.claude.desc', icon: Bot, keywords: 'model token api key permission' },
   { id: 'codex', label: 'settings.codex', description: 'settings.codex.desc', icon: Bot, keywords: 'openai codex chatgpt login agent' },
-  { id: 'companions', label: 'settings.companions', description: 'settings.companions.desc', icon: Bot, keywords: 'agents roles review proposal' },
+  { id: 'companions', label: 'companions.section', description: 'companions.section.desc', icon: Bot, keywords: 'agents roles review proposal' },
   { id: 'memory', label: 'settings.memory', description: 'settings.memory.desc', icon: Brain, keywords: 'second brain memory.md clean compaction lines' },
   { id: 'telegram', label: 'settings.telegram', description: 'settings.telegram.desc', icon: Send, keywords: 'bot threads' },
   { id: 'voice', label: 'settings.voice', description: 'settings.voice.desc', icon: Mic, keywords: 'microphone speech transcription whisper dictation audio' },
