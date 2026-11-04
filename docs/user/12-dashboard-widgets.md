@@ -20,6 +20,10 @@ website"...) and a new session opens in `system/harness` with the request alread
 harness-pilot writes the widget in your extensions. Any request works the same way from any session: "add a widget
 that shows ...". Hide the card with **Edit layout** once you have yours.
 
+A link to one card - **Open** on a widget in the Studio, or an address such as `/?widget=shop-sales` - scrolls the
+dashboard to that card and rings it for a moment. If the widget is hidden, a message says so (show it again with
+**Edit layout**).
+
 ## Built-in widgets
 
 | Widget | Shows |

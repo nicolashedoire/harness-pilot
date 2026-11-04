@@ -4334,5 +4334,7 @@ export const fr: Record<keyof typeof en, string> = {
   "atelier.settings.range": "Un nombre entier de {min} à {max}",
   "atelier.settings.save": "Enregistrer",
   "atelier.menu": "Historique et réglages",
+  "dash.linkHidden": "Ce widget est masqué : réaffichez-le avec Modifier la disposition.",
+  "dash.linkMissing": "Ce widget n’est pas sur le tableau de bord.",
 
 }

@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- **Open** on a widget in the Studio now takes you to its card on the dashboard: the page scrolls to it and rings it for a moment (any `/?widget=<id>` link does the same; a hidden widget is said hidden).
 - The Studio now says who made your scheduled jobs (you in the app, or the Claude or Codex session that added it) and the themes saved from **Create with harness-pilot** (the session that designed it).
 - The **Studio** has its settings (the gear at the top): let the creations that declare no network and no key go live by themselves (off by default; you get a notification), and choose how long versions are kept (90 days, and always the 10 newest, by default).
 - The notifications of the Studio (a creation waiting for your approval, one added without asking) are now worded in your language, and have their own row in the notification settings: they ring by default.

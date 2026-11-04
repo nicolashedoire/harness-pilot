@@ -4353,5 +4353,7 @@ export const en = {
   "atelier.settings.range": "A whole number from {min} to {max}",
   "atelier.settings.save": "Save",
   "atelier.menu": "History and settings",
+  "dash.linkHidden": "This widget is hidden: show it again with Edit layout.",
+  "dash.linkMissing": "This widget is not on the dashboard.",
 
 }
