@@ -518,7 +518,10 @@ def _agent_of(meta: dict | None, claimed: str | None) -> str:
 
 def origin(sid: str | None, agent: str | None, at: float | None, summary: str | None) -> dict:
     meta = _session(sid)
-    return {"agent": _agent_of(meta, agent) if (sid or agent) else "user", "session": meta["id"] if meta else None,
+    who = _agent_of(meta, agent) if (sid or agent) else "user"
+    if sid and meta is None and not agent:             # its session is gone: an agent, which one is unknown
+        who = "unknown"
+    return {"agent": who, "session": meta["id"] if meta else None,
             "session_title": (meta or {}).get("title") or None, "session_path": (meta or {}).get("path") if meta else None,
             "at": at, "summary": (summary or None)}
 

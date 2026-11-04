@@ -331,7 +331,7 @@ export function ThemeCreator({ backTo }: { backTo: string }) {
                   size="lg"
                   variant="outline"
                   loading={save.isPending}
-                  onClick={() => save.mutate({ theme: { ...proposal.theme, name }, source: 'created' }, { onSuccess: () => toast.success(t('themegen.saved', { name })) })}
+                  onClick={() => save.mutate({ theme: { ...proposal.theme, name }, source: 'created', session: sid ?? undefined }, { onSuccess: () => toast.success(t('themegen.saved', { name })) })}
                   data-testid="themegen-save"
                 >
                   <BookmarkPlus /> {t('themegen.save')}

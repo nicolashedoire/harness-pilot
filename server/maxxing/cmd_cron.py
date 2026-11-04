@@ -32,6 +32,20 @@ def _configure(p) -> None:
     r.add_argument("id")
 
 
+
+def _stamp_origins() -> None:
+    """Run from a harness-pilot session: the jobs it just wrote are recorded as its own (the Atelier shows it)."""
+    from . import crons
+    from .sessions import store
+    sid = (os.environ.get("MAXXING_SESSION") or "").strip()
+    agent = (os.environ.get("MAXXING_AGENT") or "").strip() or None
+    if not store.is_valid_id(sid) or store.read(sid) is None:
+        return
+    try:
+        crons.stamp_origins(sid, agent)
+    except OSError:                                # a read-only state (Codex's sandbox): nothing recorded
+        pass
+
 def _handler(a) -> int:
     from . import crons
     if a.cron_cmd == "run":
@@ -68,6 +82,7 @@ def _handler(a) -> int:
         if crons._read_raw() is None:
             print(f"{crons.jobs_path()} cannot be read: crontab left as it is", file=sys.stderr)
             return 1
+        _stamp_origins()
         text = crons.sync_crontab()
         print(f"crontab synced ({len(crons.managed_lines(crons._load_raw()))} managed lines, "
               f"{len(text.splitlines())} lines total)")
