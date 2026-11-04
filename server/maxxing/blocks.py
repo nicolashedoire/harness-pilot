@@ -77,24 +77,25 @@ BUILTINS: list[dict[str, Any]] = [
                      "type": "array", "minItems": 2, "maxItems": 2, "items": [_NUM_OR_STR, {"type": "number"}]}}}}}}}},
     {"type": "table", "icon": "table", "category": "data", "pin": True,
      "hint": "Tabular data the user can sort, filter and export as CSV.",
-     "fields": '{columns: [label | {label, type?: "text"|"number"|"percent"|"delta"|"bar", align?}], rows: [[cell]], '
-               'title?, source?, page_size?}',
+     "fields": '{columns: [label | {label, type?: "text"|"number"|"percent"|"delta"|"bar", unit?, align?}], '
+               'rows: [[cell]], title?, source?, page_size?}',
      "schema": {"type": "object", "required": ["columns", "rows"], "properties": {
          **_HEAD, "page_size": {"type": "integer", "minimum": 1, "maximum": 500},
          "columns": {"type": "array", "minItems": 1, "maxItems": 40, "items": {"anyOf": [
              _s(120),
              {"type": "object", "required": ["label"], "properties": {
-                 "label": _s(120), "align": {"enum": ["left", "right", "center"]},
+                 "label": _s(120), "align": {"enum": ["left", "right", "center"]}, "unit": _s(20),
                  "type": {"enum": ["text", "number", "percent", "delta", "bar"]}}}]}},
          "rows": {"type": "array", "maxItems": 5000, "items": {
              "type": "array", "maxItems": 40, "items": {"type": ["string", "number", "boolean", "null"]}}}}}},
     {"type": "stats", "icon": "gauge", "category": "data", "pin": True,
      "hint": "A few key figures (KPIs), each with an optional change and tone.",
-     "fields": '{items: [{label, value, delta?, hint?, tone?: "ok"|"warn"|"error"}] (1-12), title?}',
+     "fields": '{items: [{label, value, unit?, delta?, hint?, tone?: "ok"|"warn"|"error"}] (1-12), title?}',
      "schema": {"type": "object", "required": ["items"], "properties": {
          **_HEAD, "items": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
              "type": "object", "required": ["label", "value"], "properties": {
-                 "label": _s(80), "value": _NUM_OR_STR, "delta": _NUM_OR_STR, "hint": _s(120), "tone": _TONE}}}}}},
+                 "label": _s(80), "value": _NUM_OR_STR, "unit": _s(20), "delta": _NUM_OR_STR, "hint": _s(120),
+                 "tone": _TONE}}}}}},
     {"type": "list", "icon": "list", "category": "data", "pin": True,
      "hint": "A short list of items with an optional value, status, icon or link (grid: tiles).",
      "fields": '{items: [{title, subtitle?, value?, status?: "ok"|"warn"|"error", icon?, href?}], grid?, title?}',
@@ -665,8 +666,8 @@ def to_card(btype: str, data: dict, title: str = "") -> dict:
         cols = [c if isinstance(c, str) else str(c.get("label") or "") for c in data["columns"]]
         blocks = [{"type": "table", "columns": cols, "rows": [r[:len(cols)] for r in data["rows"][:50]]}]
     elif btype == "stats":
-        blocks = [{"type": "stats", "items": [{k: it[k] for k in ("label", "value", "delta", "hint", "tone") if k in it}
-                                              for it in data["items"]]}]
+        keys = ("label", "value", "unit", "delta", "hint", "tone")
+        blocks = [{"type": "stats", "items": [{k: it[k] for k in keys if k in it} for it in data["items"]]}]
     elif btype == "list":
         blocks = [{"type": "list", "items": data["items"][:50], **({"grid": True} if data.get("grid") else {})}]
     elif btype == "progress":

@@ -278,6 +278,14 @@ def test_pin_to_dashboard(client, org):
     lanes = {w["id"]: w for w in client.get("/api/dashboard").json()["widgets"]}[tl.json()["id"]]["card"]["blocks"][0]
     assert lanes["start"] == 1793000000 and lanes["start"] < lanes["end"]
     assert all(isinstance(e["at"], float) for e in lanes["lanes"][0]["events"])
+    # figures given as numbers keep their unit: the dashboard writes them in the user's language
+    figures = {"items": [{"label": "Revenue", "value": 12480, "unit": "€", "delta": 18}]}
+    st = client.post("/api/blocks/pin", json={"type": "stats", "data": figures, "title": "Sales"})
+    stats = {w["id"]: w for w in client.get("/api/dashboard").json()["widgets"]}[st.json()["id"]]["card"]["blocks"][0]
+    assert stats["items"] == figures["items"]
+    table = next(b for b in blocks.BUILTINS if b["type"] == "table")
+    unit_col = {"columns": ["Product", {"label": "Revenue", "type": "number", "unit": "€"}], "rows": [["Mug", 3120]]}
+    assert blocks.validate(table["schema"], unit_col) == []
     assert client.post("/api/blocks/pin", json={"type": "form", "data": EXAMPLES["form"]}).json()["error"] == \
         "not_pinnable"
     bad = client.post("/api/blocks/pin", json={"type": "chart", "data": {"series": "x"}})

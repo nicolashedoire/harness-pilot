@@ -679,7 +679,7 @@ export type DocMeta = { slug: string; title: string; section: string; order: num
 export type DocPage = { slug: string; title: string; markdown: string }
 
 /* ---------------------------------------------------------------- Dashboard & extensions */
-export type StatBlock = { type: 'stat'; label: string; value: string | number; hint?: string; delta?: string | number; tone?: Tone }
+export type StatBlock = { type: 'stat'; label: string; value: string | number; unit?: string; hint?: string; delta?: string | number; tone?: Tone }
 export type Block =
   | StatBlock
   | { type: 'stats'; items: Omit<StatBlock, 'type'>[] }
