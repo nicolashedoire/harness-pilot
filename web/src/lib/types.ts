@@ -101,6 +101,8 @@ export type Session = {
   swarm_agents?: number | null
   team_phase?: string | null
   team_parent?: string | null
+  /** A mixed-team worker on its team assignment: the team (its coordinator) notifies, not this session */
+  team_turn?: boolean
   debate_paused?: boolean
   discussion_pause_reason?: string | null
   /** When it paused (limit or pause button), Unix seconds; null while not paused. */
