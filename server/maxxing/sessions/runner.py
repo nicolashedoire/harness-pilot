@@ -346,7 +346,8 @@ class Runner:
         from maxxing import pcbridge                    # not at import: the runner starts with stdlib-only modules
         base += pcbridge.mcp_config_args() + mcp_plan.args
         env = spawn.claude_env(meta.get("env") or {}, mode)
-        env["MAXXING_SESSION"] = self.sid               # `pilot mcp load` run by the turn finds its session
+        env["MAXXING_SESSION"] = self.sid               # `pilot mcp load` / `pilot ext propose` find their session
+        env["MAXXING_AGENT"] = "claude"
         text = ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)
         prompt, json_in = stdin_payload(text, item, Path(cfg.get("workspace") or "/").resolve())
         if json_in:
@@ -422,6 +423,7 @@ class Runner:
             env.update({str(k): str(v) for k, v in (meta.get('env') or {}).items()
                         if spawn.ENV_NAME_RE.match(str(k))})
             env['PILOT_AGENT_PROVIDER'] = actor
+            env['MAXXING_SESSION'], env['MAXXING_AGENT'] = self.sid, actor
             attempt = self.attempt(adapter['command'], json.dumps(request) + '\n', cwd, env,
                                    meta.get('timeout_s') or 1800, hold=False, protocol='pilot')
             if attempt.stopped:
@@ -456,6 +458,7 @@ class Runner:
         except Exception as e:  # noqa: BLE001 - a broken MCP config never blocks the turn
             mcp_args, mcp_env, skipped = [], {}, [("*", f"MCP configuration unreadable: {e}"[:200])]
         env.update(mcp_env)
+        env["MAXXING_SESSION"], env["MAXXING_AGENT"] = self.sid, "codex"   # `pilot ext propose` names its origin
         gone = [f"{n} ({why})" for n, why in skipped]
         if gone != (meta.get("codex_mcp_skipped") or []):
             store.update(self.sid, codex_mcp_skipped=gone)

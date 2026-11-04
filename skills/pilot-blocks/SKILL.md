@@ -139,8 +139,9 @@ raw HTML.
 ## Block plugins (new block types)
 
 A user may want a block the app does not have (map, kanban, calendar, formula...). Build it as a **block
-extension** in `{{WORKSPACE}}/extensions/<id>/` (slug id, not the name of a built-in type). A Codex session cannot
-write that folder (its sandbox keeps the extensions read-only): in Codex, suggest a Claude session in `system/harness`.
+extension** (slug id, not the name of a built-in type). Like every creation it goes through the Atelier: write it in
+the folder `pilot ext draft <id>` prints (not in `{{WORKSPACE}}/extensions/` directly), then propose it (below). Codex
+works the same way: the draft folder is in its own session folder, while the extensions folder stays read-only for it.
 
 `block.json`
 ```json
@@ -166,7 +167,8 @@ write that folder (its sandbox keeps the extensions read-only): in Codex, sugges
 The plugin appears in Settings -> Conversation blocks (and Settings -> Extensions); once enabled, its type joins
 the list above (this skill is rendered again) and the Codex context. Example: `{{CODE_DIR}}/examples/extensions/kanban-block/`.
 
-Test it with `pilot ext check <id>` (`--json` for details) and fix until it exits `0`: it validates block.json and the
-schema as the server does, checks that the frame is served, that every inline script of the entry parses
-(`node --check`, lines of the entry file) and that it calls `maxxing.onData`. Then answer with a ```kanban block in a
-session to see it drawn.
+Test it with `pilot ext check <id> --dir <draft folder>` (`--json` for details) and fix until it exits `0`: it
+validates block.json and the schema as the server does, checks that the frame is served, that every inline script of
+the entry parses (`node --check`, lines of the entry file) and that it calls `maxxing.onData`. Then submit it with
+`pilot ext propose <id> --summary "..."` and tell the user it waits for them in the Atelier: once they approve it,
+answer with a ```kanban block to show it drawn.
