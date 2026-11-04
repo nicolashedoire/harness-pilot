@@ -11,6 +11,7 @@
 // Serves the built SPA from ../dist (web/dist). Scenarios: setup | login | onboarding | ready | maxxing.
 // maxxing: 30 more sessions that keep finishing at random (Maxxing mode); MOCK_PASSWORD=... asks for that password.
 // MOCK_LOCAL=mac|mac-terminal|mac-none|linux: a local installation (Settings -> System: background service, Git update).
+// MOCK_MEDIA=none|no-webp|no-pdf: ffmpeg and pdftoppm missing, ffmpeg without WebP, pdftoppm missing (Settings -> System).
 
 import http from 'node:http'
 import fs from 'node:fs'
@@ -34,6 +35,8 @@ const MOCK_PASSWORD = process.env.MOCK_PASSWORD || ''
 // services or logs; on a Mac, the background service runs the app / is installed but the app runs in a terminal / is
 // not installed (Settings -> System)
 const LOCAL = ['mac', 'mac-terminal', 'mac-none', 'linux'].includes(process.env.MOCK_LOCAL) ? process.env.MOCK_LOCAL : ''
+// MOCK_MEDIA=none | no-webp | no-pdf: the thumbnail tools missing (default: all found)
+const MEDIA = ['none', 'no-webp', 'no-pdf'].includes(process.env.MOCK_MEDIA) ? process.env.MOCK_MEDIA : ''
 
 /* =================================================================== helpers */
 const now = () => Date.now() / 1000
@@ -3373,6 +3376,17 @@ R('GET', '/api/system/logs', ({ q }) => {
 R('GET', '/api/system/version', () => ({ version: VERSION, commit: 'a1b2c3d', latest_commit: 'e4f5a6b', behind: 3, local_mode: !!LOCAL,
   auto_update: { enabled: !!S.autoUpdate, tried: null, last_check: null }, report: S.updateReport ? { at: S.updateReport.at, version: S.updateReport.version, ok: S.updateReport.ok, problems: S.updateReport.problems } : null }))
 R('POST', '/api/system/update', () => (LOCAL ? fail(409, 'local_update_unsupported', 'Updates from the application are unavailable in local mode.') : { ok: true }))
+// the tools of thumbnails and previews (server/maxxing/mediatools.py `status`): Homebrew commands on a Mac, apt elsewhere
+R('GET', '/api/system/media-tools', () => {
+  const mac = LOCAL.startsWith('mac'), bin = mac ? '/opt/homebrew/bin' : '/usr/bin'
+  const ffmpeg = MEDIA === 'none' ? null : `${bin}/ffmpeg`, webp = !!ffmpeg && MEDIA !== 'no-webp'
+  const pdftoppm = MEDIA === 'none' || MEDIA === 'no-pdf' ? null : `${bin}/pdftoppm`
+  const missing = [...(!ffmpeg ? ['ffmpeg'] : webp ? [] : ['ffmpeg_webp']), ...(pdftoppm ? [] : ['pdftoppm'])]
+  const needFfmpeg = missing.some((m) => m.startsWith('ffmpeg')), needPdf = missing.includes('pdftoppm')
+  const pkgs = [...(needFfmpeg ? [mac ? 'ffmpeg-full' : 'ffmpeg'] : []), ...(needPdf ? [mac ? 'poppler' : 'poppler-utils'] : [])]
+  const install = !pkgs.length ? [] : mac ? pkgs.map((p) => `brew install ${p}`) : [`sudo apt-get install -y ${pkgs.join(' ')}`]
+  return { ok: !missing.length, ffmpeg: { path: ffmpeg, webp }, pdftoppm: { path: pdftoppm }, missing, install }
+})
 // the optional launchd agent of a local installation on macOS (server/maxxing/local_service.py), read-only
 const MAC_REPO = '/Users/me/harness-pilot'
 const macCmd = (a) => `bash ${MAC_REPO}/scripts/dev-local.sh service ${a}`
