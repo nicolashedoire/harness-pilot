@@ -31,5 +31,7 @@ Cet audit relève les écarts observés dans l'interface locale et le code. Il e
 - [ ] Reprendre les pages de documentation embarquées, les textes et liens hérités, ainsi que les notifications produites par le serveur, en conservant les attributions et licences applicables.
 - [x] **Documentation critique** : les pages mémoire, sécurité, Telegram et commandes distinguent les comportements vérifiés en local des fonctions héritées non encore validées.
 - [ ] Vérifier les fonctions de mémoire, tâches, automatisations et sauvegardes avec les deux agents ; préserver les données existantes.
+- [x] **Tests isolés des tâches et sauvegardes** : 92 tests passent sur macOS avec un GitHub simulé ; un test de nom de fichier non UTF-8 est ignoré lorsque le système de fichiers l'interdit. Cela ne valide pas une sauvegarde réelle du compte utilisateur.
+- [x] **Tests isolés Telegram** : 43 tests de format, de synchronisation et de connexion passent avec des services simulés ; une connexion et une discussion réelles avec un bot restent à vérifier.
 - [ ] Vérifier les écrans sur ordinateur et mobile, les états d'erreur, l'accessibilité et les traductions.
 - [ ] Ajouter des tests ciblés pour les corrections, puis valider les parcours dans l'interface locale.

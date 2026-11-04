@@ -556,12 +556,18 @@ def test_a_git_folder_in_any_case_is_never_collected(ws):
 
 def test_a_secret_in_a_file_name_that_is_not_utf8_is_recorded(gh, ws):
     """leaks[].file kept os.walk's surrogate: writing the history raised out of run() (a 500, no entry)."""
+    import errno
     import os
     gh.add_repo(REPO)
     assert backup.configure(REPO, GH_TOKEN)["ok"]
     backup.update_settings(include=[*backup._settings()["include"], "projects/**/*.md"])
-    with open(os.fsencode(str(ws / "projects/acme/topics/blog")) + b"/caf\xe9.md", "wb") as fh:
-        fh.write(b"token: sk-ant-api03-" + b"Z" * 50 + b"\n")
+    try:
+        with open(os.fsencode(str(ws / "projects/acme/topics/blog")) + b"/caf\xe9.md", "wb") as fh:
+            fh.write(b"token: sk-ant-api03-" + b"Z" * 50 + b"\n")
+    except OSError as exc:
+        if exc.errno == errno.EILSEQ:
+            pytest.skip('This filesystem does not permit non-UTF-8 file names')
+        raise
     r = backup.run()
     assert r["ok"] is False and r["code"] == "secret_found"
     h = backup.history()[0]
