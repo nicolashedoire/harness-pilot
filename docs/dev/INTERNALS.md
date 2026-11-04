@@ -158,9 +158,30 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - `pending(sid) -> bool` - a short title is being made (between `schedule` and the end of its thread) or meta
   `title_auto` is set: the Telegram sync waits for it (60 s at most) before creating the session's thread.
 ## maxxing.claude_auth  (stdlib only, also used by the runner)
+- `auth_method()` is shared by the web app and CLI, including macOS Keychain's boolean CLI status.
+  Legacy non-authentication failures from an explicit test are not relevant sign-in records.
 - `record(ok, error=None, source="turn"|"test"|"check")` - outcome of a real call; `detect(text) -> str|None`
   finds a sign-in error; `status() -> {ok, method, detail, checked_at, error}` (GET /api/claude/status `auth`,
   health, doctor); `needs_check()` - no verification in the last 6 h (background check in api/claude.py).
+
+## maxxing.claude_probe (stdlib only)
+- `run(model, prompt, timeout_s)` makes the one-line authentication probe used by Settings, the background
+  checker and `pilot doctor --live`. A temporary directory outside the workspace is removed after the call;
+  no tools, MCP servers, setting sources, skills or saved conversation are used. Results are
+  `{ok, model, ms, error?}`; callers record successes or genuine authentication failures only. No FastAPI
+  dependency in the CLI.
+- Success = exit 0 and a result that is not an error (`is_error` false, `subtype` success) with a non-empty
+  answer, whatever its wording ("OK.", "ok!"): the probe checks the sign-in, not the model's obedience. An
+  answer that `claude_auth.detect` reads as a sign-in error is not a success.
+- `binary()` = the executable sessions run (`spawn.claude_bin()`, executable or found on `spawn.base_env()`
+  PATH; also `api/claude._resolved_bin`); none -> `{ok: false, error: NOT_INSTALLED}` ("Claude Code is not
+  installed") without a call, and doctor `claude_auth` says so.
+- Same as a session: the credentials the CLI reads itself (the stored token or API key that `spawn.claude_env`
+  exports, `.credentials.json`, macOS Keychain) and the Claude directory (`CLAUDE_CONFIG_DIR`). Not the same:
+  `--setting-sources ""` loads no `settings.json`, so what only settings provide is missing - `apiKeyHelper`,
+  the settings `env` (`ANTHROPIC_BASE_URL`, proxies, `CLAUDE_CODE_USE_BEDROCK` / `_VERTEX`...). A setup that
+  depends on them can fail the probe while sessions work. Kept on purpose: loading the user's settings would
+  also run the user's hooks in a connection test (docs/user/16-troubleshooting.md says it).
 
 ## maxxing.auto_update
 - Harness updates itself while nobody uses it. Off by default (config `auto_update`, Settings -> System -> Updates,
@@ -968,6 +989,19 @@ BIN_LINK or to the venv's `pilot` / `maxxing` script, or it is a small script st
 script, install.sh's state-dir wrapper). Another program named `pilot` first -> WARN naming it, fix: `maxxing`, the
 same command (or a PATH order / removal of the other program). None found while BIN_LINK exists -> INFO, fix
 `maxxing init` (creates PILOT_LINK); none found in a checkout without BIN_LINK -> no check.
+Doctor on macOS (`cmd_core`, read-only): `_listen_addrs` runs `lsof -w -nP -a -iTCP:<port> -sTCP:LISTEN -Ftn`
+(`-w`: lsof warnings such as a stale network mount stay out of the output `run()` merges; `-Ftn`: each socket's
+type before its address, as lsof writes `*` for both wildcards: IPv4 -> `0.0.0.0`, IPv6 -> `::`, unknown -> `*`).
+Exit 1 with no output = nothing listens; any other failure or unreadable line = None, and check `bind` WARNs
+instead of saying nothing listens. IPv6 addresses are shown in brackets (`[::]`, `[::1]`). `check_service`
+describes the launchd configuration (`local_service.status()`, INFO: a terminal run cannot tell whether another
+process is the agent); `check_security` is INFO (ufw, fail2ban, unattended-upgrades do not apply); repair advice
+names the local app instead of systemctl. With `HARNESS_PILOT_LOCAL_MODE=1`, `check_managed_deps` is
+`check_local_tools()` (check `deps_files`): claude, uv and node, their link targets and every parent of both. An
+owner other than root or the current user, or a path writable by everyone (sticky folders aside) -> FAIL;
+writable by the group `admin` (`MAC_ADMIN_GID` 80: Homebrew's `/opt/homebrew/bin` and `Cellar`, and Intel's
+`/usr/local/bin`, are `drwxrwxr-x <user>:admin`) -> fine; writable by another group -> WARN; else INFO (package
+contents are not verified). On Linux, manifest pins, root ownership and the firewall/service checks are unchanged.
 The crontab lines, the default jobs' commands (`crons.maxxing_bin()`) and the Python package keep the
 `maxxing` name on purpose: an existing line never changes. User-facing text (docs, skills, templates, help)
 says `pilot`.
