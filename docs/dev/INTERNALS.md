@@ -727,6 +727,12 @@ Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_L
 `LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
 against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
+## maxxing.sessions.spawn - companion sandbox
+`settings_args(cfg, sandbox)` adds `COMPANION_SANDBOX` (`{enabled, failIfUnavailable: true, allowUnsandboxedCommands:
+false, autoAllowBashIfSandboxed: false}`) to the turn's `--settings`; the runner passes `companion_sandbox(cfg, meta)`
+= config `companion_sandbox` and `meta.companion` set (experiments, mission steps, planner). Codex turns and external
+adapters are unchanged. Options and limits: `docs/dev/COMPANION-SANDBOX.md`.
+
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
   `flock` (`<id>.lock`) + atomic `config.write_json`; `create.lock` serializes the 50-mission cap; `worker.lock`

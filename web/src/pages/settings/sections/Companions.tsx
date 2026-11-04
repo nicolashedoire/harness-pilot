@@ -6,8 +6,9 @@ import { TriangleAlert } from 'lucide-react'
 import { useT } from '@/i18n'
 import { api, errorMessage } from '@/lib/api'
 import type { AgentProvider } from '@/lib/types'
-import { useWorkspace } from '@/lib/queries'
-import { Button, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
+import { useSaveSettings, useSettings, useWorkspace } from '@/lib/queries'
+import { Button, EmptyState, FormField, Input, Select, Switch, Textarea } from '@/components/ui'
+import { SettingRow } from '@/features/common'
 import { SettingsCard, SectionStack } from './ui'
 import { ProposalDiff } from './ProposalDiff'
 
@@ -30,6 +31,8 @@ export function CompanionsSection() {
   const [prTitle, setPrTitle] = React.useState('Improve the platform')
   const [prBody, setPrBody] = React.useState('## Proposed change\n\nReviewed in harness-pilot.\n\n## Verification\n\nSee the companion session for test results.')
   const { data: ws } = useWorkspace()
+  const { data: settings } = useSettings()
+  const saveSettings = useSaveSettings()
   const topics = (ws?.projects || []).flatMap((p) => p.topics)
   const list = useQuery({ queryKey: ['companions'], queryFn: () => api.get<{ companions: Profile[]; runs: Run[] }>('/api/companions'), refetchInterval: 3000 })
   const review = useQuery({ queryKey: ['companion-review', sid], queryFn: () => api.get<Review>(`/api/companions/runs/${encodeURIComponent(sid)}/review`), enabled: !!sid, refetchInterval: 3000 })
@@ -63,6 +66,11 @@ export function CompanionsSection() {
           {dirty && selected !== 'new' && <p role="status" className="text-muted-foreground">{t('companions.saveFirst')}</p>}
         </div>
       )}
+    </SettingsCard>
+    <SettingsCard title={t('companions.sandbox')}>
+      <SettingRow label={t('companions.sandboxLabel')} description={t('companions.sandboxDesc')} htmlFor="companion-sandbox">
+        <Switch id="companion-sandbox" checked={!!settings?.companion_sandbox} disabled={!settings || saveSettings.isPending} onCheckedChange={(v) => saveSettings.mutate({ companion_sandbox: v })} />
+      </SettingRow>
     </SettingsCard>
     {!unavailable && <SettingsCard title={t('companions.runs')}>
       <div className="grid gap-3 text-sm">{!list.data?.runs.length && <p className="text-muted-foreground">{t('companions.empty')}</p>}{list.data?.runs.map((r) => <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><span>{r.title} · {r.state}</span><Button variant="outline" size="sm" onClick={() => setParams({ run: r.id })}>{t('companions.review')}</Button></div>)}</div>

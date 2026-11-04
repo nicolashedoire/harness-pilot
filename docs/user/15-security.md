@@ -71,7 +71,9 @@ no operating-system isolation between harness-pilot and the agents it starts. Wh
   (`<state>/companions/runs/<id>/repo`, mode 700), with Claude's `acceptEdits` mode or Codex's workspace-write
   sandbox; an architect's plan runs read-only. The copy keeps ordinary edits away from the running app, but it is
   **not a sandbox**: what the agent may run is decided by its engine's permissions, not by the copy. A proposal is
-  applied, published or merged only after your review.
+  applied, published or merged only after your review. The optional **Sandbox** of Settings -> Companions (off by
+  default) runs a Claude companion's commands in Claude Code's own sandbox: they can then write only in the copy
+  and temporary folders and cannot reach the network (see [Resident companions](companions)).
 - **External agent adapters** (agent extensions) are programs you install and trust. They run with your
   privileges and must enforce their own engine's permissions; harness-pilot cannot check that they do.
 - **Shell jobs** run with your privileges, like a command typed in your terminal.

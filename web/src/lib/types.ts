@@ -574,6 +574,8 @@ export type Settings = {
   /** Settings -> Support: hide the donation links of What's new, Feedback and License (every browser). */
   donation_hidden?: boolean
   donation_url?: string
+  /** Settings -> Companions: Claude Code's OS sandbox for companion commands (off by default). */
+  companion_sandbox?: boolean
 }
 export type ResultField = 'model' | 'duration' | 'cost' | 'tokens' | 'cache'
 
