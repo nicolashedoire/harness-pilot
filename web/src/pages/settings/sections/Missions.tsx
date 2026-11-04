@@ -6,16 +6,17 @@ import { Check, Pause, Play, Plus, Square, TriangleAlert } from 'lucide-react'
 import { useT, useLang, tDyn } from '@/i18n'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { fmtNumber } from '@/lib/format'
+import type { AgentProvider } from '@/lib/types'
 import { useWorkspace } from '@/lib/queries'
 import { Badge, Button, Checkbox, EmptyState, FormField, Input, Select, Textarea, confirm } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 
-type Role = { id: string; name: string }
+type Role = { id: string; name: string; role: string; provider?: string }
 type Step = { id: string; title: string; role: string; instruction: string; after: string[]; state?: string; session?: string; error?: string }
 type Mission = { id: string; title: string; path: string; goal: string; phase: string; plan_fingerprint: string; reason: string; steps: Step[]; max_runs: number; max_seconds: number; max_tokens: number; tokens: number; spent_seconds: number; active_since: number | null; launches: { session?: string }[]; cycle: number; max_cycles: number; next_cycle: number | null; planner: Step | null }
 const initialStep = (): Step => ({ id: 'step-1', title: '', role: 'observer', instruction: '', after: [] })
 
-function PlanEditor({ mission, roles, onSave, pending }: { mission: Mission; roles: Role[]; onSave: (steps: Step[], start: boolean) => void; pending: boolean }) {
+function PlanEditor({ mission, roles, engineOf, onSave, pending }: { mission: Mission; roles: Role[]; engineOf: (role: string) => string; onSave: (steps: Step[], start: boolean) => void; pending: boolean }) {
   const t = useT()
   const [steps, setSteps] = React.useState<Step[]>(() => mission.steps.length ? mission.steps.map((s) => ({ ...s })) : [initialStep()])
   const update = (index: number, values: Partial<Step>) => setSteps((old) => old.map((s, i) => i === index ? { ...s, ...values } : s))
@@ -23,7 +24,7 @@ function PlanEditor({ mission, roles, onSave, pending }: { mission: Mission; rol
     <p className="text-muted-foreground">{t('resident.planHint')}</p>
     {steps.map((step, i) => <fieldset key={step.id} className="grid gap-3 rounded-lg border p-4"><legend className="px-1 font-medium">{t('resident.step', { n: i + 1 })}</legend>
       <FormField label={t('resident.stepTitle')}><Input required maxLength={120} value={step.title} onChange={(e) => update(i, { title: e.target.value })} /></FormField>
-      <FormField label={t('resident.role')}><Select value={step.role} onValueChange={(role) => update(i, { role })} options={roles.map((r) => ({ value: r.id, label: r.name }))} /></FormField>
+      <FormField label={t('resident.role')} hint={t('resident.engine', { name: engineOf(step.role) })}><Select value={step.role} onValueChange={(role) => update(i, { role })} options={roles.map((r) => ({ value: r.id, label: r.name }))} /></FormField>
       <FormField label={t('resident.instruction')}><Textarea required maxLength={2000} minRows={3} value={step.instruction} onChange={(e) => update(i, { instruction: e.target.value })} /></FormField>
       {i > 0 && <fieldset className="grid gap-2"><legend className="mb-2 text-muted-foreground">{t('resident.dependencies')}</legend>{steps.slice(0, i).map((dep, n) => <label className="flex min-h-10 cursor-pointer items-center gap-3" key={dep.id}><Checkbox checked={step.after.includes(dep.id)} onCheckedChange={(checked) => update(i, { after: checked ? [...step.after, dep.id] : step.after.filter((id) => id !== dep.id) })} /><span className="min-w-0 break-words">{dep.title || t('resident.step', { n: n + 1 })}</span></label>)}</fieldset>}
       {steps.length > 1 && <div><Button variant="ghost" size="sm" onClick={() => setSteps((old) => old.filter((s) => s.id !== step.id).map((s) => ({ ...s, after: s.after.filter((id) => id !== step.id) })))}>{t('resident.removeStep')}</Button></div>}
@@ -43,6 +44,9 @@ export function MissionsSection() {
   const topics = (ws?.projects || []).flatMap((p) => p.topics)
   const list = useQuery({ queryKey: ['missions'], queryFn: () => api.get<Mission[]>('/api/missions'), refetchInterval: 2000 })
   const profiles = useQuery({ queryKey: ['companions'], queryFn: () => api.get<{ companions: Role[] }>('/api/companions') })
+  const providers = useQuery({ queryKey: ['agent-providers'], queryFn: () => api.get<AgentProvider[]>('/api/agent-providers'), refetchInterval: 10000 })
+  const roleOf = (id: string) => profiles.data?.companions.find((r) => r.id === id)
+  const engineOf = (id: string) => { const provider = roleOf(id)?.provider || 'codex'; return providers.data?.find((p) => p.id === provider)?.name || provider }
   const data = list.data?.find((m) => m.id === ident)
   const refresh = () => void qc.invalidateQueries({ queryKey: ['missions'] })
   const message = (e: unknown) => isApiError(e) ? tDyn(t, `resident.error.${e.code}`, errorMessage(e)) : errorMessage(e)
@@ -87,11 +91,12 @@ export function MissionsSection() {
         {data.planner?.session && <Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(data.planner.session)}`}>{t('resident.plannerSession')}</Link>}
         {editable && <>
           <Link className="text-primary underline" to="/settings/companions">{t('resident.adoptRole')}</Link>
-          {profiles.isError ? <p role="alert">{message(profiles.error)}</p> : <PlanEditor key={data.id + ':' + data.phase} mission={data} roles={profiles.data?.companions || []} onSave={(steps, start) => save.mutate({ steps, start })} pending={save.isPending} />}
+          {profiles.isError ? <p role="alert">{message(profiles.error)}</p> : <PlanEditor key={data.id + ':' + data.phase} mission={data} roles={profiles.data?.companions || []} engineOf={engineOf} onSave={(steps, start) => save.mutate({ steps, start })} pending={save.isPending} />}
         </>}
         {!editable && data.steps.map((s, i) => <div key={s.id} className="grid gap-2 rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-medium">{i + 1}. {s.title}</h4><span className="text-xs text-muted-foreground">{s.state === 'complete' && <Check className="mr-1 inline size-3 text-success" />}{stateText(s.state || 'pending')}</span></div>
-          <p className="text-xs text-muted-foreground">{profiles.data?.companions.find((r) => r.id === s.role)?.name || s.role}</p><details className="text-muted-foreground"><summary className="cursor-pointer text-xs">{t('resident.instruction')}</summary><p className="mt-2 whitespace-pre-wrap break-words">{s.instruction}</p></details>
+          <p className="text-xs text-muted-foreground">{roleOf(s.role)?.name || s.role} · {t('resident.engine', { name: engineOf(s.role) })}</p><details className="text-muted-foreground"><summary className="cursor-pointer text-xs">{t('resident.instruction')}</summary><p className="mt-2 whitespace-pre-wrap break-words">{s.instruction}</p></details>
+          {!!roleOf(s.role)?.role && <details className="text-muted-foreground"><summary className="cursor-pointer text-xs">{t('resident.roleInstructions')}</summary><p className="mt-2 whitespace-pre-wrap break-words">{roleOf(s.role)?.role}</p></details>}
           {!!s.after.length && <p className="text-xs text-muted-foreground">{t('resident.after', { names: s.after.map((id) => data.steps.find((d) => d.id === id)?.title || id).join(', ') })}</p>}
           <div className="flex flex-wrap gap-3">{s.session && <><Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.path)}&session=${encodeURIComponent(s.session)}`}>{t('resident.session')}</Link><Link className="text-primary underline" to={`/settings/companions?run=${encodeURIComponent(s.session)}`}>{t('resident.review')}</Link></>}
             {data.phase === 'paused' && ['failed', 'interrupted', 'rejected'].includes(s.state || '') && <Button variant="outline" size="sm" loading={skip.isPending} onClick={() => skip.mutate(s.id)}>{t('resident.skip')}</Button>}

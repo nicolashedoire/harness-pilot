@@ -34,23 +34,54 @@ def _path(ident):
     return _dir() / (ident + '.json')
 
 
-def get(ident):
+def _read(ident):
     value = config.read_json(_path(ident))
     if not isinstance(value, dict):
         raise service.SessionError(404, 'not_found', 'Mission not found.')
-    value['plan_fingerprint'] = _fingerprint(value)
+    value.pop('plan_fingerprint', None)
     return value
 
 
-def _fingerprint(data):
+def get(ident, engines=None):
+    value = _read(ident)
+    value['plan_fingerprint'] = _fingerprint(value, engines)
+    return value
+
+
+def _engines():
+    """What each role would run now: its instructions and its engine. A plugin engine is identified by its resolved
+    command and capabilities, so a replaced adapter is a different engine; an unavailable one is marked as such."""
+    from . import agent_providers
+    providers = {p['id']: p for p in agent_providers.available()}
+    result = {}
+    for profile in companions.roles():
+        provider = profile.get('provider') or 'codex'
+        adapter = providers.get(provider)
+        engine = {'id': provider, 'available': adapter is not None}
+        if adapter and not adapter.get('builtin'):
+            engine.update(command=adapter.get('command'), capabilities=adapter.get('capabilities'))
+        result[profile['id']] = {'role': profile.get('role'), 'engine': engine}
+    return result
+
+
+def _fingerprint(data, engines=None):
+    """What the owner authorizes by starting: the plan, its limits, and the instructions and engine of every role it
+    uses (editing one of those roles afterwards requires a new review)."""
+    engines = _engines() if engines is None else engines
     fields = ('title', 'path', 'goal', 'max_runs', 'max_seconds', 'max_tokens', 'concurrent', 'interval_seconds', 'max_cycles')
     plan = {k: data[k] for k in fields}
     plan['steps'] = [{k: step[k] for k in ('id', 'title', 'role', 'instruction', 'after')} for step in data['steps']]
+    plan['roles'] = {role: engines.get(role) for role in sorted({step['role'] for step in data['steps']})}
     return hashlib.sha256(json.dumps(plan, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def _listing():
+    return sorted((_read(p.stem) for p in _dir().glob('*.json')), key=lambda m: m['created'], reverse=True)
+
+
 def listing():
-    return sorted((get(p.stem) for p in _dir().glob('*.json')), key=lambda m: m['created'], reverse=True)
+    engines = _engines()
+    return [{**data, 'plan_fingerprint': _fingerprint(data, engines)} for data in _listing()]
 
 
 @contextlib.contextmanager
@@ -58,7 +89,7 @@ def _edit(ident):
     _path(ident)  # validate before opening the lock path
     with (_dir() / (ident + '.lock')).open('a') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
-        data = copy.deepcopy(get(ident))
+        data = _read(ident)
         yield data
         config.write_json(_path(ident), data, mode=0o600)
     bus.invalidate('missions')
@@ -306,7 +337,7 @@ def _relocated(ident):
     """State restored or moved from another installation: pause automatic work only. Drafts, plans under review and
     terminal missions keep their phase (a restore must not revive a stopped or completed mission)."""
     current = str(config.STATE.resolve())
-    if get(ident)['origin_state'] == current:
+    if _read(ident)['origin_state'] == current:
         return
     notification = None
     with _edit(ident) as data:
@@ -333,12 +364,17 @@ def advance(ident):
         if data['phase'] not in ('active', 'planning'):
             return
         _reconcile(data)
-        other_slots = sum(1 for other in listing() if other['id'] != ident and other['phase'] in ('active', 'planning')
+        other_slots = sum(1 for other in _listing() if other['id'] != ident and other['phase'] in ('active', 'planning')
                           for s in other['steps'] + ([other['planner']] if other.get('planner') else [])
                           if s['state'] in ('starting', 'running'))
         if (_elapsed(data) >= data['max_seconds'] or data['tokens'] >= data['max_tokens']):
             _bank(data)
             data.update(phase='budget', reason='time' if data['spent_seconds'] >= data['max_seconds'] else 'tokens')
+        elif data['phase'] == 'active' and data.get('approved_plan') != _fingerprint(data):
+            # A role of the plan (instructions or engine) changed after approval: nothing more runs until the owner
+            # reviews and starts the plan again; agents still working are stopped like a pause.
+            _bank(data)
+            data.update(phase='paused', reason='plan_changed')
         elif any(s['state'] in ('failed', 'rejected', 'interrupted') for s in data['steps'] + ([data['planner']] if data['phase'] == 'planning' and data.get('planner') else [])):
             _bank(data)
             data.update(phase='paused', reason='step_failed')
@@ -434,7 +470,7 @@ def tick():
             fcntl.flock(leader, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return
-        for data in listing():
+        for data in _listing():
             if _stop.is_set():
                 break
             try:
