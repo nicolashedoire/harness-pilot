@@ -35,7 +35,8 @@ single session, a resident experiment, or as the second agent of a discussion/de
 latest contribution, `model` is the discussion's partner model, and `history` names the other speakers
 (`{"role":"user","text":"Claude Code: ..."}`; its own replies are `assistant`). It must declare `plan` to join
 a discussion in plan mode and `attachments` to receive files; a discussion compaction cannot reset its own
-state.
+state, so after a compaction, or in a discussion that continues another one (hand-off), the summary is the
+first `history` entry (`role: user`) instead of a prompt preface.
 
 The process starts in the session topic or the companion's disposable source copy. Stdin receives
 one JSON object followed by a newline:

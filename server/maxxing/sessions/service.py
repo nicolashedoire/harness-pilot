@@ -863,9 +863,10 @@ def compact(sid: str) -> None:
     _enqueue(sid, _item(DEBATE_SUMMARY_PROMPT if debate else SUMMARY_PROMPT, [], "system", "compact"))
 
 
-# what a discussion's continuation keeps: its objective, roles, models and limits (a new period starts)
+# what a discussion's continuation keeps: its objective, roles, models, limits (a new period starts) and its second
+# agent when an agent plugin holds that seat
 DISCUSSION_CARRIED = ("debate_goal", "claude_role", "codex_role", "codex_model", "discussion_turn_limit",
-                      "discussion_duration_seconds")
+                      "discussion_duration_seconds", "discussion_partner", "provider_name", "provider_capabilities")
 
 
 def handoff(sid: str) -> dict:

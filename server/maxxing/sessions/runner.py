@@ -301,12 +301,11 @@ class Runner:
         if is_debate:
             store.update(self.sid, turn_provider=actor)
             self.note(_agent_label(actor, meta))       # the thread shows who answers (the web maps it to its mark)
-            summary = str(meta.get("discussion_summary") or "")
-            fresh = not meta.get("codex_thread_id") if actor == "codex" else bool(meta.get("fresh", True))
-            if summary and fresh:                      # the first reply of an agent after a compaction / a hand-off
-                seed = (SEED_DEBATE_HANDOFF.format(title=meta["discussion_from"], summary=summary)
-                        if meta.get("discussion_from") else SEED_DEBATE.format(summary=summary))
-                item = {**item, 'preface': '\n\n'.join(filter(None, [seed, item.get('preface')]))}
+            # the first reply of an agent after a compaction / a hand-off (an agent plugin gets it in its history)
+            fresh = not meta.get("codex_thread_id") if actor == "codex" else (
+                not actor.startswith("plugin:") and bool(meta.get("fresh", True)))
+            if fresh and _debate_seed(meta):
+                item = {**item, 'preface': '\n\n'.join(filter(None, [_debate_seed(meta), item.get('preface')]))}
             role = str(meta.get(f'{actor}_role') or '').strip()
             if role:
                 item = {**item, 'preface': f'[Your role in this discussion]\n{role}\n\n' + str(item.get('preface') or '')}
@@ -414,6 +413,8 @@ class Runner:
                                    if is_debate else agent_providers.history(store.log_path(self.sid))),
                        'attachments': item.get('attachments') or [],
                        'context': codex.workspace_context(Path(cfg.get('workspace') or '/'), Path(cwd))}
+            if is_debate and _debate_seed(meta):        # its state is its own: the summary heads its history
+                request['history'] = [{'role': 'user', 'text': _debate_seed(meta)[:16000]}] + request['history'][-7:]
             env = spawn.base_env()
             env.update({str(k): str(v) for k, v in (meta.get('env') or {}).items()
                         if spawn.ENV_NAME_RE.match(str(k))})
@@ -1219,6 +1220,17 @@ def _debate_due_note(due: object) -> str:
     return (f"The discussion reached {k}k tokens of context: harness-pilot summarizes the exchanges so far, then both "
             "agents continue in fresh threads (automatic compaction, Settings -> Claude). The history stays displayed "
             "here.")
+
+
+def _debate_seed(meta: dict) -> str:
+    """What an agent starting afresh in a discussion reads first: the summary of its last compaction or of the
+    discussion it continues ("" when there is none)."""
+    summary = str(meta.get("discussion_summary") or "")
+    if not summary:
+        return ""
+    if meta.get("discussion_from"):
+        return SEED_DEBATE_HANDOFF.format(title=meta["discussion_from"], summary=summary)
+    return SEED_DEBATE.format(summary=summary)
 
 
 def _agent_label(actor: str, meta: dict) -> str:
