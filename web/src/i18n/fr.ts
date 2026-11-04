@@ -848,6 +848,12 @@ export const fr: Record<keyof typeof en, string> = {
 
   'health.allGood': 'Aucun problème détecté',
   'health.metricUnavailable': 'Indisponible',
+  'system.mediaTools': 'Miniatures et aperçus',
+  'system.mediaToolsDesc': 'Les miniatures et aperçus des images, vidéos et PDF sont faits par deux programmes installés à côté de l’application.',
+  'system.mediaTools.ffmpeg': 'ffmpeg n’est pas installé : les images et les vidéos n’ont ni miniature ni aperçu, et les messages vocaux ne peuvent pas être convertis.',
+  'system.mediaTools.ffmpeg_webp': 'Le ffmpeg installé ne sait pas écrire d’images WebP (pas d’encodeur libwebp) : les images et les vidéos n’ont ni miniature ni aperçu.',
+  'system.mediaTools.pdftoppm': 'pdftoppm n’est pas installé : les fichiers PDF n’ont pas de miniature.',
+  'system.mediaToolsInstall': 'Lancez dans un terminal, puis redémarrez l’application :',
   'system.localMode': 'Installation locale : les commandes système et les mises à jour automatiques ne sont pas disponibles ici. Consultez les instructions du dépôt.',
   'health.checking': 'Vérification…',
   'health.cpu': 'CPU',
