@@ -326,7 +326,8 @@ without it the blocks find the session from `[data-mx-session]` / the URL and op
 6. Strings in `i18n/en.ts` **and** `i18n/fr.ts`, user data wrapped in `<Sensitive>`.
 
 ### Extension pages
-`/x/:id` imports `/ext/<id>/page.js` and calls `mount(el, ctx)`; `ctx = {id, api(path, {method, body, query}),
+`/x/:id` imports `/ext/<id>/@<page_v>/page.js` (the version in the path reaches its relative imports) and calls
+`mount(el, ctx)`; `ctx = {id, api(path, {method, body, query}),
 navigate(route), theme: 'dark'|'light', t(key)}`. `ctx.api('notes')` → `/api/ext/<id>/notes` (JSON, CSRF header),
 resolves to the parsed JSON, rejects with an `Error`. The returned function is called on leave.
 

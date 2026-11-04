@@ -4,7 +4,10 @@ See docs/dev/API.md#dashboard--extensions and maxxing/extensions.py.
 `ANY /api/ext/{id}/{path}` calls the extension's `handle(ctx, method, path, query, body)` in a
 worker thread. The return value is sent as JSON; a `(status, body)` tuple sets the status code;
 `ValueError` -> 400, `LookupError` -> 404, anything else -> 500 `extension_error`.
-`GET /ext/{id}/page.js` serves the page module (auth required, never cached).
+`GET /ext/{id}/page.js` serves the page module, `GET /ext/{id}/<path>` the other modules of the folder it imports
+(.js .mjs .css .json, `extensions.module_file`), and `GET /ext/{id}/@<version>/<path>` the same files (the version
+segment is ignored: the UI imports `@<page_v>/page.js` so relative imports carry the version too). Auth required, an
+enabled page extension without error, never cached.
 `GET /ext/ui-kit.css` serves the shared UI kit (`ui-*` classes, maxxing/assets/ui-kit.css), loaded by the app for
 page extensions and inlined in every HTML widget frame.
 """
@@ -21,8 +24,23 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+from starlette.convertors import Convertor, register_url_convertor
+
 from .. import bus, extensions
 from ..security import require_auth
+
+
+class _ExtId(Convertor):
+    regex = "[a-z0-9][a-z0-9-]{0,47}"                  # extensions.ID_RE
+
+    def convert(self, value: str) -> str:
+        return value
+
+    def to_string(self, value: str) -> str:
+        return value
+
+
+register_url_convertor("extid", _ExtId())
 
 router = APIRouter(tags=["extensions"], dependencies=[Depends(require_auth)])
 log = logging.getLogger("maxxing.extensions")
@@ -34,10 +52,13 @@ def _err(status: int, code: str, msg: str) -> HTTPException:
     return HTTPException(status, detail={"error": code, "message": msg})
 
 
+def _infos(exts: list[extensions.Extension]) -> list[dict]:
+    return [e.info() for e in exts]                    # page_v walks the page's folder: run in a thread
+
+
 @router.get("/api/extensions")
 async def list_extensions():
-    exts = await asyncio.to_thread(extensions.all_extensions)
-    return [e.info() for e in exts]
+    return await asyncio.to_thread(lambda: _infos(extensions.all_extensions()))
 
 
 class PatchIn(BaseModel):
@@ -59,9 +80,9 @@ async def patch_extension(eid: str, body: PatchIn):
 
 @router.post("/api/extensions/reload")
 async def reload_extensions():
-    exts = await asyncio.to_thread(extensions.scan)
+    out = await asyncio.to_thread(lambda: _infos(extensions.scan()))
     bus.invalidate("extensions")
-    return [e.info() for e in exts]
+    return out
 
 
 def _usable(eid: str) -> extensions.Extension:
@@ -169,13 +190,24 @@ def _own_file(ext: extensions.Extension, name: str) -> Path:
     return p
 
 
-@router.get("/ext/{eid}/page.js", include_in_schema=False)
-async def page_js(eid: str):
-    ext = await asyncio.to_thread(extensions.get, eid)
+def _page_module(eid: str, rel: str) -> tuple[Path, str]:
+    ext = extensions.get(eid)
     if ext is None or not ext.enabled or ext.error or not ext.has_page:
         raise _err(404, "not_found", f"no page for extension {eid}")
-    return FileResponse(_own_file(ext, "page.js"), media_type="text/javascript",
-                        headers={"Cache-Control": "no-store"})
+    p = extensions.module_file(ext, rel)
+    if p is None:
+        raise _err(404, "not_found", f"{rel} is not a module of extension {eid} (.js .mjs .css .json in its folder)")
+    return p, extensions.MODULE_TYPES[p.suffix]
+
+
+async def _serve_module(eid: str, rel: str) -> FileResponse:
+    p, media = await asyncio.to_thread(_page_module, eid, rel)
+    return FileResponse(p, media_type=media, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/ext/{eid}/page.js", include_in_schema=False)
+async def page_js(eid: str):
+    return await _serve_module(eid, "page.js")
 
 
 # The HTML widget's frame: the bridge (maxxing.api / resize / theme, see web/src/pages/dashboard/HtmlWidget.tsx)
@@ -221,6 +253,16 @@ async def widget_html(eid: str):
         raise _err(404, "not_found", f"no HTML widget for extension {eid}")
     return FileResponse(_own_file(ext, "widget.html"), media_type="text/plain; charset=utf-8",
                         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+# Declared after the fixed /ext/{id}/... routes above; `extid` (an extension id: never "_blocks") keeps
+# /ext/_blocks/... for api/blocks.py, whose router is included after this one.
+@router.get("/ext/{eid:extid}/{rel:path}", include_in_schema=False)
+async def page_module(eid: str, rel: str):
+    parts = rel.split("/")
+    if len(parts) > 1 and parts[0].startswith("@"):   # /ext/<id>/@<version>/<path>: the version only names the URL
+        rel = "/".join(parts[1:])
+    return await _serve_module(eid, rel)
 
 
 async def startup() -> None:

@@ -575,23 +575,25 @@ Block =
 | GET | `/api/dashboard` | – | `{widgets:[{id, title, icon, span:1\|2\|3, source:"builtin"\|"extension", card:Card\|null, error:string\|null, hidden:bool, pending?:true}]}` — hidden widgets are listed with `card:null` so the UI can show them again; a widget still computing after 1.5 s comes as `pending:true` (fetch it with the route below, which joins that computation); the `crons` and `day` cards are reused while jobs.json, runs.jsonl, the job locks and config.json are unchanged (10 s at most); `?force=1` recomputes everything |
 | GET | `/api/dashboard/widgets/{id}?force=1` | – | one widget (refresh) |
 | PUT | `/api/dashboard/layout` | `{order:[id], hidden:[id]}` | `{ok}` |
-| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?}]` (pinned: page shown in the sidebar; page_v: page.js mtime in ms, the UI imports `page.js?v=<page_v>` so the module is reused until the file changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks) |
+| GET | `/api/extensions` | – | `[{id, name, type:"widget"\|"page"\|"block", icon, version, enabled, error, has_api, pinned, page_v, renders?}]` (pinned: page shown in the sidebar; page_v: newest mtime in ms of page.js and the module files of its folder (`.js .mjs .css .json`, hidden files, `node_modules` and `__pycache__` skipped, 2000 files at most), the UI imports `/ext/<id>/@<page_v>/page.js` so the page and the modules it imports relatively are reused until one of them changes; `block` = a conversation block plugin described by `block.json`, `renders` = its block types, see Conversation blocks) |
 | PATCH | `/api/extensions/{id}` | `{enabled?, pinned?}` | `{ok}` (`pinned` on a widget -> 400 `not_a_page`) |
 | POST | `/api/extensions/reload` | – | rescans `<workspace>/extensions` |
 | ANY | `/api/ext/{id}[/{path}]` | – | forwarded to the extension's `api.py` `handle()` (`path` = `""` without it): return value → JSON, `(status, body)` tuple sets the status, `ValueError` → 400, `LookupError` → 404, other → 500 `extension_error`, 30 s timeout (504 `extension_timeout`), 503 `extension_busy` at once while an earlier timed-out `handle()` of the same extension has not returned, or when the 4 extension threads are all still running earlier calls. A `.` / `..` segment in `path` → `400 bad_path` |
 | GET | `/ext/{id}/page.js` | – | page module (ES module) |
+| GET | `/ext/{id}/{path}` · `/ext/{id}/@{version}/{path}` | – | a module of the page's folder, `page.js` included, for its relative imports: `.js`/`.mjs` (`text/javascript`), `.css` (`text/css`), `.json` (`application/json`), in the folder or a subfolder. Every segment of `path` starts with a letter, a digit or `_` (no hidden file, no `.`/`..`), and the real path (links followed) must be such a file inside the folder. The `@{version}` segment is ignored (the UI imports `@<page_v>[-<retry>]/page.js`, so relative imports carry the version). Same checks as `page.js`: signed in (`401`), an enabled page extension without error, else `404 not_found`; `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`. `{id}` only matches an extension id, so `/ext/_blocks/...` stays with Conversation blocks |
 | GET | `/ext/ui-kit.css` | – | the UI kit of extensions (`server/maxxing/assets/ui-kit.css`): `ui-*` classes scoped to `.mx-ext` (page host) and `[data-mx-kit]` (widget frame), built on the theme variables; the app adds it once when a page extension opens; `ETag` (content hash), `If-None-Match` -> `304` |
 | GET | `/ext/{id}/widget-frame` | – | HTML widget document: the bridge (`maxxing.api / resize / theme`, theme from the URL fragment) + the UI kit inlined (`<html data-mx-kit>`) + `widget.html`, `Content-Security-Policy: sandbox allow-scripts allow-pointer-lock` (the UI frames it with the same sandbox; an srcdoc frame would inherit the app's script policy). `/ext/{id}/widget.html` stays the raw file (text/plain) |
 | GET | `/ext/{id}/widget.html` | – | the raw `widget.html` as `text/plain` (`no-store`, `nosniff`) · `404 not_found` when the extension is unknown, off, broken or has none |
 
 The app page (`index.html`) is served with `script-src 'self'` plus the hashes of its inline boot scripts
 (`app._app_csp`): a page extension's `page.js` runs in the app, so it may not inject inline `<script>` nor use
-`eval` / `new Function` (load code as modules from its own folder).
+`eval` / `new Function` (load code as modules from its own folder: `/ext/{id}/{path}` above).
 
 Extension folder: `<workspace>/extensions/<id>/manifest.json`
 `{"id", "name", "type":"widget"|"page", "icon":"<lucide name>", "version", "span"?, "ttl"?: seconds}` +
 `api.py` (widget: `def card(ctx) -> dict` returning a Card; page/API: `def handle(ctx, method, path, query, body) -> dict`) +
-`page.js` (page: `export function mount(el, ctx) { …; return () => cleanup }`, `ctx = {api(path, opts), navigate, theme, lang, t, icon(name, {size?, className?}) -> <svg>}`).
+`page.js` (page: `export function mount(el, ctx) { …; return () => cleanup }`, `ctx = {api(path, opts), navigate, theme, lang, t, icon(name, {size?, className?}) -> <svg>}`)
++ optional modules `page.js` imports relatively (`./lib/chart.js`; `.js .mjs .css .json`).
 
 Extension details: `ctx` (Python) = `{id, workspace, state_dir, secret(name) -> str|None, config:{timezone, language,
 public_url}}`; `state_dir` = `<state>/extensions/<id>/` (created). Extensions are rescanned automatically when a

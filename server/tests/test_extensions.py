@@ -113,8 +113,9 @@ def test_examples(client, org):
     lst = {e["id"]: e for e in client.post("/api/extensions/reload").json()}
     assert lst["hello-widget"]["error"] is None and lst["notes-page"]["error"] is None
     assert lst["notes-page"]["type"] == "page" and lst["notes-page"]["has_page"]
-    page = org.ws / "extensions" / "notes-page" / "page.js"
-    assert lst["notes-page"]["page_v"] == page.stat().st_mtime_ns // 1_000_000 and lst["hello-widget"]["page_v"] is None
+    folder = org.ws / "extensions" / "notes-page"
+    newest = max(f.stat().st_mtime_ns for f in folder.iterdir() if f.suffix in (".js", ".json"))
+    assert lst["notes-page"]["page_v"] == newest // 1_000_000 and lst["hello-widget"]["page_v"] is None
 
     w = client.get("/api/dashboard/widgets/hello-widget").json()
     assert w["error"] is None and w["source"] == "extension"
@@ -264,6 +265,84 @@ def test_extension_files_linked_outside_their_folder_are_not_served(client, org,
     for url in ("/ext/leak/widget.html", "/ext/leak/widget-frame", "/ext/leakpage/page.js"):
         r = client.get(url)
         assert r.status_code == 404 and "SECRET" not in r.text, url
+
+
+def test_page_modules_of_the_folder_are_served(client, org, tmp_path):
+    import os
+    d = _ext(org, "multi", {"type": "page", "name": "Multi"}, api="def handle(ctx, m, p, q, b):\n    return {}\n",
+             page="import { draw } from './lib/chart.js';\nexport function mount(el) { draw(el) }\n")
+    (d / "lib").mkdir()
+    (d / "lib" / "chart.js").write_text("export function draw(el) { el.textContent = 'chart' }\n")
+    (d / "lib" / "util.mjs").write_text("export const x = 1\n")
+    (d / "style.css").write_text(".multi { color: red }\n")
+    (d / "data.json").write_text('{"rows": []}')
+    (d / ".env.json").write_text('{"token": "HIDDEN"}')
+    (d / ".git").mkdir()
+    (d / ".git" / "config.js").write_text("HIDDEN")
+    (d / "notes.txt").write_text("HIDDEN")
+    secret = tmp_path / "credentials.json"
+    secret.write_text('{"token": "SECRET"}')
+    (d / "leak.js").symlink_to(secret)                    # a link out of the folder
+    (d / "alias.js").symlink_to(d / "api.py")             # a link to a file that is not a module
+    (d / "lib" / "same.js").symlink_to(d / "lib" / "chart.js")   # a link inside, to a module: fine
+    w = _ext(org, "plainwidget", {"type": "widget"}, "def card(ctx):\n    return {'blocks': []}\n")
+    (w / "helper.js").write_text("export const y = 2\n")
+    old = 1_700_000_000
+    for f in (d / "page.js", d / "manifest.json", d / "lib" / "util.mjs", d / "style.css", d / "data.json"):
+        os.utime(f, (old, old))
+    os.utime(d / "lib" / "chart.js", (old + 60, old + 60))
+    lst = {e["id"]: e for e in client.post("/api/extensions/reload").json()}
+    assert lst["multi"]["error"] is None
+    assert lst["multi"]["page_v"] >= (old + 60) * 1000
+    assert lst["plainwidget"]["page_v"] is None
+
+    for url, ctype, text in (
+            ("/ext/multi/page.js", "text/javascript", "./lib/chart.js"),
+            ("/ext/multi/lib/chart.js", "text/javascript", "textContent = 'chart'"),
+            ("/ext/multi/lib/util.mjs", "text/javascript", "x = 1"),
+            ("/ext/multi/lib/same.js", "text/javascript", "textContent = 'chart'"),
+            ("/ext/multi/style.css", "text/css", "color: red"),
+            ("/ext/multi/data.json", "application/json", '"rows"'),
+            ("/ext/multi/@1700000060000/page.js", "text/javascript", "./lib/chart.js"),     # versioned base
+            ("/ext/multi/@1700000060000-2/lib/chart.js", "text/javascript", "'chart'")):   # retry suffix
+        r = client.get(url)
+        assert r.status_code == 200, url
+        assert r.headers["content-type"].startswith(ctype) and text in r.text, url
+        assert r.headers["cache-control"] == "no-store" and r.headers["x-content-type-options"] == "nosniff"
+    for url in ("/ext/multi/api.py", "/ext/multi/.env.json", "/ext/multi/.git/config.js", "/ext/multi/notes.txt",
+                "/ext/multi/leak.js", "/ext/multi/alias.js", "/ext/multi/missing.js", "/ext/multi/lib",
+                "/ext/multi/lib/../api.py", "/ext/multi/%2e%2e/%2e%2e/state/config.json", "/ext/multi/@1/api.py",
+                "/ext/multi/@1/@2/page.js", "/ext/multi/lib//chart.js", "/ext/plainwidget/helper.js",
+                "/ext/plainwidget/manifest.json", "/ext/nope/page.js"):
+        r = client.get(url)
+        assert r.status_code == 404, url
+        assert "SECRET" not in r.text and "HIDDEN" not in r.text and "def handle" not in r.text, url
+
+    assert client.patch("/api/extensions/multi", json={"enabled": False}).status_code == 200
+    assert client.get("/ext/multi/lib/chart.js").status_code == 404
+    assert client.patch("/api/extensions/multi", json={"enabled": True}).status_code == 200
+    client.cookies.clear()
+    assert client.get("/ext/multi/lib/chart.js").status_code == 401
+    assert client.get("/ext/multi/@1/page.js").status_code == 401
+
+
+def test_page_version_follows_every_module(org):
+    import os
+    d = _ext(org, "ver", {"type": "page"}, page="export function mount() {}\n")
+    (d / "lib").mkdir()
+    (d / "lib" / "a.js").write_text("export const a = 1\n")
+    (d / "node_modules").mkdir()
+    (d / "node_modules" / "big.js").write_text("")
+    (d / ".cache.js").write_text("")
+    for f in (d / "page.js", d / "manifest.json", d / "lib" / "a.js", d / "node_modules" / "big.js", d / ".cache.js"):
+        os.utime(f, (1_700_000_000, 1_700_000_000))
+    ext = extensions.get("ver")
+    assert extensions.page_version(ext) == 1_700_000_000_000
+    os.utime(d / "lib" / "a.js", (1_700_000_100, 1_700_000_100))       # editing a module the page imports
+    assert extensions.page_version(ext) == 1_700_000_100_000
+    os.utime(d / "node_modules" / "big.js", (1_800_000_000, 1_800_000_000))   # skipped folders and hidden files
+    os.utime(d / ".cache.js", (1_800_000_000, 1_800_000_000))
+    assert extensions.page_version(ext) == 1_700_000_100_000
 
 
 def test_extension_in_error_serves_neither_page_nor_widget(client, org):

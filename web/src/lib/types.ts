@@ -787,7 +787,8 @@ export type Extension = {
   has_api: boolean
   /** Page extensions: own entry in the sidebar (otherwise listed under "Extensions"). */
   pinned?: boolean
-  /** page.js mtime (ms): version of the module URL (the browser reuses it until the file changes). */
+  /** Newest mtime (ms) of page.js and the modules of its folder: the version in the module URL
+   *  (/ext/<id>/@<page_v>/page.js; the browser reuses the modules until one of them changes). */
   page_v?: number | null
 }
 
