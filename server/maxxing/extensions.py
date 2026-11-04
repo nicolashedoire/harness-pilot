@@ -4,6 +4,8 @@
                    ("name" may be {"en": ..., "fr": ...}: shown in the UI language)
     api.py         widget: def card(ctx) -> Card   ·   page / API: def handle(ctx, method, path, query, body)
     page.js        page: ES module exporting mount(el, ctx)
+    block.json     (instead of manifest.json) a conversation block plugin: {"type": "block", "renders": [...],
+                   "schema", "entry": "block.html", "permissions": {"network": [hosts]}, "hint"} - see blocks.py
 
 Extensions live outside the code directory so updates never touch them. Each one is isolated:
 a broken manifest or an api.py that fails to import only sets that extension's `error`.
@@ -37,7 +39,7 @@ from typing import Any, Callable
 from . import config
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}\Z")              # \Z: "$" also matches before a final "\n"
-TYPES = ("widget", "page")
+TYPES = ("widget", "page", "block")
 DEFAULT_TTL = 300
 # The extension contract (Card schema, ctx, page ctx, maxxing.api bridge, CSS variables). An extension declares
 # the version it was written for in its manifest ("api", default 1). EXT_API goes up when something is ADDED;
@@ -66,6 +68,7 @@ class Extension:
     has_html: bool = False                 # widget drawn by widget.html in a sandboxed frame
     page_v: int | None = None              # page.js mtime (ms): the UI imports page.js?v=<it> (cached until it changes)
     height: int = 260
+    block: dict | None = None              # block plugins: the validated block.json (blocks.parse_manifest)
     error: str | None = None
     module: ModuleType | None = field(default=None, repr=False)
 
@@ -84,7 +87,8 @@ class Extension:
                 "version": self.version, "enabled": self.enabled, "error": self.error,
                 "api": self.api, "has_api": self.has_api, "has_page": self.has_page, "span": self.span,
                 "has_html": self.has_html, "height": self.height, "page_v": self.page_v,
-                "pinned": self.type == "page" and self.id in pinned_ids()}
+                "pinned": self.type == "page" and self.id in pinned_ids(),
+                **({"renders": (self.block or {}).get("renders") or []} if self.type == "block" else {})}
 
 
 _lock = threading.RLock()
@@ -218,6 +222,13 @@ def _load_one(d: Path) -> Extension:
     try:
         if not ID_RE.match(d.name):
             raise ValueError("folder name must be a lowercase slug (a-z, 0-9, -)")
+        if (d / "block.json").is_file() and not (d / "manifest.json").is_file():
+            from . import blocks                            # a conversation block plugin: no Python code at all
+            ext.type = "block"
+            ext.block = blocks.parse_manifest(d)
+            ext.name, ext.names = ext.block["name"], ext.block["names"]
+            ext.version, ext.icon = ext.block["version"], ext.block["icon"]
+            return ext
         try:
             m = json.loads((d / "manifest.json").read_text())
         except FileNotFoundError:
@@ -234,6 +245,8 @@ def _load_one(d: Path) -> Extension:
             raw = ext.names.get("en") or next(iter(ext.names.values()), "")
         ext.name = str(raw or d.name)[:80]
         ext.type = m.get("type", "widget")
+        if ext.type == "block":
+            raise ValueError("a block plugin is described by block.json (not manifest.json)")
         if ext.type not in TYPES:
             raise ValueError("type must be widget or page")
         if ext.type == "widget" and d.name in RESERVED_IDS:
@@ -312,7 +325,7 @@ def _signature() -> tuple:
         if not d.is_dir() or d.name.startswith((".", "_")):
             continue
         stamps = []
-        for f in ("manifest.json", "api.py", "page.js"):
+        for f in ("manifest.json", "api.py", "page.js", "block.json", "block.html", "schema.json"):
             try:
                 stamps.append((d / f).stat().st_mtime_ns)
             except OSError:
@@ -342,7 +355,27 @@ def scan(only_if_stale: bool = False) -> list[Extension]:
         _cards.clear()
         _scanned = True
         _last_sig = sig
+    _changed()
     return list(exts.values())
+
+
+_listeners: list[Callable[[], None]] = []
+
+
+def on_change(fn: Callable[[], None]) -> None:
+    """Called (best effort, in the calling thread) after a rescan or an enable / disable: conversation blocks keep
+    the agents' list of block types in step with the block extensions (blocks.sync_agent_files)."""
+    if fn not in _listeners:
+        _listeners.append(fn)
+
+
+def _changed() -> None:
+    for fn in list(_listeners):
+        try:
+            fn()
+        except Exception:                                # never fails a scan
+            import logging
+            logging.getLogger("maxxing.extensions").warning("extension change listener failed", exc_info=True)
 
 
 def all_extensions() -> list[Extension]:
@@ -374,6 +407,7 @@ def set_enabled(eid: str, enabled: bool) -> bool:
     with _lock:
         _registry[eid] = fresh
         _cards.pop(eid, None)
+    _changed()
     return True
 
 

@@ -29,6 +29,7 @@ import { cn, copyText } from '@/lib/utils'
 import { useT } from '@/i18n'
 import { basename, dirname } from './kinds'
 import { useDownloadEntries } from './download'
+import { SpaceMenuItems } from '@/features/spaces/SpaceLabel'
 
 const LONG_PRESS_MS = 450
 const MOVE_PX = 8
@@ -311,6 +312,7 @@ function MenuItems({ entries, actions }: { entries: FileEntry[]; actions: Select
           {t('files.renameMove')}
         </DropdownMenuItem>
       )}
+      {one && <SpaceMenuItems path={one.path} />}
       <DropdownMenuSeparator />
       <DropdownMenuItem
         destructive
@@ -403,7 +405,7 @@ export function SelectCheck({ checked, className }: { checked: boolean; classNam
       aria-hidden
       className={cn(
         'pointer-events-none items-center justify-center rounded-full border-2 transition-colors',
-        checked ? 'flex border-primary bg-primary text-primary-foreground' : 'hidden border-foreground/40 bg-background/80 group-data-[selecting]/sel:flex',
+        checked ? 'flex border-action bg-action text-action-foreground' : 'hidden border-foreground/40 bg-background/80 group-data-[selecting]/sel:flex',
         className,
       )}
     >

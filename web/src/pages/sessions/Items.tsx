@@ -1,26 +1,24 @@
 // Rendering of one thread item. Every row is memoised on the item object (items keep their identity
 // when the log grows, see log.ts), so appending events only renders the new rows.
 import * as React from 'react'
-import { AlertTriangle, Brain, Check, ChevronRight, CircleAlert, Copy, FileText, GripVertical, Info, MessageSquarePlus, Mic, Paperclip, Pause, Pencil, Play, ScrollText, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, CircleAlert, Copy, FileText, GripVertical, Info, MessageSquarePlus, Mic, Paperclip, Pause, Pencil, Play, ScrollText, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useT, useLang } from '@/i18n'
-import { fmtDate, fmtNumber } from '@/lib/format'
+import { fmtDate } from '@/lib/format'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Sensitive, Spinner, Tooltip, usePresentation } from '@/components/ui'
 import { Markdown } from '@/components/ui/markdown'
+import { stripBlockFences } from '@/features/blocks/fence'
 import { filePreviewUrl, fileRawUrl, fileThumbUrl, knownFileStamp, prefetchImage, PREVIEW_W } from '@/lib/queries/files'
 import { Thumb } from '@/features/files/Thumb'
-import type { ClaudeModel, ResultField } from '@/lib/types'
-import { costTip, ResultLineMenu, useResultLine } from './resultLine'
-import { isShownTask, taskStatus, type Item } from './log'
-import { TaskDetails, TaskElapsed, TaskStatusIcon, useOpenTaskLine } from './Tasks'
+import type { ClaudeModel } from '@/lib/types'
+import type { Item } from './log'
 import type { Seed } from './store'
 import { useOpenPreview } from './FilePreview'
 import { MediaPlayer } from '@/features/files/MediaPlayer'
 import { QuotedFile } from './QuotedFile'
 import { SendToDialog, SendToSub, type SendTarget } from '@/features/team/SendTo'
 import { gripRef } from './contentDrag'
-import { authServerOf, McpAuthButton } from '@/features/mcp/AuthButton'
-import { audioPaths, baseName, diffStats, FILE_HREF, fmtCost, fmtMs, fmtTokens, isAudio, isImage, isVideo, lineDiff, linkifyMarkdown, mediaPaths, modelLabel, quotedFile, relPath, relPaths, splitQuotes, toolIcon, type DiffLine } from './util'
+import { audioPaths, baseName, FILE_HREF, fmtTokens, isAudio, isImage, isVideo, lineDiff, linkifyMarkdown, mediaPaths, quotedFile, splitQuotes, type DiffLine } from './util'
 
 export type ItemCtx = {
   filesRoot: string | null
@@ -39,54 +37,39 @@ function prefetchMedia(p: string) {
 
 export const ItemContext = React.createContext<ItemCtx>({ filesRoot: null, models: undefined, running: false })
 
-export const ItemRow = React.memo(function ItemRow({
+/** A message of the user (typed, voice, from Telegram or a cron). `intervention`: a message sent into a running
+ *  discussion between two agents (labelled, so it stands out between their replies). */
+export const UserItem = React.memo(function UserItem({
   item,
-  live,
+  intervention,
   onHide,
   onEdit,
   onFork,
 }: {
-  item: Item
-  live: boolean
+  item: Extract<Item, { kind: 'user' }>
+  intervention?: boolean
   /** Only for a message that got no answer: delete it, or (with onEdit) bring it back into the composer. */
   onHide?: (key: string, at: number) => void
   onEdit?: (key: string, at: number, seed: Seed) => void
   onFork?: (seed: Seed) => void
 }) {
-  switch (item.kind) {
-    case 'user': {
-      const { text, attachments, at, voice } = item.ev
-      const heardText = item.heard?.text || ''
-      const seed = () => ({ ...userSeed([text, heardText].filter(Boolean).join('\n\n')), attachments: heardText ? attachments : [...attachments, ...(voice || [])] })
-      return (
-        <UserMessage
-          text={text}
-          attachments={attachments}
-          voice={voice}
-          heard={item.heard}
-          at={at}
-          source={item.ev.source}
-          onFork={onFork && (() => onFork(seed()))}
-          onEdit={onHide && onEdit && (() => onEdit(item.key, at, seed()))}
-          onDelete={onHide && (() => onHide(item.key, at))}
-        />
-      )
-    }
-    case 'request':
-      return <RequestRow text={item.ev.text} />
-    case 'assistant':
-      return <AssistantMessage text={item.ev.text} onFork={onFork} />
-    case 'thinking':
-      return <Thinking text={item.ev.text} />
-    case 'tool':
-      return <ToolCard item={item} live={live} />
-    case 'init':
-      return <InitRow model={item.ev.model} />
-    case 'result':
-      return <ResultRow ev={item.ev} />
-    case 'note':
-      return <NoteRow text={item.ev.text} level={item.ev.level} />
-  }
+  const { text, attachments, at, voice } = item.ev
+  const heardText = item.heard?.text || ''
+  const seed = () => ({ ...userSeed([text, heardText].filter(Boolean).join('\n\n')), attachments: heardText ? attachments : [...attachments, ...(voice || [])] })
+  return (
+    <UserMessage
+      text={text}
+      attachments={attachments}
+      voice={voice}
+      heard={item.heard}
+      at={at}
+      source={item.ev.source}
+      intervention={intervention}
+      onFork={onFork && (() => onFork(seed()))}
+      onEdit={onHide && onEdit && (() => onEdit(item.key, at, seed()))}
+      onDelete={onHide && (() => onHide(item.key, at))}
+    />
+  )
 })
 
 /** A sent message split back into what the composer holds: its leading quotes, then the typed text. */
@@ -218,7 +201,7 @@ function useMessageMenu({ text, onFork, onEdit, onDelete }: MsgActions) {
 
 /** Grip of a whole message: drag it into another session to quote it there (mouse, several sessions side by side;
  *  the thread's delegated dragstart reads its text, see contentDrag.ts). */
-function MessageGrip({ text, className }: { text: string; className?: string }) {
+export function MessageGrip({ text, className }: { text: string; className?: string }) {
   return (
     <span
       draggable
@@ -247,6 +230,7 @@ export function UserMessage({
   queued,
   voice,
   heard,
+  intervention,
   onFork,
   onEdit,
   onDelete,
@@ -260,6 +244,8 @@ export function UserMessage({
   /** Voice message sent directly: its audio (paths; `true` for an optimistic one still uploading) and transcript. */
   voice?: string[] | true
   heard?: { text: string; error: string | null; stopped?: boolean }
+  /** Sent into a running discussion between two agents: labelled and outlined. */
+  intervention?: boolean
 } & Omit<MsgActions, 'text'>) {
   const t = useT()
   const lang = useLang()
@@ -268,12 +254,13 @@ export function UserMessage({
   const { quotes, rest } = React.useMemo(() => splitQuotes(text), [text])
   const { onContextMenu, touch, menu } = useMessageMenu({ text: [text, heard?.text].filter(Boolean).join('\n\n'), onFork, onEdit, onDelete })
   return (
-    <div className={cn('group/msg relative flex flex-col items-end gap-1.5 pl-8', pending && 'opacity-70')} onContextMenu={onContextMenu} {...touch}>
+    <div className={cn('group/msg relative flex flex-col items-end gap-1.5 pl-[14%] max-md:pl-[10%]', pending && 'opacity-70')} onContextMenu={onContextMenu} {...touch} data-testid="user-message">
       {menu}
+      {intervention && <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{t('conv.intervention')}</span>}
       {voice && <VoiceNote paths={voice === true ? [] : voice} heard={heard} pending={pending} />}
       {attachments.length > 0 && <AttachmentStrip paths={attachments} />}
       {text && (
-        <div className="relative max-w-full rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere]">
+        <div className={cn('relative max-w-full rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[14px] leading-[1.55] whitespace-pre-wrap text-secondary-foreground [overflow-wrap:anywhere] max-md:text-[15px]', intervention && 'ring-1 ring-foreground/20 ring-inset')}>
           <Sensitive block className="min-w-24 bg-transparent">
             {quotes.map((q, i) =>
               quotedFile(q) ? (
@@ -299,7 +286,7 @@ export function UserMessage({
           <>
             {(text || heard?.text) && <MessageGrip text={[text, heard?.text].filter(Boolean).join('\n\n')} />}
             {source && source !== 'web' && <span className="rounded bg-muted px-1">{sourceLabel(source, t)}</span>}
-            {at ? <time className="opacity-0 transition-opacity group-hover/msg:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100">{fmtDate(at, lang, tz, { dateStyle: undefined, timeStyle: 'short' })}</time> : null}
+            {at ? <time className="tabular-nums">{fmtDate(at, lang, tz, { dateStyle: undefined, timeStyle: 'short' })}</time> : null}
             {onEdit && (
               <Tooltip content={t('sessions.msg.edit')}>
                 <button
@@ -356,7 +343,7 @@ function VoiceNote({ paths, heard, pending }: { paths: string[]; heard?: { text:
         data-mx-file={paths[0]}
         className={cn(
           'relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 max-md:size-10 pointer-coarse:size-10 text-primary transition-colors hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60',
-          playing && 'bg-primary text-primary-foreground hover:bg-primary/90',
+          playing && 'bg-action text-action-foreground hover:bg-action/90',
         )}
       >
         {playing ? <Pause className="size-3.5 fill-current" /> : <Mic className="size-4" />}
@@ -457,16 +444,34 @@ export function AttachmentStrip({ paths }: { paths: string[] }) {
   )
 }
 
-function RequestRow({ text }: { text: string }) {
+/** A prompt the server sent itself (the summary before a compaction, a hand-off): a separator across the thread -
+ *  the summary that answers it follows as a normal reply. Its text opens on demand. */
+export function RequestRow({ text }: { text: string }) {
   const t = useT()
   const [open, setOpen] = React.useState(false)
   return (
-    <div className="flex flex-col items-center gap-1">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent">
-        <ScrollText className="size-3" /> {t('sessions.summaryRequested')}
+    <div className="flex flex-col items-center gap-1.5" data-testid="request-row">
+      <div role="separator" className="flex w-full items-center gap-3 text-xs text-muted-foreground">
+        <span aria-hidden className="h-px flex-1 bg-border" />
+        <span className="inline-flex items-center gap-1.5 text-center">
+          <ScrollText className="size-3.5 shrink-0" /> {t('conv.summarised')}
+        </span>
+        <span aria-hidden className="h-px flex-1 bg-border" />
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="relative inline-flex items-center gap-1 rounded-md px-1.5 text-xs text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:before:absolute pointer-coarse:before:-inset-3 pointer-coarse:before:content-['']"
+      >
+        {t(open ? 'conv.summaryHide' : 'conv.summaryShow')}
         <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
       </button>
-      {open && <p className="max-w-[90%] text-center text-xs text-muted-foreground">{text}</p>}
+      {open && (
+        <p className="max-w-[90%] text-center text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          <Sensitive>{text}</Sensitive>
+        </p>
+      )}
     </div>
   )
 }
@@ -478,8 +483,10 @@ export const AssistantMessage = React.memo(function AssistantMessage({ text, onF
   const { onContextMenu, touch, menu } = useMessageMenu({ text, onFork: onFork && (() => onFork({ text: '', quotes: [text.trim()], attachments: [] })) })
   const open = useOpenPreview()
   const md = React.useMemo(() => linkifyMarkdown(text, filesRoot), [text, filesRoot])
-  const media = React.useMemo(() => mediaPaths(text, filesRoot), [text, filesRoot])
-  const audio = React.useMemo(() => audioPaths(text, filesRoot), [text, filesRoot])
+  // the paths of a block (a `file` block, a table…) are its own: no second thumbnail under the message
+  const prose = React.useMemo(() => stripBlockFences(text), [text])
+  const media = React.useMemo(() => mediaPaths(prose, filesRoot), [prose, filesRoot])
+  const audio = React.useMemo(() => audioPaths(prose, filesRoot), [prose, filesRoot])
   const onLink = React.useCallback((href: string) => (href.startsWith(FILE_HREF) ? () => open(decodeURIComponent(href.slice(FILE_HREF.length))) : null), [open])
   return (
     <div className="group/msg relative min-w-0" onContextMenu={onContextMenu} {...touch}>
@@ -487,7 +494,7 @@ export const AssistantMessage = React.memo(function AssistantMessage({ text, onF
       {/* in the thread's right padding, at the first line (the left one is under the resize handle of the column on the left) */}
       <MessageGrip text={text.trim()} className="absolute top-0.5 -right-4 w-4 max-md:hidden" />
       <Sensitive block placeholder={<MaskedLines />}>
-        <Markdown onLink={onLink} className="mx-assistant">
+        <Markdown onLink={onLink} className="mx-assistant mx-answer">
           {md}
         </Markdown>
         {media.length > 0 && (
@@ -538,97 +545,11 @@ function MaskedLines() {
   )
 }
 
-function Thinking({ text }: { text: string }) {
-  const t = useT()
-  const [open, setOpen] = React.useState(false)
-  return (
-    <div className="min-w-0">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="relative inline-flex items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-xs text-muted-foreground hover:text-foreground pointer-coarse:before:absolute pointer-coarse:before:inset-x-0 pointer-coarse:before:-inset-y-2.5 pointer-coarse:before:content-['']">
-        <Brain className="size-3.5" /> {t('sessions.thinking')}
-        <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-      </button>
-      {open && (
-        <div className="mt-1 border-l-2 pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted-foreground italic">
-          <Sensitive block>{text}</Sensitive>
-        </div>
-      )}
-    </div>
-  )
-}
-
 /* ---------------------------------------------------------------- tools */
 const OUT_PREVIEW = 1600
-const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'NotebookRead'])
+export const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'NotebookRead'])
 
-function ToolCard({ item, live }: { item: Extract<Item, { kind: 'tool' }>; live: boolean }) {
-  const t = useT()
-  const [open, setOpen] = React.useState(false)
-  const { use, result } = item
-  const Icon = toolIcon(use.name)
-  const { running } = React.useContext(ItemContext)
-  // A sub-agent or a background command: its own state, not its tool result ("launched" comes back at once).
-  const task = isShownTask(item.task) ? item.task : undefined
-  const status = task ? taskStatus(task, running) : null
-  const pendingNow = status ? status === 'running' : !result && live
-  const err = status ? status === 'failed' : result?.is_error
-  const root = React.useRef<HTMLDivElement>(null)
-  useOpenTaskLine(task ? use.id : undefined, React.useCallback(() => setOpen(true), []), root)
-  const input = (use.input && typeof use.input === 'object' ? use.input : {}) as Record<string, unknown>
-  const diff = React.useMemo(() => (open || ['Edit', 'MultiEdit', 'Write'].includes(use.name) ? toolDiff(use.name, input) : null), [open, use.name, input])
-  const stats = diff ? diffStats(diff) : null
-  const authServer = authServerOf(use.name)
-  const name = use.name.startsWith('mcp__') ? use.name.split('__').slice(2).join('__') || use.name : use.name
-  const { topicDir = null, wsRoot = null } = React.useContext(ItemContext)
-  const bases = { topicDir, wsRoot }
-  const file = typeof input.file_path === 'string' ? input.file_path : typeof input.notebook_path === 'string' ? input.notebook_path : null
-  // Full one-line description (server summaries are cut at 120 chars: rebuild file ones from the input).
-  const full = file && FILE_TOOLS.has(use.name) ? file : use.summary.startsWith(use.name) ? use.summary.slice(use.name.length).replace(/^[:\s]+/, '') : use.summary
-  const summary = file && FILE_TOOLS.has(use.name) ? relPath(file, bases) : relPaths(full, bases)
-  return (
-    <div ref={root} className={cn('min-w-0 overflow-hidden rounded-lg border bg-card/60 text-[13px]', err && 'border-destructive/40')}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex h-8 w-full min-w-0 items-center gap-2 px-2.5 text-left hover:bg-accent/60 focus-visible:bg-accent focus-visible:outline-none max-md:h-10"
-      >
-        <Icon className={cn('size-3.5 shrink-0', err ? 'text-destructive' : 'text-muted-foreground')} />
-        <span className="shrink-0 font-medium">{name}</span>
-        <Tooltip content={summary !== full ? <Sensitive length={20}><span className="max-w-[min(80vw,640px)] font-mono break-all">{full}</span></Sensitive> : null}>
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
-            <Sensitive length={14}>{summary}</Sensitive>
-          </span>
-        </Tooltip>
-        {stats && (stats.add > 0 || stats.del > 0) && (
-          <span className="shrink-0 font-mono text-[11px] tabular-nums">
-            <span className="text-success">+{stats.add}</span> <span className="text-destructive">−{stats.del}</span>
-          </span>
-        )}
-        {task && status && <TaskElapsed task={task} status={status} />}
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          {status ? <TaskStatusIcon status={status} /> : pendingNow ? <Spinner className="size-3.5" /> : err ? <CircleAlert className="size-3.5 text-destructive" /> : result ? <Check className="size-3.5 text-success" /> : <X className="size-3.5 text-muted-foreground" />}
-        </span>
-        <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
-      </button>
-      {authServer && <McpAuthButton server={authServer} />}
-      {open && (
-        <div className="grid gap-2 border-t bg-background/40 p-2.5">
-          <Sensitive block>
-            {task && status && <TaskDetails task={task} status={status} />}
-            <ToolInput name={use.name} input={input} diff={diff} display={file ? relPath(file, bases) : null} />
-            {task && (task.background || task.summary) ? null : result ? (
-              <ToolOutput text={result.text} error={result.is_error} />
-            ) : (
-              <p className="text-xs text-muted-foreground">{pendingNow ? t('sessions.tool.running') : t('sessions.tool.noResult')}</p>
-            )}
-          </Sensitive>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function toolDiff(name: string, input: Record<string, unknown>): DiffLine[] | null {
+export function toolDiff(name: string, input: Record<string, unknown>): DiffLine[] | null {
   const s = (v: unknown) => (typeof v === 'string' ? v : '')
   if (name === 'Edit') return lineDiff(s(input.old_string), s(input.new_string))
   if (name === 'MultiEdit' && Array.isArray(input.edits)) {
@@ -648,7 +569,7 @@ function toolDiff(name: string, input: Record<string, unknown>): DiffLine[] | nu
   return null
 }
 
-function ToolInput({ name, input, diff, display }: { name: string; input: Record<string, unknown>; diff: DiffLine[] | null; display: string | null }) {
+export function ToolInput({ name, input, diff, display }: { name: string; input: Record<string, unknown>; diff: DiffLine[] | null; display: string | null }) {
   const open = useOpenPreview()
   const file = typeof input.file_path === 'string' ? input.file_path : typeof input.notebook_path === 'string' ? input.notebook_path : null
   return (
@@ -716,7 +637,7 @@ export function DiffView({ lines }: { lines: DiffLine[] }) {
   )
 }
 
-function ToolOutput({ text, error }: { text: string; error: boolean }) {
+export function ToolOutput({ text, error }: { text: string; error: boolean }) {
   const t = useT()
   const [all, setAll] = React.useState(false)
   const long = text.length > OUT_PREVIEW
@@ -739,53 +660,7 @@ function ToolOutput({ text, error }: { text: string; error: boolean }) {
 }
 
 /* ---------------------------------------------------------------- meta rows */
-function InitRow({ model }: { model: string }) {
-  const { models } = React.useContext(ItemContext)
-  return (
-    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-      <span className="h-px flex-1 bg-border" />
-      <span className="font-medium">{modelLabel(model, models)}</span>
-      <span className="h-px flex-1 bg-border" />
-    </div>
-  )
-}
-
-function ResultRow({ ev }: { ev: Extract<Item, { kind: 'result' }>['ev'] }) {
-  const t = useT()
-  const lang = useLang()
-  const { models } = React.useContext(ItemContext)
-  const { hidden } = useResultLine()
-  const show = (f: ResultField) => !hidden.includes(f)
-  const u = ev.usage
-  const ctx = (u?.input || 0) + (u?.cache_read || 0) + (u?.cache_write || 0)
-  const share = fmtNumber(ctx > 0 ? (u?.cache_read || 0) / ctx : 0, lang, { style: 'percent', maximumFractionDigits: 1 })
-  const tokensTip = t('sessions.tokensTip', { input: fmtNumber(u?.input || 0, lang), cacheRead: fmtNumber(u?.cache_read || 0, lang), cacheWrite: fmtNumber(u?.cache_write || 0, lang), output: fmtNumber(u?.output || 0, lang), share })
-  const hasTokens = ctx > 0 || (u?.output || 0) > 0
-  const part = (key: string, tip: React.ReactNode, body: React.ReactNode) => (
-    <Tooltip key={key} content={<span className="block max-w-72 whitespace-normal">{tip}</span>}>
-      <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {body}
-      </span>
-    </Tooltip>
-  )
-  return (
-    <div className="group/result flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums" data-testid="result-line">
-      {ev.ok ? <Check className="size-3 text-success" /> : <AlertTriangle className="size-3 text-destructive" />}
-      {[
-        ev.model && show('model') ? part('m', t('sessions.result.modelTip'), modelLabel(ev.model, models)) : null,
-        ev.duration_ms > 0 && show('duration') ? part('d', t('sessions.result.durationTip'), fmtMs(ev.duration_ms)) : null,
-        ev.cost_usd > 0 && show('cost') ? part('c', costTip(t), <Sensitive length={4}>≈ {fmtCost(ev.cost_usd)}</Sensitive>) : null,
-        hasTokens && show('tokens') ? part('t', tokensTip, `${fmtTokens(ctx)} → ${fmtTokens(u?.output || 0)}`) : null,
-        hasTokens && show('cache') ? part('k', t('sessions.result.cacheTip', { share }), t('sessions.cacheShare', { share })) : null,
-      ]
-        .filter(Boolean)
-        .flatMap((el, i) => (i ? [<span key={`s${i}`} aria-hidden>·</span>, el] : [el]))}
-      <ResultLineMenu />
-    </div>
-  )
-}
-
-function NoteRow({ text, level }: { text: string; level: 'info' | 'warn' | 'error' }) {
+export function NoteRow({ text, level }: { text: string; level: 'info' | 'warn' | 'error' }) {
   const Icon = level === 'error' ? CircleAlert : level === 'warn' ? AlertTriangle : Info
   return (
     <div

@@ -42,6 +42,14 @@ Python modules call each other only through these functions. Keep signatures sta
   passes a list; tests may call `_scan(primed)` as before). Used by `sessionfeed.on_stop` (registered by
   `api/feed.startup`). `resume_debate`, a message to a paused discussion (`_enqueue`), `stop` and `delete_session`
   resolve the session's `discussion.paused` feed event (`_resolve_paused`, never raises).
+- Discussions (provider `discussion` / `debate`): `pause_debate(sid)`, `resume_debate(sid)`,
+  `update_discussion(sid, turn_limit=UNSET, duration_s=UNSET) -> Session` (PATCH /discussion: `UNSET` keeps, `None`
+  removes; `SessionError 400 unsupported|bad_limit`, same ranges as `create_session`). Meta of the current period:
+  `discussion_turns`, `discussion_elapsed` (+ `discussion_started` while it runs), limits `discussion_turn_limit` /
+  `discussion_duration_seconds`; `_limit_reached(m)` compares them. A limit pause (set by the runner's
+  `_debate_followup`) resets the counters on resume / a new message only while `_limit_reached` is still true.
+  `discussion_paused_at` (time.time()) is set by `pause_debate` (when it was running) and by the runner's limit pause,
+  and dropped wherever `debate_paused` turns false (resume, `_enqueue`, `stop`, the runner on an error / empty answer).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
@@ -180,6 +188,8 @@ Python modules call each other only through these functions. Keep signatures sta
   `POST_ACTIONS`), params coerced instead of refused; external callers (API, CLI, webhooks) are not trusted
   (`clean_kind` / `clean_params(strict)` / `clean_actions(trusted, strict)` raise `FeedError 400 bad_kind|bad_params|
   bad_action`; feedhooks drops a generic payload's bad actions with `strict=False`).
+  `notify=False` = a quiet event (CLI `--quiet`, API `quiet`): the new row gets `quiet = 1`, it is not sent to
+  Telegram and `push.wants` refuses it (a fold never changes the flag of the row it grows).
   `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
   raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
   `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
@@ -187,9 +197,9 @@ Python modules call each other only through these functions. Keep signatures sta
   `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
   and documented with its params in API.md.
 - Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
-  after 2.0.0a108: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
+  after 2.0.0a108, `quiet` (0 / 1) after them: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
   `ALTER TABLE` (a "duplicate column" from a concurrent process is ignored) and the index `events_grp(source, grp)`.
-  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`. A fold (`group`) only matches an unread, unresolved row of
+  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`, not quiet. A fold (`group`) only matches an unread, unresolved row of
   the same level younger than 24 h and pushes the previous state into `occurrences` (seeded with the row itself).
 - `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
   `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,
@@ -217,6 +227,33 @@ Python modules call each other only through these functions. Keep signatures sta
 - Telegram: `gateway.feed_notify(ev, loud)` / `feed_message(ev)` (body cut at 700 characters BEFORE HTML escaping); thread key `#feed` (`NOTIFY_ONLY` = Crons, Alerts,
   Notifications: never treated as topic threads by the legacy migration); callback `f:<id>` = Ask Claude.
 
+## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
+Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
+inside the functions that need them), so `sessions/codex.py` could read its output without it.
+- `BUILTINS` (type, icon, category, hint, `fields` = the body summary given to the agents, `schema`, `raw` field for
+  raw-text bodies, `pin`) is the source of the built-in schemas. Copies to keep in step (tests fail otherwise):
+  `web/mock/blocks-builtins.json` (dev mock) and the type sets of `web/src/features/blocks/fence.tsx`.
+- `check_schema(schema)` (raises ValueError on anything outside the subset) and `validate(schema, data, limit=20) ->
+  [str]` (mirrors `features/blocks/schema.ts`, same messages).
+- `parse_manifest(dir) -> dict` validates `block.json` (limits, renders, hosts, schema file, entry inside the folder).
+  `extensions._load_one` calls it for a folder with `block.json` and no `manifest.json`: `Extension.type == "block"`,
+  `Extension.block` = the manifest; never imported, never a widget. `extensions.on_change(fn)` listeners run after a
+  rescan or an enable / disable (the blocks API registers `sync_agent_files`).
+- `plugins(light=False)` (built-ins + block extensions with `enabled`, `error` - a type claimed twice -, `consent`),
+  `get(id)`, `enabled_plugins()`, `set_enabled(id, on)` (config `blocks.disabled` or `extensions.disabled`).
+  `light=True` reads the block.json files directly (CLI: install, doctor) instead of the extension registry.
+- Consent: `set_consent(id, "always"|"once"|"deny"|"reset")` (config `blocks.consent`, or an in-memory grant token for
+  one hour), `allowed_hosts(plugin, grant)`, `frame_csp(hosts)` (the frames' policy).
+- `to_card(type, data, title)` / `pin(...)`: dashboard pins are plain widget extensions `pin-<slug>-<hex>` (manifest,
+  `card.json`, fixed `api.py` returning it).
+- Agents: `skill_vars(ps)` -> `{{PILOT_BLOCKS_TYPES}}`, `{{PILOT_BLOCKS_ENABLED}}`, merged into `cmd_core._skill_vars()`
+  (install and `skills_status` render `skills/pilot-blocks/SKILL.md` with them); `sync_agent_files()` writes
+  `<state>/blocks/agents.md` (Codex: `sessions/codex.workspace_context` appends it, the only hook in session code),
+  `<state>/blocks/reference.md`, and renders the installed skill again when it exists. Idempotent (files rewritten only
+  on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `maxxing init`. The
+  user's CLAUDE.md files are never touched.
+- `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
+
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
   cron sessions; a discussion / debate paused with `discussion_pause_reason == "limit"` -> `discussion.paused`; state
@@ -230,7 +267,9 @@ Python modules call each other only through these functions. Keep signatures sta
   `encrypt(plaintext, p256dh, auth, *, salt=None, private_key=None)` (test vector of RFC 8291 appendix A in the tests).
 - Subscriptions in `<state>/push.json` (mode 600, max 50): `subscriptions()`, `subscribe(endpoint, keys, label, prefs)`
   (upsert by endpoint), `update(id, label, prefs)`, `remove(id)`, `test(id)`; errors `PushError(status, code, msg)`.
-  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}}`: `wants(prefs, ev)`, `sound(prefs, ev)`.
+  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}, sources: {source: {enabled, sound}}}` (`_prefs`; `sources`
+  checked by `_source_prefs`): `wants(prefs, ev)` (a quiet event: never; then the source's entry, the kind's entry, the
+  level), `sound(prefs, ev)` (the same entry's sound, else `prefs.sound`); `_entry(p, ev)` picks the entry.
 - `prime()` (cursor = feed max id, at server start) and `dispatch()` (rows after the cursor, oldest first, at most 50
   per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
   by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:
@@ -321,6 +360,23 @@ Python modules call each other only through these functions. Keep signatures sta
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
   itself - same result) and into shell cron jobs.
 
+## maxxing.themes
+- `clean_theme(data) -> dict` - structural validation of a palette (Theme object, DESIGN.md "Themes"), the server
+  mirror of `web/src/lib/theme/validate.ts`: unknown keys dropped, defaults filled, colours only (`is_color`), 16 KB
+  at most; raises `ThemeError` (-> 422 `invalid_theme`). No colour maths: derivation and contrast stay in the browser.
+- `legacy_theme(accent, tint, keep)` - the palette of a client from before palettes; `nearest_accent(theme)`.
+- Used by `PUT /api/settings/look` (config `look` = `{theme, accent, tint, palette, rev}`, `rev` + bus `look` on a
+  palette change) and `GET /api/auth/state`.
+- Saved themes ("My themes"): `saved()`, `save_theme(theme, source, frm)` (validated, same colours = the existing
+  entry, `ThemeLimit` past `SAVED_MAX` = 50), `rename_theme(id, name)`, `delete_theme(id)` (`ThemeNotFound`);
+  `<state>/themes.json` (600, `{themes: [{id, theme, source, from, saved}]}`, atomic writes, `_saved_lock`, bus
+  `themes`); an entry that no longer validates is skipped on read. Routes `/api/settings/themes*`.
+- `latest_file(folder, since)` - the newest `*.theme.json` (folder or `folder/themes/`, mtime >= since, no symbolic
+  link, read with `O_NOFOLLOW`, 16 KB at most) as `{theme, file, at}` through `clean_theme`: the theme generator
+  (Settings -> Appearance -> Create, skill `skills/pilot-theme`) reads what its session wrote
+  (`GET /api/settings/themes/session/{sid}`).
+- `team.send_theme` / `team._remote_message` validate a theme sent in a chat (message `kind: theme`) both ways.
+
 ## maxxing.crons  (owner: organisation)
 - `run_job(id) -> Run | None` (blocking; None = unknown or already running) · `spawn_run(id)` · `sync_crontab()`
 - `list_jobs()`, `read_runs(cron_id=None, limit=50)`, `last_runs() -> {cron_id: Run}`, `parse/humanize/next_runs`.
@@ -380,7 +436,7 @@ listing (`clear_cache()` in tests). Web: `features/git/` (GitGraph = lane layout
 Chats between people, `<state>/team/team.json` (format in the docstring), one lock (`_lock`), atomic writes, bus
 topic `team`. `state()`, `messages(cid)`, `create_chat`, `send`, `react`, `create_poll`, `vote`, `mark_read`,
 `mark_sent` (a "to a session" click), `edit_message` / `delete_message`, `update_group` / `leave_group` / `set_muted`,
-`typing` and the read receipt (signals through `teampeer.signal_all`, never queued), `summarize(cid, ids, since)` (one `claude -p` without tools, Sonnet,
+`send_theme` (a colour theme as a card, `themes.clean_theme` here and at every receiver), `typing` and the read receipt (signals through `teampeer.signal_all`, never queued), `summarize(cid, ids, since)` (one `claude -p` without tools, Sonnet,
 prompt `SUMMARY_PROMPT`, titles in the chat's language). Every local change goes to the other members (`_post_mine`: a new message, stored with its `pending` list in one save; `_broadcast`: the other events)
 through `teampeer.send` (message `pending` = ids not reached yet, cleared by `delivered()`); remote events come in
 through `apply_remote(frm, contact, event)` which checks membership and authorship; their messages keep `recv`

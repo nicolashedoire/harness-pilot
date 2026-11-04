@@ -426,12 +426,13 @@ def test_push_subscriptions_api_and_vapid_key(client, mx):
            "keys": {"p256dh": p256dh, "auth": _b64(auth)}}
     created = client.post("/api/push/subscriptions", json={**sub, "label": "Phone"}).json()
     assert created["label"] == "Phone"
-    assert created["prefs"] == {"levels": ["warning", "error"], "sound": True, "kinds": {}}
+    assert created["prefs"] == {"levels": ["warning", "error"], "sound": True, "kinds": {}, "sources": {}}
     again = client.post("/api/push/subscriptions", json={**sub, "prefs": {"kinds": {
         "session.done": {"enabled": True, "sound": False}, "cron.succeeded": True}}}).json()
     assert again["id"] == created["id"] and again["label"] == "Phone"
     assert again["prefs"] == {"levels": ["warning", "error"], "sound": True, "kinds": {
-        "session.done": {"enabled": True, "sound": False}, "cron.succeeded": {"enabled": True, "sound": True}}}
+        "session.done": {"enabled": True, "sound": False}, "cron.succeeded": {"enabled": True, "sound": True}},
+        "sources": {}}
     assert stat.S_IMODE((mx["state"] / "push.json").stat().st_mode) == 0o600
     p = client.patch(f"/api/push/subscriptions/{created['id']}", json={"prefs": {"levels": ["error"],
                                                                                "sound": False}}).json()

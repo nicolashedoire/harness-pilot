@@ -74,7 +74,9 @@ export function Chart({ kind, series, unit, height = 140 }: { kind: 'bar' | 'lin
   const hx = hover == null ? 0 : kind === 'bar' ? xc(hover) : xl(hover)
   return (
     <div className="grid gap-2">
-      <div ref={ref} className="relative w-full" style={{ height: H }}>
+      {/* min-w-0: the grid item may shrink below the drawn width, so a narrower card (a side panel opening, a column
+          resized) is measured again */}
+      <div ref={ref} className="relative w-full min-w-0" style={{ height: H }}>
         {width > 0 && n > 0 && (
           <svg
             width={W}

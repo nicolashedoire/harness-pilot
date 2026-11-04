@@ -383,6 +383,7 @@ class Runner:
             if err or attempt.stopped or not answer:
                 m["debate_active"] = False
                 m["debate_paused"] = False
+                m.pop("discussion_paused_at", None)
                 return
             if not m.get("debate_active") and not m.get("debate_paused"):
                 return
@@ -404,7 +405,7 @@ class Runner:
             if m.get("debate_active") and ((turns_limit and m["discussion_turns"] >= turns_limit)
                                            or (seconds_limit and elapsed >= seconds_limit)):
                 m.update(debate_active=False, debate_paused=True, discussion_pause_reason="limit",
-                         discussion_elapsed=elapsed, discussion_started=None)
+                         discussion_elapsed=elapsed, discussion_started=None, discussion_paused_at=time.time())
             if m.get("debate_paused"):
                 m["debate_pending"] = {"text": prompt, "attachments": [], "source": "debate", "kind": "debate", "at": time.time()}
                 return
@@ -518,6 +519,14 @@ class Runner:
 
     @staticmethod
     def _cwd(cfg: dict, meta: dict) -> str | None:
+        companion = meta.get('companion')
+        if isinstance(companion, dict) and meta.get('provider') == 'codex':
+            run_id = str(companion.get('run_id') or '')
+            if not store.is_valid_id(run_id):
+                return None
+            root = (config.STATE / 'companions' / 'runs').resolve()
+            cwd = (root / run_id / 'repo').resolve()
+            return str(cwd) if root in cwd.parents and cwd.is_dir() else None
         root = Path(cfg.get("workspace") or "/").resolve()
         cwd = (root / (meta.get("path") or "")).resolve()
         if cwd != root and root not in cwd.parents:

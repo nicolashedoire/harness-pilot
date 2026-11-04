@@ -7,6 +7,7 @@ import { useT } from '@/i18n'
 import { PageHeader, useDocumentTitle } from '@/components/shell/Page'
 import { SETTINGS_SECTIONS, type SettingsSectionId } from './sections'
 import { GeneralSection } from './sections/General'
+import { AppearanceSection } from './sections/Appearance'
 import { ProfileSection } from './sections/Profile'
 import { LicenseSection } from './sections/License'
 import { SupportSection } from './sections/Support'
@@ -14,12 +15,14 @@ import { FeaturesSection } from './sections/Features'
 import { SecuritySection } from './sections/Security'
 import { ClaudeSection } from './sections/Claude'
 import { CodexSection } from './sections/Codex'
+import { CompanionsSection } from './sections/Companions'
 import { TelegramSection } from './sections/Telegram'
 import { BackupSection } from './sections/Backup'
 import { VoiceSection } from './sections/Voice'
 import { KeysSection } from './sections/Keys'
 import { McpSection } from './sections/Mcp'
 import { ExtensionsSection } from './sections/Extensions'
+import { BlocksSection } from './sections/Blocks'
 import { SystemSection } from './sections/System'
 import { TrashSection } from './sections/Trash'
 import { ImportSection } from './sections/Import'
@@ -31,6 +34,7 @@ import { UpdatesSection } from './sections/Updates'
 
 const COMPONENTS: Record<Exclude<SettingsSectionId, 'docs'>, React.ComponentType> = {
   general: GeneralSection,
+  appearance: AppearanceSection,
   profile: ProfileSection,
   license: LicenseSection,
   support: SupportSection,
@@ -41,12 +45,14 @@ const COMPONENTS: Record<Exclude<SettingsSectionId, 'docs'>, React.ComponentType
   security: SecuritySection,
   claude: ClaudeSection,
   codex: CodexSection,
+  companions: CompanionsSection,
   telegram: TelegramSection,
   voice: VoiceSection,
   backup: BackupSection,
   keys: KeysSection,
   mcp: McpSection,
   extensions: ExtensionsSection,
+  blocks: BlocksSection,
   import: ImportSection,
   packs: ProjectsSection,
   trash: TrashSection,

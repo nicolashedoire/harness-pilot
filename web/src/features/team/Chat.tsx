@@ -22,6 +22,7 @@ import { fmtBytes } from '@/lib/format'
 import { Markdown } from '@/components/ui/markdown'
 import { Avatar } from '@/features/profile/Avatar'
 import { projectColor } from '@/features/tasks/model'
+import { ThemeMessageCard } from '@/features/themes/TeamCard'
 import { ForwardDialog, GroupDialog, NewChatDialog, PollDialog } from './Dialogs'
 import { AddFriendDialog, useOpenDm } from './Friends'
 import { ChatAvatar, chatTitle, friendsOf, PersonAvatar, personOf, TypingDots, usePresence, useTypingLabel } from './people'
@@ -151,6 +152,8 @@ export function ChatList({
                             ? t('team.msg.deleted')
                             : last.kind === 'poll'
                               ? `📊 ${last.text}`
+                              : last.kind === 'theme'
+                                ? `🎨 ${last.text || t('themegen.team.label')}`
                               : last.kind === 'summary'
                                 ? `✨ ${t('team.summaryShort')}`
                                 : `${last.files ? '📎 ' : ''}${last.text}`}
@@ -268,6 +271,7 @@ export function ChatView({ team, chatId, onBack, compact, headerExtra }: { team:
   const sendLabel = (m: TeamMessage) => {
     const who = m.author === me ? t('team.you') : personOf(team, m.author).name
     if (m.kind === 'summary') return t('team.fwd.fromSummary', { chat: title }) + '\n\n' + m.text + '\n\n'
+    if (m.kind === 'theme' && m.theme) return t('themegen.team.fwd', { chat: title, name: who, theme: m.text || t('themegen.team.label') }) + '\n\n```json\n' + JSON.stringify(m.theme) + '\n```\n\n'
     if (m.kind === 'poll' && m.poll) {
       const lines = m.poll.options.map((o) => `- ${o.label} : ${o.votes.map((v) => (v === me ? t('team.you') : personOf(team, v).name)).join(', ') || '0'}`)
       return t('team.fwd.fromPoll', { chat: title, name: who }) + `\n\n**${m.poll.question}**\n${lines.join('\n')}\n\n`
@@ -602,7 +606,7 @@ function SelectBar({
               onClick={() => onPreset(p)}
               className={cn(
                 'h-7 rounded-full border px-2.5 text-[12px] font-medium transition-colors pointer-coarse:h-10',
-                preset === p ? 'border-primary bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
+                preset === p ? 'border-action bg-action text-action-foreground' : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
               )}
             >
               {label}
@@ -671,7 +675,7 @@ function MessageRow({
           <span
             className={cn(
               'inline-flex size-[18px] items-center justify-center rounded-full border transition-colors',
-              selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 bg-background',
+              selected ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40 bg-background',
             )}
           >
             {selected && <Check className="size-3" strokeWidth={3} />}
@@ -703,7 +707,7 @@ function MessageRow({
                 <span className="min-w-0">
                   <span className="block font-medium">{quoted ? quotedName : t('team.msg.unknown')}</span>
                   <span className="line-clamp-2 text-muted-foreground [overflow-wrap:anywhere]">
-                    {!quoted ? '' : quoted.deleted ? t('team.msg.deleted') : quoted.kind === 'poll' ? `📊 ${quoted.poll?.question}` : quoted.text || `📎 ${quoted.files?.map((f) => f.name).join(', ')}`}
+                    {!quoted ? '' : quoted.deleted ? t('team.msg.deleted') : quoted.kind === 'poll' ? `📊 ${quoted.poll?.question}` : quoted.kind === 'theme' ? `🎨 ${quoted.text}` : quoted.text || `📎 ${quoted.files?.map((f) => f.name).join(', ')}`}
                   </span>
                 </span>
               </button>
@@ -717,6 +721,8 @@ function MessageRow({
               <SummaryCard m={m} />
             ) : m.kind === 'poll' ? (
               <PollCard team={team} chat={chat} m={m} />
+            ) : m.kind === 'theme' ? (
+              <ThemeMessageCard theme={m.theme} from={author.name} mine={mine} />
             ) : m.text ? (
               <div
                 className={cn(
@@ -1000,7 +1006,7 @@ function PollCard({ team, chat, m }: { team: TeamState | undefined; chat: TeamCh
                 className={cn(
                   'relative inline-flex size-4 shrink-0 items-center justify-center border',
                   poll.multi ? 'rounded-[4px]' : 'rounded-full',
-                  mineVote ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                  mineVote ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40',
                 )}
               >
                 {mineVote && <Check className="size-2.5" strokeWidth={3} />}

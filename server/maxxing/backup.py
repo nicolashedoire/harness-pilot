@@ -31,7 +31,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -449,24 +451,29 @@ def collect(root: Path | None = None, include: list[str] | None = None) -> dict[
     pats = [glob_re(p) for p in _patterns(include if include is not None else _settings().get("include"))]
     out: dict[str, Path] = {}
     if not root.is_dir():
-        return out
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        raise BackupError("The workspace is missing or inaccessible; no backup was published.", "read_failed")
+    def walk_error(error: OSError) -> None:
+        raise BackupError(f"Cannot read a workspace directory: {error.filename or 'unknown'}", "read_failed") from error
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False, onerror=walk_error):
         dirnames[:] = sorted(d for d in dirnames if d.lower() not in _PRUNE        # git refuses .GIT too
                              and not (Path(dirpath) / d).is_symlink())
         base = Path(dirpath)
         for fn in sorted(filenames):
             p = base / fn
             rel = p.relative_to(root).as_posix()
-            if p.is_symlink() or not p.is_file() or denied(rel):
+            if denied(rel):
                 continue
             if not any(r.match(rel) for r in pats):
                 continue
             try:
-                if p.stat().st_size > MAX_FILE:
-                    log.warning("backup: %s skipped (larger than 5 MB)", rel)
+                info = p.lstat()
+                if not stat.S_ISREG(info.st_mode):  # Never follow symlinks or special files.
                     continue
-            except OSError:
-                continue
+                if info.st_size > MAX_FILE:
+                    raise BackupError(f"Selected file is larger than 5 MB: {rel}", "file_too_large")
+            except OSError as e:
+                raise BackupError(f"Cannot inspect selected file: {rel}", "read_failed") from e
             out[rel] = p
     return out
 
@@ -515,9 +522,15 @@ def snapshot() -> dict[str, bytes]:
     files: dict[str, bytes] = {}
     for rel, p in collect().items():
         try:
-            files[rel] = p.read_bytes()
+            fd = os.open(p, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+            with os.fdopen(fd, 'rb') as src:
+                if not stat.S_ISREG(os.fstat(src.fileno()).st_mode):
+                    raise BackupError(f"Selected file is no longer a regular file: {rel}", "read_failed")
+                files[rel] = src.read(MAX_FILE + 1)
         except OSError as e:
-            log.warning("backup: cannot read %s: %s", rel, e)
+            raise BackupError(f"Cannot read selected file: {rel}", "read_failed") from e
+        if len(files[rel]) > MAX_FILE:
+            raise BackupError(f"Selected file is larger than 5 MB: {rel}", "file_too_large")
     files[f"{META_DIR}/config.json"] = (json.dumps(sanitized_config(), indent=2, ensure_ascii=False)
                                         + "\n").encode()
     jobs = _cron_jobs_file()
@@ -530,6 +543,7 @@ def snapshot() -> dict[str, bytes]:
             files[f"{META_DIR}/mcp.json"] = (json.dumps(servers, indent=2, ensure_ascii=False) + "\n").encode()
     except Exception as e:                                         # noqa: BLE001
         log.warning("backup: MCP servers not exported: %s", e)
+        raise BackupError("Cannot export MCP settings; no backup was published.", "read_failed") from e
     files[f"{META_DIR}/README.md"] = (b"# harness-pilot memory backup\n\nPrivate backup of the workspace memory "
                           b"(CLAUDE.md, memory.md, tasks, extensions, skills) made by harness-pilot.\n"
                           b"Restore: Settings > Backup > Restore, or `maxxing backup restore`.\n")
@@ -754,6 +768,58 @@ def _extract(wc: Path, rev: str) -> dict[str, bytes]:
     return out
 
 
+def _revision(wc: Path, remote: str | None, ref: str | None) -> str:
+    candidate = ref or remote
+    if not candidate:
+        raise BackupError("The backup repository is empty.", "empty")
+    if candidate.startswith('-') or '\x00' in candidate:
+        raise BackupError("Invalid revision.", "bad_ref")
+    result = git("rev-parse", "--verify", "-q", f"{candidate}^{{commit}}", cwd=wc, check=False)
+    if result.returncode:
+        raise BackupError(f"Unknown revision {candidate!r}.", "bad_ref")
+    return _out(result)
+
+
+def preview(ref: str | None = None) -> dict:
+    """Review workspace changes without writing the workspace or applying server settings."""
+    try:
+        with _flock():
+            repo, tok = _settings().get("repo"), _token()
+            if not repo or not tok:
+                raise BackupError("The backup is not configured (repository + token).", "not_configured")
+            wc, remote = prepare(repo, tok)
+            rev = _revision(wc, remote, ref)
+            files = _extract(wc, rev)
+            root = config.workspace().resolve()
+            hold = not _fresh_server()
+            allowed = [glob_re(p) for p in _patterns(_settings().get("include"))] if hold else None
+            groups: dict[str, list[str]] = {k: [] for k in ("create", "replace", "unchanged", "held", "skip")}
+            for rel, data in sorted(files.items()):
+                if rel.startswith(META_DIR + "/") or denied(rel):
+                    continue
+                dest = root / rel
+                if root not in dest.resolve().parents:
+                    groups["skip"].append(rel)
+                elif allowed is not None and not any(r.match(rel) for r in allowed):
+                    groups["held"].append(rel)
+                elif dest.exists() and not dest.is_file():
+                    groups["skip"].append(rel)
+                elif not _differs(dest, data):
+                    groups["unchanged"].append(rel)
+                elif dest.is_file():
+                    groups["replace"].append(rel)
+                else:
+                    groups["create"].append(rel)
+            return {"ok": True, "commit": rev, "hold": hold,
+                    "counts": {key: len(value) for key, value in groups.items()},
+                    "paths": {key: value[:50] for key, value in groups.items()},
+                    "settings": f"{META_DIR}/config.json" in files,
+                    "crons": f"{META_DIR}/crons/jobs.json" in files,
+                    "mcp": f"{META_DIR}/mcp.json" in files}
+    except BackupError as e:
+        return {"ok": False, "error": str(e), "code": e.code}
+
+
 def restore(ref: str | None = None, hold: bool | None = None) -> dict:
     """Restore whitelisted files from the backup repo -> {ok, files, unchanged, trash, error?}.
 
@@ -768,11 +834,7 @@ def restore(ref: str | None = None, hold: bool | None = None) -> dict:
             if not repo or not tok:
                 raise BackupError("The backup is not configured (repository + token).", "not_configured")
             wc, remote = prepare(repo, tok)
-            rev = ref or remote
-            if not rev:
-                raise BackupError("The backup repository is empty.", "empty")
-            if ref and git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}", cwd=wc, check=False).returncode:
-                raise BackupError(f"Unknown revision {ref!r}.", "bad_ref")
+            rev = _revision(wc, remote, ref)
             files = _extract(wc, rev)
             return _apply(files, hold)
     except BackupError as e:
@@ -783,7 +845,7 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
     root = config.workspace()
     root.mkdir(parents=True, exist_ok=True)
     root = root.resolve()
-    trash = config.STATE / "trash" / f"backup-restore-{time.strftime('%Y%m%d-%H%M%S')}"
+    trash = config.STATE / "trash" / f"backup-restore-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(6)}"
     restored, unchanged = [], 0
     hooks_held: list[str] = []
     # A new server (no session yet: the installer's restore, a move) gets everything back as it was. A server in use
@@ -793,31 +855,33 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
         hold = not _fresh_server()
     hooks_kept: dict[str, object] = {}
     skipped: list[str] = []
+    warnings: list[str] = []
 
     def put(dest: Path, data: bytes, rel_trash: str) -> bool:
         nonlocal unchanged
         moved = None
-        if dest.is_file():
-            try:
-                if dest.read_bytes() == data:
-                    unchanged += 1
-                    return False
-            except OSError:
-                pass
-            t = trash / rel_trash
-            t.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(dest), str(t))
-            moved = t
-        tmp = dest.with_name(dest.name + ".restore-tmp")
+        tmp = None
         try:
+            if dest.is_file() and dest.read_bytes() == data:
+                unchanged += 1
+                return False
             dest.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_bytes(data)
+            fd, name = tempfile.mkstemp(prefix=f'.{dest.name}.restore-', dir=dest.parent)
+            tmp = Path(name)
+            with os.fdopen(fd, 'wb') as out:
+                out.write(data)
+            if dest.is_file():
+                t = trash / rel_trash
+                t.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(dest), str(t))
+                moved = t
             os.replace(tmp, dest)
         except OSError as e:                       # a folder where the file goes, a read-only disk...: the rest goes on
             log.warning("restore: %s skipped: %s", rel_trash, e)
             skipped.append(rel_trash)
             try:
-                tmp.unlink(missing_ok=True)
+                if tmp is not None:
+                    tmp.unlink(missing_ok=True)
             except OSError:
                 pass
             if moved is not None and not dest.exists():  # the file in place stays in place, not in the trash
@@ -879,6 +943,7 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
                     crons.sync_crontab()
         except Exception as e:
             log.warning("restore: cron jobs not restored: %s", e)
+            warnings.append("crons")
     mcp_added = 0
     held["mcp"] = []
     mcp_blob = files.get(f"{META_DIR}/mcp.json")
@@ -899,6 +964,7 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
                 held["mcp"] = [str(it.get("name")) for it in local]
         except Exception as e:                                     # noqa: BLE001
             log.warning("restore: MCP servers not restored: %s", e)
+            warnings.append("mcp")
     cfg_blob = files.get(f"{META_DIR}/config.json")
     if cfg_blob is not None:
         try:
@@ -916,6 +982,8 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
                                 cfg["backup"][k] = clean(saved["backup"][k])
                             except BackupError as e:      # the same checks as Settings: else the current value stays
                                 log.warning("backup: restored %s ignored: %s", k, e)
+                                if "settings" not in warnings:
+                                    warnings.append("settings")
                     config.save_config(cfg)
             if ext_held and isinstance(changes.get("extensions"), dict):
                 # the saved settings bring their own disabled list: what this restore holds stays off in the same
@@ -926,8 +994,9 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
                 changes["extensions"] = ext
             if changes:
                 config.update_config(**changes)
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, OSError) as e:
             log.warning("restore: config not restored: %s", e)
+            warnings.append("settings")
     held["extensions"] = ext_held
     held["hooks"] = hooks_held
     if hooks_kept:                                   # kept aside, to put back by hand once checked
@@ -973,8 +1042,9 @@ def _apply(files: dict[str, bytes], hold: bool | None = None) -> dict:
     trash_mod.invalidate_sizes()                   # previous versions were written into the trash
     bus.invalidate("backup", "workspace", "tasks", "crons", "extensions", "mcp")
     return {"ok": True, "files": len(restored), "restored": restored[:200], "unchanged": unchanged,
-            "skipped": skipped[:200],
-            "crons": crons_restored, "mcp": mcp_added, "held": held, "trash": str(trash) if trash.exists() else None}
+            "skipped": skipped[:200], "skipped_count": len(skipped),
+            "crons": crons_restored, "mcp": mcp_added, "held": held, "warnings": warnings,
+            "trash": str(trash) if trash.exists() else None}
 
 
 def _differs(dest: Path, data: bytes) -> bool:

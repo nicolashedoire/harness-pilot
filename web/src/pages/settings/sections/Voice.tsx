@@ -12,30 +12,30 @@ export function VoiceSection() {
   const engine = s.settings.engine
   return (
     <SectionStack>
-      <SettingsCard title={t('voice.engine')} description={t('voice.engineDesc')}>
+      <SettingsCard title={t('vset.engine')} description={t('vset.engineDesc')}>
         <EngineChoice status={s} />
         {!s.ffmpeg && engine !== 'off' && (
-          <Callout tone="error" className="mt-4" title={t('voice.noFfmpeg')}>
+          <Callout tone="error" className="mt-4" title={t('vset.noFfmpeg')}>
             <code>apt-get install -y ffmpeg</code>
           </Callout>
         )}
       </SettingsCard>
       {engine === 'local' && (
-        <SettingsCard title={t('voice.engine.local')} description={t('voice.localDesc')}>
+        <SettingsCard title={t('vset.engine.local')} description={t('vset.localDesc')}>
           <LocalEngine status={s} />
         </SettingsCard>
       )}
       {(engine === 'groq' || engine === 'openai') && (
-        <SettingsCard title={t(`voice.engine.${engine}`)} description={t('voice.apiDesc')}>
+        <SettingsCard title={t(`vset.engine.${engine}`)} description={t('vset.apiDesc')}>
           <ApiEngine status={s} engine={engine} />
         </SettingsCard>
       )}
       {engine !== 'off' && (
         <>
-          <SettingsCard title={t('voice.options')}>
+          <SettingsCard title={t('vset.options')}>
             <VoiceOptions status={s} />
           </SettingsCard>
-          <SettingsCard title={t('voice.test')} description={t('voice.testDesc')}>
+          <SettingsCard title={t('vset.test')} description={t('vset.testDesc')}>
             <RecordTest status={s} />
           </SettingsCard>
         </>

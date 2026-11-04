@@ -23,7 +23,7 @@
       p { margin: 0; color: var(--muted); }
       button {
         margin-top: 12px; height: 40px; padding: 0 18px; border: 0; border-radius: 8px; cursor: pointer;
-        background: var(--primary); color: #fff; font: inherit; font-weight: 500;
+        background: var(--primary); color: var(--on-primary, #fff); font: inherit; font-weight: 500;
       }
       button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     </style>
@@ -34,15 +34,22 @@
         try { t = (JSON.parse(localStorage.getItem('mx-ui') || '{}').state || {}).theme || 'dark'; } catch (e) {}
         var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
         if (!dark) document.documentElement.className = 'light';
-        // Accent color of the app (copy of src/lib/accent.ts ACCENT_HEX).
-        var hex = {
-          light: { blue: '#0076ed', clay: '#ea7e00', violet: '#a126d7', green: '#25931c', amber: '#e0bb00', rose: '#e62e1e' },
-          dark: { blue: '#3c91fd', clay: '#f8962d', violet: '#c25af3', green: '#55cc4b', amber: '#f1d025', rose: '#fc523a' }
-        };
-        var a = 'blue';
-        try { a = (JSON.parse(localStorage.getItem('mx-ui') || '{}').state || {}).accent || 'blue'; } catch (e) {}
-        if (!hex.dark[a]) a = 'blue';
-        document.documentElement.style.setProperty('--primary', hex[dark ? 'dark' : 'light'][a]);
+        // Colours of the app's palette (cache written by src/stores/ui.ts applyPalette), else the defaults above.
+        var c = null;
+        try { c = JSON.parse(localStorage.getItem('mx-theme') || 'null'); } catch (e) {}
+        var sum = c && c.summary && c.summary[dark ? 'dark' : 'light'];
+        var hex = /^#[0-9a-f]{6}$/i;
+        if (sum) {
+          var st = document.documentElement.style;
+          if (hex.test(sum.bg)) st.setProperty('--bg', sum.bg);
+          if (hex.test(sum.fg)) st.setProperty('--fg', sum.fg);
+          if (hex.test(sum.muted)) st.setProperty('--muted', sum.muted);
+          if (hex.test(sum.card)) st.setProperty('--card', sum.card);
+          if (hex.test(sum.border)) st.setProperty('--border', sum.border);
+          if (hex.test(sum.primary)) st.setProperty('--primary', sum.primary);
+          if (hex.test(sum.onPrimary)) st.setProperty('--on-primary', sum.onPrimary);
+        }
+        var a = c && c.accent ? c.accent : 'blue';
         window.__mxAccent = a;
       })();
     </script>

@@ -1,12 +1,12 @@
 import * as React from 'react'
-import { Check, CheckCircle2, Compass, Download, GraduationCap, Monitor, Moon, Sun } from 'lucide-react'
+import { CheckCircle2, Compass, Download, GraduationCap } from 'lucide-react'
 import { useSaveSettings, useSettings } from '@/lib/queries'
-import { ACCENTS, useUI, type Accent, type Density, type Layout, type Theme, type Tint, type TouchHome } from '@/stores/ui'
+import { useUI, type Layout, type TouchHome } from '@/stores/ui'
 import { cn } from '@/lib/utils'
 import { FONT_GROUPS, loadFontPreview, MONO_FONTS, SANS_FONTS, type FontGroup } from '@/lib/fonts'
 import { useT, type TKey } from '@/i18n'
 import type { Language } from '@/lib/types'
-import { Button, FormField, Input, Segmented, Skeleton, Tooltip, toast } from '@/components/ui'
+import { Button, FormField, Input, Segmented, Skeleton, toast } from '@/components/ui'
 import { QRCode } from '@/components/ui/qr-code'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RegionFields } from '@/features/general/RegionFields'
@@ -98,15 +98,6 @@ function AppCard() {
   )
 }
 
-const ACCENT_SWATCH: Record<Accent, string> = {
-  blue: 'oklch(0.62 0.2 256)',
-  clay: 'oklch(0.73 0.17 58)',
-  violet: 'oklch(0.6 0.25 312)',
-  green: 'oklch(0.67 0.18 142)',
-  amber: 'oklch(0.83 0.17 95)',
-  rose: 'oklch(0.64 0.22 30)',
-}
-
 /** Pick a font: each choice is written in its own font; interface fonts are grouped by style. */
 function FontButton({ label, stack, active, onClick }: { label: string; stack: string; active: boolean; onClick: () => void }) {
   React.useEffect(() => loadFontPreview(stack), [stack]) // the preview needs the font's @font-face rules
@@ -154,31 +145,27 @@ function MonoFontPicker({ value, onChange, label }: { value: keyof typeof MONO_F
   )
 }
 
-export function AccentPicker() {
+/** Interface and code fonts (Settings -> Appearance). */
+export function FontPickers() {
   const t = useT()
-  const accent = useUI((s) => s.accent)
-  const setAccent = useUI((s) => s.setAccent)
+  const ui = useUI()
   return (
-    <div role="radiogroup" aria-label={t('settings.accent')} data-tour="accent" className="flex flex-wrap gap-2">
-      {ACCENTS.map((a) => (
-        <Tooltip key={a} content={t(`accent.${a}` as TKey)}>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={accent === a}
-            aria-label={t(`accent.${a}` as TKey)}
-            onClick={() => setAccent(a)}
-            className={cn(
-              'flex size-8 items-center justify-center rounded-full ring-offset-2 ring-offset-background outline-none transition focus-visible:ring-2 focus-visible:ring-ring max-md:size-10',
-              accent === a && 'ring-2 ring-foreground/70',
-            )}
-            style={{ background: ACCENT_SWATCH[a] }}
-          >
-            {accent === a && <Check className="size-4 text-white drop-shadow" strokeWidth={3} />}
-          </button>
-        </Tooltip>
-      ))}
-    </div>
+    <>
+      <div className="grid gap-3 py-4">
+        <div className="grid gap-0.5">
+          <span className="text-sm font-medium">{t('settings.font')}</span>
+          <p className="text-[13px] text-muted-foreground">{t('settings.fontDesc')}</p>
+        </div>
+        <SansFontPicker value={ui.font} onChange={ui.setFont} label={t('settings.font')} />
+      </div>
+      <div className="grid gap-3 py-4 last:pb-0">
+        <div className="grid gap-0.5">
+          <span className="text-sm font-medium">{t('settings.monoFont')}</span>
+          <p className="text-[13px] text-muted-foreground">{t('settings.monoFontDesc')}</p>
+        </div>
+        <MonoFontPicker value={ui.monoFont} onChange={ui.setMonoFont} label={t('settings.monoFont')} />
+      </div>
+    </>
   )
 }
 
@@ -209,34 +196,8 @@ export function GeneralSection() {
 
   return (
     <SectionStack>
-      <SettingsCard title={t('settings.appearance')} description={t('settings.appearanceDesc')}>
+      <SettingsCard title={t('settings.display')} description={t('settings.displayDesc')}>
         <div className="divide-y">
-          <SettingRow label={t('shell.theme')}>
-            <Segmented<Theme>
-              value={ui.theme}
-              onChange={ui.setTheme}
-              aria-label={t('shell.theme')}
-              options={[
-                { value: 'dark', label: t('theme.dark'), icon: <Moon /> },
-                { value: 'light', label: t('theme.light'), icon: <Sun /> },
-                { value: 'system', label: t('theme.system'), icon: <Monitor /> },
-              ]}
-            />
-          </SettingRow>
-          <SettingRow label={t('settings.accent')} description={t('settings.accentDesc')}>
-            <AccentPicker />
-          </SettingRow>
-          <SettingRow label={t('settings.density')} description={t('settings.densityDesc')}>
-            <Segmented<Density>
-              value={ui.density}
-              onChange={ui.setDensity}
-              aria-label={t('settings.density')}
-              options={[
-                { value: 'comfortable', label: t('density.comfortable') },
-                { value: 'compact', label: t('density.compact') },
-              ]}
-            />
-          </SettingRow>
           <SettingRow label={t('settings.layout')} description={t('settings.layoutDesc')}>
             <Segmented<Layout>
               value={ui.layout}
@@ -260,41 +221,15 @@ export function GeneralSection() {
               ]}
             />
           </SettingRow>
-          <div className="grid gap-3 py-4">
+          <div className="grid gap-3 py-4 last:pb-0">
             <div className="grid gap-0.5">
               <span className="text-sm font-medium">{t('settings.resultLine')}</span>
               <p className="text-[13px] text-muted-foreground">{t('settings.resultLineDesc')}</p>
             </div>
             <ResultLinePicker />
           </div>
-          <SettingRow label={t('settings.tint')} description={t('settings.tintDesc')}>
-            <Segmented<Tint>
-              value={ui.tint}
-              onChange={ui.setTint}
-              aria-label={t('settings.tint')}
-              options={[
-                { value: 'neutral', label: t('tint.neutral') },
-                { value: 'tinted', label: t('tint.tinted') },
-              ]}
-            />
-          </SettingRow>
-          <div className="grid gap-3 py-4">
-            <div className="grid gap-0.5">
-              <span className="text-sm font-medium">{t('settings.font')}</span>
-              <p className="text-[13px] text-muted-foreground">{t('settings.fontDesc')}</p>
-            </div>
-            <SansFontPicker value={ui.font} onChange={ui.setFont} label={t('settings.font')} />
-          </div>
-          <div className="grid gap-3 py-4 last:pb-0">
-            <div className="grid gap-0.5">
-              <span className="text-sm font-medium">{t('settings.monoFont')}</span>
-              <p className="text-[13px] text-muted-foreground">{t('settings.monoFontDesc')}</p>
-            </div>
-            <MonoFontPicker value={ui.monoFont} onChange={ui.setMonoFont} label={t('settings.monoFont')} />
-          </div>
         </div>
       </SettingsCard>
-
 
       <SettingsCard title={t('settings.region')} description={t('settings.regionDesc')}>
         {!s ? (

@@ -1,0 +1,38 @@
+<!-- Kanban board: a conversation block drawn in a sandboxed frame (no cookies, no app API, no network).
+     The data arrives with maxxing.onData(); colours come from the app theme (UI kit variables). -->
+<style>
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); gap: 10px; overflow-x: auto; padding: 2px; }
+  .col { background: color-mix(in oklab, var(--muted) 60%, transparent); border: 1px solid var(--border); border-radius: 10px; padding: 8px; display: grid; gap: 6px; align-content: start; }
+  .col h3 { margin: 2px 4px 4px; font-size: 12px; font-weight: 600; color: var(--muted-foreground); display: flex; justify-content: space-between; }
+  .card { all: unset; box-sizing: border-box; display: grid; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+  .card:hover { border-color: var(--primary); }
+  .card:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .card b { font-weight: 500; font-size: 13px; }
+  .card span { font-size: 12px; color: var(--muted-foreground); }
+  .tag { justify-self: start; font-size: 11px; padding: 0 6px; border-radius: 999px; background: color-mix(in oklab, var(--primary) 15%, transparent); color: var(--primary); }
+</style>
+<div class="board" id="board"></div>
+<script>
+  var board = document.getElementById('board')
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e }
+  maxxing.onData(function (data) {
+    board.textContent = ''
+    ;(data.columns || []).forEach(function (col) {
+      var c = el('section', 'col'), h = el('h3', null, col.name)
+      h.appendChild(el('span', null, String((col.cards || []).length)))
+      c.appendChild(h)
+      ;(col.cards || []).forEach(function (raw) {
+        var card = typeof raw === 'string' ? { title: raw } : raw
+        var b = el('button', 'card')
+        b.type = 'button'
+        if (card.tag) b.appendChild(el('span', 'tag', card.tag))
+        b.appendChild(el('b', null, card.title))
+        if (card.note) b.appendChild(el('span', null, card.note))
+        // the app shows this text to the user and sends it only if they confirm
+        b.onclick = function () { maxxing.send('Let\'s work on "' + card.title + '" (' + col.name + ').') }
+        c.appendChild(b)
+      })
+      board.appendChild(c)
+    })
+  })
+</script>

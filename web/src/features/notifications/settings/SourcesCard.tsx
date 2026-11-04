@@ -72,24 +72,24 @@ function HookRow({ hook, onSecret }: { hook: FeedHook; onSecret: () => void }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuItem onSelect={() => test.mutate(hook.id, { onSuccess: () => toast.success(t('feed.testSent')) })}>
-            <FlaskConical /> {t('feed.test')}
+          <DropdownMenuItem onSelect={() => test.mutate(hook.id, { onSuccess: () => toast.success(t('nset.hook.testSent')) })}>
+            <FlaskConical /> {t('nset.hook.test')}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onSecret}>
-            <KeyRound /> {hook.has_secret ? t('feed.changeSecret') : t('feed.setSecret')}
+            <KeyRound /> {hook.has_secret ? t('nset.hook.changeSecret') : t('nset.hook.setSecret')}
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={async () => {
-              if (await confirm({ title: t('feed.regenerate'), description: t('feed.regenerateDesc'), confirmText: t('feed.regenerate') })) patch.mutate({ id: hook.id, regenerate: true })
+              if (await confirm({ title: t('nset.hook.regenerate'), description: t('nset.hook.regenerateDesc'), confirmText: t('nset.hook.regenerate') })) patch.mutate({ id: hook.id, regenerate: true })
             }}
           >
-            <RefreshCw /> {t('feed.regenerate')}
+            <RefreshCw /> {t('nset.hook.regenerate')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             destructive
             onSelect={async () => {
-              if (await confirm({ title: t('feed.deleteHook', { name: hook.name }), description: t('feed.deleteHookDesc'), destructive: true, confirmText: t('common.delete') }))
+              if (await confirm({ title: t('nset.hook.delete', { name: hook.name }), description: t('nset.hook.deleteDesc'), destructive: true, confirmText: t('common.delete') }))
                 del.mutate(hook.id)
             }}
           >
@@ -128,13 +128,13 @@ export function SourcesCard() {
       description={t('nset.sourcesDesc')}
       actions={
         <Button size="sm" onClick={() => setAdding(true)} data-testid="add-hook">
-          <Plus /> {t('feed.addWebhook')}
+          <Plus /> {t('nset.hook.add')}
         </Button>
       }
     >
       {!publicOk && (
         <Callout tone="warning" className="mb-3">
-          {t('feed.notPublic')}
+          {t('nset.hook.notPublic')}
         </Callout>
       )}
       {isPending || !data ? (
@@ -155,12 +155,12 @@ export function SourcesCard() {
               <span className="truncate text-sm font-medium">
                 <Sensitive length={8}>{s.label}</Sensitive>
               </span>
-              <Badge variant="muted">{t('feed.script')}</Badge>
+              <Badge variant="muted">{t('nset.hook.script')}</Badge>
             </li>
           ))}
         </ul>
       )}
-      <p className="mt-3 text-xs text-muted-foreground">{t('feed.cliHint')}</p>
+      <p className="mt-3 text-xs text-muted-foreground">{t('nset.hook.cliHint')}</p>
       {adding && <AddHookDialog onClose={() => setAdding(false)} />}
       {secretHook && <SecretDialog hook={secretHook} onClose={() => setSecretFor(null)} />}
     </SettingsCard>
@@ -175,10 +175,10 @@ function SecretDialog({ hook, onClose }: { hook: FeedHook; onClose: () => void }
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('feed.secretTitle', { name: hook.name })}</DialogTitle>
-          <DialogDescription>{t(`feed.secretHelp.${hook.kind}` as TKey)}</DialogDescription>
+          <DialogTitle>{t('nset.hook.secretTitle', { name: hook.name })}</DialogTitle>
+          <DialogDescription>{t(`nset.hook.secretHelp.${hook.kind}` as TKey)}</DialogDescription>
         </DialogHeader>
-        <Input value={v} onChange={(e) => setV(e.target.value)} placeholder={t('feed.secretPlaceholder')} autoComplete="off" autoFocus />
+        <Input value={v} onChange={(e) => setV(e.target.value)} placeholder={t('nset.hook.secretPlaceholder')} autoComplete="off" autoFocus />
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             {t('common.cancel')}
@@ -205,8 +205,8 @@ function AddHookDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-testid="hook-dialog">
         <DialogHeader>
-          <DialogTitle>{made ? t('feed.hookReady') : t('feed.addWebhook')}</DialogTitle>
-          <DialogDescription>{made ? t(`feed.where.${made.kind}` as TKey) : t('feed.addWebhookDesc')}</DialogDescription>
+          <DialogTitle>{made ? t('nset.hook.ready') : t('nset.hook.add')}</DialogTitle>
+          <DialogDescription>{made ? t(`nset.hook.where.${made.kind}` as TKey) : t('nset.hook.addDesc')}</DialogDescription>
         </DialogHeader>
         {made ? (
           <div className="grid gap-3">
@@ -216,7 +216,7 @@ function AddHookDialog({ onClose }: { onClose: () => void }) {
               </code>
               <CopyButton text={made.url} />
             </div>
-            {needsSecret(made) && <Callout tone="warning">{t('feed.noSecretWarn')}</Callout>}
+            {needsSecret(made) && <Callout tone="warning">{t('nset.hook.noSecretWarn')}</Callout>}
           </div>
         ) : (
           <form
@@ -228,22 +228,22 @@ function AddHookDialog({ onClose }: { onClose: () => void }) {
               create.mutate({ name, kind, secret: secret.trim() || undefined }, { onSuccess: setMade, onError: (x) => setErr(x.message) })
             }}
           >
-            <FormField label={t('feed.service')}>
+            <FormField label={t('nset.hook.service')}>
               <Select
                 value={kind}
                 onValueChange={(v) => {
                   setKind(v as FeedHookKind)
                   if (kinds.includes(name as FeedHookKind) || name === 'webhook') setName(v === 'generic' ? 'webhook' : v)
                 }}
-                options={kinds.map((k) => ({ value: k, label: t(`feed.service.${k}`) }))}
-                aria-label={t('feed.service')}
+                options={kinds.map((k) => ({ value: k, label: t(`nset.hook.service.${k}`) }))}
+                aria-label={t('nset.hook.service')}
               />
             </FormField>
-            <FormField label={t('feed.sourceName')} hint={t('feed.sourceNameHint')} error={err || undefined}>
+            <FormField label={t('nset.hook.sourceName')} hint={t('nset.hook.sourceNameHint')} error={err || undefined}>
               <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoComplete="off" data-testid="hook-name" />
             </FormField>
-            <FormField label={t('feed.secret')} hint={t(`feed.secretHelp.${kind}`)}>
-              <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('feed.secretPlaceholder')} autoComplete="off" />
+            <FormField label={t('nset.hook.secret')} hint={t(`nset.hook.secretHelp.${kind}`)}>
+              <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={t('nset.hook.secretPlaceholder')} autoComplete="off" />
             </FormField>
           </form>
         )}
@@ -256,7 +256,7 @@ function AddHookDialog({ onClose }: { onClose: () => void }) {
                 {t('common.cancel')}
               </Button>
               <Button type="submit" form="hook-form" loading={create.isPending} disabled={!name.trim()}>
-                {t('feed.create')}
+                {t('nset.hook.create')}
               </Button>
             </>
           )}

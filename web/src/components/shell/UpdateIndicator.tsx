@@ -17,7 +17,7 @@ const row =
 export function UpdateIndicator({ collapsed }: { collapsed?: boolean }) {
   const t = useT()
   if (!useReloadPending()) return null
-  const label = t('update.reload')
+  const label = t('shell.updateReload')
   return (
     <Tooltip content={collapsed ? label : null} side="right">
       <button type="button" onClick={applyUpdate} className={cn(row, collapsed && 'justify-center px-0')} aria-label={label}>

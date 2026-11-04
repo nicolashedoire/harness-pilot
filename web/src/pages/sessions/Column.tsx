@@ -12,7 +12,11 @@ import {
   ChevronRight,
   Clock,
   Copy,
+  CircleAlert,
   ExternalLink,
+  PanelTop,
+  RotateCw,
+  Square,
   PictureInPicture2,
   FolderOpen,
   GripVertical,
@@ -32,14 +36,13 @@ import {
   Play,
   Quote,
   Rows2,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { cn, copyText } from '@/lib/utils'
 import { TouchAppButton, TouchSessionsButton } from '@/components/shell/TouchNav'
-import { Logo } from '@/components/shell/Logo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useUI } from '@/stores/ui'
 import { openHud } from './Hud'
-import { costTip, useResultLine } from './resultLine'
 import { useT } from '@/i18n'
 import {
   useClaudeStatus,
@@ -89,15 +92,19 @@ import {
 import { Combobox } from '@/components/ui/combobox'
 import { Textarea } from '@/components/ui/textarea'
 import { TaskBar } from './Tasks'
-import { forgetLog, getLog, loadEarlier, loadLog, seedEmptyLog, useLogSelect, useSessionLog, useSessionStream } from './log'
-import { PlanChip, PlanNotice } from './Plan'
-import { PausedBanner, pausedOnLimit } from './PausedBanner'
+import { forgetLog, getLog, loadEarlier, loadLog, seedEmptyLog, useLogSelect, useSessionLog, useSessionStream, type LogState } from './log'
+import { PlanCard, PlanToggle } from './Plan'
+import { PausedBanner, PauseSeparator, pausedOnLimit } from './PausedBanner'
+import { ChangeLimitsDialog } from './ChangeLimitsDialog'
+import { BlockPanel, useBlockPanel, useWideEnough } from './BlockPanel'
+import { BlockHostProvider, type BlockHost } from '@/features/blocks/host'
 import { MaxxingControls, MaxxingMeter } from './MaxxingMeter'
 import { notifySendFailed, notifySent, useMaxxingEnabled } from './maxxing'
-import { MobileTabsSlot, TabsToggle } from './Tabs'
+import { MobileTabsSlot } from './Tabs'
 import { AsidePanel, useAside } from './Aside'
 import { SessionSummary } from './Summary'
 import { AgentMap } from './AgentMap'
+import { MixedTeam } from './MixedTeam'
 import { LayoutPicker } from './LayoutPicker'
 import { MIN_W } from './layouts'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
@@ -107,8 +114,8 @@ import { Composer, type ComposerHandle } from './Composer'
 import { QuotePill } from './Quote'
 import { FileMenu } from './FileMenu'
 import { ItemContext } from './Items'
-import { ContextGauge, ModelPicker, StateBadge } from './Widgets'
-import { absTopicDir, fileQuote, fmtCost, topicLabel } from './util'
+import { AgentChip, ContextGauge, ModelPicker, StateBadge } from './Widgets'
+import { absTopicDir, fileQuote, modelLabel, topicLabel } from './util'
 import { CONTENT_MIME, contentDragLeave, contentDragOver, contentDrop, useContentDrag, type Dropped } from './contentDrag'
 
 export type ColumnVariant = 'column' | 'solo' | 'mobile'
@@ -197,7 +204,8 @@ export function ColumnShell({ col, index, count, variant, place, children }: { c
       // In the strip, the grid places the session (its width comes from the grid template, see index.tsx).
       style={{
         ...(isCol && place && { gridColumn: place.col, gridRow: place.gridRow }),
-        ...(widened && ({ '--mx-read': 'none' } as React.CSSProperties)),
+        // reading column: 740 px, or the whole width once widened by hand
+        ...({ '--mx-read': widened ? 'none' : '740px' } as React.CSSProperties),
       }}
       className={cn(
         'relative flex min-h-0 min-w-0 flex-col bg-background',
@@ -441,9 +449,15 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
   const [dragFiles, setDragFiles] = React.useState(false)
   const [summaryOpen, setSummaryOpen] = React.useState(false)
   const [agentMapOpen, setAgentMapOpen] = React.useState(false)
+  const [limitsOpen, setLimitsOpen] = React.useState(false)
+  // "Open beside" of the thread's blocks: docked on the right of the conversation when there is room, else a sheet
+  const row = React.useRef<HTMLDivElement>(null)
+  const panel = useBlockPanel(sid)
+  const docked = useWideEnough(row) && variant !== 'mobile'
 
   const notFound = (isError && isApiError(error) && error.status === 404) || deleted
   const running = session?.state === 'running'
+  const duo = session?.provider === 'discussion' || session?.provider === 'debate'
   const path = session?.path ?? ''
   // Message actions of the thread: Edit (a stopped message back into this composer), New session from a message
   // (a new session of the same topic, its composer filled; the URL opens it, on a phone too).
@@ -552,6 +566,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
 
   const qc = useQueryClient()
   const hudOn = useUI((s) => s.hud)
+  const tabsOn = useSessionsUI((s) => s.tabs)
   const hud = () => {
     const go = (path: string) => {
       navigate(path)
@@ -608,6 +623,47 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
     },
   }
 
+  // End of the thread: the plan of a plan-mode turn to approve, or the failed turn with Retry. Memoised: the thread
+  // only re-renders when its own props change.
+  const sendNow = React.useRef(onSend)
+  sendNow.current = onSend
+  const planReady = !!session?.plan_ready && !running
+  const failed = session?.state === 'error' && !running ? session.error || '' : null
+  // the last turn ended on a question of the agent (AskUserQuestion): its options answer it in one click
+  const asked = useLogSelect(sid, lastQuestion)
+  const question = !running && !planReady && failed === null ? asked : null
+  const agentName = session?.provider === 'codex' ? 'Codex' : 'Claude Code'
+  // a paused discussion ends with the date of its pause (and the limit it reached)
+  const pauseKey = duo && session?.debate_paused ? [session.discussion_paused_at, session.discussion_pause_reason, session.discussion_turns, session.discussion_turn_limit, session.discussion_duration_seconds, session.discussion_elapsed].join('|') : ''
+  const card = React.useMemo(
+    () =>
+      planReady && session ? (
+        <PlanCard session={session} onEdit={() => composer.current?.focus()} />
+      ) : failed ? (
+        <FailedTurn sid={sid} error={failed} onRetry={(text, attachments) => void sendNow.current(text, attachments)} />
+      ) : question ? (
+        <QuestionCard question={question} agent={agentName} onAnswer={(text) => void sendNow.current(text, [])} onOther={() => composer.current?.focus()} />
+      ) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [planReady, failed, sid, planReady && session?.id, question, agentName],
+  )
+  const tail = React.useMemo(
+    () => (pauseKey && session ? <>{<PauseSeparator session={session} />}{card}</> : card),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [card, pauseKey],
+  )
+  // The blocks of this thread answer in this session (forms, checklists, "Ask for a fix"), shown at once as sent
+  // messages, and open beside it in the column's own panel.
+  const blockHost = React.useMemo<BlockHost>(
+    () => ({
+      sessionId: sid,
+      send: (text) => sendNow.current(text, []),
+      openPanel: panel.open,
+      agent: duo ? undefined : agentName,
+    }),
+    [sid, panel.open, duo, agentName],
+  )
+
   // (a picture dragged from a thread carries a file too: that is a content drag)
   const isFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes(CONTENT_MIME)
   return (
@@ -657,31 +713,37 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 // "Layouts…": the focus goes to the picker, not back to this button (that would close the picker)
                 onCloseAutoFocus={(e) => useSessionsUI.getState().layoutPicker === col.key && e.preventDefault()}
               >
-                {(variant === 'mobile' || slim) && (
-                  <>
-                    {/* Touch layout and short stacked session: the header keeps room for the title - Telegram lives
-                        here (on a phone plan mode is next to the title). */}
-                    {slim && session?.provider !== 'debate' && session?.provider !== 'discussion' && (
-                      <DropdownMenuCheckboxItem checked={!!session?.plan_mode} disabled={!session} onSelect={() => session && patch.mutate({ id: sid, plan_mode: !session.plan_mode })}>
-                        {t('plan.toggle')}
-                      </DropdownMenuCheckboxItem>
-                    )}
-                    <DropdownMenuCheckboxItem checked={!!session?.notify} disabled={!session || !tgLinked} onSelect={actions.notify}>
-                      {t('sessions.notify.label')}
-                    </DropdownMenuCheckboxItem>
-                    <DropdownMenuSeparator />
-                  </>
+                {/* The header keeps room for the title: Telegram, plan mode of a folded stacked session and (phone) the
+                    tabs view live here. */}
+                {slim && session?.provider !== 'debate' && session?.provider !== 'discussion' && (
+                  <DropdownMenuCheckboxItem checked={!!session?.plan_mode} disabled={!session} onSelect={() => session && patch.mutate({ id: sid, plan_mode: !session.plan_mode })}>
+                    {t('plan.toggle')}
+                  </DropdownMenuCheckboxItem>
                 )}
+                <DropdownMenuCheckboxItem checked={!!session?.notify} disabled={!session || !tgLinked} onSelect={actions.notify}>
+                  {session?.notify ? <Bell /> : <BellOff />} {t('sessions.notify.label')}
+                </DropdownMenuCheckboxItem>
+                {variant === 'mobile' && (
+                  <DropdownMenuCheckboxItem checked={tabsOn} onSelect={() => useSessionsUI.getState().setTabs(!tabsOn)} data-testid="menu-tabs">
+                    <PanelTop /> {t('tabs.toggle')}
+                  </DropdownMenuCheckboxItem>
+                )}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
+                {duo && (
+                  <DropdownMenuItem disabled={!session} onSelect={() => setLimitsOpen(true)} data-testid="menu-limits">
+                    <SlidersHorizontal /> {t('notifx.change')}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem disabled={!session?.turns} onSelect={() => setSummaryOpen(true)}>
-                  <ListChecks /> {t('summary.title')}
+                  <ListChecks /> {t('sessions.menu.summary')}
                 </DropdownMenuItem>
-                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</DropdownMenuItem>}
+                {session?.provider !== 'codex' && <DropdownMenuItem onSelect={() => setAgentMapOpen(true)}><Network /> {t('sessions.swarm.map')}</DropdownMenuItem>}
                 <DropdownMenuItem onSelect={actions.archive}>
                   {session?.archived ? <ArchiveRestore /> : <Archive />} {session?.archived ? t('sessions.menu.unarchive') : t('sessions.menu.archive')}
                 </DropdownMenuItem>
@@ -694,7 +756,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 </DropdownMenuItem>
                 {hudOn && variant !== 'mobile' && (
                   <DropdownMenuItem onSelect={hud}>
-                    <PictureInPicture2 /> {t('hud.open')}
+                    <PictureInPicture2 /> {t('sessions.menu.hud')}
                   </DropdownMenuItem>
                 )}
                 {variant === 'column' && (
@@ -744,127 +806,160 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
             </DropdownMenu>
           }
           onRename={actions.rename}
-          onHud={hudOn ? hud : undefined}
-          onPlan={session?.provider === 'debate' || session?.provider === 'discussion' ? undefined : () => session && patch.mutate({ id: sid, plan_mode: !session.plan_mode })}
           onNotify={actions.notify}
         />
         <SessionSummary key={sid} sid={sid} path={path} open={summaryOpen} onOpenChange={setSummaryOpen} />
         {agentMapOpen && <AgentMap key={`agents-${sid}`} sid={sid} running={running} open onOpenChange={setAgentMapOpen} />}
-        {session?.archived && (
-          <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
-            <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
-            <Button size="sm" variant="link" className="ml-auto h-auto text-xs" onClick={actions.archive}>
-              {t('sessions.menu.unarchive')}
-            </Button>
-          </div>
-        )}
-        {session && pausedOnLimit(session) && <PausedBanner session={session} />}
-        <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
-          {notFound ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
-              {t('sessions.deleted')}
-              <Button size="sm" variant="outline" onClick={() => close(col.key)}>
-                {t('sessions.closeColumn')}
-              </Button>
-            </div>
-          ) : (
-            <LiveThread ref={thread} sid={sid} session={session} pending={pending} onRetry={onRetry} onLoadEarlier={onLoadEarlier} onEdit={onEdit} onFork={path ? onFork : undefined} />
-          )}
-        </ItemContext.Provider>
-        {session?.state === 'error' && session.error && !running && (
-          <div className="mx-auto w-full max-w-(--mx-read,860px) px-3">
-            <div role="alert" className="rounded-md bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
-              <Sensitive>{session.error}</Sensitive>
-            </div>
-          </div>
-        )}
-        {!notFound && (
-          <QuotePill
-            scope={body}
-            onQuote={(text) => {
-              composer.current?.quote(text)
-              window.getSelection()?.removeAllRanges()
-              composer.current?.focus()
-            }}
-          />
-        )}
-        {!notFound && (
-          <FileMenu
-            scope={body}
-            onQuote={(path) => {
-              composer.current?.quote(fileQuote(path))
-              composer.current?.focus()
-            }}
-          />
-        )}
-        {!notFound && aside.aside && <AsidePanel aside={aside.aside} onClose={aside.close} />}
-        {!notFound && <TaskBar sid={sid} running={running} />}
-        {!notFound && (
-          <StackedComposer colKey={col.key} stacked={!!place && place.n >= 3}>
-          <Composer
-            ref={composer}
-            colKey={col.key}
-            maxRows={place && place.row !== 'full' ? 4 : 12}
-            draftKey={sid}
-            placeholder={session?.plan_mode ? t(session.plan_ready ? 'plan.placeholderAdjust' : 'plan.placeholder') : undefined}
-            notice={session?.plan_ready && !running ? <PlanNotice session={session} onAdjust={() => composer.current?.focus()} /> : null}
-            topicPath={path}
-            running={running}
-            immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
-            disabledReason={authReason || (!session ? t('sessions.composer.loading') : null)}
-            queueCount={session?.queue || 0}
-            queued={queuedPending}
-            queueItems={session?.queue_items}
-            onClearQueue={() => clearQueue.mutateAsync(sid).then(() => usePending.getState().clearQueued(sid))}
-            onSteer={() =>
-              steer.mutate(sid, {
-                onSuccess: (r) => {
-                  if (r.steered) {
-                    setSteerPending(true)
-                    if (!r.interrupted) toast.info(t('sessions.queue.steerAfter'))
+        {duo && session && <ChangeLimitsDialog session={session} open={limitsOpen} onOpenChange={setLimitsOpen} />}
+        <BlockHostProvider value={blockHost}>
+          <div ref={row} className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-mx-session={sid}>
+              {session?.archived && (
+                <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs text-muted-foreground">
+                  <Archive className="size-3.5" /> {t('sessions.archivedBanner')}
+                  <Button size="sm" variant="link" className="ml-auto h-auto text-xs" onClick={actions.archive}>
+                    {t('sessions.menu.unarchive')}
+                  </Button>
+                </div>
+              )}
+              {session && pausedOnLimit(session) && <PausedBanner session={session} />}
+              <ItemContext.Provider value={React.useMemo(() => ({ filesRoot: settings?.files_root || null, models: claude?.models, running, tz: settings?.timezone, topicDir: dir, wsRoot: ws?.root || null }), [settings?.files_root, settings?.timezone, claude?.models, running, dir, ws?.root])}>
+                {notFound ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
+                    {t('sessions.deleted')}
+                    <Button size="sm" variant="outline" onClick={() => close(col.key)}>
+                      {t('sessions.closeColumn')}
+                    </Button>
+                  </div>
+                ) : (
+                  <LiveThread ref={thread} sid={sid} session={session} pending={pending} onRetry={onRetry} onLoadEarlier={onLoadEarlier} onEdit={onEdit} onFork={path ? onFork : undefined} tail={tail} hideFailureNotes={!planReady && !!failed} />
+                )}
+              </ItemContext.Provider>
+              {!notFound && (
+                <QuotePill
+                  scope={body}
+                  onQuote={(text) => {
+                    composer.current?.quote(text)
+                    window.getSelection()?.removeAllRanges()
+                    composer.current?.focus()
+                  }}
+                />
+              )}
+              {!notFound && (
+                <FileMenu
+                  scope={body}
+                  onQuote={(path) => {
+                    composer.current?.quote(fileQuote(path))
+                    composer.current?.focus()
+                  }}
+                />
+              )}
+              {!notFound && aside.aside && <AsidePanel aside={aside.aside} onClose={aside.close} />}
+              {!notFound && session?.team_phase && <MixedTeam sid={sid} />}
+              {!notFound && <TaskBar sid={sid} running={running} />}
+              {!notFound && (
+                <StackedComposer colKey={col.key} stacked={!!place && place.n >= 3}>
+                <Composer
+                  ref={composer}
+                  colKey={col.key}
+                  maxRows={place && place.row !== 'full' ? 4 : 12}
+                  draftKey={sid}
+                  placeholder={
+                    session?.plan_mode
+                      ? t(session.plan_ready ? 'plan.placeholderAdjust' : 'plan.placeholder')
+                      : duo
+                        ? t('conv.composer.intervene')
+                        : session
+                          ? t('conv.composer.replyTo', { agent: session.provider === 'codex' ? 'Codex' : 'Claude Code' })
+                          : undefined
                   }
-                  else toast.info(t('sessions.queue.steerNothing'), t('sessions.queue.steerNothingDesc'))
-                },
-              })
-            }
-            steerPending={steerPending}
-            onTakeQueue={async () => {
-              const r = await takeQueue.mutateAsync(sid)
-              usePending.getState().clearQueued(sid)
-              return r.messages
-            }}
-            steering={steer.isPending}
-            onAsk={session?.provider === 'claude' || !session?.provider ? () => void onAsk() : undefined}
-            asking={takeQueue.isPending || aside.pending}
-            clearingQueue={clearQueue.isPending}
-            onSend={onSend}
-            checkSent={checkSent}
-            onSendVoice={onSendVoice}
-            onStop={onStop}
-            stopping={stop.isPending}
-            autoFocus={variant !== 'mobile'}
-            toolbar={
-              session ? (
-                <>
-                  {session.provider === 'codex' || session.provider === 'debate' || session.provider === 'discussion' ? <span className="text-xs font-medium">{session.provider === 'codex' ? 'Codex' : 'Claude Code ↔ Codex'}</span> : <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} />}
-                  {!!session.swarm_agents && <Button type="button" variant="ghost" size="sm" onClick={() => setAgentMapOpen(true)}><Network /> {t('swarm.map')}</Button>}
-                  {session.debate_paused && !pausedOnLimit(session) && <span className="text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
-                  {(session.provider === 'discussion' || session.provider === 'debate') && (running || session.debate_paused) && (
-                    <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
-                      <Button variant="ghost" size="icon-sm" aria-label={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')} loading={pauseDiscussion.isPending || resumeDiscussion.isPending} onClick={() => session.debate_paused ? resumeDiscussion.mutate(sid) : pauseDiscussion.mutate(sid)}>
-                        {session.debate_paused ? <Play /> : <Pause />}
-                      </Button>
-                    </Tooltip>
-                  )}
-                  {session.plan_mode && <PlanChip session={session} />}
-                </>
-              ) : (
-                <Skeleton className="h-6 w-24" />
-              )
-            }
-          />
-          </StackedComposer>
-        )}
+                  hint={duo ? t('conv.composer.duoHint') : t('conv.composer.hint')}
+                  topicPath={path}
+                  running={running}
+                  immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
+                  disabledReason={session?.team_phase && ['launching', 'working', 'synthesizing'].includes(session.team_phase) ? t('mixedTeam.wait') : authReason || (!session ? t('sessions.composer.loading') : null)}
+                  queueCount={session?.queue || 0}
+                  queued={queuedPending}
+                  queueItems={session?.queue_items}
+                  onClearQueue={() => clearQueue.mutateAsync(sid).then(() => usePending.getState().clearQueued(sid))}
+                  onSteer={() =>
+                    steer.mutate(sid, {
+                      onSuccess: (r) => {
+                        if (r.steered) {
+                          setSteerPending(true)
+                          if (!r.interrupted) toast.info(t('sessions.queue.steerAfter'))
+                        }
+                        else toast.info(t('sessions.queue.steerNothing'), t('sessions.queue.steerNothingDesc'))
+                      },
+                    })
+                  }
+                  steerPending={steerPending}
+                  onTakeQueue={async () => {
+                    const r = await takeQueue.mutateAsync(sid)
+                    usePending.getState().clearQueued(sid)
+                    return r.messages
+                  }}
+                  steering={steer.isPending}
+                  onAsk={session?.provider === 'claude' || !session?.provider ? () => void onAsk() : undefined}
+                  asking={takeQueue.isPending || aside.pending}
+                  clearingQueue={clearQueue.isPending}
+                  onSend={onSend}
+                  checkSent={checkSent}
+                  onSendVoice={onSendVoice}
+                  onStop={duo ? undefined : onStop}
+                  stopping={stop.isPending}
+                  autoFocus={variant !== 'mobile'}
+                  toolbar={
+                    session ? (
+                      <>
+                        {!duo && <PlanToggle session={session} />}
+                        {!!session.swarm_agents && (
+                          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAgentMapOpen(true)}>
+                            <Network /> <span className="@max-[26rem]:sr-only">{t('sessions.swarm.map')}</span>
+                          </Button>
+                        )}
+                        {duo && session.debate_paused && !pausedOnLimit(session) && <span className="truncate px-1 text-xs text-muted-foreground">{t('sessions.discussionPaused')}</span>}
+                        {duo && (running || session.debate_paused) && (
+                          <Tooltip content={t(session.debate_paused ? 'sessions.discussionResume' : 'sessions.discussionPause')}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs max-md:h-9"
+                              loading={pauseDiscussion.isPending || resumeDiscussion.isPending}
+                              onClick={() => (session.debate_paused ? resumeDiscussion.mutate(sid) : pauseDiscussion.mutate(sid))}
+                              data-testid="duo-pause"
+                            >
+                              {session.debate_paused ? <Play /> : <Pause />}
+                              <span className="@max-[24rem]:sr-only">{t(session.debate_paused ? 'conv.duo.resume' : 'conv.duo.pause')}</span>
+                            </Button>
+                          </Tooltip>
+                        )}
+                        {duo && running && (
+                          <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs text-destructive hover:text-destructive max-md:h-9" onClick={onStop} loading={stop.isPending} data-testid="duo-stop">
+                            <Square className="size-3! fill-current" /> {t('conv.duo.stop')}
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <Skeleton className="h-6 w-24" />
+                    )
+                  }
+                  toolbarEnd={
+                    session && !duo ? (
+                      session.provider === 'codex' ? (
+                        <span className="truncate px-1 text-xs text-muted-foreground">{session.model || 'Codex'}</span>
+                      ) : (
+                        <ModelPicker chosen={session.model} real={session.real_model} contextTokens={session.context_tokens} onChange={actions.model} compact />
+                      )
+                    ) : null
+                  }
+                />
+                </StackedComposer>
+              )}
+            </div>
+            {!notFound && panel.state && <BlockPanel {...panel} state={panel.state} docked={docked} />}
+          </div>
+        </BlockHostProvider>
         {dragFiles && (
           <div className="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary bg-background/95 text-sm font-medium">
             <Upload className="size-6 text-primary" />
@@ -878,6 +973,8 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
 }
 
 /* ---------------------------------------------------------------- header */
+/** One header per session: where it lives (project › topic, a click moves it), its title (a click renames it), who
+ *  answers with which model, how much context is used, the menu and close. A discussion adds its progress. */
 function ColumnHeader({
   col,
   variant,
@@ -887,8 +984,6 @@ function ColumnHeader({
   menu,
   onRename,
   onNotify,
-  onHud,
-  onPlan,
   tgLinked,
   headRef,
   slim,
@@ -901,159 +996,224 @@ function ColumnHeader({
   menu: React.ReactNode
   onRename: (title: string) => void
   onNotify: () => void
-  onHud?: () => void
-  onPlan?: () => void
   tgLinked: boolean
   headRef?: React.Ref<HTMLElement>
-  /** Short stacked session: one line (title, state, context, menu, close); plan mode and Telegram show only
-   *  while on and are in the menu, the picture-in-picture is in the menu, topic and cost go. */
+  /** Short stacked session: one line (title, state, context, menu, close). */
   slim?: boolean
 }) {
   const t = useT()
-  const showCost = !useResultLine().hidden.includes('cost')
-  const notifyTip = !tgLinked ? t('sessions.notify.unavailable') : session?.notify ? t('sessions.notify.on') : t('sessions.notify.off')
   const maxxing = useMaxxingEnabled()
-  if (variant === 'mobile')
-    // phone / tablet: app bar (☰ logo ⋯ ⊞), then the session's title, then its topic and what it used
+  const { data: claude } = useClaudeStatus()
+  const claudeTurns = !session?.provider || session.provider === 'claude'
+  const duo = session?.provider === 'discussion' || session?.provider === 'debate'
+  const gauge = session && claudeTurns && <ContextGauge percent={!slim} ring={slim} tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />
+  if (variant === 'mobile') {
+    // phone / tablet: one bar - sessions (☰), the title over where it lives and the model, the menu, the app (⊞)
+    const model = session ? (session.provider === 'codex' ? session.model || 'Codex' : duo ? 'Claude Code · Codex' : modelLabel(session.real_model || session.model || claude?.default_model || '', claude?.models)) : ''
     return (
-      <header className="relative shrink-0 border-b bg-background px-3 pb-2 pt-[calc(0.25rem+var(--safe-top))]">
+      <header className="relative shrink-0 border-b bg-background px-2 pt-[calc(0.25rem+var(--safe-top))] pb-1" data-col-head>
         {maxxing && <MaxxingMeter strip />}
-        <div className="flex h-11 min-w-0 items-center gap-1">
-          <TouchSessionsButton className="-ml-2" />
-          <Logo className="min-w-0 flex-1 gap-2 [&_img]:size-6" nameClassName={maxxing ? 'max-[479px]:sr-only' : undefined} />
-          <div className="flex shrink-0 items-center">
-            <TabsToggle compact />
-            {maxxing && <MaxxingControls compact />}
-            {menu}
-            <TouchAppButton className="-mr-2" />
+        <div className="flex min-h-12 min-w-0 items-center gap-0.5">
+          <TouchSessionsButton />
+          <div className="grid min-w-0 flex-1 px-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              {session ? <InlineTitle value={session.title} onSave={onRename} className="-ml-1 h-7 text-[15px] pointer-coarse:h-7" /> : <Skeleton className="h-5 w-40" />}
+              {session && <StateBadge session={session} />}
+            </div>
+            <div className="flex h-5 min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              {session ? (
+                <>
+                  <MoveSessionPicker session={session} rootLabel={rootLabel} plain />
+                  {model && <span className="min-w-0 shrink truncate">· {model}</span>}
+                  {gauge && <span className="ml-auto flex shrink-0">{<ContextGauge ring tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />}</span>}
+                </>
+              ) : (
+                <Skeleton className="h-3 w-32" />
+              )}
+            </div>
           </div>
+          {maxxing && <MaxxingControls compact />}
+          {menu}
+          <TouchAppButton />
         </div>
         <MobileTabs />
-        <div className="flex min-h-8 min-w-0 items-center gap-2">
-          {session ? <InlineTitle value={session.title} onSave={onRename} className="text-[17px] font-semibold" /> : <Skeleton className="h-5 w-48" />}
-          {session && <StateBadge session={session} />}
-          {onPlan && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('plan.toggle')}
-              aria-pressed={!!session?.plan_mode}
-              disabled={!session}
-              onClick={onPlan}
-              className={cn('-mr-1 ml-auto shrink-0 pointer-coarse:size-10', session?.plan_mode && 'bg-primary/12 text-primary hover:bg-primary/20 hover:text-primary')}
-            >
-              <ListChecks />
-            </Button>
-          )}
-        </div>
-        <div className="mt-0.5 flex h-6 min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
-          {session ? (
-            <>
-              <MoveSessionPicker session={session} rootLabel={rootLabel} />
-              {session.source === 'cron' && <Clock className="size-3.5 shrink-0" aria-label={t('sessions.source.cron')} />}
-              <span className="ml-auto flex shrink-0 items-center gap-3 tabular-nums">
-                {(!session.provider || session.provider === 'claude') && session.cost_usd > 0 && showCost && (
-                  <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, session.turns)}</span>}>
-                    <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <Sensitive length={4}>≈ {fmtCost(session.cost_usd)}</Sensitive>
-                    </span>
-                  </Tooltip>
-                )}
-                {(!session.provider || session.provider === 'claude') && <ContextGauge ring tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />}
-              </span>
-            </>
-          ) : (
-            <Skeleton className="h-3.5 w-32" />
-          )}
-        </div>
+        {session && duo && <DuoProgress session={session} />}
       </header>
     )
+  }
   return (
-    <header ref={headRef} data-col-head className={cn('shrink-0 border-b bg-background/95 px-3', slim ? 'py-0.5' : 'py-1.5', variant !== 'column' && 'pt-[calc(0.375rem+var(--safe-top))]')}>
-      <div className="flex h-9 min-w-0 items-center gap-1 pointer-coarse:h-10">
+    <header ref={headRef} data-col-head className={cn('@container shrink-0 border-b bg-background px-3', slim ? 'py-0.5' : 'py-2', variant !== 'column' && 'pt-[calc(0.5rem+var(--safe-top))]')}>
+      <div className={cn('flex min-w-0 items-center gap-2', slim ? 'h-9' : 'min-h-11')}>
         {variant === 'column' && <DragGrip colKey={col.key} />}
-        {session ? <InlineTitle value={session.title} onSave={onRename} /> : <Skeleton className="h-4 w-40" />}
-        {session && <StateBadge session={session} />}
-        <div className="ml-auto flex shrink-0 items-center">
-          {slim && session && (!session.provider || session.provider === 'claude') && (
-            <span className="mr-1 flex">
-              <ContextGauge ring tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />
-            </span>
+        <div className="grid min-w-0 flex-1">
+          {!slim && (
+            <div className="flex h-[18px] min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              {session ? (
+                <>
+                  <MoveSessionPicker session={session} rootLabel={rootLabel} plain />
+                  {duo && <span className="shrink-0 truncate">· {t(session.provider === 'debate' ? 'sessions.debate' : 'sessions.discussion')}</span>}
+                  {session.source === 'cron' && (
+                    <Tooltip content={t('sessions.source.cron')}>
+                      <span className="inline-flex shrink-0 items-center"><Clock className="size-3" /></span>
+                    </Tooltip>
+                  )}
+                </>
+              ) : (
+                <Skeleton className="h-3 w-28" />
+              )}
+            </div>
           )}
-          {onHud && !slim && (
-            <Tooltip content={t('hud.open')}>
-              <Button variant="ghost" size="icon-sm" aria-label={t('hud.open')} onClick={onHud}>
-                <PictureInPicture2 />
+          <div className="flex min-w-0 items-center gap-1.5">
+            {session ? <InlineTitle value={session.title} onSave={onRename} className="-ml-1 h-7 text-[15px]" /> : <Skeleton className="my-1 h-4 w-40" />}
+            {session && <StateBadge session={session} />}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {session && !slim && <AgentChip session={session} />}
+          {gauge && <span className="flex @max-[26rem]:hidden">{gauge}</span>}
+          {session?.notify && (
+            // Telegram on: a quiet bell says so (a click turns it off; the menu holds the switch)
+            <Tooltip content={tgLinked ? t('sessions.notify.on') : t('sessions.notify.unavailable')}>
+              <Button variant="ghost" size="icon-sm" aria-label={t('sessions.notify.on')} aria-pressed onClick={onNotify} disabled={!tgLinked} className="text-muted-foreground">
+                <Bell />
               </Button>
             </Tooltip>
-          )}
-          {onPlan && (!slim || session?.plan_mode) && (
-            <Tooltip content={session?.plan_mode ? t('plan.toggleOff') : t('plan.toggleOn')}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('plan.toggle')}
-                aria-pressed={!!session?.plan_mode}
-                disabled={!session}
-                onClick={onPlan}
-                className={cn(session?.plan_mode && 'bg-primary/12 text-primary hover:bg-primary/20 hover:text-primary')}
-              >
-                <ListChecks />
-              </Button>
-            </Tooltip>
-          )}
-          {(!slim || session?.notify) && (
-          <Tooltip content={notifyTip}>
-            <span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={notifyTip}
-                aria-pressed={!!session?.notify}
-                disabled={!session || !tgLinked}
-                onClick={onNotify}
-                className={cn(session?.notify && 'text-primary')}
-              >
-                {session?.notify ? <Bell /> : <BellOff />}
-              </Button>
-            </span>
-          </Tooltip>
           )}
           {menu}
           {variant === 'column' && (
             <Tooltip content={t('sessions.closeColumn')}>
-              <Button variant="ghost" size="icon-sm" aria-label={t('sessions.closeColumn')} onClick={onClose}>
+              <Button variant="ghost" size="icon-sm" aria-label={t('sessions.closeColumn')} onClick={onClose} className="text-muted-foreground">
                 <X />
               </Button>
             </Tooltip>
           )}
         </div>
       </div>
-      <div className={cn('flex h-5 min-w-0 items-center gap-2 text-[11px] text-muted-foreground', slim && 'hidden')}>
-        {session ? (
-          <>
-            <MoveSessionPicker session={session} rootLabel={rootLabel} />
-            {session.source === 'cron' && (
-              <Tooltip content={t('sessions.source.cron')}>
-                <span className="inline-flex shrink-0 items-center"><Clock className="size-3" /></span>
-              </Tooltip>
-            )}
-            <span className="ml-auto flex shrink-0 items-center gap-2.5 tabular-nums">
-              {(!session.provider || session.provider === 'claude') && session.cost_usd > 0 && showCost && (
-                <Tooltip content={<span className="block max-w-72 whitespace-normal">{costTip(t, session.turns)}</span>}>
-                  <span tabIndex={0} className="rounded outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <Sensitive length={4}>≈ {fmtCost(session.cost_usd)}</Sensitive>
-                  </span>
-                </Tooltip>
-              )}
-              {(!session.provider || session.provider === 'claude') && <ContextGauge tokens={session.context_tokens} window={session.context_window} model={session.model} realModel={session.real_model} />}
-            </span>
-          </>
-        ) : (
-          <Skeleton className="h-3 w-28" />
-        )}
-      </div>
+      {session && duo && !slim && <DuoProgress session={session} />}
     </header>
+  )
+}
+
+/** A discussion between two agents: how far it went against its limits ("Reply 6 of 20 · 14 min of 30"). */
+function DuoProgress({ session }: { session: Session }) {
+  const t = useT()
+  const n = session.discussion_turns || 0
+  const max = session.discussion_turn_limit || 0
+  const minutes = Math.floor((session.discussion_elapsed || 0) / 60)
+  const maxMin = session.discussion_duration_seconds ? Math.round(session.discussion_duration_seconds / 60) : 0
+  const pct = Math.min(1, Math.max(max ? n / max : 0, maxMin ? minutes / maxMin : 0))
+  const parts = [
+    max ? t('conv.duo.replies', { n, max }) : n ? t('conv.duo.repliesNoMax', { n }) : '',
+    maxMin ? t('conv.duo.minutes', { n: minutes, max: maxMin }) : session.discussion_elapsed ? t('conv.duo.minutesNoMax', { n: minutes }) : '',
+  ].filter(Boolean)
+  if (!parts.length) return null
+  return (
+    <div className="flex min-w-0 items-center gap-3 pt-1.5 pb-0.5 text-xs text-muted-foreground" data-testid="duo-progress">
+      {(max || maxMin) > 0 && (
+        <span role="progressbar" aria-label={t('conv.duo.progress')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct * 100)} aria-valuetext={parts.join(', ')} className="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-muted">
+          <span className="block h-full rounded-full bg-muted-foreground transition-[width] duration-500" style={{ width: `${Math.max(2, pct * 100)}%` }} />
+        </span>
+      )}
+      <span className="shrink-0 tabular-nums">{parts.join(' · ')}</span>
+    </div>
+  )
+}
+
+type Question = { question?: string; header?: string; options?: { label?: string; description?: string }[] }
+
+/** The question the agent asked at the end of the last turn (its AskUserQuestion call), if nobody answered yet. */
+function lastQuestion(st: LogState): Question | null {
+  for (let i = st.items.length - 1; i >= 0; i--) {
+    const it = st.items[i]
+    if (it.kind === 'user' || it.kind === 'request') return null
+    if (it.kind === 'tool' && it.use.name === 'AskUserQuestion') {
+      const qs = (it.use.input as { questions?: Question[] } | null)?.questions
+      const q = Array.isArray(qs) ? qs[0] : null
+      return q && q.question && Array.isArray(q.options) && q.options.length ? q : null
+    }
+  }
+  return null
+}
+
+/** End of the thread: the agent asked a question with choices - one click sends a choice as the answer. */
+function QuestionCard({ question, agent, onAnswer, onOther }: { question: Question; agent: string; onAnswer: (text: string) => void; onOther: () => void }) {
+  const t = useT()
+  const [sent, setSent] = React.useState<string | null>(null)
+  return (
+    <section className="grid gap-3 rounded-xl border bg-card p-4" aria-label={t('conv.question.waiting', { agent })} data-testid="question-card">
+      <span className="text-xs text-muted-foreground">{t('conv.question.waiting', { agent })}</span>
+      <span className="leading-snug font-semibold">
+        <Sensitive>{question.question}</Sensitive>
+      </span>
+      <div className="grid gap-1.5">
+        {(question.options || []).filter((o) => o.label).map((o) => (
+          <button
+            key={o.label}
+            type="button"
+            disabled={sent !== null}
+            onClick={() => {
+              setSent(o.label!)
+              onAnswer(o.label!)
+            }}
+            className="grid min-h-10 gap-0.5 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60 max-md:min-h-11"
+          >
+            <span className="font-medium">
+              <Sensitive>{o.label}</Sensitive>
+            </span>
+            {o.description && (
+              <span className="text-xs text-muted-foreground">
+                <Sensitive>{o.description}</Sensitive>
+              </span>
+            )}
+          </button>
+        ))}
+        <button type="button" onClick={onOther} disabled={sent !== null} className="min-h-10 rounded-lg border border-dashed px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-md:min-h-11">
+          {t('conv.question.other')}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/** End of the thread when the last turn failed: what happened, Retry (the last message again), the details. */
+function FailedTurn({ sid, error, onRetry }: { sid: string; error: string; onRetry?: (text: string, attachments: string[]) => void }) {
+  const t = useT()
+  const [open, setOpen] = React.useState(false)
+  const last = useLogSelect(sid, (st) => {
+    for (let i = st.items.length - 1; i >= 0; i--) {
+      const it = st.items[i]
+      if (it.kind === 'user') return it.ev
+    }
+    return null
+  })
+  const first = error.split('\n')[0]
+  return (
+    <div role="alert" className="flex gap-3 rounded-xl border border-destructive/40 bg-destructive/8 p-4" data-testid="failed-turn">
+      <CircleAlert className="mt-0.5 size-[18px] shrink-0 text-destructive" />
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        <span className="font-semibold">{t('conv.failed.title')}</span>
+        <p className="line-clamp-3 text-[13px] leading-relaxed text-foreground/85 [overflow-wrap:anywhere]">
+          <Sensitive>{first}</Sensitive>
+        </p>
+        {open && (
+          <pre className="max-h-64 overflow-auto rounded-md bg-muted/60 px-2.5 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <Sensitive>{error}</Sensitive>
+          </pre>
+        )}
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          {onRetry && last && (last.text || last.attachments.length > 0) && (
+            <Button size="sm" onClick={() => onRetry(last.text, last.attachments)}>
+              <RotateCw /> {t('conv.failed.retry')}
+            </Button>
+          )}
+          {error.trim() !== first.trim() && (
+            <Button size="sm" variant="outline" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+              {t(open ? 'conv.failed.hideDetails' : 'conv.failed.details')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1109,7 +1269,7 @@ function InlineTitle({ value, onSave, className }: { value: string; onSave: (v: 
 
 /* ---------------------------------------------------------------- new session column */
 /** The session's project / topic: click to move the session to another topic (once its turn is over). */
-function MoveSessionPicker({ session, rootLabel }: { session: Session; rootLabel: string }) {
+function MoveSessionPicker({ session, rootLabel, plain }: { session: Session; rootLabel: string; /** Text ("acme › # blog") instead of badges. */ plain?: boolean }) {
   const t = useT()
   const { data: ws } = useWorkspace()
   const patch = usePatchSession()
@@ -1124,12 +1284,13 @@ function MoveSessionPicker({ session, rootLabel }: { session: Session; rootLabel
   const hint = t(busy ? 'sessions.move.busy' : 'where.move')
   const label = m ? (
     <>
-      <WhereBadge kind="project" name={m[1]} description={project?.description} dir={absTopicDir(ws, `projects/${m[1]}`)} hint={hint}>
-        {project?.emoji ? <span className="shrink-0 leading-none">{project.emoji}</span> : <FolderOpen className="size-3 shrink-0 opacity-70" />}
+      <WhereBadge kind="project" name={m[1]} description={project?.description} dir={absTopicDir(ws, `projects/${m[1]}`)} hint={hint} plain={plain}>
+        {project?.emoji ? <span className="shrink-0 leading-none">{project.emoji}</span> : plain ? null : <FolderOpen className="size-3 shrink-0 opacity-70" />}
       </WhereBadge>
+      {m[2] && plain && <span aria-hidden className="shrink-0 opacity-70">›</span>}
       {m[2] && (
-        <WhereBadge kind="topic" name={m[2]} description={topic?.description} dir={absTopicDir(ws, session.path)} hint={hint}>
-          <Hash className="size-3 shrink-0 opacity-70" />
+        <WhereBadge kind="topic" name={m[2]} description={topic?.description} dir={absTopicDir(ws, session.path)} hint={hint} plain={plain}>
+          {plain ? <span className="shrink-0 opacity-70">#</span> : <Hash className="size-3 shrink-0 opacity-70" />}
         </WhereBadge>
       )}
       {!busy && <ChevronDown className="size-3 shrink-0 opacity-60" />}
@@ -1181,12 +1342,12 @@ function MoveSessionPicker({ session, rootLabel }: { session: Session; rootLabel
 }
 
 /** One part of the session's place (project or topic) as a badge; hovering it explains what it is. */
-export function WhereBadge({ kind, name, description, dir, hint, generic, children }: { kind: 'project' | 'topic'; name: string; description?: string; dir?: string | null; hint: string; /** The word itself (page subtitle): no name, no folder in the card. */ generic?: boolean; children?: React.ReactNode }) {
+export function WhereBadge({ kind, name, description, dir, hint, generic, plain, children }: { kind: 'project' | 'topic'; name: string; description?: string; dir?: string | null; hint: string; /** The word itself (page subtitle): no name, no folder in the card. */ generic?: boolean; /** Plain text (session header breadcrumb). */ plain?: boolean; children?: React.ReactNode }) {
   const t = useT()
   return (
     <TooltipRoot delayDuration={350}>
       <TooltipTrigger asChild>
-        <span className="inline-flex h-[18px] min-w-0 items-center gap-1 rounded-md border bg-muted/50 px-1.5 text-[11px] font-medium text-foreground/80 max-md:h-5 max-md:text-xs" data-testid={generic ? `where-word-${kind}` : `where-${kind}`} tabIndex={generic ? 0 : undefined}>
+        <span className={cn('inline-flex min-w-0 items-center', plain ? 'gap-0.5' : 'h-[18px] gap-1 rounded-md border bg-muted/50 px-1.5 text-[11px] font-medium text-foreground/80 max-md:h-5 max-md:text-xs')} data-testid={generic ? `where-word-${kind}` : `where-${kind}`} tabIndex={generic ? 0 : undefined}>
           {children}
           <span className="truncate">{generic ? name : <Sensitive length={8}>{name}</Sensitive>}</span>
         </span>
@@ -1221,7 +1382,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [title, setTitle] = React.useState('')
   const [model, setModel] = React.useState('')
   const [codexModel, setCodexModel] = React.useState('')
-  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm'>('claude')
+  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm' | 'team'>('claude')
   const [swarmAgents, setSwarmAgents] = React.useState('3')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
@@ -1266,6 +1427,14 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
+      if (provider === 'team') {
+        if (attachments.length) { toast.error(t('mixedTeam.noAttachments')); return false }
+        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined })
+        await qc.invalidateQueries({ queryKey: ['sessions'] })
+        saveDraft(`new:${col.path}`, '')
+        becomeSession(col.key, s.id)
+        return true
+      }
       const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, attachments, plan_mode: planMode || undefined })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text, attachments, queued: false })
@@ -1281,6 +1450,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSendVoice = async (file: File) => {
     try {
+      if (provider === 'team') { toast.error(t('mixedTeam.noAttachments')); return false }
       const up = await uploadAttachment(col.path, file)
       const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
@@ -1346,12 +1516,13 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('swarm.provider') }]} />
+              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm' | 'team'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('sessions.swarm.provider') }, { value: 'team', label: t('mixedTeam.provider') }]} />
             </div>
+            {provider === 'team' && <p className="rounded-lg border p-3 text-xs text-muted-foreground">{t('mixedTeam.hint')}</p>}
             {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
-              <Label htmlFor={`swarm-count-${col.key}`}>{t('swarm.count')}</Label>
+              <Label htmlFor={`swarm-count-${col.key}`}>{t('sessions.swarm.count')}</Label>
               <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
-              <p className="text-xs text-muted-foreground">{t('swarm.hint')}</p>
+              <p className="text-xs text-muted-foreground">{t('sessions.swarm.hint')}</p>
             </div>}
             {provider === 'both' && <div className="grid gap-1.5">
               <Label htmlFor={`conversation-mode-${col.key}`}>{t('sessions.conversationMode')}</Label>
@@ -1371,7 +1542,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
               {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
             </div>}
-            {provider !== 'codex' && <div className="grid gap-1.5">
+            {provider !== 'codex' && provider !== 'team' && <div className="grid gap-1.5">
               <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
               <div>
                 <ModelPicker chosen={model} onChange={setModel} />
@@ -1382,7 +1553,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
               <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>
             </div>}
-            {provider !== 'both' && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
+            {provider !== 'both' && provider !== 'team' && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
               <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
               <span className="grid gap-0.5 leading-tight">
                 <span className="flex items-center gap-1.5 text-sm font-medium">

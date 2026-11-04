@@ -20,7 +20,10 @@ Skills are instructions Claude Code may load when a task matches their descripti
 | `pilot-notifications` | you say "notify me when…", or want sales, orders, deployments, e-mails or a script's results reported (webhooks, `pilot feed post`) |
 | `pilot-mcp` | you want Claude to use a service through MCP ("connect the Google Ads MCP"), an MCP tool is missing or needs a sign-in |
 | `pilot-widgets-pages` | you want a dashboard widget (Card, or HTML: a game, a canvas) or a custom page |
+| `pilot-blocks` | an answer is clearer as a chart, a table, a form, a terminal output or a file preview ([Conversation blocks](conversation-blocks)), or you want a new kind of block |
 | `pilot-customize` | you want to change the product itself, or an update reports that your customizations need adapting |
+| `pilot-theme` | you ask for a colour theme or a palette for harness-pilot ("colours like my logo", a light version, more contrast); used by Settings -> Appearance -> Create with harness-pilot (see [Customizing](customizing)) |
+| `pilot-rea-investigation` | you want a local application, packaged JavaScript or a binary investigated with an optional external REA installation (not bundled); used by the reverse-engineering companion (see [Settings](settings-and-keys#resident-companions)) |
 | `video-motion-design` | you ask for a video, an animation, a short / reel or a trailer (Remotion, see [Videos, PDFs and images](tools)) |
 | `pdf-document` | you ask for a PDF: a quote, an invoice, a report, a guide |
 | `image-edit` | you want images resized, converted, compressed or batch-processed |

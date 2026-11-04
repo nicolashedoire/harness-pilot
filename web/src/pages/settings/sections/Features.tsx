@@ -33,12 +33,12 @@ export function FeaturesSection() {
     <SectionStack>
       <SettingsCard title={t('features.browser')} description={t('features.browserDesc')}>
         <div className="divide-y">
-          <SettingRow label={t('hud.enable')} description={t('hud.enableDesc')} htmlFor="ft-hud">
+          <SettingRow label={t('features.hudEnable')} description={t('features.hudEnableDesc')} htmlFor="ft-hud">
             <Switch id="ft-hud" checked={ui.hud} onCheckedChange={ui.setHud} />
           </SettingRow>
           {ui.hud && !('documentPictureInPicture' in window) && (
             <div className="py-3">
-              <Callout tone="info">{t('hud.fallback')}</Callout>
+              <Callout tone="info">{t('features.hudFallback')}</Callout>
             </div>
           )}
           <SettingRow label={t('notify.done')} description={t('notify.doneDesc')} htmlFor="ft-done">

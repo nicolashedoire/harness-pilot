@@ -1,0 +1,7 @@
+/* Conversation blocks are drawn inside markdown (.prose-mx), whose element rules (h3, table, td, a, code...) are
+   unlayered and would win over the blocks' own Tailwind classes: inside a block, every property they set is handed
+   back to the Tailwind layers (revert-layer). Loaded with the blocks chunk. */
+.prose-mx .mx-block :is(h1, h2, h3, h4, p, ul, ol, li, blockquote, table, thead, tbody, tr, th, td, img, a, code, pre, hr, figure, figcaption),
+.prose-mx a.mx-block {
+  all: revert-layer;
+}

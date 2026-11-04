@@ -44,7 +44,7 @@ function Fallback({ error, variant, className, onRetry }: { error: Error; varian
         <TriangleAlert className="size-8 text-destructive" />
         <p className="text-base font-medium">{chunk ? t('error.updated') : t('error.title')}</p>
         <p className="max-w-md text-sm text-muted-foreground">{chunk ? t('error.updatedDesc') : error.message}</p>
-        <button type="button" onClick={action} className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground">
+        <button type="button" onClick={action} className="inline-flex h-9 items-center gap-2 rounded-md bg-action px-4 text-sm font-medium text-action-foreground">
           <RefreshCw className="size-4" /> {label}
         </button>
       </div>

@@ -1,11 +1,9 @@
 import { cn } from '@/lib/utils'
 import { logoSrc } from '@/lib/accent'
-import { useUI } from '@/stores/ui'
 
 export function LogoMark({ className }: { className?: string }) {
-  const accent = useUI((s) => s.accent)
   return (
-    <img src={logoSrc(accent)} alt="" width={28} height={28} draggable={false} className={cn('size-7 shrink-0 select-none', className)} aria-hidden />
+    <img src={logoSrc()} alt="" width={28} height={28} draggable={false} className={cn('size-7 shrink-0 select-none', className)} aria-hidden />
   )
 }
 

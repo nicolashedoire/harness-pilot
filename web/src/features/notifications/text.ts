@@ -1,7 +1,9 @@
 // The words of an event: `feed.kind.<kind>.title` (and `.body`) translated with its params, falling back to the
-// server's English `title` / `body` (unknown kind, missing translation, missing param, older server).
+// server's English `title` / `body` (unknown kind, missing translation, missing param, older server). The kinds of
+// an optional feature keep their words in that feature's dictionary group (KIND_KEYS), out of the core dictionary.
 import * as React from 'react'
-import { useLang, useT, type TFn, type TKey, type TVars } from '@/i18n'
+import { loadGroups, useLang, useT, type TFn, type TKey, type TVars } from '@/i18n'
+import type { Group } from '@/i18n/groups'
 import { categoryOf } from '@/lib/feed'
 import { fmtDate, fmtDuration, fmtRelative } from '@/lib/format'
 import { useSettings } from '@/lib/queries'
@@ -18,6 +20,21 @@ export function paramVars(p?: FeedParams): TVars {
   return out
 }
 
+/** Kind prefix -> its key prefix and dictionary group: `companion.ready` -> `companions.kind.ready.title`. */
+const KIND_KEYS: [prefix: string, key: string, group: Group][] = [['companion.', 'companions.kind.', 'companions']]
+
+/** The dictionary key of a kind's `title` / `body` / `bodyLimit`. */
+function kindKey(kind: string, suffix: string): string {
+  const k = KIND_KEYS.find(([p]) => kind.startsWith(p))
+  return k ? `${k[1]}${kind.slice(k[0].length)}.${suffix}` : `feed.kind.${kind}.${suffix}`
+}
+
+/** Loads the dictionary groups that hold the words of these events (a notice is worded once, when it shows). */
+export function loadEventTexts(events: readonly Pick<FeedEvent, 'kind'>[]): Promise<void> {
+  const groups = KIND_KEYS.filter(([p]) => events.some((ev) => ev.kind?.startsWith(p))).map(([, , g]) => g)
+  return loadGroups(groups)
+}
+
 /** A dynamic key translated, or null when it is missing or a param it names is not there. */
 function tKey(t: TFn, key: string, vars: TVars): string | null {
   const s = t(key as TKey, vars)
@@ -29,7 +46,7 @@ const contentBody = (ev: FeedEvent) => !ev.kind || ev.kind === 'custom' || categ
 
 export function eventTitle(t: TFn, ev: Pick<FeedEvent, 'kind' | 'title' | 'params'>): string {
   if (!ev.kind || ev.kind === 'custom') return ev.title
-  return tKey(t, `feed.kind.${ev.kind}.title`, paramVars(ev.params)) ?? ev.title
+  return tKey(t, kindKey(ev.kind, 'title'), paramVars(ev.params)) ?? ev.title
 }
 
 /** One line under the title: the kind's translated body, else the body when it is content (a system event's
@@ -37,7 +54,7 @@ export function eventTitle(t: TFn, ev: Pick<FeedEvent, 'kind' | 'title' | 'param
 export function eventSummary(t: TFn, ev: FeedEvent): string {
   const vars = paramVars(ev.params)
   if (ev.kind && ev.kind !== 'custom') {
-    const key = ev.kind === 'discussion.paused' && vars.turn_limit != null ? 'feed.kind.discussion.paused.bodyLimit' : `feed.kind.${ev.kind}.body`
+    const key = kindKey(ev.kind, ev.kind === 'discussion.paused' && vars.turn_limit != null ? 'bodyLimit' : 'body')
     const s = tKey(t, key, vars)
     if (s) return s
   }

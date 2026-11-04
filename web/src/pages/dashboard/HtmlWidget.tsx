@@ -24,7 +24,7 @@ const VARS: [string, string][] = [
   // the same names as the app, for the UI kit (server/maxxing/assets/ui-kit.css) and the widget's own CSS
   ...[
     'background', 'foreground', 'card', 'card-foreground', 'muted', 'muted-foreground', 'accent', 'accent-foreground',
-    'primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'destructive', 'destructive-foreground',
+    'primary', 'primary-foreground', 'action', 'action-foreground', 'secondary', 'secondary-foreground', 'destructive', 'destructive-foreground',
     'success', 'warning', 'border', 'input', 'ring', 'radius', 'row-h', 'pad-card',
   ].map((n): [string, string] => [`--${n}`, `--${n}`]),
 ]
@@ -55,7 +55,8 @@ function extPath(raw: unknown): string {
 export function HtmlWidget({ id, src, height, title }: { id: string; src: string; height: number; title: string }) {
   const t = useT()
   const theme = resolveTheme(useUI((s) => s.theme))
-  const look = useUI((s) => `${s.accent}.${s.tint}.${s.density}`)
+  const palette = useUI((s) => s.palette)
+  const density = useUI((s) => s.density)
   const frame = React.useRef<HTMLIFrameElement>(null)
   const [loaded, setLoaded] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -107,7 +108,7 @@ export function HtmlWidget({ id, src, height, title }: { id: string; src: string
     // after the <html> attributes changed (accent, tint, density set them in an effect too)
     const r = requestAnimationFrame(() => frame.current?.contentWindow?.postMessage({ mx: 'theme', theme, vars: themeVars() }, '*'))
     return () => cancelAnimationFrame(r)
-  }, [theme, look])
+  }, [theme, palette, density])
 
   if (error)
     return (
