@@ -104,7 +104,8 @@ def _toml(v: object) -> str:
 
 
 def _server(cfg: dict, env: dict[str, str], extra: dict[str, str], header_no: int,
-            taken: dict[str, str], keys: set[str] = frozenset()) -> tuple[dict | None, str]:
+            taken: dict[str, str], keys: set[str] = frozenset(),
+            turn_env: dict[str, str] | None = None) -> tuple[dict | None, str]:
     """One Claude Code server config -> (Codex table, "") or (None, why it is skipped). Secrets go to `extra` (the
     Codex process environment; header values as MAXXING_MCP_H<header_no...>), never into the table, which ends up
     on the command line."""
@@ -127,8 +128,11 @@ def _server(cfg: dict, env: dict[str, str], extra: dict[str, str], header_no: in
                 return None, f"its variable {k} cannot be passed safely"
             elif k in taken and taken[k] != _expand(v, env):
                 return None, f"its variable {k} has another value in a server already given to Codex"
+            elif k in (turn_env or {}) and turn_env[k] != _expand(v, env):
+                return None, f"its variable {k} has another value in the session's environment"
             else:
-                extra[k] = _expand(v, env)
+                if k not in (turn_env or {}):            # already there with this value: nothing to add or hide
+                    extra[k] = _expand(v, env)
                 forwarded.append(k)
         if plain:
             out["env"] = plain
@@ -153,10 +157,20 @@ def _server(cfg: dict, env: dict[str, str], extra: dict[str, str], header_no: in
     return out, ""
 
 
-def mcp_config(cwd: str, env: dict[str, str]) -> tuple[list[str], dict[str, str], list[tuple[str, str]]]:
-    """The MCP servers Claude Code would load in `cwd`, for a Codex turn -> (`-c` arguments, variables to add to
-    the Codex process environment, [(server, reason)] skipped). `env`: the turn environment (references resolve
-    from it and from the vault keys flagged `expose`)."""
+def tools_approval(mode: str) -> str:
+    """`default_tools_approval_mode` of every server for a permission mode. `codex exec` never asks (approval policy
+    `never`) and its sandbox does not apply to MCP tools; checked with codex-cli 0.150.1: "writes" runs only the
+    tools a server marks read-only (`readOnlyHint`) and refuses the others ("MCP tool call requires approval, but
+    approval policy is never"), "approve" runs them all. Only Full access (bypass) lets Codex write through MCP,
+    like Claude, whose other modes refuse tools that need approval in an unattended turn."""
+    return "approve" if mode == "bypass" else "writes"
+
+
+def mcp_config(cwd: str, env: dict[str, str], mode: str = "default") -> tuple[list[str], dict[str, str],
+                                                                               list[tuple[str, str]]]:
+    """The MCP servers Claude Code would load in `cwd`, for a Codex turn in permission `mode` -> (`-c` arguments,
+    variables to add to the Codex process environment, [(server, reason)] skipped). `env`: the turn environment
+    (references resolve from it and from the vault keys flagged `expose`)."""
     if os.environ.get("MAXXING_CODEX_MCP") == "0":                    # tests: never the real .claude.json
         return [], {}, []
     from .. import config, mcp_auto
@@ -180,13 +194,14 @@ def mcp_config(cwd: str, env: dict[str, str]) -> tuple[list[str], dict[str, str]
         mine: dict[str, str] = {}                       # kept only when the server is passed
         try:
             table, why = _server(s.cfg, refs, mine, sum(1 for k in extra if k.startswith("MAXXING_MCP_H")), extra,
-                                 set(vault))
+                                 set(vault), env)
         except _Missing as e:
             table, why = None, f"no value for ${{{e}}}"
         if table is None:
             skipped.append((name, why))
             continue
         extra.update(mine)
+        table["default_tools_approval_mode"] = tools_approval(mode)
         args += ["-c", f"mcp_servers.{name}={_toml(table)}"]
     if extra:                                           # the servers' secrets stay out of the agent's shell commands
         args += ["-c", f"shell_environment_policy.exclude={_toml(sorted(extra))}"]

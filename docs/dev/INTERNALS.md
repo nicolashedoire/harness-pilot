@@ -634,8 +634,13 @@ command line: a stdio `env` value that is not plain goes in the Codex process en
 `env_vars`, a non-plain HTTP header in `MAXXING_MCP_H<n>` and `env_http_headers`; plain values stay in `env` /
 `http_headers`. Skipped, with the reason (`-> skipped [(name, reason)]`): names outside `[A-Za-z0-9_-]{1,64}`,
 `sse` / `ws` transports (Codex has streamable HTTP and stdio only), an address or program arguments carrying a key
-(literal, or a reference to a vault key: it would be on the command line), a secret env value whose name is reserved (`PATH`, `HOME`, `CODEX_*`, `OPENAI_*`...), a reference
-with no value. Claude's OAuth sign-ins and claude.ai connectors are not shared (Codex keeps its own tokens).
+(literal, or a reference to a vault key: it would be on the command line), a secret env value whose name is reserved (`PATH`, `HOME`, `CODEX_*`, `OPENAI_*`...) or already set in
+the turn environment with another value (the same value is forwarded as is and not hidden), a reference with no value.
+Every server gets `default_tools_approval_mode = codex.tools_approval(mode)`: `codex exec` never asks and its sandbox
+does not cover MCP tools; checked with codex-cli 0.150.1 against a stub model and MCP server: unset / `auto` /
+`writes` run only `readOnlyHint` tools and refuse the others ("requires approval, but approval policy is never"),
+`prompt` refuses all, `approve` runs all. So `writes` in plan / default / acceptEdits, `approve` in bypass only; the
+runner notes once (meta `codex_mcp_tools`) when the read-only rule applies. Claude's OAuth sign-ins and claude.ai connectors are not shared (Codex keeps its own tokens).
 The runner notes the skipped servers in the conversation when that list changes (meta `codex_mcp_skipped`).
 
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
