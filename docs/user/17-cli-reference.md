@@ -3,7 +3,7 @@ section: Reference
 ---
 # Command line reference
 
-This reference describes inherited server commands. The Linux installer, service commands and update flow have not been validated for this repository. In the verified local setup, use the repository's `scripts/dev-local.sh`; the command is run from the project's Python environment rather than assumed to exist in `/usr/local/bin`. See [Local installation](installation).
+This reference describes the server commands. On a Linux server installed with `install.sh` (see [Installation](installation)), `pilot` is in `/usr/local/bin` and is run as root (`sudo pilot doctor`). In the local setup, use the repository's `scripts/dev-local.sh`; the command is run from the project's Python environment rather than assumed to exist in `/usr/local/bin`. See [Local installation](installation).
 
 The command is `pilot`. `maxxing` is the same command under its earlier name and keeps working everywhere (scripts, scheduled jobs, habits): both names run the same program with the same settings. In the local setup, run it from the repository root as `bash scripts/dev-local.sh cli ...`, for example `bash scripts/dev-local.sh cli doctor`: the command then uses the settings of your local app (its state, workspace and scheduled jobs under `.harness-pilot-local/`). A plain `uv run pilot ...` does not: it reads the folder of a server installation (`/var/lib/claude-maxxing`) instead. On a server installation, the installer and every `pilot init` link `/usr/local/bin/pilot` to `/usr/local/bin/maxxing` (an existing `pilot` command of another program is never replaced: use `maxxing` there). `pilot doctor` warns when another program called `pilot` comes first on the PATH.
 
@@ -83,7 +83,7 @@ latest fetched version passes the check. Off by default.
 
 ## License
 
-This version uses the MIT license and does not require an enterprise key. Legacy license commands are inherited and are not needed; see [License](license).
+This version uses the MIT license and does not require an enterprise key. Legacy license commands are inherited and are not needed: `pilot license activate` and `pilot license release` refuse without contacting anything, `pilot license remove` only forgets a stored key on this computer. See [License](license).
 
 ## pilot video, pilot pdf
 
@@ -219,7 +219,18 @@ OAuth sign-ins (state "To connect") are done in Settings -> MCP -> **Connect**. 
 
 ## Installer
 
-The inherited server installer and update commands have not yet been validated for this repository. Use the local startup instructions in [Installation](installation). The commands above describe inherited CLI features and should be verified before use on a production system.
+`install.sh` installs, updates and removes a Linux server installation (Debian 12, Ubuntu 24.04; see [Installation](installation)). Run it as root:
+
+| Command | Purpose |
+|---|---|
+| `bash install.sh` | install, or repair an existing installation (every step keeps what is already done) |
+| `bash install.sh --check` | look at the server and say what the installation would do, changing nothing |
+| `bash install.sh --help` | the options and the variables for an unattended install |
+| `bash /opt/claude-maxxing/install.sh --update` | update (= `pilot update`) |
+| `bash /opt/claude-maxxing/install.sh --uninstall [--purge] [--purge-workspace]` | remove the service and integrations; `--purge` also the code and the state, `--purge-workspace` also the workspace |
+| `bash /opt/claude-maxxing/install.sh --secure` | security updates, fail2ban, firewall and SSH settings again |
+
+The other commands above describe inherited CLI features; not all of them have been verified on a server.
 
 ## Environment variables
 
