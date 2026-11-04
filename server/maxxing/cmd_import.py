@@ -1,4 +1,4 @@
-"""`maxxing import <zip> [--dry-run]` / `maxxing import --prompt [agent]` - import another agent's memory."""
+"""`pilot import <zip> [--dry-run]` / `pilot import --prompt [agent]` - import another agent's memory."""
 from __future__ import annotations
 
 import json
@@ -22,7 +22,7 @@ def _handler(a) -> int:
         print(importer.prompt(a.prompt))
         return 0
     if not a.zip:
-        print("Usage: maxxing import <export.zip> [--dry-run]   |   maxxing import --prompt [agent]")
+        print("Usage: pilot import <export.zip> [--dry-run]   |   pilot import --prompt [agent]")
         return 2
     src = Path(a.zip).expanduser()
     if not src.is_file():

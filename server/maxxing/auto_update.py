@@ -9,9 +9,9 @@ ALL of these hold:
   (those need a Harness session: the person is told instead, once per version);
 - the code folder is on a branch (a detached HEAD = a branch under test, never moved unattended) and no update is
   pending (a conflict or a rolled-back version waits for a person, it is not retried every day);
-- the same target was not tried in the last 24 hours (`maxxing update` rolls itself back when the new version does
+- the same target was not tried in the last 24 hours (`pilot update` rolls itself back when the new version does
   not start; one attempt per version a day, never a loop).
-The update is the usual `maxxing update` (without `--smart`: no Harness session is opened unattended). Only the
+The update is the usual `pilot update` (without `--smart`: no Harness session is opened unattended). Only the
 installed server does it (`claude_update.runs_here`).
 
 State: <state>/auto-update.json = {tried: {target, at}, last_check: {at, verdict}}. Tests replace `preflight`,

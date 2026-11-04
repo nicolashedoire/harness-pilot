@@ -1,4 +1,4 @@
-"""`maxxing voice status|set|download|transcribe` - voice messages (speech-to-text) from a shell."""
+"""`pilot voice status|set|download|transcribe` - voice messages (speech-to-text) from a shell."""
 from __future__ import annotations
 
 import json

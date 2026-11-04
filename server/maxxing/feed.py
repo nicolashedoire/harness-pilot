@@ -1,5 +1,5 @@
 """Notifications feed: events from the system (cron runs, sessions, updates, backups, sign-ins, health), from webhooks
-(Stripe, Shopify, GitHub, generic JSON) and from any script (`maxxing feed post`), shown on the dashboard and the
+(Stripe, Shopify, GitHub, generic JSON) and from any script (`pilot feed post`), shown on the dashboard and the
 notifications page, optionally posted to the Telegram "Notifications" thread and pushed to browsers (push.py).
 See docs/user/24-feed.md and docs/dev/API.md#feed-notifications.
 

@@ -97,7 +97,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
                "include": ["**/CLAUDE.md", "**/memory.md", "**/NOTES.md", "tasks.json",
                            "projects/*/topics/*/accounts.md", "extensions/**", ".claude/skills/**"]},
     "voice": {"engine": "off", "model": "small", "language": "auto", "auto_send": False},
-    "update_verify_signature": False,      # maxxing update: the new commit (or its tag) must be signed by a known key
+    "update_verify_signature": False,      # pilot update: the new commit (or its tag) must be signed by a known key
     "upload_max_mb": 2048,                 # per upload (one request of the UI); 0 = no cap
     "upload_min_free_mb": 1024,            # uploads refused (507) when they would leave less free disk
     # Memory cap of each turn / scheduled job unit (systemd MemoryMax: "75%" of RAM, "4G"...; "" or "infinity" = none).
@@ -105,11 +105,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "unit_memory_max": "75%",
     # systemd protections of turn / job units (sessions.spawn.UNIT_HARDENING: clock, personality, realtime); false = none.
     "unit_hardening": True,
-    # Memory budget of ALL scheduled jobs running at once (MemoryMax of maxxing-jobs.slice, written by `maxxing init`):
+    # Memory budget of ALL scheduled jobs running at once (MemoryMax of maxxing-jobs.slice, written by `pilot init`):
     # several heavy jobs at night share it instead of each taking `unit_memory_max`. "" or "infinity" = none.
     "jobs_memory_max": "75%",
     # true = programs a scheduled job leaves running in the background outlive it (KillMode=process), as before
-    # 2.0.0a70; `maxxing init` writes true on installs that existed before (no silent change), new ones end them.
+    # 2.0.0a70; `pilot init` writes true on installs that existed before (no silent change), new ones end them.
     "cron_keep_background": False,
 }
 

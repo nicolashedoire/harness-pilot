@@ -1,4 +1,4 @@
-"""`maxxing deps list|verify|update|remove|clean|check` - the external components of deps.toml (see deps.py)."""
+"""`pilot deps list|verify|update|remove|clean|check` - the external components of deps.toml (see deps.py)."""
 from __future__ import annotations
 
 import argparse
@@ -69,7 +69,7 @@ def cmd_deps(a) -> int:
         if not _root_only():
             return 1
         if not a.names:
-            print("Name the component(s) to remove (see: maxxing deps list).", file=sys.stderr)
+            print("Name the component(s) to remove (see: pilot deps list).", file=sys.stderr)
             return 2
         rc = 0
         for n in a.names:

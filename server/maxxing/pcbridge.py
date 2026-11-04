@@ -333,7 +333,7 @@ def install_script(kind: str, code: str, server_url: str, target: str) -> str:
 
 # ---- MCP registration ------------------------------------------------------------------------------------------
 def local_port() -> int:
-    """The port this server listens on (`maxxing serve --port` wins over the config)."""
+    """The port this server listens on (`pilot serve --port` wins over the config)."""
     return int(os.environ.get("MAXXING_LISTEN_PORT") or config.load_config().get("port") or 8787)
 
 

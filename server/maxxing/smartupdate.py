@@ -7,8 +7,8 @@
   be customizations) and extensions the new version no longer supports (manifest "api") are reported too.
   Verdict: "up_to_date" | "simple" (the button just updates) | "adapt" (a Harness session adapts first).
 - verify(): after an update (or on demand), every extension is loaded and every widget computed, and the check
-  command of each customization (`maxxing custom save ... --check "<cmd>"`) is run. Saved as the last report.
-- after_update(): the restarted server reads the marker written by `maxxing update` and runs verify(); for an
+  command of each customization (`pilot custom save ... --check "<cmd>"`) is run. Saved as the last report.
+- after_update(): the restarted server reads the marker written by `pilot update` and runs verify(); for an
   update started from the UI (`--smart`) it also opens a Harness session that applies the workspace upgrade
   notes needing action, so the person who clicked gets them without asking.
 - assist_prompt(): the prompt of the "Update with Harness" session (adapt by intent, test, then switch).
@@ -305,7 +305,7 @@ def last_report() -> dict | None:
 
 # ---- after an update (run by the restarted server) -----------------------------------------------
 def mark_updated(old_version: str, new_version: str, smart: bool) -> None:
-    """Written by `maxxing update` once the new version answers."""
+    """Written by `pilot update` once the new version answers."""
     _write(AFTER, {"at": time.time(), "from": old_version, "to": new_version, "smart": smart, "done": False})
 
 
@@ -369,7 +369,7 @@ def assist_prompt(rep: dict) -> str:
     from . import customs
     lines = [f"Update harness-pilot from {rep.get('current')} to {rep.get('latest')} - this server has changes "
              "the update cannot carry over by itself. Here is what the preflight found "
-             "(`maxxing update --preflight` shows it again):", ""]
+             "(`pilot update --preflight` shows it again):", ""]
     for c in rep.get("customs") or []:
         tag = {"conflict": "CONFLICTS with the new version", "included": "is now INCLUDED in the new version",
                "review": "applies, but touches code the new version changed", "ok": "applies cleanly",
@@ -386,24 +386,24 @@ def assist_prompt(rep: dict) -> str:
     for e in rep.get("extensions") or []:
         lines.append(f"- Extension `{e['id']}`: {e['reason']}")
     lines += ["", "How to do it (skill pilot-customize):",
-              "1. Read CUSTOMIZATIONS.md (what each change is FOR) and the changelog (`maxxing update --check`).",
-              "2. Included in the new version: check it really does the same, then `maxxing custom drop <id>`.",
-              "3. Unsaved changes: save them first with a real title and reason (`maxxing custom save ... --why ...`).",
+              "1. Read CUSTOMIZATIONS.md (what each change is FOR) and the changelog (`pilot update --check`).",
+              "2. Included in the new version: check it really does the same, then `pilot custom drop <id>`.",
+              "3. Unsaved changes: save them first with a real title and reason (`pilot custom save ... --why ...`).",
               "4. Edits of the web UI: rebuild what they did as an extension (skill pilot-widgets-pages), ask me "
               "before dropping anything.",
-              f"5. Run `maxxing update`. On a conflict (exit 3): `cd {config.CODE} && git rebase origin/"
+              f"5. Run `pilot update`. On a conflict (exit 3): `cd {config.CODE} && git rebase origin/"
               f"{rep.get('branch') or 'main'}`, then for each conflicting file re-implement the INTENT of the "
               "customization on the new code (do not just pick a side), `git add`, `GIT_EDITOR=true git rebase "
-              "--continue`, and finally `maxxing update --resume`.",
+              "--continue`, and finally `pilot update --resume`.",
               "6. Extensions the new version does not support: update their code and their manifest \"api\" "
               "(docs/user/12-dashboard-widgets.md and 13-page-extensions.md of the new version).",
-              "7. `maxxing update --verify`: fix whatever fails, then give each customization a check if it has "
-              "none (`maxxing custom check <id> \"<command>\"`).",
+              "7. `pilot update --verify`: fix whatever fails, then give each customization a check if it has "
+              "none (`pilot custom check <id> \"<command>\"`).",
               "8. Apply the upgrade notes (steps 5-6 of this topic's CLAUDE.md), then tell me in plain words what "
               "changed and what you adapted.",
               "If anything looks risky, stop and ask me: the current version keeps running until the update succeeds."]
     if customs.pending():
-        lines.insert(1, "(A previous update attempt is pending: `maxxing update --resume` once the rebase is done.)")
+        lines.insert(1, "(A previous update attempt is pending: `pilot update --resume` once the rebase is done.)")
     return "\n".join(lines) + _reply_in()
 
 
@@ -420,6 +420,6 @@ def fix_prompt(rep: dict) -> str:
     bad += [f"- customization `{x['id']}` \"{x['title']}\": its check `{x['check']}` fails: {x['output'][-200:]}"
             for x in rep.get("checks", []) if not x["ok"]]
     return ("These stopped working after the update to " + str(rep.get("version")) + ":\n" + "\n".join(bad)
-            + "\n\nFix them (skills pilot-widgets-pages / pilot-customize), run `maxxing update --verify` until "
+            + "\n\nFix them (skills pilot-widgets-pages / pilot-customize), run `pilot update --verify` until "
               "everything passes, then tell me what you changed." + _reply_in())
 

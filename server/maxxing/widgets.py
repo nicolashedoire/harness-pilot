@@ -494,7 +494,7 @@ def _stat_sig(p: Any) -> tuple | None:
 
 
 def _crons_sig() -> tuple:
-    """What the crons / day cards are computed from: jobs.json, runs.jsonl (appended by `maxxing cron
+    """What the crons / day cards are computed from: jobs.json, runs.jsonl (appended by `pilot cron
     run`, another process), the lock files (truncated when a run starts) and config.json (language,
     time zone)."""
     from . import crons as cr

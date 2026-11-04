@@ -1,4 +1,4 @@
-"""`maxxing video new DIR` / `maxxing video status` / `maxxing pdf IN.html OUT.pdf`.
+"""`pilot video new DIR` / `pilot video status` / `pilot pdf IN.html OUT.pdf`.
 
 The installer prepares Remotion once in <state>/tools/remotion (node_modules + headless browser,
 ~700 MB); every video project links its node_modules there, so a new project is ready in a second
@@ -17,7 +17,7 @@ def _node() -> str | None:
     from .sessions.spawn import base_env
     return shutil.which("node", path=base_env()["PATH"])
 
-HINT = "run `maxxing deps update` (as root) to install Node.js, Remotion and the browser"
+HINT = "run `pilot deps update` (as root) to install Node.js, Remotion and the browser"
 
 
 def tools_dir() -> Path:

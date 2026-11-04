@@ -7,7 +7,7 @@
 
 A resource id is the one the snapshot computes (`site:<server>:<host><path>`, `db:<server>:postgres:native:<name>`...),
 so a declared resource and a discovered one merge. A server's `name` is part of those ids and never changes; its
-`label` is what the page shows ("VPS Hostinger") and can be renamed at will. `declared: true` = created by a recipe (`maxxing infra ...`): the
+`label` is what the page shows ("VPS Hostinger") and can be renamed at will. `declared: true` = created by a recipe (`pilot infra ...`): the
 page reports it as missing when the snapshot no longer finds it. Annotations (project, note, hidden) can be set on any
 id. Never holds a secret: credentials live in the vault, the registry only names their keys.
 """
