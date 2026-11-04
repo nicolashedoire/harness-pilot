@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.
 - The Settings menu groups its sections under headings (You, Agents, Data, Integrations, Platform) with Support last, and a search above it on a computer finds a setting by name or keyword.
 - The agent map of a running agent team now says that its subagents cannot be stopped one by one, and that stopping the session interrupts the coordinator and all its subagents.
