@@ -29,6 +29,28 @@ To use an agent, sign in to its CLI on the computer and check its connection in 
 
 The local setup disables upstream registration and license communication and starts with restrictive agent permissions. The telemetry counter is off by default. Telegram, voice and backup connections are optional and require separate configuration.
 
+### Keep it running in the background
+
+In a terminal, the app stops when the terminal is closed, and scheduled jobs, backups, resident missions and Telegram stop with it. To keep it running, make it a background service of your user account (a launchd agent). Nothing is installed until you run, from the repository root:
+
+```sh
+bash scripts/dev-local.sh service install
+```
+
+Run it from a terminal where `uv`, `claude` and `codex` work: the service keeps that terminal's PATH. It runs the same `bash scripts/dev-local.sh`, with the same settings, right away and at every login, and starts it again if it crashes. Stop the app first if it runs in a terminal: the install is refused while its port is in use.
+
+| Command | Effect |
+|---|---|
+| `bash scripts/dev-local.sh service status` | running or not, its process, the address, the service file, the log files and the PATH it uses |
+| `bash scripts/dev-local.sh service restart` | restart it, for example after a `git pull` |
+| `bash scripts/dev-local.sh service uninstall` | stop it and remove the service; your state, workspace and logs stay |
+
+Its output goes to `.harness-pilot-local/logs/server.log` and `.harness-pilot-local/logs/server.err.log`. `service status` prints their full paths, which Console.app can open.
+
+**Where the clone lives matters.** macOS keeps background services out of Desktop, Documents, Downloads, iCloud Drive and external disks. A clone in one of those folders cannot run as a service: `install` notices it, removes the service again and says so. To use the service, clone the repository somewhere else, for example `~/harness-pilot`. The same protection applies to the folders your agents work in while the app runs as a service.
+
+The app uses port 8787. `HARNESS_PILOT_PORT=8790 bash scripts/dev-local.sh service install` picks another one, and the variable works without the service too. After installing a tool in a new place (a new PATH), run `service uninstall`, then `service install` again.
+
 ## Linux server (Debian 12, Ubuntu 24.04)
 
 You need a server with Debian 12 or Ubuntu 24.04 and systemd, x86_64 or arm64, root access (`sudo`) and about 5 GB
@@ -47,8 +69,8 @@ changing anything. The installer asks how you will reach the web interface:
 - **local** (the default without a terminal): the server listens on `127.0.0.1:8787` only. Open an SSH tunnel
   from your computer; the installer prints the exact command (`ssh -N -L 8787:127.0.0.1:8787 user@server`).
 - **tailscale**: the server listens on its Tailscale address, for your Tailscale devices only.
-- **domain**: HTTPS on your own domain with Caddy and an automatic certificate. This choice has not yet been
-  verified with a real domain.
+- **domain**: HTTPS on your own domain with Caddy and an automatic certificate (see
+  [HTTPS with your own domain](#https-with-your-own-domain) below).
 
 It then installs, without further questions: the system packages; the code of this repository (`main` branch) in
 `/opt/claude-maxxing`; uv and Claude Code at pinned versions, their checksums verified; the Python environment;
@@ -68,9 +90,34 @@ new one. Then connect Claude in **Settings → Claude**. `sudo pilot doctor` che
   commands and the skills and keeps your data; `--purge` also removes the code and the state, `--purge-workspace`
   also the workspace.
 
-Verified: Debian 12 and Ubuntu 24.04 on arm64, in systemd containers (installation, service, first sign-in,
-`pilot doctor`, `pilot update`, uninstallation). Not yet verified: x86_64, a real server (firewall, SSH
-settings, swap), a domain with HTTPS, Tailscale and restoring a memory backup during the installation. See the
+### HTTPS with your own domain
+
+Mobile push notifications, webhooks (Stripe, Shopify, GitHub, see [Feed](feed)) and [Team](team) need the server
+at a public `https://` address. Before choosing **domain**:
+
+- create a DNS `A` record (and `AAAA` for IPv6) for a name such as `ui.example.com` that points to the server,
+  with no proxy in front of it (on Cloudflare: DNS only);
+- make sure ports 80 and 443 reach the server: the installer opens them in its own firewall, but check your
+  hosting provider's firewall too.
+
+Then choose **domain** when the installer asks, or run it as root with `ACCESS=domain DOMAIN=ui.example.com bash
+install.sh`. The same command switches an existing installation to the domain and keeps everything else. Caddy is
+installed from its signed package repository and asks Let's Encrypt for a certificate, which it renews by itself.
+Plain HTTP is redirected to HTTPS, and the setup link starts with your `https://` address. `sudo pilot doctor`
+checks that the address answers. If another web server (nginx, Apache) already uses ports 80 and 443, Caddy is not
+installed: the installer saves a configuration block to add to that server in
+`/var/lib/claude-maxxing/reverse-proxy.conf`.
+
+Verified in containers with a test domain, using a local certificate authority instead of Let's Encrypt: the
+Caddy configuration, the redirect from HTTP, the security headers, sign-in with a secure cookie, live updates,
+push availability, a webhook delivered over HTTPS, switching a local installation to a domain, and uninstalling.
+Getting a real certificate from Let's Encrypt needs a real domain and has not been verified yet.
+
+### What has been verified
+
+Debian 12 and Ubuntu 24.04 on arm64, in systemd containers (installation, service, first sign-in, `pilot doctor`,
+`pilot update`, uninstallation). Not yet verified: x86_64, a real server (firewall, SSH settings, swap), a Let's
+Encrypt certificate for a real domain, Tailscale and restoring a memory backup during the installation. See the
 [installer status](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/dev/INSTALLER.md) for details
 and the [audit](https://github.com/nicolashedoire/harness-pilot/blob/main/docs/AUDIT.md) for other known
 limitations.

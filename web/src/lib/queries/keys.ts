@@ -4,6 +4,7 @@ import type { BusTopic } from '../types'
 
 export const qk = {
   authState: ['auth', 'state'] as const,
+  totp: ['auth', 'totp'] as const,
   onboarding: ['onboarding'] as const,
   claude: ['claude', 'status'] as const,
   workspace: ['workspace', 'tree'] as const,
@@ -54,6 +55,7 @@ export const qk = {
     usage: ['system', 'usage'] as const,
     changelog: ['system', 'changelog'] as const,
     preflight: ['system', 'preflight'] as const,
+    mediaTools: ['system', 'media-tools'] as const,
   },
   memory: ['memory'] as const,
   stats: { tokens: ['stats', 'tokens'] as const },
