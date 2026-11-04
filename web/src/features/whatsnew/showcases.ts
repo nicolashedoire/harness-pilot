@@ -14,6 +14,7 @@ const DEMO_DIAGRAM = `flowchart LR
   D --> E`
 
 export const SHOWCASES: Record<string, TourStep[]> = {
+  'backup-preview': [{ id: 'backup-preview', targets: [], title: 'show.backupPreview.title', body: 'show.backupPreview.body', route: (c) => (c.pathname === '/settings/backup' ? null : '/settings/backup') }],
   look: [{ id: 'look', targets: ['accent'], title: 'show.look.title', body: 'show.look.body', route: (c) => (c.pathname === '/settings/general' ? null : '/settings/general') }],
   diagram: [{ id: 'diagram', targets: [], title: 'show.diagram.title', body: 'show.diagram.body', cta: 'show.try', after: () => showDiagram(DEMO_DIAGRAM) }],
   'text-zoom': [{ id: 'text-zoom', targets: [], title: 'show.textZoom.title', body: 'show.textZoom.body' }],

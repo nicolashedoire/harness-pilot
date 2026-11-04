@@ -60,6 +60,16 @@ async def get_history(limit: int = 100):
     return await asyncio.to_thread(backup.history, max(1, min(limit, 500)))
 
 
+@router.post("/preview")
+async def preview_restore(body: RestoreIn | None = None):
+    res = await asyncio.to_thread(backup.preview, body.ref if body else None)
+    if not res.get("ok"):
+        status = 409 if res.get("code") in ("busy", "not_configured", "empty") else 400
+        raise HTTPException(status, detail={"error": res.get("code") or "preview_failed",
+                                            "message": res.get("error") or "Preview failed"})
+    return res
+
+
 @router.post("/restore")
 async def post_restore(body: RestoreIn | None = None):
     res = await asyncio.to_thread(backup.restore, body.ref if body else None)

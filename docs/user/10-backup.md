@@ -19,7 +19,9 @@ Only a **whitelist**, relative to the workspace:
   scheduled jobs, in a `_maxxing/` folder.
 
 Never saved, even if a pattern matches: `secrets.json`, keys, `.env` files, private keys,
-credentials, logs, `attachments/`, `.git`, `node_modules`, virtual environments, and files over 5 MB.
+credentials, logs, `attachments/`, `.git`, `node_modules` and virtual environments. Session conversations are stored outside the workspace and are not included. Other project files are included only when a configured pattern matches them. This is a selected-file memory backup, not a complete project archive.
+
+If a selected file is larger than 5 MB or cannot be read, the backup fails rather than silently publishing an incomplete snapshot. The previous successful backup remains available. Symlinks and special files are not followed.
 
 ## Safety checks
 
@@ -31,6 +33,7 @@ credentials, logs, `attachments/`, `.git`, `node_modules`, virtual environments,
   files are read too). If one is found the backup **stops before pushing** and tells you
   which file and which kind of secret (never the value). Remove it from the file – keep only the
   key name, store the value in Settings -> Keys – and run again.
+- The scanner detects known formats; it cannot guarantee detection of every secret. Review what you include before sending it to GitHub.
 - **Private only**: the repository must be private; this is checked when you configure it and
   again before every push. If it becomes public, backups stop.
 - The GitHub token is stored in `secrets.json` (mode 600) and never written in a git config file.
@@ -53,9 +56,8 @@ In local mode, scheduled backups run only while the app is running; missed runs 
 
 ## Restore
 
-- **Settings -> Backup -> Restore** (or `maxxing backup restore`): restores the whitelisted files
-  of the latest commit (or a chosen one). Files that would be overwritten are first moved to the
-  trash (`/var/lib/claude-maxxing/trash/backup-restore-<date>/`).
+- **Settings -> Backup -> Preview and restore latest** previews the latest revision, even when the local history is empty. The restore button next to a history entry previews that revision. The preview shows counts and example paths for files to create, replace, hold aside or skip. It pins the reviewed commit; local files can still change between preview and restore. The CLI `maxxing backup restore` restores the latest revision (or `--ref` selects one). Files that would be overwritten are first moved to a uniquely named folder under the application's state `trash/` directory.
+- After a restore, review the result for skipped files, settings that could not be restored, and items held aside. A successful response does not mean every item was restored. The original files are in the indicated trash folder when replacements occurred.
 - On a **new server** (no session started yet: the installer's restore, a move to another server) everything comes
   back as it was, jobs and extensions on. On a server **already in use**, code that runs on the server comes back
   **turned off**: scheduled jobs (shell or Claude) this server does not

@@ -51,6 +51,8 @@ To follow discussions in Telegram, configure a bot in **Settings → Telegram** 
 
 The guides in `docs/user/` describe the existing application; some legacy pages are still being updated for this version. See [the current audit](docs/AUDIT.md) for known inconsistencies and [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 
+Memory backups cover selected files and settings, not conversations, attachments or all project files. Preview a restore and review its result in Settings → Backup. See the [backup guide](docs/user/10-backup.md) for the exact scope and current limitations.
+
 You can support development through [PayPal](https://paypal.me/nicolashedoire). The link opens PayPal directly; the application does not handle payments or store payment credentials.
 
 ## License

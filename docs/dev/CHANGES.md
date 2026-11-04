@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Backup restore previews resolve a revision to its immutable commit and report workspace changes before applying it. Restores report skipped counts and non-file warnings; trash directories are unique per restore, and replacement files are staged using exclusive temporary files. Selected unreadable or oversized files abort a backup before the previous snapshot can be replaced. Conversation logs and attachments remain outside the backup scope.
 - Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory; mixed-provider teams are not yet implemented. Existing session permissions and stop handling are unchanged.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users
