@@ -16,6 +16,8 @@ Organize work by project, collaborate with either agent, and follow their automa
 - Work with files, tasks, schedules, and project memory from the web interface.
 - Optionally configure Telegram, voice features, and GitHub backups.
 
+Product telemetry is disabled by default; see [privacy defaults](docs/user/15-security.md#privacy-defaults) for the exact scope.
+
 Each agent uses its own CLI and account. Automatic discussions pass the other agent's latest reply to the next agent; every turn uses the corresponding account. Some features, including parts of the Claude-specific settings, are not yet available for Codex.
 
 ## Run locally on macOS
