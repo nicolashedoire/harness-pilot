@@ -26,6 +26,7 @@ Skills are instructions Claude Code may load when a task matches their descripti
 | `image-edit` | you want images resized, converted, compressed or batch-processed |
 | `seo-audit` | you ask for an SEO audit or why a site does not rank |
 | `web-scraping` | you want data collected from a website (prices, catalogue, listings…) or a page watched for changes |
+| `pilot-theme` | you ask for a colour theme or a palette for harness-pilot ("colours like my logo", a light version, more contrast); used by Settings -> Appearance -> Create with harness-pilot (see [Customizing](customizing)) |
 
 You can also name a skill explicitly: "use the maxxing-doctor skill".
 
