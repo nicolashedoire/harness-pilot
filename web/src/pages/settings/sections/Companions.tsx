@@ -2,10 +2,11 @@ import * as React from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { TriangleAlert } from 'lucide-react'
 import { useT } from '@/i18n'
 import { api, errorMessage } from '@/lib/api'
 import { useWorkspace } from '@/lib/queries'
-import { Button, Input } from '@/components/ui'
+import { Button, EmptyState, FormField, Input, Select, Textarea } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 import { ProposalDiff } from './ProposalDiff'
 
@@ -13,7 +14,6 @@ type Profile = { id: string; name: string; role: string }
 type Run = { id: string; title: string; path: string; state: string; error: string | null }
 type Decision = { value: 'approved' | 'rejected'; fingerprint: string }
 type Review = { target: string | null; session: Run; patch: string; untracked: { path: string; content: string; executable: boolean }[]; fingerprint: string; has_changes: boolean; decision: Decision | null; pull_request: { url: string; fingerprint: string } | null }
-const field = 'w-full rounded-md border border-input bg-transparent p-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 export function CompanionsSection() {
   const t = useT(), qc = useQueryClient()
@@ -37,27 +37,32 @@ export function CompanionsSection() {
   const decide = useMutation({ mutationFn: (decision: 'approved' | 'rejected') => api.post<Review>(`/api/companions/runs/${encodeURIComponent(sid)}/decision`, { decision, fingerprint: review.data?.fingerprint }), onSuccess: (r) => { qc.setQueryData(['companion-review', sid], r); void qc.invalidateQueries({ queryKey: ['companions'] }) }, onError: (e) => { toast.error(errorMessage(e)); void review.refetch() } })
   const publish = useMutation({ mutationFn: () => api.post<{url: string}>(`/api/companions/runs/${encodeURIComponent(sid)}/pull-request`, { fingerprint: review.data?.fingerprint, title: prTitle, body: prBody }), onSuccess: () => { void review.refetch(); toast.success(t('companions.prCreated')) }, onError: (e) => toast.error(errorMessage(e)) })
   const data = review.data
+  // The list could not load at all: its error, translated, instead of a form that cannot work (it polls, so it comes back)
+  const unavailable = list.isError && !list.data
   const recorded = data?.decision?.fingerprint === data?.fingerprint ? data?.decision : null
   return <SectionStack>
     <SettingsCard title={t('companions.profile')} description={t('companions.intro')}>
-      <div className="grid gap-4 text-sm">
-        <p className="text-muted-foreground">{t('companions.manual')}</p>
-        {list.isError && <p role="alert">{errorMessage(list.error)}</p>}
-        <label className="grid gap-1">{t('companions.profile')}<select className={field} value={selected} onChange={(e) => setSelected(e.target.value)}>{list.data?.companions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}<option value="new">{t('companions.new')}</option></select></label>
-        <label className="grid gap-1">{t('companions.name')}<Input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} /></label>
-        <label className="grid gap-1">{t('companions.role')}<textarea className={field} rows={4} maxLength={4000} value={role} onChange={(e) => setRole(e.target.value)} /></label>
-        <div><Button variant="outline" disabled={!name.trim() || !role.trim()} loading={save.isPending} onClick={() => save.mutate()}>{t('companions.save')}</Button></div>
-        <label className="grid gap-1">{t('companions.topic')}<select className={field} value={path} onChange={(e) => setPath(e.target.value)}><option value="">{t('companions.selectTopic')}</option>{topics.map((topic) => <option key={topic.path} value={topic.path}>{topic.project} / {topic.name}</option>)}</select></label>
-        <label className="grid gap-1">{t('companions.mission')}<textarea className={field} rows={3} maxLength={6000} value={mission} onChange={(e) => setMission(e.target.value)} /></label>
-        <div><Button disabled={!path || selected === 'new'} loading={start.isPending} onClick={() => start.mutate()}>{t('companions.start')}</Button></div>
-      </div>
+      {unavailable ? (
+        <EmptyState compact tone="error" icon={TriangleAlert} title={t('companions.loadError')} description={errorMessage(list.error)} action={<Button variant="outline" size="sm" onClick={() => void list.refetch()}>{t('common.retry')}</Button>} />
+      ) : (
+        <div className="grid gap-4 text-sm">
+          <p className="text-muted-foreground">{t('companions.manual')}</p>
+          <FormField label={t('companions.profile')}><Select value={selected} onValueChange={setSelected} options={[...(list.data?.companions.map((p) => ({ value: p.id, label: p.name })) || []), { value: 'new', label: t('companions.new') }]} /></FormField>
+          <FormField label={t('companions.name')}><Input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} /></FormField>
+          <FormField label={t('companions.role')}><Textarea minRows={4} maxLength={4000} value={role} onChange={(e) => setRole(e.target.value)} /></FormField>
+          <div><Button variant="outline" disabled={!name.trim() || !role.trim()} loading={save.isPending} onClick={() => save.mutate()}>{t('companions.save')}</Button></div>
+          <FormField label={t('companions.topic')}><Select value={path} onValueChange={setPath} placeholder={t('companions.selectTopic')} options={topics.map((topic) => ({ value: topic.path, label: `${topic.project} / ${topic.name}` }))} /></FormField>
+          <FormField label={t('companions.mission')}><Textarea maxLength={6000} value={mission} onChange={(e) => setMission(e.target.value)} /></FormField>
+          <div><Button disabled={!path || selected === 'new'} loading={start.isPending} onClick={() => start.mutate()}>{t('companions.start')}</Button></div>
+        </div>
+      )}
     </SettingsCard>
-    <SettingsCard title={t('companions.runs')}>
+    {!unavailable && <SettingsCard title={t('companions.runs')}>
       <div className="grid gap-3 text-sm">{!list.data?.runs.length && <p className="text-muted-foreground">{t('companions.empty')}</p>}{list.data?.runs.map((r) => <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><span>{r.title} · {r.state}</span><Button variant="outline" size="sm" onClick={() => setParams({ run: r.id })}>{t('companions.review')}</Button></div>)}</div>
-    </SettingsCard>
+    </SettingsCard>}
     {!!sid && <SettingsCard title={t('companions.review')}>
       {review.isPending && <p>{t('companions.loading')}</p>}
-      {review.isError && <p role="alert">{t('companions.error')} {errorMessage(review.error)}</p>}
+      {review.isError && <EmptyState compact tone="error" icon={TriangleAlert} title={t('companions.error')} description={errorMessage(review.error)} action={<Button variant="outline" size="sm" onClick={() => void review.refetch()}>{t('common.retry')}</Button>} />}
       {data && <div className="grid gap-3 text-sm">
         <p className="font-medium">{data.session.title}</p>
         <Link className="text-primary underline" to={`/sessions?path=${encodeURIComponent(data.session.path)}&session=${encodeURIComponent(sid)}`}>{t('companions.session')}</Link>
@@ -72,8 +77,8 @@ export function CompanionsSection() {
               <h4 className="font-semibold">{t('companions.prTitle')}</h4>
               <p className="text-muted-foreground">{data.target ? t('companions.prTarget', { repo: data.target }) : t('companions.prNoTarget')}</p>
               {data.pull_request?.fingerprint === data.fingerprint ? <a className="text-primary underline" href={data.pull_request.url} target="_blank" rel="noopener noreferrer">{t('companions.prOpen')}</a> : <>
-                <label className="grid gap-1">{t('companions.prName')}<Input value={prTitle} maxLength={180} onChange={(e) => setPrTitle(e.target.value)} /></label>
-                <label className="grid gap-1">{t('companions.prBody')}<textarea className={field} rows={5} maxLength={12000} value={prBody} onChange={(e) => setPrBody(e.target.value)} /></label>
+                <FormField label={t('companions.prName')}><Input value={prTitle} maxLength={180} onChange={(e) => setPrTitle(e.target.value)} /></FormField>
+                <FormField label={t('companions.prBody')}><Textarea minRows={5} maxLength={12000} value={prBody} onChange={(e) => setPrBody(e.target.value)} /></FormField>
                 <div><Button disabled={!data.target || !prTitle.trim()} loading={publish.isPending} onClick={() => publish.mutate()}>{t('companions.prCreate')}</Button></div>
               </>}
             </div>}

@@ -7,6 +7,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - Settings -> Backup: the *What this backup covers* card is spaced like the other cards.
+- Settings -> Companions: when the companions cannot be loaded, the section says so in your language, with the reason and a **Retry** button, instead of a raw server message above a form that could not work. Its lists use the same menus as the rest of the app.
 - A link to a file given relative to the workspace (such as `projects/acme/topics/blog/memory.md`) opens like its full path: whole breadcrumb, file selected in its folder.
 - The Crons page shows every time in your language's format: a schedule *every day at 04:40* reads *4:40 AM* in English, like its next run. On the night clocks go back, a next run in the repeated hour is no longer shown in the past.
 - Preview a memory backup before restoring, restore the latest version without local history, and review skipped or held items afterward. A selected file that cannot be read or exceeds the size limit now stops the backup instead of silently dropping it. [Show me](#show:backup-preview)
