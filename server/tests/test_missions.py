@@ -362,3 +362,36 @@ def test_editing_a_role_of_an_active_mission_pauses_it_for_a_new_review(client,t
     assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':mission['plan_fingerprint']}).status_code==200
     missions.tick()
     assert missions.get(ident)['phase']=='active' and len(agents[1])==2
+
+
+def test_only_working_time_counts_so_a_long_interval_still_reaches_cycle_two(client,topic,agents,monkeypatch):
+    clock=[1000.0];monkeypatch.setattr(missions,'_now',lambda:clock[0])
+    ident=create(client,topic,[step(1)],max_minutes=1,interval_minutes=5,max_cycles=2)
+    start(ident);assert missions.get(ident)['active_since'] is None  # nothing works yet
+    missions.tick();assert missions.get(ident)['active_since']==1000.0
+    clock[0]+=30;sid=finish(agents)
+    agents[4][sid]={'has_changes':True,'fingerprint':'a'*64,'decision':None}
+    missions.tick()
+    mission=missions.get(ident)
+    assert mission['steps'][0]['state']=='review' and mission['spent_seconds']==30 and mission['active_since'] is None
+    clock[0]+=10*3600;missions.tick()  # ten hours waiting for the owner's decision
+    assert missions.get(ident)['phase']=='active' and missions.get(ident)['spent_seconds']==30
+    agents[4][sid]['decision']={'value':'approved','fingerprint':'a'*64}
+    missions.tick()
+    assert missions.get(ident)['next_cycle']==clock[0]+300
+    clock[0]+=301;missions.tick()  # the 5-minute wait is longer than the 1-minute limit
+    mission=missions.get(ident)
+    assert mission['phase']=='active' and mission['cycle']==2 and len(agents[1])==2 and mission['spent_seconds']==30
+    clock[0]+=31;missions.tick()
+    assert missions.get(ident)['phase']=='budget' and missions.get(ident)['reason']=='time'
+    assert agents[2]==[agents[1][1]['sid']]
+
+
+def test_planning_time_counts_as_work(client,topic,agents,monkeypatch):
+    clock=[50.0];monkeypatch.setattr(missions,'_now',lambda:clock[0])
+    ident=create(client,topic);missions.control(ident,'plan')
+    assert missions.get(ident)['active_since'] is None
+    missions.tick();clock[0]+=20
+    finish(agents,text=json.dumps({'steps':[step(1)]}));missions.tick()
+    mission=missions.get(ident)
+    assert mission['phase']=='plan_review' and mission['spent_seconds']==20 and mission['active_since'] is None

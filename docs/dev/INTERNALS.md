@@ -665,7 +665,8 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 - `startup()` runs `tick()` in a thread about every 2 s (`MAXXING_MISSIONS_WORKER=0`: never); `shutdown()` sets the
   stop flag and waits. `advance(id)`: relocated-state pause (`origin_state` != current state dir, active/planning
   only), `_reconcile` (session states, current companion decision of each proposal, reported tokens), limits
-  (time, tokens, runs), then at most one launch, reserved under the lock (`launches[]` + step `key`) before the
+  (time = working time: `_track_work` sets `active_since` while a step or the planner is starting/running and banks
+  it into `spent_seconds` otherwise; clock `_now`), then at most one launch, reserved under the lock (`launches[]` + step `key`) before the
   clone, and sent through `companions.run(..., launch_key, timeout_s, launch_guard)`: the guard re-checks phase,
   stop flag and deadline under the mission lock just before the first message.
 - `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,

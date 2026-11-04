@@ -20,6 +20,7 @@ from .sessions import service, store
 _stop = threading.Event()
 _task: asyncio.Task | None = None
 MAX_MISSIONS = 50
+_now = time.time  # the mission clock (tests replace it)
 
 
 def _dir():
@@ -144,7 +145,7 @@ def create(title, path, goal, steps, max_runs=8, max_minutes=60, max_tokens=1000
         if len(list(_dir().glob('*.json'))) >= MAX_MISSIONS:
             raise service.SessionError(400, 'limit', 'The mission list is full.')
         data = {'id': uuid.uuid4().hex, 'title': title, 'path': path, 'goal': goal, 'steps': plan,
-                'phase': 'draft', 'reason': '', 'created': time.time(), 'origin_state': str(config.STATE.resolve()),
+                'phase': 'draft', 'reason': '', 'created': _now(), 'origin_state': str(config.STATE.resolve()),
                 'max_runs': max_runs, 'max_seconds': max_minutes * 60, 'max_tokens': max_tokens,
                 'concurrent': concurrent, 'interval_seconds': interval_minutes * 60, 'max_cycles': max_cycles,
                 'cycle': 1, 'spent_seconds': 0, 'active_since': None, 'next_cycle': None,
@@ -155,12 +156,22 @@ def create(title, path, goal, steps, max_runs=8, max_minutes=60, max_tokens=1000
 
 
 def _elapsed(data):
-    return data['spent_seconds'] + (max(0, time.time() - data['active_since']) if data.get('active_since') else 0)
+    return data['spent_seconds'] + (max(0, _now() - data['active_since']) if data.get('active_since') else 0)
 
 
 def _bank(data):
     data['spent_seconds'] = _elapsed(data)
     data['active_since'] = None
+
+
+def _track_work(data):
+    """The time limit counts working time only: while a step or the planner is being prepared or works. Waiting for
+    the next cycle or for the owner's decision on a proposal does not count."""
+    working = any(s['state'] in ('starting', 'running') for s in data['steps'] + ([data['planner']] if data.get('planner') else []))
+    if working and not data.get('active_since'):
+        data['active_since'] = _now()
+    elif not working and data.get('active_since'):
+        _bank(data)
 
 
 def save_plan(ident, steps):
@@ -182,7 +193,7 @@ def control(ident, action, fingerprint=None):
         if action == 'plan':
             if data['phase'] not in ('draft', 'plan_review') or data['planner']:
                 raise service.SessionError(409, 'busy', 'This mission already has a planner run.')
-            data.update(phase='planning', active_since=time.time(), reason='')
+            data.update(phase='planning', active_since=None, reason='')
         elif action == 'start':
             if fingerprint != _fingerprint(data):
                 raise service.SessionError(409, 'changed', 'The plan or limits changed. Review the current plan before starting it.')
@@ -190,7 +201,7 @@ def control(ident, action, fingerprint=None):
                 raise service.SessionError(409, 'busy', 'Review a plan before starting this mission.')
             if len(data['launches']) >= data['max_runs'] or _elapsed(data) >= data['max_seconds'] or data['tokens'] >= data['max_tokens']:
                 raise service.SessionError(409, 'budget', 'The authorized mission budget is exhausted.')
-            data.update(phase='active', active_since=time.time(), reason='', approved_plan=fingerprint)
+            data.update(phase='active', active_since=None, reason='', approved_plan=fingerprint)
         else:
             if action == 'stop' and data['phase'] in ('completed', 'stopped', 'budget'):
                 raise service.SessionError(409, 'busy', 'A terminal mission cannot be stopped again.')
@@ -246,7 +257,7 @@ def _reconcile(data):
             continue
         sid = step.get('session') or _find_launch(step['key'])
         if not sid:
-            if time.time() - step['started'] > 180:
+            if _now() - step['started'] > 180:
                 step.update(state='failed', error='launch_uncertain')
             continue
         step['session'] = sid
@@ -308,7 +319,7 @@ def _plan_result(step):
 
 def _prepare(data, step, purpose):
     key = f"{data['id']}:{data['cycle']}:{step['id']}:{len(data['launches'])}"
-    step.update(state='starting', key=key, started=time.time(), session=None)
+    step.update(state='starting', key=key, started=_now(), session=None)
     data['launches'].append({'key': key, 'session': None})
     context = []
     for dep in data['steps']:
@@ -393,14 +404,14 @@ def advance(ident):
             active = [s for s in data['steps'] if s['state'] in ('starting', 'running')]
             if all(s['state'] in ('complete', 'skipped') for s in data['steps']):
                 if data['interval_seconds'] and data['cycle'] < data['max_cycles']:
-                    data['next_cycle'] = data.get('next_cycle') or time.time() + data['interval_seconds']
+                    data['next_cycle'] = data.get('next_cycle') or _now() + data['interval_seconds']
                     changed = True
-                    if time.time() >= data['next_cycle'] and data.get('cycle_source') and any(s.get('proposed') for s in data['steps']):
+                    if _now() >= data['next_cycle'] and data.get('cycle_source') and any(s.get('proposed') for s in data['steps']):
                         head = companions._git(config.CODE, 'rev-parse', 'HEAD', limit=100).decode().strip()
                         changed = head != data['cycle_source']
                         if not changed:
                             data['reason'] = 'source_unchanged'
-                    if time.time() >= data['next_cycle'] and changed:
+                    if _now() >= data['next_cycle'] and changed:
                         data.update(cycle=data['cycle'] + 1, next_cycle=None, cycle_source=None, reason='')
                         for step in data['steps']:
                             for key in ('key', 'started', 'error'):
@@ -418,7 +429,9 @@ def advance(ident):
                         data.update(phase='budget', reason='runs')
                     elif not _stop.is_set():
                         launch = _prepare(data, ready, 'experiment')
-        if data['phase'] not in ('active', 'planning'):
+        if data['phase'] in ('active', 'planning'):
+            _track_work(data)
+        else:
             stops = [s['session'] for s in data['steps'] + ([data['planner']] if data.get('planner') else [])
                      if s.get('session') and s['state'] == 'running']
             for step in data['steps'] + ([data['planner']] if data.get('planner') else []):
