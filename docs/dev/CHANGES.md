@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Conversation blocks (API.md#conversation-blocks, INTERNALS.md maxxing.blocks): `maxxing/blocks.py` (14 built-in types with JSON-schema-subset schemas, block extensions `extensions/<id>/block.json` = new extension type `block`, consent config `blocks.consent`, built-ins off in config `blocks.disabled`), `api/blocks.py` (`/api/blocks`, `PATCH /api/blocks/{id}`, `/consent`, `/pin`, frames `/ext/_blocks/app-frame` and `/ext/_blocks/{id}/frame` with a per-frame CSP: sandbox, inline code only, network only to consented hosts). Agents: product skill `pilot-blocks` rendered with the enabled list (`cmd_core._skill_vars`), `<state>/blocks/agents.md` appended to the Codex context by `sessions/codex.workspace_context`, `<state>/blocks/reference.md`. `extensions.on_change()` listeners. Web: `features/blocks` (lazy chunk + dictionary group `blocks`), hook in `components/ui/markdown.tsx`, Settings section `blocks`, `BlockHostProvider` for the conversation view. Mock: `web/mock/blocks.mjs` (+ `blocks-builtins.json`, checked against BUILTINS by the tests). No migration: missing config keys mean everything on, no consent.
 - Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory; mixed-provider teams are not yet implemented. Existing session permissions and stop handling are unchanged.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users

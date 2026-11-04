@@ -20,6 +20,7 @@ Skills are instructions Claude Code may load when a task matches their descripti
 | `maxxing-feed` | you say "notify me when…", or want sales, orders, deployments, e-mails or a script's results reported (webhooks, `maxxing feed post`) |
 | `maxxing-mcp` | you want Claude to use a service through MCP ("connect the Google Ads MCP"), an MCP tool is missing or needs a sign-in |
 | `maxxing-extension` | you want a dashboard widget (Card, or HTML: a game, a canvas) or a custom page |
+| `pilot-blocks` | an answer is clearer as a chart, a table, a form, a terminal output or a file preview ([Conversation blocks](conversation-blocks)), or you want a new kind of block |
 | `maxxing-customize` | you want to change the product itself, or an update reports that your customizations need adapting |
 | `video-motion-design` | you ask for a video, an animation, a short / reel or a trailer (Remotion, see [Videos, PDFs and images](tools)) |
 | `pdf-document` | you ask for a PDF: a quote, an invoice, a report, a guide |

@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Answers can show conversation blocks: charts, tables you can sort and export, key figures, timelines, terminal output, diffs, file previews, forms whose answers go back to the agent, checklists, mini-apps and cards of what the agent created. Each kind is a plugin you can turn on or off in Settings -> Conversation blocks; the agents only use the enabled ones. Plugins you add run in an isolated frame, with network access only to the hosts you allow.
 - Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate; mixed Claude–Codex teams are not yet available.
 - Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.
