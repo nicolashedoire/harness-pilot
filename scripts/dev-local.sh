@@ -17,6 +17,9 @@ export HARNESS_PILOT_WORKSPACE="$LOCAL_DIR/workspace"
 # Claude Code reads .claude/skills from a session's folder and its parents, so only this workspace's sessions see
 # them and the personal skills of this computer are never replaced (a personal skill of the same name wins).
 export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"
+# The same for Codex: it reads .agents/skills from a session's folder and its parents up to the Git root (the default
+# local dir is inside this checkout), so ~/.agents/skills is never written.
+export MAXXING_CODEX_SKILLS_DIR="$LOCAL_DIR/.agents/skills"
 mkdir -p "$MAXXING_STATE" "$HARNESS_PILOT_WORKSPACE"
 chmod 700 "$LOCAL_DIR" "$MAXXING_STATE"
 cd "$ROOT/server"
@@ -34,7 +37,7 @@ if not config.config_path().exists():
                         'auto_update': False})
 cmd_core.copy_templates(ws)
 try:
-    cmd_core.install_skills()                   # like `pilot init`, into MAXXING_SKILLS_DIR
+    cmd_core.install_skills()                   # like `pilot init`, into MAXXING_SKILLS_DIR and MAXXING_CODEX_SKILLS_DIR
 except Exception as e:                          # never keeps the server from starting
     print(f"product skills not installed: {e}", flush=True)
 PY

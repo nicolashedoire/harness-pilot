@@ -73,6 +73,9 @@ def update(state, ident, **values):
 
 
 def tree(path, limit):
+    """Hash every regular file under `path`. `limit` bounds the total size; None for the files of the adapter command,
+    which are hashed to detect a change during the experiment but never copied or stored (a statically linked Python
+    interpreter is about 30 MB, a Node.js binary over 100 MB)."""
     path = Path(path)
     if path.is_symlink() or not path.exists():
         raise ValueError('Artifact is missing or is a symlink')
@@ -86,7 +89,7 @@ def tree(path, limit):
         if not p.is_file():
             raise ValueError('Only regular artifact files are supported')
         size += p.stat().st_size
-        if size > limit or len(rows) >= 10000:
+        if (limit is not None and size > limit) or len(rows) >= 10000:
             raise ValueError('Artifact exceeds the storage or file-count budget')
         h = hashlib.sha256()
         with open(p, 'rb') as stream:
@@ -251,7 +254,7 @@ def worker(state, ident):
                 shutil.copy2(baseline, copied)
             if tree(copied, limit) != before or tree(baseline, limit) != before:
                 raise ValueError('Baseline changed while it was being copied')
-        code = [{'path': arg, 'files': tree(Path(arg).resolve(), max(limit, 16 * 1024 * 1024))} for arg in spec['command'] if Path(arg).is_absolute() and Path(arg).is_file()]
+        code = [{'path': arg, 'files': tree(Path(arg).resolve(), None)} for arg in spec['command'] if Path(arg).is_absolute() and Path(arg).is_file()]
         output = root / 'output'
         output.mkdir(mode=0o700)
         write(root / 'request.json', {'version': 1, 'spec': spec, 'baseline': str(copied) if baseline else None, 'output_dir': str(output)})
@@ -300,7 +303,7 @@ def worker(state, ident):
         usage(output, max(0, limit - sum(x['bytes'] for x in before)))
         if baseline and (tree(baseline, limit) != before or tree(copied, limit) != before):
             raise ValueError('The adapter modified a source or copied baseline')
-        if any(tree(Path(item['path']).resolve(), max(limit, 16 * 1024 * 1024)) != item['files'] for item in code):
+        if any(tree(Path(item['path']).resolve(), None) != item['files'] for item in code):
             raise ValueError('The adapter executable changed during the experiment')
         if baseline and before == after:
             reasons.append('Candidate artifacts are unchanged')
