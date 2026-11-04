@@ -6,6 +6,7 @@ import os
 import stat
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from typing import Callable, Iterator
 
@@ -145,3 +146,19 @@ def all_events(client: TestClient, sid: str) -> list[dict]:
             return out
         frm = r["next"]
 
+
+def codex_profile(argv: list[str]) -> dict | None:
+    """The `protected` permission profile of a Codex argv (Protect the secrets), parsed; None with `--sandbox`."""
+    settings = dict(argv[i + 1].split("=", 1) for i, a in enumerate(argv[:-1]) if a == "-c")
+    if "permissions.protected" not in settings:
+        return None
+    assert settings["default_permissions"] == '"protected"' and "--sandbox" not in argv   # it would replace the profile
+    return tomllib.loads("p = " + settings["permissions.protected"])["p"]
+
+
+def codex_sandbox(argv: list[str]) -> str:
+    """The sandbox a Codex argv asks for, whichever form it takes: `--sandbox <mode>`, or the profile's parent."""
+    profile = codex_profile(argv)
+    if profile is None:
+        return argv[argv.index("--sandbox") + 1]
+    return {":read-only": "read-only", ":workspace": "workspace-write"}[profile["extends"]]

@@ -208,12 +208,37 @@ def mcp_config(cwd: str, env: dict[str, str], mode: str = "default") -> tuple[li
     return args, extra, skipped
 
 
+# ---- sandbox ---------------------------------------------------------------------------------------------------
+PROFILE = "protected"                          # Codex permission profile name (":..." names are Codex's built-ins)
+# Kept read-only inside the writable folder, as `--sandbox workspace-write` does: a profile extending ":workspace"
+# loses that (checked with codex-cli 0.150.1), so they are listed again.
+WORKSPACE_READ_ONLY = (".git", ".codex", ".agents")
+
+
+def sandbox_args(mode: str) -> list[str]:
+    """Codex's sandbox for a permission mode: read-only in default / plan, workspace-write otherwise - never
+    unrestricted machine access, even when Claude's mode is bypass. With config `protect_secrets` (default on), the
+    same sandbox as a permission profile that also denies `spawn.secret_paths()`: Codex's OS sandbox then refuses
+    reading or changing them to every command it runs. No `--sandbox` with it: that flag silently replaces the
+    profile. Only existing paths are passed (nothing to protect otherwise); none: plain `--sandbox`.
+    INTERNALS.md `maxxing.sessions.codex` has what was checked and what it does not cover (MCP servers)."""
+    from .. import config
+    from . import spawn
+    write = mode not in ("default", "plan")
+    paths = [os.path.abspath(p) for p in spawn.secret_paths() if os.path.lexists(p)] \
+        if config.load_config().get("protect_secrets", True) else []
+    if not paths:
+        return ["--sandbox", "workspace-write" if write else "read-only"]
+    fs: dict = {":workspace_roots": {".": "write", **{d: "read" for d in WORKSPACE_READ_ONLY}}} if write else {}
+    fs.update({p: "deny" for p in paths})
+    profile = {"extends": ":workspace" if write else ":read-only", "filesystem": fs}
+    return ["-c", f'default_permissions="{PROFILE}"', "-c", f"permissions.{PROFILE}={_toml(profile)}"]
+
+
 def command(thread_id: str, mode: str, model: str = "", images: list[str] | None = None,
             mcp: list[str] | None = None) -> list[str]:
     binary = os.environ.get("MAXXING_CODEX_BIN") or shutil.which("codex") or "codex"
-    # Never silently give Codex unrestricted machine access, including when Claude's default is bypass.
-    sandbox = "read-only" if mode in ("default", "plan") else "workspace-write"
-    args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--sandbox", sandbox]
+    args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", *sandbox_args(mode)]
     args += privacy_args() + list(mcp or [])
     if model:
         args += ["--model", model]
@@ -227,7 +252,7 @@ def fork_command(thread_id: str, model: str = "") -> list[str]:
     session file, the original thread is not touched."""
     binary = os.environ.get("MAXXING_CODEX_BIN") or shutil.which("codex") or "codex"
     args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--ephemeral",
-            "--sandbox", "read-only", *privacy_args()]
+            *sandbox_args("plan"), *privacy_args()]
     if model:
         args += ["--model", model]
     return args + ["fork", thread_id, "-"]

@@ -1,6 +1,7 @@
 """App-owned telemetry stays off even when the parent environment opts into OTLP."""
 import pytest
 
+from conftest import codex_sandbox
 from maxxing import config
 from maxxing.sessions import codex, spawn
 
@@ -32,7 +33,7 @@ def test_codex_turn_and_resume_explicitly_disable_all_exporters():
         assert all(settings[key]=='"none"' for key in ('otel.exporter','otel.metrics_exporter','otel.trace_exporter'))
         assert settings['otel.log_user_prompt']==settings['otel.log_agent_responses']=='false'
         assert '--dangerously-bypass-approvals-and-sandbox' not in args
-        assert args[args.index('--sandbox')+1]==('read-only' if mode=='default' else 'workspace-write')
+        assert codex_sandbox(args)==('read-only' if mode=='default' else 'workspace-write')
 
 
 def test_claude_default_disables_nonessential_traffic_without_changing_user_settings(mx,monkeypatch):

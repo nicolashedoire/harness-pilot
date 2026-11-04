@@ -145,8 +145,9 @@ job's mode, else the topic's, else this global one.
 
 **Protect the secrets** (on by default): in every mode, Claude's tools refuse to read or edit the server's secrets
 (`secrets.json`) and the SSH keys (`~/.ssh`). It stops a hidden instruction from simply reading them; a script written
-on purpose to open the file is not stopped, so it does not replace a stricter mode. More rules: `claude_deny` in
-config.json (Claude Code rule syntax, for example `"Bash(rm -rf:*)"`).
+on purpose to open the file is not stopped, so it does not replace a stricter mode. Codex sessions get the same two
+paths denied by Codex's own sandbox, which stops a script too (not yet checked on Linux). More rules for Claude only:
+`claude_deny` in config.json (Claude Code rule syntax, for example `"Bash(rm -rf:*)"`).
 
 See [Security](security).
 
