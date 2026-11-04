@@ -120,6 +120,7 @@ def run_now(cid: str):
 
 # ---- watcher --------------------------------------------------------------------------------
 _task: asyncio.Task | None = None
+_local_task: asyncio.Task | None = None
 
 
 def _signature() -> tuple:
@@ -148,13 +149,31 @@ async def _watch(interval: float = 2.0) -> None:
             bus.invalidate("crons", "health")
 
 
+async def _local_schedule() -> None:
+    from .. import localcron
+    while True:
+        try:
+            await asyncio.to_thread(localcron.tick)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Local scheduler failed')
+        await asyncio.sleep(15)
+
+
 async def startup() -> None:
-    global _task
+    global _task, _local_task
     _task = asyncio.create_task(_watch())
+    if os.environ.get('HARNESS_PILOT_LOCAL_MODE') == '1':
+        _local_task = asyncio.create_task(_local_schedule())
 
 
 async def shutdown() -> None:
-    global _task
+    global _task, _local_task
+    if _local_task:
+        _local_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await _local_task
+        _local_task = None
     if _task:
         _task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):

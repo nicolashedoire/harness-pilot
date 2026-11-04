@@ -2027,6 +2027,7 @@ export const en = {
   'tasks.projects.deleteTitle': 'Delete this project?',
   'tasks.projects.deleteDesc': 'Its tasks are kept, without a project.',
   'crons.description': 'Scheduled shell commands and harness-pilot prompts',
+  'crons.localHint': 'Local schedules run only while the application is running. Missed runs are not replayed and @reboot is not supported. Scheduled prompts use Claude Code.',
   'crons.new': 'New job',
   'crons.newTitle': 'New scheduled job',
   'crons.editTitle': 'Edit job',

@@ -610,14 +610,18 @@ def test_killed_run_is_recorded_as_interrupted_on_the_next_run(org, monkeypatch)
         crons.run_job(j["id"])
         assert other.poll() is None
         other.kill()
+        identity = crons._proc_start(orphan.pid)
         lock.write_text(json.dumps({"pid": 999999, "at": _time.time() - 5, "pgid": orphan.pid,
-                                    "pgid_start": crons._proc_start(orphan.pid)}))
+                                    "pgid_start": identity}))
         r = crons.run_job(j["id"])
         assert r["ok"]
         runs = crons.read_runs()
         assert len(runs) == 5 and not runs[1]["ok"] and "interrupted" in runs[1]["output_tail"]
         assert [x["ok"] for x in sent] == [True, False, True, False, True]
-        assert orphan.wait(timeout=5) == -9                          # the orphan job shell is killed
+        if identity is None:
+            assert orphan.poll() is None  # without a reliable identity, never kill a possibly reused PID
+        else:
+            assert orphan.wait(timeout=5) == -9
     finally:
         if orphan.poll() is None:
             orphan.kill()

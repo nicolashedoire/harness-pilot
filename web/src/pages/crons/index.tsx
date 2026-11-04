@@ -6,7 +6,8 @@ import { Page, Section } from '@/components/shell/Page'
 import { useLang, useT } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { fmtDate, fmtDuration, fmtRelative } from '@/lib/format'
-import { useCron, useCrons, useDeleteCron, usePatchCronOptimistic, useRunCronNow, useSettings, useWorkspace } from '@/lib/queries'
+import { useCron, useCrons, useDeleteCron, usePatchCronOptimistic, useRunCronNow, useSettings, useVersion, useWorkspace } from '@/lib/queries'
+import { Callout } from '@/features/common'
 import type { Cron } from '@/lib/types'
 import { useRegisterCommands } from '@/commands/registry'
 import {
@@ -42,6 +43,7 @@ export default function CronsPage() {
   const jobId = params.get('job')
   const q = useCrons()
   const { data: settings } = useSettings()
+  const { data: version } = useVersion()
   const tz = settings?.timezone
   const now = useNow(30_000)
   const [seed, setSeed] = React.useState<EditorSeed | null>(null)
@@ -88,6 +90,7 @@ export default function CronsPage() {
       }
     >
       <div className="grid gap-8">
+        {version?.local_mode && <Callout tone="info">{t('crons.localHint')}</Callout>}
         {q.isError && !q.data ? (
           <EmptyState
             tone="error"

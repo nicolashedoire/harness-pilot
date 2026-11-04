@@ -3,8 +3,10 @@ section: Using harness-pilot
 ---
 # Scheduled jobs (Crons)
 
-The **Crons** page runs things on a schedule: a **shell command** or a **Harness prompt** in a
+The **Crons** page runs things on a schedule: a **shell command** or a **Claude Code prompt** in a
 topic. Each run is recorded (status, duration, output) and can be reported on Telegram.
+
+In the local macOS installation, a small scheduler runs while the application is running. It checks the current minute in the configured time zone without changing your system crontab. Jobs missed while the computer sleeps or the app is stopped are not replayed; `@reboot` is not supported in local mode. Scheduled prompts currently use Claude Code.
 
 ## Creating a job
 

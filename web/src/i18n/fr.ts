@@ -2009,6 +2009,7 @@ export const fr: Record<keyof typeof en, string> = {
   'tasks.projects.deleteTitle': 'Supprimer ce projet ?',
   'tasks.projects.deleteDesc': 'Ses tâches sont conservées, sans projet.',
   'crons.description': 'Commandes shell et prompts harness-pilot planifiés',
+  'crons.localHint': 'En local, les tâches se lancent uniquement pendant que l’application fonctionne. Les exécutions manquées ne sont pas rattrapées et @reboot n’est pas pris en charge. Les prompts planifiés utilisent Claude Code.',
   'crons.new': 'Nouvelle tâche planifiée',
   'crons.newTitle': 'Nouvelle tâche planifiée',
   'crons.editTitle': 'Modifier la tâche planifiée',
