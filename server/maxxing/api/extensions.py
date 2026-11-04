@@ -68,12 +68,15 @@ async def list_extensions():
 class PatchIn(BaseModel):
     enabled: Optional[bool] = None
     pinned: Optional[bool] = None             # page extensions: own entry in the sidebar
+    page_runtime: Literal["frame", "trusted"] | None = None
 
 
 @router.patch("/api/extensions/{eid}")
 async def patch_extension(eid: str, body: PatchIn):
     if extensions.get(eid) is None:
         raise _err(404, "not_found", f"no extension {eid}")
+    if body.page_runtime is not None and not await asyncio.to_thread(extensions.set_page_runtime, eid, body.page_runtime):
+        raise _err(400, "not_a_page", f"{eid} is not a page extension")
     if body.pinned is not None and not await asyncio.to_thread(extensions.set_pinned, eid, body.pinned):
         raise _err(400, "not_a_page", f"{eid} is not a page extension")
     if body.enabled is not None and not await asyncio.to_thread(extensions.set_enabled, eid, body.enabled):
@@ -335,6 +338,22 @@ async def _serve_module(eid: str, rel: str) -> FileResponse:
 @router.get("/ext/{eid}/page.js", include_in_schema=False)
 async def page_js(eid: str):
     return await _serve_module(eid, "page.js")
+
+
+@router.get("/ext/{eid}/page-frame", include_in_schema=False)
+async def page_frame(eid: str, request: Request, grant: str = ""):
+    from .. import pageframes
+    from . import extframes
+    ext = await asyncio.to_thread(_usable, eid)
+    if not ext.has_page or ext.page_runtime != "frame":
+        raise _err(404, "not_found", "no isolated page")
+    net = await asyncio.to_thread(permissions.frame_network, ext, grant)
+    # Legacy open network permissions never grant an isolated page unrestricted same-origin access.
+    token = extframes.issue(eid, report=False)
+    base = str(request.base_url).rstrip("/") + f"/ext/{eid}/f/{token}/"
+    doc, csp = await asyncio.to_thread(pageframes.document, base, net["hosts"] or net["known"], ui_kit_css())
+    return HTMLResponse(doc, headers={"Content-Security-Policy": csp, "Cache-Control": "no-store",
+                                    "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"})
 
 
 # The HTML widget's frame: the bridge (maxxing.api / resize / theme, and the frame's uncaught errors and rejected

@@ -1,1 +1,20 @@
-{"id":"model-lab","name":{"en":"Model Lab","fr":"Laboratoire de modèles"},"type":"page","icon":"brain","version":"0.1.0","api":1,"permissions":{"read":[".agents/skills/pilot-model-evolution",".claude/skills/pilot-model-evolution"]}}
+{
+  "id": "model-lab",
+  "name": {
+    "en": "Model Lab",
+    "fr": "Laboratoire de mod\u00e8les"
+  },
+  "type": "page",
+  "icon": "brain",
+  "version": "0.1.0",
+  "api": 2,
+  "permissions": {
+    "read": [
+      ".agents/skills/pilot-model-evolution",
+      ".claude/skills/pilot-model-evolution"
+    ]
+  },
+  "runtime": {
+    "page": "frame"
+  }
+}

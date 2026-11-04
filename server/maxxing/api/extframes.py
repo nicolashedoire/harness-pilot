@@ -71,7 +71,8 @@ def _not_found() -> JSONResponse:
 
 def _widget(eid: str) -> extensions.Extension | None:
     ext = extensions.get(eid)
-    return ext if ext is not None and ext.enabled and not ext.error and ext.has_html else None
+    return ext if ext is not None and ext.enabled and not ext.error and (ext.has_html or
+                                      (ext.has_page and ext.page_runtime == "frame")) else None
 
 
 @router.get("/ext/{eid:extid}/f/{token}/{rel:path}", include_in_schema=False)

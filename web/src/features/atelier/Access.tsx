@@ -8,6 +8,7 @@ import { fmtRelative } from '@/lib/format'
 import { useLang, useT, type TKey } from '@/i18n'
 import { Sensitive } from '@/components/ui'
 import { ExtensionPermissions } from '@/features/extensions/Permissions'
+import { PageIsolation } from '@/features/extensions/PageIsolation'
 
 const REASON: Record<ExtPermissionRefusal['reason'], TKey> = {
   undeclared: 'atelier.access.undeclared',
@@ -24,6 +25,7 @@ export function AccessBlock({ ext }: { ext: Extension }) {
   const sites = (a.legacy.network ?? []).map((n) => n.host)
   return (
     <div className="grid gap-2" data-testid="atelier-access">
+      <PageIsolation ext={ext} />
       {(a.state === 'legacy' || legacy.length > 0 || sites.length > 0) && (
         <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning" data-testid="atelier-legacy">
           <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />

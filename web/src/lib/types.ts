@@ -817,6 +817,7 @@ export type Extension = {
   icon: string
   version: string
   enabled: boolean
+  runtime?: { page: 'frame' | 'trusted' }
   /** Block extensions (block.json): the conversation block types it draws. */
   renders?: string[]
   error: string | null
@@ -1066,6 +1067,7 @@ export type AtelierEvent = {
 }
 export type AtelierCheckStep = { step: string; status: 'ok' | 'warn' | 'error'; detail: string }
 export type AtelierDraft = {
+  runtime?: { page: 'frame' | 'trusted' } | null
   id: string
   kind: 'extension'
   target: string

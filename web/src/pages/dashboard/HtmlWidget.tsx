@@ -36,11 +36,11 @@ const VARS: [string, string][] = [
   ...[
     'background', 'foreground', 'card', 'card-foreground', 'muted', 'muted-foreground', 'accent', 'accent-foreground',
     'primary', 'primary-foreground', 'action', 'action-foreground', 'secondary', 'secondary-foreground', 'destructive', 'destructive-foreground',
-    'success', 'warning', 'border', 'input', 'ring', 'radius', 'row-h', 'pad-card',
+    'success', 'warning', 'border', 'input', 'ring', 'radius', 'row-h', 'pad-card', 'mx-font-sans', 'mx-font-mono',
   ].map((n): [string, string] => [`--${n}`, `--${n}`]),
 ]
 
-function themeVars(): Record<string, string> {
+export function themeVars(): Record<string, string> {
   const cs = getComputedStyle(document.documentElement)
   return Object.fromEntries(VARS.map(([k, v]) => [k, cs.getPropertyValue(v).trim()]))
 }

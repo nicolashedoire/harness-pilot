@@ -102,6 +102,11 @@ export function useLang(): Language {
   return useUI((s) => s.language)
 }
 
+/** Public presentation strings sent to an opaque-origin extension page. Never application state. */
+export function extensionDictionary(lang: Language): Record<string, string> {
+  return { ...dicts[lang] }
+}
+
 /** Untyped lookup for dynamic keys (e.g. `settings.section.${id}`); falls back to `fallback`. */
 export function tDyn(t: TFn, key: string, fallback?: string): string {
   const v = t(key as TKey)

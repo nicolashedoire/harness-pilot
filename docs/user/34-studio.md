@@ -130,3 +130,16 @@ Extensions (widgets, HTML widgets, pages, conversation blocks, agent engines and
 are versioned by the Studio. Themes, skills, customizations and cron jobs are listed so that you see everything in one
 place; they keep their own settings pages. Extensions that existed before the Studio are listed as approved version 1,
 with an unknown origin.
+
+## Page isolation
+
+New pages use extension API 2 and an isolated browser frame. They can use their own service through `ctx.api`;
+they cannot read the app DOM or storage, or call the signed-in application API directly. Relative modules and
+assets remain available, and language, icons and theme follow the app. Use `ctx.route` / `ctx.setRoute` for subviews.
+
+The page and the Studio show its mode. Older API 1 pages keep **Compatibility mode: runs with your session**;
+choose **Isolate this page** to migrate one. `pilot ext check` flags storage and direct app calls to adapt. If
+needed, **Use compatibility mode** asks for explicit confirmation because it restores full browser session access.
+The Studio shows the proposed mode before approval; compatibility pages do not activate automatically.
+
+This isolates browser code only. The extension's Python service still runs inside the server until stage B.
