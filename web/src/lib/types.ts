@@ -98,6 +98,8 @@ export type Session = {
   id: string
   provider?: 'claude' | 'codex' | 'discussion' | 'debate'
   swarm_agents?: number | null
+  team_phase?: string | null
+  team_parent?: string | null
   debate_paused?: boolean
   discussion_pause_reason?: string | null
   discussion_turns?: number

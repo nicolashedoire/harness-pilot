@@ -2,7 +2,8 @@
 
 ## Unreleased - 2026-11-04
 
-- Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory; mixed-provider teams are not yet implemented. Existing session permissions and stop handling are unchanged.
+- Sessions accept an optional `swarm_agents` count for Claude. User turns receive a delegation request and the web UI maps actual Agent/Task tool events and their results. The count is advisory and native-agent stop remains session-wide.
+- Mixed teams store their phase and two independent worker session IDs on a coordinator session. The session watcher resumes the transition to synthesis after worker completion; individual and team stop operate on the existing runner locks. Workers use plan/read-only modes; the coordinator retains topic permissions. This first version uses fixed complementary roles and accepts text missions only.
 
 Private, technical counterpart of `CHANGELOG.md`. `CHANGELOG.md` is **public**: written for users
 (what changes for them, plain language), shown in the app ("What's new" after an update) and by

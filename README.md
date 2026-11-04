@@ -11,6 +11,7 @@ Create project sessions, work with either agent, or let both exchange ideas auto
 - Organize persistent conversations by project and topic.
 - Select Claude Code, Codex, or both for an automatic collaborative discussion or debate.
 - Request a Claude Code subagent team and inspect the agents actually launched in an agent map.
+- Run a mixed Claude–Codex team with independent sessions, individual stops, and a coordinator's synthesis.
 - Pause after the current answer, resume, intervene during a turn, stop the conversation, or set an optional response or time limit.
 - Work with files, tasks, schedules, and project memory from the web interface.
 - Optionally configure Telegram, voice features, and GitHub backups.
@@ -41,7 +42,9 @@ In **Sessions**, create a session and select **Claude Code + Codex**. Choose a c
 
 You can assign roles to each agent, save reusable role configurations, and choose a Claude model and a separate Codex model identifier. Model availability depends on the corresponding account; leaving a field empty uses that agent's default.
 
-For a task that benefits from parallel work, select **Claude Code — agent team**, request two to six subagents, and open **Agent map** in the session to inspect detected assignments, statuses, and results. Claude decides whether and how to delegate; the requested count is not a hard limit. This mode currently uses Claude's native subagents, not a mixed Claude–Codex team. All work uses the session's permissions and Claude account allowance.
+For a task that benefits from parallel work, select **Claude Code — agent team**, request two to six subagents, and open **Agent map** in the session to inspect detected assignments, statuses, and results. Claude decides whether and how to delegate; the requested count is not a hard limit. This mode uses Claude's native subagents and Claude account allowance.
+
+For a mixed team, select **Claude Code + Codex — mixed team** and enter a text mission. Claude and Codex analyze it in parallel from complementary perspectives; Claude then synthesizes their reports. Open either worker's session to follow its work, stop one worker, or stop the whole team. The analysis sessions use plan/read-only provider modes; the coordinator follows the topic's permissions. Both subscriptions or configured credentials are needed, and each provider's usage applies. This first mixed-team mode has two fixed roles, not arbitrary agent creation or automatic task decomposition.
 
 The session menu can generate a reviewable summary, decisions, and suggested actions using Codex. Select the proposed actions you want before adding them to the task board. You can also review and edit the summary before explicitly saving it to the topic's shared `memory.md`. Codex reads this memory on its next turn; Claude normally loads it when starting a new thread. Summary requests use the connected Codex account and are not yet included in the turn statistics.
 

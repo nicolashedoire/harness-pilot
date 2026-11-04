@@ -97,6 +97,7 @@ import { MobileTabsSlot, TabsToggle } from './Tabs'
 import { AsidePanel, useAside } from './Aside'
 import { SessionSummary } from './Summary'
 import { AgentMap } from './AgentMap'
+import { MixedTeam } from './MixedTeam'
 import { LayoutPicker } from './LayoutPicker'
 import { MIN_W } from './layouts'
 import { EASE_OUT, reducedMotion } from '@/lib/presence'
@@ -796,6 +797,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
           />
         )}
         {!notFound && aside.aside && <AsidePanel aside={aside.aside} onClose={aside.close} />}
+        {!notFound && session?.team_phase && <MixedTeam sid={sid} />}
         {!notFound && <TaskBar sid={sid} running={running} />}
         {!notFound && (
           <StackedComposer colKey={col.key} stacked={!!place && place.n >= 3}>
@@ -809,7 +811,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
             topicPath={path}
             running={running}
             immediateIntervention={session?.provider === 'discussion' || session?.provider === 'debate'}
-            disabledReason={authReason || (!session ? t('sessions.composer.loading') : null)}
+            disabledReason={session?.team_phase && ['launching', 'working', 'synthesizing'].includes(session.team_phase) ? t('mixedTeam.wait') : authReason || (!session ? t('sessions.composer.loading') : null)}
             queueCount={session?.queue || 0}
             queued={queuedPending}
             queueItems={session?.queue_items}
@@ -1219,7 +1221,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
   const [title, setTitle] = React.useState('')
   const [model, setModel] = React.useState('')
   const [codexModel, setCodexModel] = React.useState('')
-  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm'>('claude')
+  const [provider, setProvider] = React.useState<'claude' | 'codex' | 'both' | 'swarm' | 'team'>('claude')
   const [swarmAgents, setSwarmAgents] = React.useState('3')
   const [conversationMode, setConversationMode] = React.useState<'discussion' | 'debate'>('discussion')
   const [turnLimit, setTurnLimit] = React.useState('')
@@ -1264,6 +1266,14 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSend = async (text: string, attachments: string[]) => {
     try {
+      if (provider === 'team') {
+        if (attachments.length) { toast.error(t('mixedTeam.noAttachments')); return false }
+        const s = await api.post<Session>('/api/teams', { path: col.path, message: text, title: title.trim() || undefined })
+        await qc.invalidateQueries({ queryKey: ['sessions'] })
+        saveDraft(`new:${col.path}`, '')
+        becomeSession(col.key, s.id)
+        return true
+      }
       const s = await create.mutateAsync({ path: col.path, message: text, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, attachments, plan_mode: planMode || undefined })
       seedEmptyLog(s.id)
       usePending.getState().add(s.id, { text, attachments, queued: false })
@@ -1279,6 +1289,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
 
   const onSendVoice = async (file: File) => {
     try {
+      if (provider === 'team') { toast.error(t('mixedTeam.noAttachments')); return false }
       const up = await uploadAttachment(col.path, file)
       const s = await create.mutateAsync({ path: col.path, title: title.trim() || undefined, model: (provider === 'codex' ? codexModel.trim() : model) || undefined, provider: provider === 'both' ? conversationMode : provider === 'swarm' ? 'claude' : provider, ...limits, plan_mode: planMode || undefined, voice: up.path })
       seedEmptyLog(s.id)
@@ -1344,8 +1355,9 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor={`provider-${col.key}`}>{t('sessions.provider')}</Label>
-              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('swarm.provider') }]} />
+              <Select id={`provider-${col.key}`} value={provider} onValueChange={(v) => { setProvider(v as 'claude' | 'codex' | 'both' | 'swarm' | 'team'); setModel(''); setPlanMode(false) }} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }, { value: 'both', label: 'Claude Code + Codex' }, { value: 'swarm', label: t('swarm.provider') }, { value: 'team', label: t('mixedTeam.provider') }]} />
             </div>
+            {provider === 'team' && <p className="rounded-lg border p-3 text-xs text-muted-foreground">{t('mixedTeam.hint')}</p>}
             {provider === 'swarm' && <div className="grid gap-2 rounded-lg border p-3">
               <Label htmlFor={`swarm-count-${col.key}`}>{t('swarm.count')}</Label>
               <Select id={`swarm-count-${col.key}`} value={swarmAgents} onValueChange={setSwarmAgents} options={['2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))} />
@@ -1369,7 +1381,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               <div className="flex gap-2"><Input value={presetName} onChange={(e) => setPresetName(e.target.value)} maxLength={80} placeholder={t('sessions.presetName')} aria-label={t('sessions.presetName')} /><Button type="button" variant="outline" disabled={!presetName.trim() || savingPreset} onClick={savePreset}>{t('sessions.presetSave')}</Button></div>
               {presets.some((p) => p.id === preset) && <Button type="button" variant="ghost" className="justify-start" onClick={deletePreset}>{t('sessions.presetDelete')}</Button>}
             </div>}
-            {provider !== 'codex' && <div className="grid gap-1.5">
+            {provider !== 'codex' && provider !== 'team' && <div className="grid gap-1.5">
               <span className="text-sm font-medium">{provider === 'both' ? t('sessions.claudeModel') : t('sessions.model.label')}</span>
               <div>
                 <ModelPicker chosen={model} onChange={setModel} />
@@ -1380,7 +1392,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
               <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
               <p className="text-xs text-muted-foreground">{t('sessions.codexModelHint')}</p>
             </div>}
-            {provider !== 'both' && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
+            {provider !== 'both' && provider !== 'team' && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
               <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
               <span className="grid gap-0.5 leading-tight">
                 <span className="flex items-center gap-1.5 text-sm font-medium">

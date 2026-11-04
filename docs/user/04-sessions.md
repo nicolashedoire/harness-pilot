@@ -9,9 +9,15 @@ stopped.
 
 ## Claude subagent team
 
-Choose **Claude Code — agent team** when creating a session and request two to six subagents. Claude acts as coordinator and is instructed to split suitable work into independent tasks, use its native subagents in parallel, and combine their results. This is a request to Claude, not a guarantee of the number of agents or a hard concurrency limit. The team uses Claude Code; a mixed Claude–Codex team is not available in this mode. Each agent's work consumes the relevant account's usage allowance and follows the session's permissions.
+Choose **Claude Code — agent team** when creating a session and request two to six subagents. Claude acts as coordinator and is instructed to split suitable work into independent tasks, use its native subagents in parallel, and combine their results. This is a request to Claude, not a guarantee of the number of agents or a hard concurrency limit. Each agent's work consumes the relevant account's usage allowance and follows the session's permissions.
 
 Open **Agent map** from the session menu to inspect agent calls present in the loaded conversation, their status and their reported result. Load earlier messages to include older calls. Claude's internal subagent transcripts are not always available. Stop the session to interrupt the current turn; verify the displayed statuses and resulting files afterward.
+
+## Mixed Claude and Codex team
+
+Choose **Claude Code + Codex — mixed team** and send a written mission. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, Claude synthesizes the available reports in the coordinator session. This first version uses these two fixed roles and does not automatically split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
+
+Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Attachments and voice messages are not supported in this mode yet.
 
 ## Claude Code and Codex together
 
