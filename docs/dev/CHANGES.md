@@ -2,6 +2,8 @@
 
 ## Unreleased - 2026-11-04
 
+- Added `missions.py`, authenticated `/api/missions` and Settings → Resident missions. Private per-mission JSON and locks persist bounded plans, launch reservations, session keys and cycles. A global leader enforces two resident launches at a time; existing sessions reconcile across restart. Architect planning is read-only and parsed as validated advisory JSON, requiring owner plan activation. Current companion proposal decisions gate dependencies; no patches are applied to successor clones. Owner pause and deadline checks are serialized with message launch after cloning. Relocated state pauses, token counters are soft reported limits, and recurring approved proposals wait for a new source commit. Background tests disable `MAXXING_MISSIONS_WORKER`; provider calls are simulated except the explicit local preview demonstration. Both manual and agent-proposed plans use existing roles.
+
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
 - `SettingsCard` (`pages/settings/sections/ui.tsx`): `children` optional; without them the description is the card's text (no body, the header takes the bottom padding). Backup's *What this backup covers* uses it instead of a paragraph in the body, whose top padding made a larger gap under the title than in the other cards.

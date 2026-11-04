@@ -1,0 +1,40 @@
+---
+section: Agents
+---
+# Resident missions
+
+Open **Settings → Resident missions** to give persistent companions bounded work on the platform. A mission keeps its plan, assignments, sessions, decisions and limits on disk. Its source experiments use disposable clones of the application's **committed source**, not the user's live working files.
+
+## Plan, review, execute
+
+1. Create a draft with a goal and conversation topic. Choose a maximum number of runs and active minutes. Creating a draft does not call a model.
+2. Either write the steps yourself or ask the architect for a read-only plan. Planning consumes one run and uses the architect role's configured engine. The architect uses the internal source map; the user sees assignments and results, not that map.
+3. Review the proposed assignments. Each step chooses an existing persistent role and may wait for earlier steps. Edit instructions, test expectations and dependencies. You can create or adapt roles in **Settings → Companions** and return to the plan.
+4. **Save the plan** preserves a draft. **Validate the plan and start** saves the current visible edits and authorizes execution. Up to two resident agents run across the installation, with a maximum of one or two per mission.
+5. Follow a step's conversation, inspect its tests and open its code proposal. The normal companion review requires your approval or rejection of the current diff. A pending or rejected proposal never silently becomes accepted.
+
+A generated plan is advisory. Invalid JSON, unknown roles, duplicate step IDs and future or cyclic dependencies are refused. No role, plugin, dependency update, pull request or merge is installed or published merely by accepting a plan.
+
+The planner uses native read-only/plan permissions. Code experiments use the existing companion permissions in disposable copies. These are cooperating agent processes, **not a complete operating-system sandbox**; trusted providers and local access rules still matter. Mission instructions prohibit publishing, credential changes and work outside the clone. The provider needs an active account. Model calls use its normal allowance.
+
+## Dependencies and results
+
+Independent assignments can run concurrently. A dependent step waits until prerequisites finish without changes, have an approved current proposal, or are explicitly skipped by the owner. It receives short predecessor reports as advisory context. Predecessor patches are **not applied to its clone**. If another patch must be integrated first, the companion should report that requirement rather than assume that code exists.
+
+Approval here accepts a proposal for review/publishing; it does not apply code to the running app. Publishing still uses the companion's explicit PR action, and integration follows the PR review/queue flow. Runtime tests reported by an agent remain evidence to inspect in its conversation; a completed mission is not a certification that all proposed code is correct or merged.
+
+## Recurring observation
+
+Set a non-zero interval and a finite maximum cycle count to repeat the reviewed assignments, for example a security and architecture watch. These are checks while the server runs, not unbounded background model activity. The run, time and token budgets still apply, including planning and waiting between cycles.
+
+A proposal awaiting a decision holds that cycle. If a cycle produced an approved patch, recurrence waits for the source commit to change before proposing it again. An unchanged source eventually reaches the time budget; approval alone does not deploy the patch. A security role can inspect available local evidence, prepare changes and tests, and report missing advisory/network access; a role definition alone does not provision an advisory service or prove that packages are up to date.
+
+## Limits, interruptions and recovery
+
+The run count is a hard limit on new automatic launches. Active duration includes planning, clone preparation, agent work and cycle waits, but excludes owner pauses. Deadline checks run approximately every two seconds when the worker is free; CLI/process startup and stopping may add latency. Each turn also receives a bounded timeout. No claim of an exact wall-clock kill is made.
+
+The token threshold uses reported session counters. Some engines report usage only at the end of a turn, so an in-flight call can exceed it. It is **not a billing cap or subscription quota**. Stopping prevents new launches and requests the normal stop of owned sessions; a model request already sent cannot be recalled.
+
+Pause interrupts active agents and retains their conversations. Interrupted or failed steps are not automatically retried. Review them, explicitly skip a step when appropriate, and resume, or create a corrected mission. Restarts reconcile launch keys with existing sessions instead of creating duplicate work; an uncertain launch without a recoverable session stops for attention. Relocated or restored state is paused before automatic work can resume.
+
+Current limits are 50 missions per installation, eight steps, 32 runs and 32 cycles per mission, a duration of at most 24 active hours and at most two resident agents globally. Historical conversations and proposals remain available through the existing session and companion pages. Missions do not archive or delete them.

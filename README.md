@@ -60,6 +60,8 @@ The [Model evolution plugin](docs/user/31-model-evolution.md) pairs a companion 
 
 ## Documentation and contributions
 
+Organize bounded platform improvements with [resident missions](docs/user/33-resident-missions.md): review the architect’s plan, assign persistent roles and approve proposed patches. Missions retain progress across restarts and include finite recurrence and stop controls.
+
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.
 
 Memory backups cover selected files and settings, not conversations, attachments or all project files. Preview a restore and review its result in Settings → Backup. See the [backup guide](docs/user/10-backup.md) for the exact scope and current limitations.

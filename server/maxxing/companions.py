@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import hashlib
 import os
@@ -103,7 +104,13 @@ def _clone(run_id: str) -> Path:
     return dest
 
 
-def run(ident: str, path: str, mission: str = '') -> dict:
+def run(ident: str, path: str, mission: str = '', *, purpose: str = 'experiment',
+        launch_key: str = '', timeout_s: int = 1800, launch_guard=None) -> dict:
+    if launch_key:
+        for sid in store.list_ids():
+            existing = store.read_cached(sid) or {}
+            if (existing.get('companion') or {}).get('launch_key') == launch_key:
+                return service.public(existing)
     profile = next((p for p in roles() if p['id'] == ident), None)
     if profile is None:
         raise service.SessionError(404, 'not_found', 'Companion not found.')
@@ -119,11 +126,12 @@ def run(ident: str, path: str, mission: str = '') -> dict:
     architecture.write(repo)
     try:
         session = service.create_session(path, title=f"{profile['name']} — platform review", provider='codex',
-                                         permission_mode='acceptEdits', timeout_s=1800)
+                                         plan_mode=purpose == 'plan', permission_mode='plan' if purpose == 'plan' else 'acceptEdits',
+                                         timeout_s=max(60, min(1800, timeout_s)))
         sid = session['id']
         with store.edit(sid) as meta:
             meta['companion'] = {'id': ident, 'name': profile['name'], 'role': profile['role'],
-                                 'run_id': run_id, 'base': base, 'decision': None}
+                                 'run_id': run_id, 'base': base, 'decision': None, 'purpose': purpose, 'launch_key': launch_key}
         text = (f"You are {profile['name']}, a resident companion. Your persistent role:\n{profile['role']}\n\n"
                 "You are working in a disposable clone of the platform source. Inspect the code, identify one "
                 "concrete improvement, implement a small change in this clone, run relevant tests, and report "
@@ -139,7 +147,13 @@ def run(ident: str, path: str, mission: str = '') -> dict:
                 f"Respond in the user's language: {_language()} (the interface language) unless the mission "
                 "below is written in another one.\n\n"
                 f"Additional mission: {mission.strip() or 'Find a useful, small improvement.'}")
-        service.send_message(sid, text, source='companion')
+        if purpose == 'plan':
+            text = (f"You are {profile['name']}, a resident planning companion. Role: {profile['role']}\n"
+                    "Inspect the disposable source copy read-only. Do not edit files, execute updates, publish, "
+                    "contact external services or change credentials. Propose an actionable plan only. "
+                    "Use ../architecture.json for navigation; distinguish evidence from assumptions.\n" + mission)
+        with launch_guard() if launch_guard else contextlib.nullcontext():
+            service.send_message(sid, text, source='companion')
         bus.invalidate('companions', 'sessions')
         return service.get_session(sid) or session
     except Exception:
