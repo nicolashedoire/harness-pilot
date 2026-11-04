@@ -4,13 +4,16 @@ import { Link } from 'react-router'
 import { ArrowUpRight, Bot, ChevronRight, History, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useLang, useT } from '@/i18n'
-import { fmtDate, fmtDuration, fmtRelative } from '@/lib/format'
+import { fmtClockTimes, fmtDate, fmtDuration, fmtRelative } from '@/lib/format'
 import { useCronRuns } from '@/lib/queries'
 import type { CronKind, CronLastRun, CronRun } from '@/lib/types'
 import { Badge, Button, CodeBlock, EmptyState, Sensitive, Skeleton, StatusDot } from '@/components/ui'
 
 /** Sentence case for the server's humanised schedules. */
 export const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s)
+
+/** A humanised schedule from the server, sentence case, its times in the language's format (like the dates). */
+export const scheduleText = (s: string, lang: string) => cap(fmtClockTimes(s, lang))
 
 /** Re-render every `ms` (relative times). */
 export function useNow(ms = 30_000) {

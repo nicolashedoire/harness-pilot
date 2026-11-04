@@ -1,6 +1,10 @@
 @import 'tailwindcss';
 /* Default interface font only; the other fonts are loaded on demand (lib/fonts.ts loadFont). */
 @import '@fontsource-variable/inter';
+/* Class names come from the sources, never from the committed build: scanning web/dist kept classes that src/ no
+   longer uses (one more build was needed to drop them). Anything else generated under web/ is git-ignored, which
+   Tailwind skips already. */
+@source not "../../dist";
 
 /* ------------------------------------------------------------------------------------------
  * harness-pilot design tokens. Documented in docs/dev/DESIGN.md — change both together.

@@ -186,3 +186,70 @@ def test_uninstall_removes_the_pilot_link_only_when_ours(env):
     cmd_core.PILOT_LINK.write_text("another program")
     assert run_cli("uninstall", "--yes") == 0
     assert cmd_core.PILOT_LINK.read_text() == "another program"
+
+
+# ---- doctor: which `pilot` runs ----------------------------------------------------------------
+def _program(path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    path.chmod(0o755)
+    return path
+
+
+def _paths(monkeypatch, shell: list, sessions: list | None = None) -> None:
+    """The PATH of the shell running the doctor, and the one sessions get (spawn.base_env)."""
+    from maxxing.sessions import spawn
+    monkeypatch.setenv("PATH", ":".join(map(str, shell)))
+    monkeypatch.setattr(spawn, "base_env", lambda: {"PATH": ":".join(map(str, shell if sessions is None else sessions))})
+
+
+def test_doctor_warns_when_another_pilot_comes_first(tmp_path, monkeypatch):
+    other = _program(tmp_path / "usr-bin" / "pilot", "#!/bin/sh\necho a file browser\n")
+    _paths(monkeypatch, [other.parent])
+    c = cmd_core.check_cli_name()
+    assert c["id"] == "cli" and c["level"] == cmd_core.WARN
+    assert str(other) in c["title"] and "not harness-pilot" in c["detail"]
+    assert "use `maxxing`, the same command" in c["fix"]
+    binary = _program(tmp_path / "bin2" / "pilot", "\x7fELF not a script")       # a compiled program: not ours
+    _paths(monkeypatch, [binary.parent])
+    assert cmd_core.check_cli_name()["level"] == cmd_core.WARN
+
+
+def test_doctor_accepts_our_pilot_link_wrapper_and_venv_script(tmp_path, monkeypatch):
+    link_dir = cmd_core.PILOT_LINK.parent
+    _program(cmd_core.BIN_LINK, "#!/bin/bash\n# claude-maxxing CLI wrapper (custom state dir)\nexec /x/maxxing \"$@\"\n")
+    cmd_core.PILOT_LINK.symlink_to("maxxing")                                     # what `init` creates
+    _paths(monkeypatch, [link_dir])
+    c = cmd_core.check_cli_name()
+    assert c["level"] == cmd_core.OK and c["detail"] == str(cmd_core.PILOT_LINK)
+    venv = _program(tmp_path / "venv" / "bin" / "pilot", "#!/x/python\nimport sys\nfrom maxxing.cli import main\n")
+    _paths(monkeypatch, [venv.parent])                                            # `uv run pilot` in a checkout
+    assert cmd_core.check_cli_name()["level"] == cmd_core.OK
+
+
+def test_doctor_checks_the_pilot_that_sessions_run(tmp_path, monkeypatch):
+    other = _program(tmp_path / "home-local-bin" / "pilot", "#!/bin/sh\necho other\n")
+    _program(cmd_core.BIN_LINK, "#!/x/python\nfrom maxxing.cli import main\n")
+    cmd_core.PILOT_LINK.symlink_to("maxxing")
+    _paths(monkeypatch, [cmd_core.PILOT_LINK.parent], [other.parent, cmd_core.PILOT_LINK.parent])
+    c = cmd_core.check_cli_name()
+    assert c["level"] == cmd_core.WARN and "(sessions)" in c["title"] and "this shell" in c["detail"]
+    assert f"put {cmd_core.PILOT_LINK.parent} before {other.parent}" in c["fix"]
+
+
+def test_doctor_without_pilot_on_the_path(tmp_path, monkeypatch):
+    _paths(monkeypatch, [tmp_path / "empty"])
+    assert cmd_core.check_cli_name() is None                                      # a checkout, nothing installed
+    _program(cmd_core.BIN_LINK, "#!/x/python\nfrom maxxing.cli import main\n")
+    c = cmd_core.check_cli_name()
+    assert c["level"] == cmd_core.INFO and "maxxing init" in c["fix"] and "`maxxing` works" in c["detail"]
+
+
+def test_doctor_output_names_the_way_round(env, tmp_path, monkeypatch, capsys):
+    run_cli("init", "--workspace", str(env["ws"]), "--quiet")
+    other = _program(tmp_path / "usr-bin" / "pilot", "#!/bin/sh\necho other\n")
+    _paths(monkeypatch, [other.parent, *os.environ["PATH"].split(":")])
+    capsys.readouterr()
+    run_cli("doctor", "--json", "--offline")
+    ids = {c["id"]: c for c in json.loads(capsys.readouterr().out)["checks"]}
+    assert ids["cli"]["level"] == "warn" and "maxxing doctor" in ids["cli"]["fix"]

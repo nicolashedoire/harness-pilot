@@ -101,6 +101,12 @@ Session = {
   permission_mode: string,            // set by its cron ("" = the topic's, else the global mode)
   plan_ready: bool,                   // a plan-mode turn finished OK: its plan waits for POST /plan/approve
   provider: "claude"|"codex"|"discussion"|"debate",
+  // Mixed teams (POST /api/teams):
+  team_phase: "launching"|"working"|"synthesizing"|"completed"|"stopped"|"error"|null,   // on the coordinator
+  team_parent: string|null,           // on a worker: its coordinator session
+  team_turn: bool,                    // a worker whose last turn ran its team assignment: its stop raises no
+                                      // notification (feed, push, browser); the team notifies once, at the end
+                                      // of its coordinator's synthesis. A message sent to it later is its own turn
   // Claude Code + Codex conversations (provider discussion / debate; null / 0 / false for the others), see
   // "Discussion periods" below the table:
   debate_paused: bool,                // the automatic exchange is paused (Resume continues it)
@@ -723,7 +729,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 
 | kind | source | level | params | actions | resolved by |
 |---|---|---|---|---|---|
-| `session.done` | sessions | success | `session_id, title, path, provider, turns` | `open_session` | – |
+| `session.done` | sessions | success | `session_id, title, path, provider, turns` (never for a mixed-team worker on its assignment, `team_turn`: its coordinator notifies for the team) | `open_session` | – |
 | `session.failed` | sessions | error | `session_id, title, path, provider, error` | `open_session` | the next `session.done` of that session |
 | `discussion.paused` | sessions | warning | `session_id, title, path, provider ("discussion"\|"debate"), turns, turn_limit, duration_s, duration_limit_s` (limits: number or null) | `resume` (post), `open_session` | resume, a new message, Stop or deletion of that session |
 | `cron.succeeded` | crons | success | `cron_id, name, run_id, duration_s` (folded over all jobs, group `ok`: params of the latest run) | – | – |

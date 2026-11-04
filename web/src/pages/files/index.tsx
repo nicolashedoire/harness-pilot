@@ -1,5 +1,6 @@
 // /files?path=<absolute path> — file browser. `path` is a folder (listing, empty viewer) or a file (listing
 // of its folder + viewer/editor). Desktop: listing left, viewer right. Mobile: listing page → file page.
+// A workspace-relative path (`projects/acme/topics/blog/memory.md`) is resolved against the workspace root first.
 import * as React from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -7,6 +8,7 @@ import { ArrowLeft, ChevronRight, FileQuestion, Eye, EyeOff, File as FileIcon, F
 import type { FileEntry, FileList } from '@/lib/types'
 import { api, errorMessage, isApiError } from '@/lib/api'
 import { seedFileKind, useFileKind, useFileList, useFileSearch } from '@/lib/queries/files'
+import { useWorkspace } from '@/lib/queries/workspace'
 import { qk } from '@/lib/queries/keys'
 import { cn, copyText } from '@/lib/utils'
 import { useT } from '@/i18n'
@@ -42,13 +44,34 @@ import { NameDialog, type NameDialogState } from './dialogs'
 import { sortEntries, useFilePrefs, useTopicFor, useUploads } from './state'
 
 export default function FilesPage() {
+  const [params, setParams] = useSearchParams()
+  const path = (params.get('path') || '').replace(/(.)\/+$/, '$1')
+  // Topics and agents name workspace files relatively: the same file as its absolute path, so the breadcrumb,
+  // the selected row and "Ask Claude" work. Nothing is listed until it is resolved (the server wants absolute paths).
+  const relative = !!path && !path.startsWith('/')
+  const ws = useWorkspace()
+  const resolved = relative && ws.data ? resolvePath(ws.data.root, path) : null
+  React.useEffect(() => {
+    if (resolved)
+      setParams(
+        (p) => {
+          const n = new URLSearchParams(p)
+          n.set('path', resolved)
+          return n
+        },
+        { replace: true },
+      )
+  }, [resolved, setParams])
+  if (relative && !ws.isError) return null
+  return <FilesBrowser path={path} />
+}
+
+function FilesBrowser({ path }: { path: string }) {
   const t = useT()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const mobile = useIsMobile()
   const mask = useMask()
-  const [params] = useSearchParams()
-  const path = (params.get('path') || '').replace(/(.)\/+$/, '$1')
   const kindQ = useFileKind(path)
   const isFile = kindQ.data === 'file' || kindQ.data === 'missing'
   const file = isFile ? path : null

@@ -118,6 +118,16 @@ def _num(v: object) -> float:
         return 0.0
 
 
+def _team_turn(m: dict) -> bool:
+    """A mixed-team worker whose last turn ran its team assignment (sessions/teams.py; a worker without `last_turn`
+    yet is on its assignment, its first turn): the team reports through its coordinator, so this session's own stop
+    raises no notification (sessionfeed, web useDoneNotifier). A message sent to the worker later is its own turn."""
+    if not m.get("team_parent"):
+        return False
+    last = m.get("last_turn")
+    return not isinstance(last, dict) or last.get("source") == "team"
+
+
 def _discussion_elapsed(m: dict) -> int:
     """Seconds the current period of a discussion has run: the time banked by its pauses plus the running span
     (0 otherwise). Same value as the banked time while it is paused (pauses pop `discussion_started`)."""
@@ -139,6 +149,7 @@ def public(meta: dict) -> dict:
             "swarm_agents": m.get("swarm_agents"),
             "team_phase": (m.get("team") or {}).get("phase"),
             "team_parent": m.get("team_parent"),
+            "team_turn": _team_turn(m),
             "debate_telegram": bool(m.get("debate_telegram")),
             "debate_paused": bool(m.get("debate_paused")),
             "discussion_pause_reason": m.get("discussion_pause_reason") or None,
