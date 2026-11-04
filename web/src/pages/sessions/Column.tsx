@@ -603,7 +603,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
       ),
     compact: () => compact.mutate(sid, { onSuccess: () => toast.success(t('sessions.compacting')) }),
     handoff: async () => {
-      if (!(await confirm({ title: t('sessions.handoff.title'), description: t('sessions.handoff.desc'), confirmText: t('sessions.handoff.confirm') }))) return
+      if (!(await confirm({ title: t('sessions.handoff.title'), description: t(duo ? 'convx.handoffDuo' : 'sessions.handoff.desc'), confirmText: t('sessions.handoff.confirm') }))) return
       handoff.mutate(sid, {
         onSuccess: (s) => {
           seedEmptyLog(s.id)
@@ -738,7 +738,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                 <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.compact}>
                   <Minimize2 /> {t('sessions.menu.compact')}
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={session?.provider === 'debate' || session?.provider === 'discussion' || session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
+                <DropdownMenuItem disabled={session?.provider?.startsWith('plugin:') || running || !session?.turns} onSelect={actions.handoff}>
                   <Sparkles /> {t('sessions.menu.handoff')}
                 </DropdownMenuItem>
                 {duo && (
@@ -918,7 +918,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   toolbar={
                     session ? (
                       <>
-                        {!duo && (!session.provider?.startsWith('plugin:') || session.provider_capabilities?.includes('plan')) && <PlanToggle session={session} />}
+                        {(!session.provider?.startsWith('plugin:') || session.provider_capabilities?.includes('plan')) && <PlanToggle session={session} />}
                         {!!session.swarm_agents && (
                           <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAgentMapOpen(true)}>
                             <Network /> <span className="@max-[26rem]:sr-only">{t('sessions.swarm.map')}</span>
@@ -1586,7 +1586,7 @@ export function NewSessionColumn({ col, variant, index, count, place }: { col: E
                 <Input id={`codex-model-${col.key}`} value={codexModel} maxLength={100} onChange={(e) => setCodexModel(e.target.value)} placeholder={t('sessions.model.default')} autoComplete="off" />
                 <p className="text-xs text-muted-foreground">{plugin ? t('agentProviders.modelHint', { name: agentName('plugin', t, adapter?.name) }) : t('sessions.codexModelHint')}</p>
               </div>}
-              {provider !== 'both' && provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
+              {provider !== 'team' && (!plugin || adapter?.capabilities.includes('plan')) && <label htmlFor={`plan-${col.key}`} className="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/[0.06]">
                 <Checkbox id={`plan-${col.key}`} checked={planMode} onCheckedChange={(v) => setPlanMode(v === true)} className="mt-0.5" />
                 <span className="grid gap-0.5 leading-tight">
                   <span className="flex items-center gap-1.5 text-sm font-medium">

@@ -31,18 +31,23 @@ lines only concern a Linux server and can be ignored locally: systemd and the se
 | Agent turns (their processes' own errors) | `.harness-pilot-local/state/logs/runner.log` |
 | One conversation | `.harness-pilot-local/state/sessions/<id>.log`; the session page shows the same events |
 | Scheduled jobs | **Crons** (last result and output) or `bash scripts/dev-local.sh cli cron list` |
+| The background service ([`service install`](installation)) | `.harness-pilot-local/logs/server.log` and `server.err.log`; `bash scripts/dev-local.sh service status` prints their full paths |
 
 **Restart it.** Press `Ctrl+C` in its terminal, then run `bash scripts/dev-local.sh` again from the repository
 root. After a `git pull`, restart the same way: the script installs the new dependencies before it starts.
-`pilot update` and the Update button do not work in the local setup.
+`pilot update` and the Update button do not work in the local setup. When it runs as the background service:
+`bash scripts/dev-local.sh service restart`.
 
 **When the terminal is closed, the server stops,** and scheduled jobs, backups, resident missions and Telegram stop
 with it. While the Mac sleeps, it is paused. A job whose minute passed while the server was stopped or paused does
-not run late: the local scheduler only looks at the current minute.
+not run late: the local scheduler only looks at the current minute. To keep it running without a terminal, install
+the [background service](installation).
 
 **"Address already in use" at start.** The local app listens on `127.0.0.1:8787`, and something else already
-holds that port, usually the app running in another terminal. `lsof -nP -iTCP:8787 -sTCP:LISTEN` names the process.
-Stop it with `Ctrl+C` in its terminal, or with `kill <PID>`. The address is only reachable from this computer.
+holds that port, usually the app running in another terminal or as the background service (`bash
+scripts/dev-local.sh service status`). The start says which process holds it, and so does
+`lsof -nP -iTCP:8787 -sTCP:LISTEN`. Stop it with `Ctrl+C` in its terminal, with `service uninstall`, or with
+`kill <PID>`; `HARNESS_PILOT_PORT=8790` picks another port. The address is only reachable from this computer.
 
 **"Operation not permitted" on a folder.** macOS asks before a program reads Desktop, Documents, Downloads,
 iCloud Drive or an external disk. The server and the agents run with the permissions of your terminal app
@@ -59,9 +64,11 @@ thumbnails with `ffmpeg` and PDF thumbnails with `pdftoppm`, and the local setup
 | `ffmpeg` with WebP | thumbnails and previews of images and videos, lighter copies of videos, voice messages | `brew install ffmpeg-full` |
 | `pdftoppm` | the first page of a PDF as its thumbnail | `brew install poppler` |
 
-Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one but is
-not put on the PATH by Homebrew: start the local app with
-`PATH="$(brew --prefix ffmpeg-full)/bin:$PATH" bash scripts/dev-local.sh`. To check a `ffmpeg`:
+Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one, and
+Homebrew does not put it on the PATH, but `scripts/dev-local.sh` uses it first as soon as it is installed: restart
+the local app after `brew install ffmpeg-full`. While a tool is missing, Settings → System shows a **Thumbnails and
+previews** card with the command to run, `bash scripts/dev-local.sh cli doctor` warns (`media_tools`), and the
+server says so in its terminal at start. Nothing is installed for you. To check a `ffmpeg` by hand:
 `ffmpeg -hide_banner -encoders | grep libwebp` must print a line.
 
 **What Settings → System shows locally.** The version card shows the version and commit of your clone, and
@@ -96,6 +103,7 @@ checks and the logs, explains, and fixes what is safe to fix.
 | security | firewall (ufw), fail2ban and automatic security updates active - warning only; fix: `bash /opt/claude-maxxing/install.sh --secure` |
 | state_files | a damaged `config.json` / `secrets.json` was found and replaced; its copy (`*.damaged-<date>`) is kept next to it - compare, restore what is missing (keys: Settings -> Keys), delete the copy |
 | tools | Node.js, Remotion, Scrapling and the shared Chromium ready (videos, PDFs, scraping) - warning only; fix: `pilot deps update` |
+| media_tools | `ffmpeg` with its WebP encoder and `pdftoppm` found: thumbnails and previews of images, videos and PDFs - warning only; the fix names the install command (`brew install ffmpeg-full`, `brew install poppler` on a Mac) |
 | deps_files | external components (`pilot deps list`): ✘ when a binary changed since it was installed or a file is not owned by root (another user could replace it), ! when one is missing or not at the version of this release; fix: `pilot deps update` |
 | bind | not listening on a public address |
 | public_url, caddy | your URL reachable, Caddy config valid |
