@@ -9,7 +9,7 @@ import type { Session } from '@/lib/types'
 import { useT } from '@/i18n'
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, FormField, Input } from '@/components/ui'
 
-type LimitsBody = { turn_limit: number | null; duration_minutes: number | null }
+type LimitsBody = { turn_limit?: number | null; duration_minutes?: number | null }
 
 export function useDiscussionLimits() {
   const set = useSetSessionCache()
@@ -27,18 +27,27 @@ export function ChangeLimitsDialog({ session, open, onOpenChange }: { session: S
   const t = useT()
   const save = useDiscussionLimits()
   const resume = useResumeDiscussion()
+  const initial = {
+    turns: session.discussion_turn_limit ? String(session.discussion_turn_limit) : '',
+    minutes: session.discussion_duration_seconds ? String(Math.round(session.discussion_duration_seconds / 60)) : '',
+  }
   const [turns, setTurns] = React.useState('')
   const [minutes, setMinutes] = React.useState('')
   // the session's limits each time it opens
   React.useEffect(() => {
     if (!open) return
-    setTurns(session.discussion_turn_limit ? String(session.discussion_turn_limit) : '')
-    setMinutes(session.discussion_duration_seconds ? String(Math.round(session.discussion_duration_seconds / 60)) : '')
-  }, [open, session.discussion_turn_limit, session.discussion_duration_seconds])
+    setTurns(initial.turns)
+    setMinutes(initial.minutes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on opening
+  }, [open])
   const ok = valid(turns, 200) && valid(minutes, 1440)
   const busy = save.isPending || resume.isPending
   const apply = async (andResume: boolean) => {
-    await save.mutateAsync({ id: session.id, turn_limit: value(turns), duration_minutes: value(minutes) })
+    // only what was changed: a duration that is not a whole number of minutes stays as it is
+    const body: LimitsBody = {}
+    if (turns.trim() !== initial.turns) body.turn_limit = value(turns)
+    if (minutes.trim() !== initial.minutes) body.duration_minutes = value(minutes)
+    await save.mutateAsync({ id: session.id, ...body })
     if (andResume) await resume.mutateAsync(session.id)
     onOpenChange(false)
   }
