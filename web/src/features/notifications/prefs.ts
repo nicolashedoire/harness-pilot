@@ -2,8 +2,8 @@
 // the tab is in front, a system notification when it is not, a push notification when no tab is open; and which of
 // those ring (column "Sound"). Stored per browser in the UI store (`notifyPrefs`, `soundPrefs`, keys `<kind>` or
 // `source:<name>`); a missing entry is the default below.
-import { categoryOf, needsAttention } from '@/lib/feed'
-import type { FeedCategory, FeedHookKind, FeedLevel, FeedSettings, PushPrefs } from '@/lib/types'
+import { categoryOf, needsAttention } from '../../lib/feed'
+import type { FeedCategory, FeedHookKind, FeedLevel, FeedSettings, PushPrefs } from '../../lib/types'
 
 export type PrefSubject = { kind?: string; level: FeedLevel; source: string; category?: FeedCategory }
 
@@ -39,6 +39,7 @@ export const PREF_ROWS: PrefRow[] = [
     level: 'info',
     sound: false,
   },
+  { id: 'companions', category: 'system', kinds: ['companion.ready', 'companion.error', 'mission.review'], level: 'warning', sound: true },
   { id: 'health', category: 'system', kinds: ['health.issue', 'deps.vulnerable', 'deps.update_failed'], level: 'warning', sound: true },
   { id: 'security', category: 'system', kinds: ['signin.failed', 'signin.denied', 'webhook.refused', 'backup.restore_held'], level: 'warning', sound: true },
   { id: 'signins', category: 'system', kinds: ['signin.ok'], level: 'info', sound: false },
