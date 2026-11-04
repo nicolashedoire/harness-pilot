@@ -462,6 +462,7 @@ function withoutFailureNotes(blocks: Block[]): Block[] {
 
 /** Who answers next while nothing of the turn has come yet. */
 function nextAgent(session: Session, blocks: Block[]): AgentId {
+  if (session.provider?.startsWith('plugin:')) return 'plugin'
   if (session.provider === 'codex') return 'codex'
   if (!isDuo(session.provider)) return 'claude'
   for (let i = blocks.length - 1; i >= 0; i--) {

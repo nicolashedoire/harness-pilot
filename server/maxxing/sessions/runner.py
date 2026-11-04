@@ -44,7 +44,7 @@ from typing import Callable, Iterator
 if __package__ in (None, ""):                       # path invocation
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from maxxing import claude_auth, config, mcp_auto   # noqa: E402  (stdlib-only modules)
+from maxxing import agent_providers, claude_auth, config, mcp_auto   # noqa: E402  (stdlib-only modules)
 from maxxing.sessions import clip, codex, resume, spawn, store      # noqa: E402
 
 RESUME_LOST = re.compile(r"no conversation found|session .{0,80}not found|no such session|"
@@ -192,14 +192,17 @@ class Runner:
 
     def _take(self, m: dict, q: list, cfg: dict, now: float) -> dict:
         """Pop the queue head (under the session lock), with the summary turn first when the return is worth it."""
-        smart = None if m.get("provider") in ("discussion", "debate") else resume.candidate(m, q[0], cfg, now)
+        # Claude and Codex threads can be summarized; debates and agent plugins (adapter-owned threads) cannot.
+        provider = str(m.get("provider") or "claude")
+        summarizable = provider not in ("discussion", "debate") and not provider.startswith("plugin:")
+        smart = resume.candidate(m, q[0], cfg, now) if summarizable else None
         item = q.pop(0)
         item.pop("held", None)
         if smart:                                      # a summary written for this message (smart resume)
             idle = (resume.away_text(smart[0]), smart[1] // 1000)
             prompt = resume.summary_prompt(item.get("text") or "")
         else:                                          # the idle rule: a plain summary
-            idle = None if m.get("provider") in ("discussion", "debate") else _idle_compact(m, item, cfg, now)
+            idle = _idle_compact(m, item, cfg, now) if summarizable else None
             prompt = SUMMARY_PROMPT
         if idle:                                       # the summary runs first, the message waits at the head
             q.insert(0, {**item, "held": True})        # a Stop cancels the summary, never the user's message
@@ -282,6 +285,8 @@ class Runner:
             item = {**item, 'preface': '\n\n'.join(filter(None, [team, item.get('preface')]))}
         if actor == "codex":
             return self._codex_turn(item, meta, cfg, cwd, kind, is_debate)
+        if actor.startswith('plugin:'):
+            return self._plugin_turn(actor, item, meta, cfg, cwd, kind)
         mode = effective_mode(meta, cfg)
         # Plan mode: a read-only turn that ends with a plan; the user validates it (approve_plan) before
         # anything is changed. Compact / hand-off summaries run as usual.
@@ -340,6 +345,41 @@ class Runner:
         elif not plan:
             self._auto_compact(item, a, err, cfg)
         return err
+
+    def _plugin_turn(self, actor: str, item: dict, meta: dict, cfg: dict, cwd: str, kind: str) -> str | None:
+        adapter = agent_providers.get(actor)
+        plan = bool(meta.get('plan_mode')) and kind not in ('compact', 'handoff')
+        if meta.get('plan_ready'):                     # a new turn replaces the plan waiting for validation
+            store.update(self.sid, plan_ready=False)
+        if not adapter:
+            attempt = Attempt(rc=1, stderr='The agent plugin is unavailable or disabled.')
+        elif plan and 'plan' not in adapter['capabilities']:
+            attempt = Attempt(rc=1, stderr='The agent plugin does not support plan mode.')
+        elif item.get('attachments') and 'attachments' not in adapter['capabilities']:
+            attempt = Attempt(rc=1, stderr='The agent plugin does not support attachments.')
+        else:
+            request = {'protocol': agent_providers.PROTOCOL, 'session_id': self.sid, 'cwd': cwd,
+                       'model': meta.get('model') or '', 'permission_mode': 'plan' if plan else effective_mode(meta, cfg),
+                       'prompt': (PLAN_PREFACE if plan else '') + build_prompt(item),
+                       'history': agent_providers.history(store.log_path(self.sid)),
+                       'attachments': item.get('attachments') or [],
+                       'context': codex.workspace_context(Path(cfg.get('workspace') or '/'), Path(cwd))}
+            env = spawn.base_env()
+            env.update({str(k): str(v) for k, v in (meta.get('env') or {}).items()
+                        if spawn.ENV_NAME_RE.match(str(k))})
+            env['PILOT_AGENT_PROVIDER'] = actor
+            attempt = self.attempt(adapter['command'], json.dumps(request) + '\n', cwd, env,
+                                   meta.get('timeout_s') or 1800, hold=False, protocol='pilot')
+            if attempt.stopped:
+                self.note("Stopped." if not attempt.timed_out else "Turn stopped (timeout).", "warn")
+        store.append_log(self.sid, {'type': 'mx_done', 'code': attempt.rc, 'stderr': attempt.stderr[-STDERR_TAIL:],
+                                   'stopped': attempt.stopped and not attempt.timed_out,
+                                   'timed_out': attempt.timed_out, 'at': time.time()})
+        error = self._record(attempt, item)
+        if plan and error is None and not attempt.stopped:
+            store.update(self.sid, plan_ready=True)
+        self._post(item, attempt, error)
+        return error
 
     def _codex_turn(self, item: dict, meta: dict, cfg: dict, cwd: str, kind: str,
                     is_debate: bool = False) -> str | None:
@@ -520,7 +560,7 @@ class Runner:
     @staticmethod
     def _cwd(cfg: dict, meta: dict) -> str | None:
         companion = meta.get('companion')
-        if isinstance(companion, dict) and meta.get('provider') == 'codex':
+        if isinstance(companion, dict):
             run_id = str(companion.get('run_id') or '')
             if not store.is_valid_id(run_id):
                 return None
@@ -538,7 +578,7 @@ class Runner:
         """Run one claude process, streaming its stdout into the raw log. `prev_total`: the running cost Claude
         last reported for thread `csid` (to tell this turn's own cost). Holds the Claude Code update lock (shared)
         meanwhile: an automatic update never replaces the files of a running Claude, and waits for it."""
-        fd = _claude_in_use(self.note)
+        fd = _claude_in_use(self.note) if protocol == 'claude' else None
         try:
             return self._attempt(args, prompt, cwd, env, timeout_s, hold, csid, prev_total, protocol)
         finally:
@@ -577,10 +617,12 @@ class Runner:
             if not line:
                 continue
             ev = _parse(line)
-            if protocol == "codex":
+            if protocol in ('codex', 'pilot'):
                 if ev and ev.get("type") == "thread.started" and isinstance(ev.get("thread_id"), str):
-                    store.update(self.sid, codex_thread_id=ev["thread_id"])
-                for mapped in codex.events(ev or {}):
+                    if protocol == 'codex':
+                        store.update(self.sid, codex_thread_id=ev["thread_id"])
+                mapped_events = codex.events(ev or {}) if protocol == 'codex' else agent_providers.events(ev)
+                for mapped in mapped_events:
                     self._observe(mapped, a)
                     if clip.keep_event(mapped):
                         clip.clip_event(mapped)
@@ -605,9 +647,9 @@ class Runner:
                 a.held = []
             self._write_line(line)
         a.rc = p.wait()
-        if protocol == "codex" and a.rc == 0 and a.result is None and not self.stop_flag.is_set():
+        if protocol in ('codex', 'pilot') and a.rc == 0 and a.result is None and not self.stop_flag.is_set():
             a.rc = 1
-            err_chunks.append("Codex exited without a turn result.")
+            err_chunks.append(("Codex" if protocol == "codex" else "The agent plugin") + " exited without a turn result.")
         if a.rc in (-9, 137) and oom_before is not None:
             a.oom = (_oom_kills() or 0) > oom_before
         if timer:
@@ -679,7 +721,7 @@ class Runner:
                 err = OOM_ERROR
         meta = store.read(self.sid) or {}
         actor = meta.get("turn_provider") if meta.get("provider") in ("discussion", "debate") else meta.get("provider")
-        if not (a.stopped and not a.timed_out) and actor != "codex":
+        if not (a.stopped and not a.timed_out) and actor in (None, 'claude'):
             auth_err = _auth_error(a, ok)
             if auth_err:
                 err = auth_err

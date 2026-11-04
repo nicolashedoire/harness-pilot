@@ -1,16 +1,18 @@
 // The marks of the coding agents a session runs (Claude Code, Codex), drawn inline so they work offline. The paths
 // come from Simple Icons (CC0); the marks themselves belong to their owners and only identify the agent that answers
 // (see THIRD_PARTY_NOTICES.md). The Claude mark keeps its own colour, the OpenAI mark follows the text colour.
+import { Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Session } from '@/lib/types'
 
-export type AgentId = 'claude' | 'codex'
+export type AgentId = 'claude' | 'codex' | 'plugin'
 
 /** Product names: never translated. */
-export const AGENT_NAME: Record<AgentId, string> = { claude: 'Claude Code', codex: 'Codex' }
+export const AGENT_NAME: Record<AgentId, string> = { claude: 'Claude Code', codex: 'Codex', plugin: 'Agent' }
 
 /** Agents a session talks to, in speaking order. */
 export function sessionAgents(provider: Session['provider']): AgentId[] {
+  if (provider?.startsWith('plugin:')) return ['plugin']
   if (provider === 'codex') return ['codex']
   if (provider === 'discussion' || provider === 'debate') return ['claude', 'codex']
   return ['claude']
@@ -36,9 +38,9 @@ export function AgentIcon({ agent, size = 20, label, className }: { agent: Agent
       style={{ width: size, height: size }}
       data-agent-icon={agent}
     >
-      <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden focusable="false">
+      {agent === 'plugin' ? <Bot size={size} aria-hidden /> : <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden focusable="false">
         {agent === 'claude' ? <path fill={CLAUDE_MARK} d={CLAUDE_PATH} /> : <path fill="currentColor" d={OPENAI_PATH} />}
-      </svg>
+      </svg>}
     </span>
   )
 }

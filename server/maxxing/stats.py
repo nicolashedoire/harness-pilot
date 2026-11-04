@@ -129,6 +129,10 @@ def compute() -> dict:
         path = m.get("path") if isinstance(m.get("path"), str) else ""
         _add(totals, tk, cost, turns)
         tracked = m.get('provider_usage') if isinstance(m.get('provider_usage'), dict) else {}
+        for name in tracked:
+            if isinstance(name, str) and name.startswith('plugin:') and len(name) <= 64:
+                providers.setdefault(name, {**store.empty_tokens(), 'total': 0, 'turns': 0,
+                    'name': m.get('provider_name') or name})
         for name, acc in providers.items():
             p = tracked.get(name) if isinstance(tracked.get(name), dict) else {}
             for key, _ in store.TOKEN_KEYS:
