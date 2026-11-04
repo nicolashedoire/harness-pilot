@@ -1094,7 +1094,7 @@ export const en = {
   'codex.loginHint': 'After installing Codex, sign in from a terminal with',
   'codex.capabilities': 'Current capabilities',
   'codex.capabilitiesDesc': 'Individual sessions and automatic conversations with Claude Code.',
-  'codex.limits': 'Codex shares topic memory, attachments, plan mode and compaction. Claude Code only for now: side questions, MCP servers, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota. Details in the Sessions guide.',
+  'codex.limits': 'Codex shares topic memory, attachments, plan mode, compaction and the MCP servers of Settings → MCP (not their sign-ins). Claude Code only for now: side questions, scheduled prompts, Claude swarm, context gauge and automatic compaction, Protect the secrets, usage quota. Details in the Sessions guide.',
   'settings.telegram': 'Telegram',
   'settings.telegram.desc': 'Your bot, linked chat, threads and notifications.',
   'settings.backup': 'Backup',

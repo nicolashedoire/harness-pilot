@@ -263,3 +263,81 @@ def test_discussion_preset_save_list_delete_and_validation(client):
     assert client.get('/api/discussion-presets').json() == [saved]
     assert client.delete(f"/api/discussion-presets/{saved['id']}").json() == {'ok': True}
     assert client.get('/api/discussion-presets').json() == []
+
+
+def _claude_json(tmp_path, monkeypatch, data):
+    own = tmp_path / 'claude-config'
+    own.mkdir(exist_ok=True)
+    (own / '.claude.json').write_text(json.dumps(data))
+    monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(own))       # read like Settings -> MCP and Claude's turns
+    monkeypatch.setenv('MAXXING_CODEX_MCP', '1')            # conftest turns it off everywhere else
+    return own
+
+
+def test_mcp_servers_are_given_to_codex_without_secrets_on_the_command_line(tmp_path, monkeypatch):
+    folder = tmp_path / 'ws' / 'projects' / 'acme' / 'topics' / 'ads'
+    folder.mkdir(parents=True)
+    _claude_json(tmp_path, monkeypatch, {
+        'mcpServers': {
+            'acme': {'command': 'npx', 'args': ['-y', '@acme/mcp', '--region=${REGION:-eu}'],
+                     'env': {'LOG_LEVEL': 'debug', 'ACME_KEY': '${VAULT_ACME}'}},
+            'legacy': {'type': 'sse', 'url': 'https://sse.example.com/sse'},
+            'keyed': {'type': 'http', 'url': 'https://mcp.example.com/mcp?key=a1b2c3d4e5f6g7h8i9j0k1'},
+            'dotted.name': {'command': 'tool'},
+            'pathy': {'command': 'tool', 'env': {'PATH': '${VAULT_ACME}'}},
+            'missing': {'command': 'tool', 'env': {'TOKEN': '${NOT_SET}'}},
+            'argkey': {'command': 'tool', 'args': ['--token', '${VAULT_ACME}']},
+        },
+        'projects': {str(folder): {'mcpServers': {
+            'ads': {'type': 'http', 'url': 'https://ads.example.com/mcp',
+                    'headers': {'Authorization': 'Bearer ${ADS_TOKEN}', 'Content-Type': 'application/json'}}}}},
+    })
+    from maxxing.sessions import spawn
+    monkeypatch.setattr(spawn, '_exposed_vault', lambda s: {'VAULT_ACME': 'acme-secret-123456'})
+    env = {'ADS_TOKEN': 'ads-secret-987654'}
+    args, extra, skipped = codex.mcp_config(str(folder), env)
+    tables = {a.split('=', 1)[0]: a.split('=', 1)[1] for a in args[1::2]}
+    assert set(tables) == {'mcp_servers.acme', 'mcp_servers.ads', 'shell_environment_policy.exclude'}
+    assert tables['mcp_servers.acme'] == ('{command = "npx", args = ["-y", "@acme/mcp", "--region=eu"], '
+                                          'env = {LOG_LEVEL = "debug"}, env_vars = ["ACME_KEY"]}')
+    assert tables['mcp_servers.ads'] == ('{url = "https://ads.example.com/mcp", env_http_headers = '
+                                         '{Authorization = "MAXXING_MCP_H0"}, http_headers = {Content-Type = "application/json"}}')
+    assert extra == {'ACME_KEY': 'acme-secret-123456', 'MAXXING_MCP_H0': 'Bearer ads-secret-987654'}
+    assert not any('secret' in a for a in args)                 # secrets go through the environment only
+    assert tables['shell_environment_policy.exclude'] == '["ACME_KEY", "MAXXING_MCP_H0"]'
+    reasons = dict(skipped)
+    assert set(reasons) == {'legacy', 'keyed', 'dotted.name', 'pathy', 'missing', 'argkey'}
+    assert 'arguments' in reasons['argkey']
+    assert 'sse' in reasons['legacy'] and 'address' in reasons['keyed'] and '${NOT_SET}' in reasons['missing']
+
+
+def test_a_codex_turn_gets_the_mcp_servers_and_says_which_are_left_out(client, topic, mx, monkeypatch):
+    from maxxing import workspace
+    folder = workspace.topic_dir(topic)
+    _claude_json(mx['tmp'], monkeypatch, {
+        'mcpServers': {'acme': {'command': 'npx', 'args': ['-y', '@acme/mcp'], 'env': {'ACME_KEY': '${ACME_SECRET}'}},
+                       'legacy': {'type': 'sse', 'url': 'https://sse.example.com/sse'}},
+        'projects': {str(folder): {'disabledMcpServers': []}},
+    })
+    monkeypatch.setenv('ACME_SECRET', 'turn-secret-42')
+    fake = mx['tmp'] / 'codex-mcp'
+    calls = mx['tmp'] / 'codex-mcp-calls.jsonl'
+    fake.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+sys.stdin.read()
+with open({str(calls)!r}, "a") as f:
+    f.write(json.dumps({{"argv": sys.argv[1:], "acme": os.environ.get("ACME_KEY")}}) + "\\n")
+print(json.dumps({{"type": "thread.started", "thread_id": "t-mcp"}}), flush=True)
+print(json.dumps({{"type": "item.completed", "item": {{"type": "agent_message", "text": "ok"}}}}), flush=True)
+print(json.dumps({{"type": "turn.completed", "usage": {{"input_tokens": 1, "output_tokens": 1}}}}), flush=True)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'go'}).json()['id']
+    wait_idle(client, sid)
+    call = json.loads(calls.read_text().splitlines()[-1])
+    assert 'mcp_servers.acme={command = "npx", args = ["-y", "@acme/mcp"], env_vars = ["ACME_KEY"]}' in call['argv']
+    assert call['argv'].index('--ignore-user-config') < call['argv'].index('mcp_servers.acme={command = "npx", args = ["-y", "@acme/mcp"], env_vars = ["ACME_KEY"]}')
+    assert call['acme'] == 'turn-secret-42' and not any('turn-secret' in a for a in call['argv'])
+    notes = [e['text'] for e in all_events(client, sid) if e['type'] == 'note']
+    assert any('MCP servers not given to Codex: legacy' in n for n in notes)

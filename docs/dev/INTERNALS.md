@@ -590,6 +590,20 @@ optional auth scheme word) or a `PLAIN_HEADERS` header; URL userinfo and query v
 `.claude.json` / `.mcp.json` goes through `_dict()` (hand-edited files). `.claude.json` rewrites use a unique
 0600 temp file + `os.replace`.
 
+Codex turns get the same servers (`sessions/codex.mcp_config(cwd, env)`, called by `runner._codex_turn`): the
+servers Claude Code would load in the session's folder (`mcp_auto.candidates`: user scope minus the folder's disabled
+ones, local scope, approved `.mcp.json` of the folder and its parents; `harness-pc` excluded), turned into
+`-c mcp_servers.<name>={...}` inline TOML tables (checked with codex-cli 0.150.1, `codex mcp list --json`), next to
+`--ignore-user-config`, so the user's own Codex config is never read nor changed. `${KEY}` / `${KEY:-default}`
+references are expanded from the turn environment plus the vault keys flagged `expose`; no secret is put on the
+command line: a stdio `env` value that is not plain goes in the Codex process environment under its own name and in
+`env_vars`, a non-plain HTTP header in `MAXXING_MCP_H<n>` and `env_http_headers`; plain values stay in `env` /
+`http_headers`. Skipped, with the reason (`-> skipped [(name, reason)]`): names outside `[A-Za-z0-9_-]{1,64}`,
+`sse` / `ws` transports (Codex has streamable HTTP and stdio only), an address or program arguments carrying a key
+(literal, or a reference to a vault key: it would be on the command line), a secret env value whose name is reserved (`PATH`, `HOME`, `CODEX_*`, `OPENAI_*`...), a reference
+with no value. Claude's OAuth sign-ins and claude.ai connectors are not shared (Codex keeps its own tokens).
+The runner notes the skipped servers in the conversation when that list changes (meta `codex_mcp_skipped`).
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`
@@ -845,6 +859,8 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_MCP=0` Codex turns get no MCP server (`codex.mcp_config`; tests: they never read the real
+  `.claude.json`, `test_codex_provider.py` opts back in with a temporary `CLAUDE_CONFIG_DIR`)
 - `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
   also read by the doctor, uninstall and `blocks.sync_agent_files`) instead of `~/.agents/skills`.
   `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and

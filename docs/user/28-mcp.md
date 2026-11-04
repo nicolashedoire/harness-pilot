@@ -3,7 +3,7 @@ section: Using harness-pilot
 ---
 # MCP servers
 
-This page describes the inherited **Claude Code** integration. MCP settings and the computer-browser bridge have not been validated for Codex in this version. No computer agent binary is currently listed for download; its inherited release URL points to the original project. The agent still needs to be built and verified for this repository.
+This page describes the inherited **Claude Code** integration; Codex sessions get the same servers with the limits listed in [Codex](#codex). The computer-browser bridge is for Claude only. No computer agent binary is currently listed for download; its inherited release URL points to the original project. The agent still needs to be built and verified for this repository.
 
 An MCP server gives Claude the tools of a service: read your ads account, search a Notion workspace, query a
 database... **Settings -> MCP** lists every MCP server Claude Code uses in your workspace, where each one applies,
@@ -125,3 +125,23 @@ names: use `${KEY_NAME}` for them so a restore works as is; plain settings such 
 Sign-ins must be done again on a new server.
 
 From a terminal: `pilot mcp list|add|remove` (see [CLI reference](17-cli-reference.md)).
+
+## Codex
+
+Codex sessions (and Codex's turns in a discussion or a debate) get the servers listed here that apply to their
+topic: every-session servers, the topic's own servers and the approved `.mcp.json` servers. harness-pilot passes them
+when it starts each Codex turn; your own Codex configuration (`~/.codex/config.toml`) is neither read nor changed.
+`${KEY_NAME}` keys are given to Codex through its environment, never written on its command line, and they are kept
+out of the commands Codex runs.
+
+Some servers cannot be given to Codex; the conversation then says which ones and why:
+
+- a server whose address carries a key (`https://…/mcp?key=…`, or `${KEY}` in the address): use a header instead;
+- a local program with a key in its arguments (`--token=…`, `${KEY_NAME}`): use an environment variable instead;
+- an **SSE** or **WebSocket** server (Codex supports local programs and HTTP servers);
+- a name with characters other than letters, digits, `-` and `_`;
+- a key with no value (not in **Settings -> Keys**), or an environment variable such as `PATH` or `HOME`.
+
+Not shared with Codex: the **Connect** sign-ins (they belong to Claude Code: an HTTP server that needs one does not
+work in Codex), the **claude.ai connectors**, the **Browser of my PC**, and **Load MCP servers only when a session
+needs them** (Codex gets every server of the topic, which costs tokens on each of its messages).

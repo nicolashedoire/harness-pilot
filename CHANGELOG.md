@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Codex sessions now get the MCP servers of **Settings → MCP** that apply to their topic, with their keys kept out of Codex's command line and of the commands it runs; the conversation says which servers could not be given to Codex and why. Your own Codex configuration is not changed.
 - The Security help page now describes the local installation: who can reach the interface, where secrets are kept and how, what agents, companions and extensions can do on your computer, telemetry, and good practice.
 - The registration, feedback and license settings inherited from the original project are no longer reachable on this server: they belonged to a service this project does not run, and they now answer "not found" instead of trying to contact it.
 - On an arm64 Linux server, the headless browser used for web pages, PDFs and videos is now found once installed; `pilot deps update` reported it as failed before.

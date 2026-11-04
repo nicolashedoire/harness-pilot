@@ -1086,7 +1086,7 @@ export const fr: Record<keyof typeof en, string> = {
   'codex.loginHint': 'Une fois Codex installé, connectez-vous dans un terminal avec',
   'codex.capabilities': 'Fonctionnement actuel',
   'codex.capabilitiesDesc': 'Sessions individuelles et conversations automatiques avec Claude Code.',
-  'codex.limits': 'Codex partage la mémoire du sujet, les pièces jointes, le mode plan et la compaction. Réservé à Claude Code pour l’instant : questions à côté, serveurs MCP, prompts des tâches planifiées, essaim Claude, jauge de contexte et compaction automatique, Protéger les secrets, quota d’utilisation. Détails dans le guide Sessions.',
+  'codex.limits': 'Codex partage la mémoire du sujet, les pièces jointes, le mode plan, la compaction et les serveurs MCP de Réglages → MCP (pas leurs connexions). Réservé à Claude Code pour l’instant : questions à côté, prompts des tâches planifiées, essaim Claude, jauge de contexte et compaction automatique, Protéger les secrets, quota d’utilisation. Détails dans le guide Sessions.',
   'settings.telegram': 'Telegram',
   'settings.telegram.desc': 'Votre bot, la conversation liée, les fils et les notifications.',
   'settings.backup': 'Sauvegarde',
