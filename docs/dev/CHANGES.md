@@ -2,6 +2,7 @@
 
 ## Unreleased - 2026-11-04
 
+- Installer audit: new `docs/dev/INSTALLER.md` (state of `install.sh`, end-to-end run in a Debian 12 systemd container through library mode with `SOURCE_DIR`, what still points to the original project, internal names kept, plan to re-enable). No code change; `install.sh` stays gated.
 - Mock (`web/mock/server.mjs`): `/api/agent-providers` (Claude Code, Codex) and `/api/companions` (roles, runs, review, decision, pull request) with the server's validation and error codes. The ready scenarios seed one finished Platform observer run waiting for review; a new run plays a short turn, then proposes a fixed diff plus one new file (stable fingerprint). State is created on first use (`companionsState()`).
 - `skills/pilot-model-evolution/scripts/lab.py`: `tree(path, None)` for the files of the adapter command (hashed at start and checked after the run), instead of `max(budget, 16 MiB)`: a statically linked interpreter (uv's CPython on Linux, 31 MB) ended every run in `error` "Artifact exceeds the storage or file-count budget". Artifacts (baseline, copy, candidate) keep the spec's byte budget. Test: `test_command_files_are_hashed_whatever_their_size`.
 - `.gitattributes`: `CHANGELOG.md` and `docs/dev/CHANGES.md` use git's built-in `union` merge driver, so two branches adding bullets at the top of the unreleased section merge without a conflict (both lines kept, order to check when it matters)

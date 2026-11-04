@@ -77,6 +77,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Find the built-in skills under clearer names starting with `pilot-`, such as `pilot-crons`, `pilot-notifications` and `pilot-widgets-pages`. An update installs the new names, removes the old copies and updates the product's own text in your workspace; your own notes and jobs are not changed.
 - `pilot doctor` warns when another program called `pilot` comes first in your terminal or for the sessions (some systems ship one), names it, and suggests `maxxing`, the same command under its earlier name.
 - The inherited Linux installer and automatic update flow remain disabled or unverified for this version. See the audit for remaining limitations.
+- The Linux server installer was tried on a test Debian 12 server; what works, what still points to the original project and the plan to turn it back on are documented for maintainers. It stays disabled for now.
 - Earlier version entries are inherited history; some features and installation instructions in them have not been verified for the current project.
 
 ### Inherited version history
