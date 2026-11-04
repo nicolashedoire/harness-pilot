@@ -74,7 +74,7 @@ The id (folder name) is a lowercase slug: letters, digits, dashes. Reserved ids:
 
 ```json
 {"id": "disk-usage", "name": "Disk usage", "type": "widget", "icon": "hard-drive",
- "version": "1.0.0", "api": 1, "span": 1, "ttl": 60}
+ "version": "1.0.0", "api": 1, "span": 1, "ttl": 60, "permissions": {}}
 ```
 
 | Key | Meaning |
@@ -84,6 +84,7 @@ The id (folder name) is a lowercase slug: letters, digits, dashes. Reserved ids:
 | `icon` | an icon name in kebab-case (`gauge`, `chart-line`, `shopping-cart`, `users`, `receipt`...) from the app's set of [lucide](https://lucide.dev/icons) icons; a name the app does not ship shows a puzzle piece |
 | `span` | width in grid columns: 1, 2 or 3 |
 | `ttl` | seconds the result is cached (default 300). The refresh button bypasses it. |
+| `permissions` | what the widget uses beyond its own folder: sites, keys, workspace files (see [Permissions](#permissions)). `{}` = nothing |
 
 ### 3. api.py
 
@@ -117,7 +118,27 @@ timeout) only blocks other extensions ("extensions are busy" until it returns), 
 | `secret(name)` | value of a key from Settings -> Keys, or `None` |
 | `config` | `{"timezone", "language", "public_url"}` |
 
-Never hard-code a token: store it in Settings -> Keys and read it with `ctx["secret"]("MY_TOKEN")`.
+Never hard-code a token: store it in Settings -> Keys and read it with `ctx["secret"]("MY_TOKEN")`, and declare it in
+the manifest's `permissions`.
+
+### Permissions
+
+The manifest says what the extension uses, so you can see it before you turn it on:
+
+```json
+"permissions": {"network": ["api.example.com"], "secrets": ["SHOP_TOKEN"], "read": ["projects/shop"]}
+```
+
+| Key | Lists |
+|---|---|
+| `network` | the sites an HTML widget reaches (host names such as `api.example.com` or `*.example.com`, no `https://`, at most 8) |
+| `secrets` | the keys of Settings -> Keys that `api.py` reads with `ctx["secret"](name)` (at most 32) |
+| `read` | the files and folders of your workspace that `api.py` reads, relative to the workspace (`projects/shop`, `tasks.json`; `.` = all of it; at most 32) |
+
+Every key is optional and `"permissions": {}` means "none of them". The extension's own folder and its `state_dir`
+are always its own: never list them. A mistake in this block (a host with `https://`, a path with `..`, an unknown
+key) is shown as the extension's error. `pilot ext check` prints what an extension declares, and warns when its
+manifest has no `permissions` at all.
 
 ### 4. The Card schema
 
@@ -189,7 +210,7 @@ widget in HTML instead. Same folder, with `widget.html` instead of (or next to) 
 
 ```
 /root/maxxing/extensions/snake-widget/
-  manifest.json     {"type": "widget", "name": "Snake", "icon": "gamepad-2", "height": 300}
+  manifest.json     {"type": "widget", "name": "Snake", "icon": "gamepad-2", "height": 300, "permissions": {}}
   widget.html       one self-contained file: inline <style> and <script>
   api.py            optional: handle(ctx, method, path, query, body) for data it saves or fetches
 ```

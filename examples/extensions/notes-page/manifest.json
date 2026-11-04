@@ -4,5 +4,6 @@
   "type": "page",
   "icon": "notebook-pen",
   "version": "1.0.0",
-  "api": 1
+  "api": 1,
+  "permissions": {}
 }

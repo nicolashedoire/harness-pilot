@@ -353,6 +353,18 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
   the `ID_RE` pattern) never matches `_blocks`, so the catch-all leaves `/ext/_blocks/...` to api/blocks.py, whose
   router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
 
+## maxxing.permissions - declared permissions of extensions  (owner: organisation)
+Stdlib only (with `blocks.HOST_RE` and `vault.NAME_RE`). API.md#dashboard--extensions (Permissions).
+- `parse(raw) -> dict | None`: the manifest's `"permissions"` validated -> `{network, secrets, read}` (lists in the
+  manifest's order, duplicates dropped, hosts lowercased, read paths normalised: no trailing `/`, `./` dropped);
+  None when the key is absent; ValueError with a readable reason otherwise. `extensions._load_one` calls it for a
+  widget or page (after the agent early return) and stores `Extension.permissions`; a ValueError becomes the
+  extension's `error` (`permissions: ...`). A block plugin's `Extension.permissions` is built from its `block.json`
+  hosts (`{network, secrets: [], read: []}`); an agent keeps None.
+- `view(perms) -> {network, secrets, read, declared}`: the Atelier's `Permissions` (API.md#atelier) of a declaration.
+- `summary(perms) -> str`: one line for people and `pilot ext check` ("network: a.example.com · keys: SHOP_TOKEN ·
+  reads: projects/shop", "nothing" for an empty declaration).
+
 ## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
 Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
 inside the functions that need them), so `sessions/codex.py` could read its output without it.
@@ -401,8 +413,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
 - HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
   position, links); an unclosed `<script>` is detected by the parser never closing it.
-- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, card?, trace?,
-  timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
+- Permissions (widget, page): step `permissions` = OK with `permissions.summary` of what the manifest declares, WARN
+  when it has no `"permissions"` key (block plugins and agents: no step). Result key `permissions` = the declaration
+  or None.
+- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, permissions, card?,
+  trace?, timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
 - `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off. Each result
   also carries `runtime_errors` (`exterrors.recent`), printed after the steps; never part of the status.
 

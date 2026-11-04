@@ -160,14 +160,16 @@ function buildState(scenario) {
     widgetUpdated: {},
     uptimeFixed: false,
     extensions: [
-      { id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', enabled: true, error: null, has_api: true,
+      // permissions: what the manifest declares (null = no "permissions" key: an extension older than permissions)
+      { id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', enabled: true, error: null, has_api: true, permissions: null,
         runtime_errors: [{ where: 'card', message: 'URLError: <urlopen error timed out>', stack: 'api.py:14 in card: orders = fetch_orders(token)\napi.py:6 in fetch_orders: with urllib.request.urlopen(req, timeout=10) as r:', at: t - 25 * MIN, count: 3 }] },
       { id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0', enabled: true, error: null, has_api: true,
+        permissions: { network: [], secrets: [], read: ['projects'] },
         runtime_errors: [
           { where: 'page', message: "TypeError: Cannot read properties of undefined (reading 'map')", stack: "TypeError: Cannot read properties of undefined (reading 'map')\nat render (lib/list.js:12:24)\nat mount (page.js:31:5)", at: t - 6 * MIN, count: 1 },
           { where: 'api', message: "KeyError: 'notes'", stack: "api.py:9 in handle: return {\"notes\": data[\"notes\"]}", at: t - 2 * HOUR, count: 2 },
         ] },
-      { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true },
+      { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true, permissions: null },
     ],
     fs: new Map(),
     blocks: blocksState(),
@@ -644,7 +646,7 @@ function seedFiles(st, t) {
   }
   fsAdd(st, 'extensions/shop-sales/manifest.json', JSON.stringify({ id: 'shop-sales', name: 'Shop sales', type: 'widget', icon: 'shopping-cart', version: '1.2.0', span: 1, ttl: 1800 }, null, 2), t - 15 * DAY)
   fsAdd(st, 'extensions/shop-sales/api.py', 'def card(ctx):\n    orders = ctx.http.get("https://api.example-shop.com/orders?days=7").json()\n    return {"blocks": [{"type": "stat", "label": "Today", "value": len(orders)}]}\n', t - 15 * DAY)
-  fsAdd(st, 'extensions/notes/manifest.json', JSON.stringify({ id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0' }, null, 2), t - 10 * DAY)
+  fsAdd(st, 'extensions/notes/manifest.json', JSON.stringify({ id: 'notes', name: 'Notes', type: 'page', icon: 'notebook-pen', version: '0.3.0', permissions: { read: ['projects'] } }, null, 2), t - 10 * DAY)
   fsAdd(st, 'extensions/notes/api.py', 'import time\n\ndef handle(ctx, method, path, query, body):\n    if path == "hello":\n        return {"hello": "world", "at": time.time()}\n    return {"error": "not_found"}\n', t - 10 * DAY)
   fsAdd(st, 'extensions/notes/page.js', NOTES_PAGE_JS, t - 10 * DAY)
   fsAdd(st, 'extensions/broken-widget/manifest.json', JSON.stringify({ id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0' }, null, 2), t - 4 * DAY)
