@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Local setup: `bash scripts/dev-local.sh cli <command>` runs the `pilot` command with the settings of your local app, for example `bash scripts/dev-local.sh cli doctor`. The guides no longer suggest `uv run pilot` in `server/`, which looked at the folder of a server installation instead of your local one.
 - An agent engine added by an extension no longer shows the Codex model hint in the new-session form, and an engine without a name is called "Extension agent" ("Agent d’extension" in French) instead of an untranslated "Agent"; the message box no longer says "Reply to Claude Code" for it.
 - Codex sessions can now use the product skills (tasks, scheduled jobs, notifications, backup…): `pilot init` and `pilot update` install them for Codex too, and `pilot doctor` reports a missing or outdated Codex copy.
 - Model Lab experiments no longer end in an error when the adapter's interpreter or program is larger than 16 MB, which was the case of the Python that uv installs on Linux.
