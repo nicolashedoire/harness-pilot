@@ -5,8 +5,9 @@ import os
 import time
 from pathlib import Path
 
-from conftest import wait_idle
-from maxxing.sessions import codex, store
+from conftest import all_events, wait_for, wait_idle
+from maxxing import config
+from maxxing.sessions import codex, runner, store
 
 V7 = '01a1a71d-9208-7c31-b16c-defbcfd43e6a'      # a 0.150.1 thread id (UUIDv7: started 2026-11-04 16:11 local time)
 
@@ -77,10 +78,11 @@ def test_session_file_lookup(tmp_path):
 
 
 # A fake `codex` that writes its session file like 0.150.1 (into $CODEX_HOME, under today's folder, a UUIDv7 thread
-# id) - each turn n makes two calls of 50 000n and 50 000n + 1000 input tokens - and prints the JSON stream.
+# id) - the k-th turn of a thread makes two calls of k x STEP and k x STEP + 1000 input tokens (STEP: FAKE_CODEX_STEP,
+# 50 000 by default) - and prints the JSON stream. Each call is listed in $CODEX_HOME/argv.jsonl.
 FAKE = '''#!/usr/bin/env python3
 import json, os, sys, time
-sys.stdin.read()
+prompt = sys.stdin.read()
 home = os.environ["CODEX_HOME"]
 counter = os.path.join(home, "calls")
 n = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
@@ -101,10 +103,14 @@ def count(k):
     u = {"input_tokens": k, "cached_input_tokens": 0, "output_tokens": 10, "total_tokens": k + 10}
     return line("event_msg", {"type": "token_count", "info": {"total_token_usage": u, "last_token_usage": u,
                                                                "model_context_window": 258400}})
+with open(os.path.join(home, "argv.jsonl"), "a") as f:
+    f.write(json.dumps({"argv": sys.argv[1:], "prompt": prompt}) + "\\n")
+step = int(os.environ.get("FAKE_CODEX_STEP") or 50000)
+k = 1 + (sum(1 for l in open(path) if '"task_started"' in l) if os.path.exists(path) else 0)
 if not os.environ.get("FAKE_CODEX_NO_FILE"):
     with open(path, "a") as f:
         f.write(line("event_msg", {"type": "task_started", "model_context_window": 258400}))
-        f.write(count(50000 * n) + count(50000 * n + 1000))
+        f.write(count(step * k) + count(step * k + 1000))
 print(json.dumps({"type": "thread.started", "thread_id": thread}), flush=True)
 print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": f"answer {n}"}}), flush=True)
 print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 100 * n, "output_tokens": 10}}), flush=True)
@@ -142,3 +148,81 @@ def test_a_codex_turn_without_its_session_file_keeps_the_gauge_hidden(client, to
     assert s['turns'] == 1 and s['state'] == 'idle' and s['last_text'] == 'answer 1'
     assert (s['context_tokens'], s['context_window']) == (None, None)
     assert 'base_tokens' not in store.read(sid)
+
+
+def _calls(home: Path) -> list[dict]:
+    path = home / 'argv.jsonl'
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def _notes(client, sid) -> list[str]:
+    return [e['text'] for e in all_events(client, sid) if e['type'] == 'note']
+
+
+def test_a_codex_session_near_its_window_is_compacted_automatically(client, topic, mx, monkeypatch):
+    """The threshold (400k by default) or 80 % of the window Codex records (258 400 -> 206 720), whichever first."""
+    home = _fake_codex(mx, monkeypatch)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '110000')
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    assert wait_idle(client, sid)['context_tokens'] == 111000          # below 206 720: nothing
+    assert not any('automatic compaction' in n for n in _notes(client, sid))
+    assert client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'}).status_code == 200
+    s = wait_idle(client, sid)
+    notes = _notes(client, sid)
+    assert any(n.startswith('The context reached 221k tokens') for n in notes)
+    assert any(n.startswith('Context compacted') for n in notes)
+    calls = _calls(home)
+    assert len(calls) == 4                                              # one, two, the summary, the seed
+    assert calls[2]['prompt'].endswith(runner.SUMMARY_PROMPT) and 'resume' in calls[2]['argv']
+    assert 'resume' not in calls[3]['argv'] and 'Context of this session before compaction' in calls[3]['prompt']
+    assert s['context_tokens'] == 111000 and s['turns'] == 4            # the fresh thread, measured again
+    assert store.read(sid)['codex_thread_id'] not in calls[2]['argv']
+
+
+def test_codex_compaction_follows_the_settings(client, topic, mx, monkeypatch):
+    home = _fake_codex(mx, monkeypatch)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '110000')
+    config.update_config(auto_compact_tokens=0)                          # Off
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    wait_idle(client, sid)
+    client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'})
+    assert wait_idle(client, sid)['context_tokens'] == 221000 and len(_calls(home)) == 2
+    config.update_config(auto_compact_tokens=100000)                     # lower than 80 % of the window: it wins
+    monkeypatch.setenv('FAKE_CODEX_STEP', '50000')
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    wait_idle(client, sid)
+    client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'})
+    wait_idle(client, sid)
+    assert any(n.startswith('The context reached 101k tokens') for n in _notes(client, sid))
+    # a plan-mode turn never compacts by itself
+    config.update_config(auto_compact_tokens=400000)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '220000')
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'plan it',
+                                             'plan_mode': True}).json()['id']
+    assert wait_idle(client, sid)['context_tokens'] == 221000
+    assert not any('automatic compaction' in n for n in _notes(client, sid))
+
+
+def test_a_codex_reply_near_its_limit_compacts_the_discussion(client, topic, mx, monkeypatch):
+    home = _fake_codex(mx, monkeypatch)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '220000')                     # Codex: 221k after its first reply
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'discussion', 'message': 'A topic NOTOOL',
+                                             'discussion_turn_limit': 3}).json()['id']
+    wait_for(lambda: (s := client.get(f'/api/sessions/{sid}').json())['state'] == 'idle' and s['debate_paused'], 40)
+    notes = _notes(client, sid)
+    assert sum(n.startswith('The discussion reached 221k tokens') for n in notes) == 1
+    assert any(n.startswith('Discussion compacted') for n in notes)
+    assert len(_calls(home)) == 1 and 'codex_thread_id' not in store.read(sid)   # Codex starts a fresh thread next
+
+
+def test_a_thread_already_too_big_at_its_first_call_is_not_compacted_again_and_again(client, topic, mx, monkeypatch):
+    """A summary cannot bring a thread below its first call (instructions, memory, the seed): compacting it would start
+    the continuation above the limit again, and loop."""
+    home = _fake_codex(mx, monkeypatch)
+    monkeypatch.setenv('FAKE_CODEX_STEP', '210000')                     # the first call of every thread: 210k
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'one'}).json()['id']
+    s = wait_idle(client, sid)
+    assert (s['context_tokens'], store.read(sid)['base_tokens']) == (211000, 210000)
+    client.post(f'/api/sessions/{sid}/messages', json={'text': 'two'})
+    assert wait_idle(client, sid)['context_tokens'] == 421000 and len(_calls(home)) == 2
+    assert not any('automatic compaction' in n for n in _notes(client, sid))

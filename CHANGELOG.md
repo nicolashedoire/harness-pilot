@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Codex sessions are now compacted automatically when their context gets large, like Claude Code sessions: at the automatic compaction threshold (Settings → Claude) or at 80 % of Codex's context window, whichever comes first. In a discussion, a Codex reply near its limit now leads to the summary too, instead of waiting for Codex to refuse a reply.
 - On Telegram, a message sent while the previous answer was still arriving could leave the status message of its own turn stuck on "Working…" after the final summary, with "typing…" shown after the answer. Its turn now has a single status, which ends on the summary.
 - **Settings → MCP → Browser of my PC** no longer disappears while harness-pilot PC cannot be downloaded: it says the program is not available yet. Its downloads will come from this repository's releases, not the original project's. A download that fails now explains why instead of showing an internal error.
 - Agents use the current `pilot` command in the workspace instructions retained from older installations, including `pilot doctor`. Startup refreshes recognized product instructions while preserving your custom text; existing conversation messages stay in the history.
