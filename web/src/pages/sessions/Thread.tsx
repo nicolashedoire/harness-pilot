@@ -3,7 +3,8 @@
 //   scroll position kept exactly (manual anchoring, `overflow-anchor: none`); once every loaded item
 //   is shown, the same sentinel/button fetches the previous page from the server (`onLoadEarlier`);
 // - sticks to the bottom only while the user is at the bottom (ResizeObserver keeps it pinned
-//   while markdown/images settle); otherwise a "jump to latest" pill appears.
+//   while markdown/images settle); otherwise a "jump to latest" pill appears, never over a block's buttons
+//   (pillSpot.ts).
 import * as React from 'react'
 import { ArrowDown, MessageSquareDashed, RotateCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ import { NoteRow, RequestRow, UserItem, UserMessage } from './Items'
 import { buildBlocks, Elapsed, isDuo, TurnView, type Block } from './Turn'
 import { AGENT_NAME, AgentIcon, type AgentId } from '@/features/agents/AgentIcon'
 import { onThreadDragEnd, onThreadDragStart } from './contentDrag'
+import { PILL_BOTTOM, pillSpot, type PillSpot } from './pillSpot'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { isShownTask, setHiddenLocal, taskStatus, turnKeys, unanswered, withoutHidden, type LogState } from './log'
 import type { Pending, Seed } from './store'
@@ -194,6 +196,20 @@ export const Thread = React.forwardRef<ThreadHandle, {
   // Only the user lets go of the bottom: a scroll that moves UP away from it (wheel, drag, keys, scrollbar). Scrolls
   // that go down (smooth "jump to latest", pinning) or that the browser makes when the layout changes keep it.
   const lastTop = React.useRef(0)
+  // The pill never sits over a block's buttons (or any link / field): it moves aside or up, or lets the clicks through
+  // (pillSpot.ts). Checked once per frame while it shows.
+  const pill = React.useRef<HTMLButtonElement>(null)
+  const [spot, setSpot] = React.useState<PillSpot>('center:0')
+  const [side, lift] = spot === 'through' ? ['center', 0] : [spot.split(':')[0], Number(spot.split(':')[1])]
+  const placing = React.useRef(0)
+  const placePill = React.useCallback(() => {
+    if (placing.current) return
+    placing.current = requestAnimationFrame(() => {
+      placing.current = 0
+      if (pill.current && scroller.current) setSpot(pillSpot(pill.current, scroller.current))
+    })
+  }, [])
+  React.useEffect(() => () => cancelAnimationFrame(placing.current), [])
   const onScroll = React.useCallback(() => {
     const el = scroller.current
     if (!el) return
@@ -203,9 +219,19 @@ export const Thread = React.forwardRef<ThreadHandle, {
     if (dist < PIN_PX) pinned.current = true
     else if (up) pinned.current = false
     const atBottom = dist < PIN_PX
-    setShowPill(!pinned.current && dist > 160)
+    const show = !pinned.current && dist > 160
+    setShowPill(show)
+    if (show) placePill()
     if (atBottom) setUnseen(false)
-  }, [])
+  }, [placePill])
+  React.useEffect(() => {
+    const el = scroller.current
+    if (!showPill || !el) return
+    placePill()
+    const ro = new ResizeObserver(placePill)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showPill, unseen, placePill])
 
   // Auto-load earlier rows when the top sentinel shows up.
   const sentinel = React.useRef<HTMLDivElement>(null)
@@ -366,13 +392,17 @@ export const Thread = React.forwardRef<ThreadHandle, {
         </div>
       </div>
       <button
+        ref={pill}
         type="button"
         onClick={() => toBottom(true)}
         tabIndex={showPill ? 0 : -1}
         aria-hidden={!showPill}
+        data-spot={spot}
+        style={{ bottom: PILL_BOTTOM + lift }}
         className={cn(
-          'absolute bottom-3 left-1/2 z-10 inline-flex h-8 max-md:h-10 pointer-coarse:h-10 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-3 text-xs font-medium shadow-pop transition-[opacity,transform] duration-150',
-          showPill ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0',
+          'absolute z-10 inline-flex h-8 max-md:h-10 pointer-coarse:h-10 items-center gap-1.5 rounded-full border bg-popover px-3 text-xs font-medium whitespace-nowrap shadow-pop transition-[opacity,transform] duration-150',
+          side === 'right' ? 'right-4' : side === 'left' ? 'left-4' : 'left-1/2 -translate-x-1/2',
+          !showPill ? 'pointer-events-none translate-y-2 opacity-0' : spot === 'through' ? 'pointer-events-none translate-y-0 opacity-60 focus-visible:opacity-100' : 'translate-y-0 opacity-100',
         )}
       >
         <ArrowDown className="size-3.5" />
