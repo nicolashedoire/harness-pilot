@@ -7,8 +7,9 @@ message (the text goes to a session as a normal web message, quoted and labelled
 
 Document: {"me": "me", "chats": [{id, kind: dm|group, name,
 emoji, members: [ids], created, read_at, remote, admin, messages: [Message]}]}; Message = {id, author, at, text,
-kind: text|summary|poll, reply_to?, files?: [{path, name, size, mime, fid?, pending?, failed?}], poll?: {question,
-multi, options: [{id, label, votes: [ids]}]}, sent?: [{session, title, at}], reactions?: {emoji: [ids]}, pending?:
+kind: text|summary|poll|theme, reply_to?, files?: [{path, name, size, mime, fid?, pending?, failed?}], poll?: {question,
+multi, options: [{id, label, votes: [ids]}]}, theme?: Theme (themes.clean_theme, checked when sent and when received:
+shown as a card, never applied by itself), sent?: [{session, title, at}], reactions?: {emoji: [ids]}, pending?:
 [ids not delivered yet], recv?: when it reached this server (messages of others: unread counts on it, not
 on the sender's clock)}. People's ids are `teampeer.pid(address)` (the contacts: `teampeer.people()`).
 """
@@ -29,7 +30,7 @@ from typing import Callable
 
 import hashlib
 
-from . import bus, config, teampeer
+from . import bus, config, teampeer, themes
 
 log = logging.getLogger(__name__)
 
@@ -318,6 +319,15 @@ def send(cid: str, text: str, reply_to: str | None = None, files: list[dict] | N
     return _post_mine(cid, text, check=check, **extra)
 
 
+def send_theme(cid: str, theme: object) -> dict:
+    """A colour theme (Settings -> Appearance -> Share): validated by themes.clean_theme, its name as the text."""
+    try:
+        clean = themes.clean_theme(theme)
+    except themes.ThemeError as e:
+        raise TeamError(422, "invalid_theme", str(e)) from None
+    return _post_mine(cid, clean["name"], kind="theme", theme=clean)
+
+
 def dm_id(a: str, b: str) -> str:
     """The id of the direct chat between two addresses: the same on both servers."""
     return "d_" + hashlib.sha256("|".join(sorted((a, b))).encode()).hexdigest()[:16]
@@ -383,6 +393,8 @@ def _wire(msg: dict) -> dict:
                        "options": [{"id": o["id"], "label": o["label"]} for o in msg["poll"]["options"]]}
     if msg.get("summary"):
         out["summary"] = {"count": msg["summary"].get("count", 0)}
+    if msg.get("theme"):
+        out["theme"] = msg["theme"]
     if msg.get("files"):
         out["files"] = [{"id": f["fid"], "name": f["name"], "size": f["size"], "mime": f["mime"]} for f in msg["files"] if f.get("fid")]
     return out
@@ -501,7 +513,7 @@ def edit_message(cid: str, mid: str, text: str) -> dict:
 def _blank(msg: dict) -> list[dict]:
     """A message becomes "deleted": its text, files, poll and reactions go. -> the files it had."""
     files = msg.get("files") or []
-    for k in ("files", "poll", "reactions", "summary", "reply_to", "edited", "pending"):
+    for k in ("files", "poll", "theme", "reactions", "summary", "reply_to", "edited", "pending"):
         msg.pop(k, None)
     msg |= {"text": "", "deleted": True}
     return files
@@ -619,7 +631,9 @@ def _transcript(doc: dict, msgs: list[dict]) -> str:
         who = (people.get(m["author"]) or {}).get("name") or m["author"]
         if m.get("kind") in ("summary", "info") or m.get("deleted"):   # a deleted poll has no "poll" left
             continue
-        if m.get("kind") == "poll":
+        if m.get("kind") == "theme":
+            lines.append(f"{who} [colour theme] {m['text'] or 'untitled'}")
+        elif m.get("kind") == "poll":
             p = m["poll"]
             opts = "; ".join(f"{o['label']} ({', '.join((people.get(v) or {}).get('name') or v for v in o['votes']) or 'no vote'})"
                              for o in p["options"])
@@ -680,7 +694,7 @@ def _safe_name(name: str) -> str:
 
 def _remote_message(frm_pid: str, raw: dict) -> dict:
     raw = raw if isinstance(raw, dict) else {}
-    kind = raw.get("kind") if raw.get("kind") in ("text", "summary", "poll") else "text"
+    kind = raw.get("kind") if raw.get("kind") in ("text", "summary", "poll", "theme") else "text"
     now = time.time()
     at = min(_finite(raw.get("at") or now, now), now)
     mid = str(raw.get("id") or "")
@@ -698,6 +712,12 @@ def _remote_message(frm_pid: str, raw: dict) -> dict:
         msg["poll"] = {"question": str(p.get("question") or msg["text"])[:200], "multi": bool(p.get("multi")),
                        "options": [{"id": str(o.get("id"))[:40], "label": str(o.get("label") or "")[:120], "votes": []}
                                    for o in opts if _ID.match(str(o.get("id")))]}
+    if kind == "theme":                          # colours only: anything else refuses the whole message
+        try:
+            msg["theme"] = themes.clean_theme(raw.get("theme"))
+        except themes.ThemeError:
+            raise TeamError(400, "invalid_theme", "Bad theme") from None
+        msg["text"] = msg["theme"]["name"]
     if kind == "summary":
         summ = raw.get("summary") if isinstance(raw.get("summary"), dict) else {}
         msg["summary"] = {"count": int(_finite(summ.get("count"), 0)) % 100000, "from": at, "to": at}
