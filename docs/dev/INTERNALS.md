@@ -392,8 +392,18 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   so a write by any process is seen on the next call.
 - `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
   `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
-  `crons.managed_lines()`, `localcron.tick()`, scheduled `pilot cron run` (detached or `--if-due`) and `backup.run()`
-  (code `paused`, not recorded in the history) do nothing.
+  `crons.managed_lines()`, `localcron.tick()`, scheduled `pilot cron run` (detached or `--if-due`), `backup.run()`
+  (code `paused`, not recorded in the history) and scheduled instance archives (`instance_backup.schedule_delay()`
+  is None) do nothing.
+- Scheduled instance archives: config `instance_backup_schedule` `{frequency, hour, keep, since}` + secret
+  `instance_backup_schedule_key` `{salt, kdf, key}` (hex; a key derived from the passphrase, never the passphrase).
+  `instance_backup.set_schedule()` / `disable_schedule()` / `schedule_status()`; `schedule_delay()` -> seconds until
+  due (None: off or paused); `export_scheduled()` = `export(None, sealed=(salt, kdf, key), keep=keep)` (marks the
+  export `scheduled`, prunes the older scheduled ones under the operation lock); `record_scheduled(result | code,
+  message)` keeps `<state>/instance-backups/schedule.json` (last success, error, `retry_at`, `notified`) and posts
+  or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
+  of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
+  scheduled=True)`): pausing services for the snapshot never cancels it.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault

@@ -75,6 +75,31 @@ button (after a confirmation; copies you already downloaded are not affected). K
 This is a file-based application snapshot, not an operating-system snapshot of unrelated services
 or a guarantee against external writers deliberately bypassing filesystem modification metadata.
 
+### Scheduled archives
+
+Under **Scheduled archives**, choose **Every day** or **Every week**, an hour (in the time zone of Settings →
+General) and how many scheduled archives to keep (1 to 30). Enter the backup passphrase twice and agree to the
+stored key, then choose **Schedule archives**.
+
+- **The passphrase is not stored.** To run without you, the server derives the archive key from it once, exactly as
+  a manual export does, and keeps that key in its protected secrets file (readable only by the application, never
+  given to agents, never sent to GitHub). Anyone able to read that file can open the scheduled archives, but they
+  could already read the data on this server. Keep the passphrase elsewhere: it opens scheduled archives with the
+  usual **Inspect before restoring**, on any installation. To change it, type a new one; archives already made keep
+  the old one.
+- A scheduled archive runs like a manual one: it waits until no session or scheduled task is running (it tries
+  again every 30 minutes) and pauses changes while the snapshot is built. Another failure waits for the next day.
+  The first one runs at the chosen hour after you enable the schedule; a run missed while the server was stopped
+  runs when it starts again.
+- After each scheduled archive, the scheduled archives beyond the number kept are deleted. Archives you create
+  yourself are never deleted automatically. **Archives kept on this server** marks scheduled ones.
+- A failure shows here and as a notification (once per series of failures; an archive blocked by activity only
+  after 6 hours). The next scheduled archive resolves it.
+- A restored copy does not run the schedule until you **Resume integrations**.
+- **Turn off** deletes the stored key; archives already made stay.
+
+Scheduled archives stay on this server: download one regularly and keep it on another device.
+
 ## GitHub memory backup
 
 Your CLAUDE.md and memory.md files are the most valuable part of the installation: months of

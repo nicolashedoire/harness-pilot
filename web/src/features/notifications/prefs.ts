@@ -39,7 +39,7 @@ export const PREF_ROWS: PrefRow[] = [
     level: 'info',
     sound: false,
   },
-  { id: 'health', category: 'system', kinds: ['health.issue', 'deps.vulnerable', 'deps.update_failed'], level: 'warning', sound: true },
+  { id: 'health', category: 'system', kinds: ['health.issue', 'deps.vulnerable', 'deps.update_failed', 'instance_backup.failed'], level: 'warning', sound: true },
   { id: 'security', category: 'system', kinds: ['signin.failed', 'signin.denied', 'webhook.refused', 'backup.restore_held'], level: 'warning', sound: true },
   { id: 'signins', category: 'system', kinds: ['signin.ok'], level: 'info', sound: false },
   { id: 'infra', category: 'system', kinds: ['infra.down', 'infra.up', 'infra.cert_expiring', 'infra.domain_expiring'], level: 'error', sound: true },
