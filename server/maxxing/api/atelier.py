@@ -159,8 +159,9 @@ async def preview(did: str):
     from .dashboard import TIMEOUT_S
     rec, ext = await _call(atelier.preview_ext, did)
     kind = atelier.preview_kind(rec)
-    if kind == "html":
-        return {"kind": "html", "url": f"/ext/_drafts/{did}/widget-frame", "height": ext.height}
+    if kind == "html":                    # the user asked to see it work: its declared sites, for this preview only
+        return {"kind": "html", "url": f"/ext/_drafts/{did}/widget-frame?grant={_issue_grant(did)}",
+                "height": ext.height}
     if kind != "card":
         return {"kind": "none", "reason": rec.get("type") if rec.get("type") in ("page", "block", "agent") else "page"}
     ctx = atelier.preview_ctx(ext, rec)
@@ -234,22 +235,51 @@ async def preview_api_root(did: str, request: Request):
     return await preview_api(did, "", request)
 
 
-@router.get("/ext/_drafts/{did}/widget-frame", include_in_schema=False)
-async def draft_widget_frame(did: str):
-    from .extensions import WIDGET_BRIDGE, WIDGET_FRAME_CSP, ui_kit_css
+# ---- the preview frame of a draft HTML widget ---------------------------------------------------------------------
+# The same document and policy as an installed widget's frame (api/extensions.py `widget_frame`): the bridge, the UI
+# kit, a `<base>` on the frame's own token routes (api/extframes.py tokens, keyed `draft:<did>`) so the draft's own
+# files load, and `widget_csp(hosts)`. `hosts` = the sites the draft declares, only with the one-off grant that
+# `POST .../preview` (the user's action) put in the URL - an hour, that draft only; [] otherwise. A grant never reaches
+# the installed extension (permissions.frame_network has its own).
+PREVIEW_GRANT_S = 3600
+_grants: dict[str, tuple[str, float]] = {}
 
-    def read() -> str:
-        rec = atelier.load_draft(did)
-        if rec is None or rec.get("status") != "pending" or rec.get("type") != "html_widget":
-            raise atelier.AtelierError(404, "not_found", f"no HTML widget in proposal {did}")
-        p = atelier._draft_dir(did) / rec["target"] / "widget.html"            # noqa: SLF001
+
+def _issue_grant(did: str) -> str:
+    import secrets as _s
+    now = time.time()
+    for k in [k for k, (_d, exp) in _grants.items() if exp < now]:
+        _grants.pop(k, None)
+    g = _s.token_urlsafe(18)
+    _grants[g] = (did, now + PREVIEW_GRANT_S)
+    return g
+
+
+def _grant_ok(did: str, grant: str) -> bool:
+    hit = _grants.get(grant or "")
+    return bool(hit) and hit[0] == did and hit[1] >= time.time()
+
+
+@router.get("/ext/_drafts/{did}/widget-frame", include_in_schema=False)
+async def draft_widget_frame(did: str, grant: str = ""):
+    from . import extframes
+    from .extensions import WIDGET_BRIDGE, ui_kit_css, widget_csp
+
+    def read() -> tuple[str, list[str]]:
+        rec, ext = atelier.draft_widget(did)
+        p = ext.dir / "widget.html"
         if p.is_symlink() or not p.is_file():
             raise atelier.AtelierError(404, "not_found", f"no HTML widget in proposal {did}")
-        return p.read_text("utf-8", "replace")
-    html = await _call(read)
+        hosts = list((rec.get("permissions") or {}).get("network") or []) if _grant_ok(did, grant) else []
+        return p.read_text("utf-8", "replace"), hosts
+    html, hosts = await _call(read)
     kit = await asyncio.to_thread(ui_kit_css)
-    return HTMLResponse(WIDGET_BRIDGE + f"<style>{kit}</style>\n" + html, headers={
-        "Cache-Control": "no-store", "Content-Security-Policy": WIDGET_FRAME_CSP, "Referrer-Policy": "no-referrer"})
+    token = extframes.issue(f"draft:{did}", report=False)
+    base = f"/ext/_drafts/{did}/f/{token}/"
+    doc = WIDGET_BRIDGE.replace('<meta charset="utf-8">', f'<meta charset="utf-8"><base href="{base}">', 1)
+    return HTMLResponse(doc + f"<style>{kit}</style>\n" + html, headers={
+        "Cache-Control": "no-store", "Content-Security-Policy": widget_csp(hosts), "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff"})
 
 
 # ---- one creation -------------------------------------------------------------------------------------------------
@@ -336,3 +366,4 @@ async def shutdown() -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await _task
         _task = None
+
