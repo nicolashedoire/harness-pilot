@@ -430,7 +430,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   plain recovery codes, 80 bits each, returned once).
 - `verify(code)` under `config._lock`: a 6-digit code must match a step > `last_step` (stored on success: no replay,
   the enrolment code included); otherwise a recovery code (normalised: case, spaces, dashes, 0/1/8 -> O/I/B) is
-  removed from the list on use. `disable(code=None)`: with a code only when it verifies (Settings), without at once
+  removed from the list on use. `regenerate(code)` (under the same lock): a verified code -> a new list of
+  `RECOVERY_COUNT` codes replaces the old one (`TotpError` `bad_code` / `not_on`). `disable(code=None)`: with a code only when it verifies (Settings), without at once
   (`pilot 2fa off`). Throttling is the callers': `twofactor.check` at sign-in, `api/auth._reauth` (password-change
   throttle) for enable / disable.
 

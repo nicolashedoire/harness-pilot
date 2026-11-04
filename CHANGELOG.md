@@ -12,6 +12,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - In plan mode, an agent engine taking part in a discussion now gets the same instructions as Codex: work the plan out with Claude Code and give the whole plan in each reply.
 - An agent engine installed as an extension can now take Codex's place in a discussion or debate with Claude Code (**Second agent** in the new-session form), if it declares what the discussion needs: plan mode or attached files are refused clearly otherwise.
 - A mixed team can now be coordinated by Codex instead of Claude, and each agent can use the model you choose; the defaults stay the same.
+- Settings → Security can now make new recovery codes for the authenticator app (with your password and a code), without turning the app off and on again. The old codes stop working.
 - The README explains how to install harness-pilot on a Linux server, and the installation and tools pages say what has been verified there: the installer downloaded from this repository, then PDFs, web scraping and video rendering on Debian 12 and Ubuntu 24.04 (arm64).
 - On a Linux server, `pilot deps update` started while another update of the tools is running (the one that follows an installation or `pilot update`) now waits for it and says so, instead of both failing and leaving Node.js and Remotion missing.
 - The role of each agent of a mixed team can be changed when you create it; the default roles stay filled in.
