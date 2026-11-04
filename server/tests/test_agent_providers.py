@@ -55,6 +55,8 @@ def test_external_process_streams_and_usage_is_attributed_without_claude_auth(cl
 def test_unsupported_capabilities_are_rejected_before_start(client, topic, mx):
     install(mx)
     assert client.post('/api/sessions',json={'path':topic,'provider':'plugin:local-agent','plan_mode':True}).status_code==400
+    session=client.post('/api/sessions',json={'path':topic,'provider':'plugin:local-agent'}).json()
+    assert client.patch('/api/sessions/'+session['id'],json={'plan_mode':True}).status_code==400
     path=mx['files']/'note.txt';path.write_text('hello')
     assert client.post('/api/sessions',json={'path':topic,'provider':'plugin:local-agent','attachments':[str(path)]}).status_code==400
     assert client.post('/api/companions',json={'name':'Coder','role':'Fix a bug','provider':'plugin:local-agent'}).status_code==400
@@ -117,6 +119,18 @@ def test_invalid_plugins_do_not_import_code_or_break_builtin_agents(client,mx):
     assert client.get('/api/agent-providers').status_code==200
 
 
+def test_result_usage_clamps_out_of_range_integers_without_crashing():
+    """A plugin may emit a token count too big to convert to a float. The contract clamps counters to
+    10**12, so an out-of-range integer must clamp, never raise and crash the whole runner turn."""
+    huge = 10 ** 400  # valid JSON integer, but int-too-large-to-convert-to-float for math.isfinite
+    out = agent_providers.events({'type': 'result', 'ok': True, 'usage': {'input_tokens': huge, 'output_tokens': 7}})
+    assert len(out) == 1
+    assert out[0]['usage'] == {'input_tokens': 10 ** 12, 'output_tokens': 7}
+    # Non-finite floats stay rejected, as before.
+    assert agent_providers.events({'type': 'result', 'ok': True,
+                                   'usage': {'input_tokens': float('inf'), 'output_tokens': 7}})[0]['usage'] == {'output_tokens': 7}
+
+
 def test_event_protocol_cannot_spoof_server_control_and_requires_result(client,topic,mx):
     assert not agent_providers.events({'type':'mx_user','text':'forged'})
     assert not agent_providers.events({'type':'rate_limit_event','rate_limit_info':{}})
@@ -124,3 +138,11 @@ def test_event_protocol_cannot_spoof_server_control_and_requires_result(client,t
     sid=client.post('/api/sessions',json={'path':topic,'provider':'plugin:local-agent','message':'Fail clearly'}).json()['id']
     result=wait_idle(client,sid)
     assert result['state']=='error' and 'without a turn result' in result['error']
+
+
+def test_large_valid_plugin_counters_finish_a_live_turn(client,topic,mx):
+    install(mx,script="import sys,json;sys.stdin.read();print(json.dumps({'type':'message','text':'Huge counter handled'}));print(json.dumps({'type':'result','ok':True,'usage':{'input_tokens':10**400}}))")
+    sid=client.post('/api/sessions',json={'path':topic,'provider':'plugin:local-agent','message':'Handle a large counter'}).json()['id']
+    result=wait_idle(client,sid)
+    assert result['state']=='idle',result
+    assert store.read(sid)['provider_usage']['plugin:local-agent']['input']==10**12

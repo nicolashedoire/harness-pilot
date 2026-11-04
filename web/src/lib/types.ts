@@ -99,6 +99,7 @@ export type Session = {
   id: string
   provider?: string
   provider_name?: string
+  provider_capabilities?: string[]
   swarm_agents?: number | null
   team_phase?: string | null
   team_parent?: string | null
@@ -863,6 +864,7 @@ export type InfraResource = {
   location: string
   provider: string
   provider_name?: string
+  provider_capabilities?: string[]
   urls: string[]
   status: InfraStatus
   status_detail: string

@@ -914,7 +914,7 @@ export function SessionColumn({ col, sid, variant, index, count, place }: { col:
                   toolbar={
                     session ? (
                       <>
-                        {!duo && <PlanToggle session={session} />}
+                        {!duo && (!session.provider?.startsWith('plugin:') || session.provider_capabilities?.includes('plan')) && <PlanToggle session={session} />}
                         {!!session.swarm_agents && (
                           <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAgentMapOpen(true)}>
                             <Network /> <span className="@max-[26rem]:sr-only">{t('sessions.swarm.map')}</span>

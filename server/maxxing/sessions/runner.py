@@ -360,6 +360,8 @@ class Runner:
                        'attachments': item.get('attachments') or [],
                        'context': codex.workspace_context(Path(cfg.get('workspace') or '/'), Path(cwd))}
             env = spawn.base_env()
+            env.update({str(k): str(v) for k, v in (meta.get('env') or {}).items()
+                        if spawn.ENV_NAME_RE.match(str(k))})
             env['PILOT_AGENT_PROVIDER'] = actor
             attempt = self.attempt(adapter['command'], json.dumps(request) + '\n', cwd, env,
                                    meta.get('timeout_s') or 1800, hold=False, protocol='pilot')

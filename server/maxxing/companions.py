@@ -130,7 +130,8 @@ def run(ident: str, path: str, mission: str = '') -> dict:
     architecture.write(repo)
     try:
         session = service.create_session(path, title=f"{profile['name']} — platform review", provider=provider,
-                                         permission_mode='acceptEdits', timeout_s=1800)
+                                         permission_mode='acceptEdits', timeout_s=1800,
+                                         env={'PYTHONPATH': str(repo / 'server')} if (repo / 'server' / 'maxxing').is_dir() else None)
         sid = session['id']
         with store.edit(sid) as meta:
             meta['companion'] = {'id': ident, 'name': profile['name'], 'role': profile['role'],
@@ -144,6 +145,8 @@ def run(ident: str, path: str, mission: str = '') -> dict:
                 "try the complete user journey where feasible, and assess clarity, visual design and accessibility. "
                 "For interface changes, visually inspect the result when tools permit. Run relevant tests and "
                 "report separately what was verified, what could not be verified, and remaining improvements. "
+                "Before running tests, confirm that imports and test commands target this disposable copy, "
+                "not an editable installation or another checkout. Do not install dependencies into a shared environment. "
                 "A static source import map is available at ../architecture.json. "
                 "Use it to navigate, but recognize that runtime and product relationships may be missing. "
                 "Do not claim an unperformed check. The user must review and approve or reject your proposal. "

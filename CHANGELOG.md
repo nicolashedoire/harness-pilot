@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Companion roles now keep their chosen coding engine independently: use Claude Code, Codex or a trusted external engine installed as an extension. External engines also appear in new single-agent sessions, with their own names and token totals. Unsupported plan or file features are refused clearly. [Show me](#show:companions)
+
 - Space labels: unclassified items (the default) no longer carry an *Unclassified* badge on every row of the session list and of Files; **Personal**, **Agents** and **Shared** still show theirs, and the *Space* menu still sets and ticks every label.
 - Settings: in a short window, the list of sections fades at the edge it can still scroll to, so the last visible section no longer looks cut off.
 - Settings -> Backup: the *What this backup covers* card is spaced like the other cards.

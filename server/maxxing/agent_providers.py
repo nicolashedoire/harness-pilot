@@ -87,8 +87,11 @@ def events(event: object) -> list[dict]:
     if event.get('type') != 'result':
         return []
     usage = event.get('usage') if isinstance(event.get('usage'), dict) else {}
+    # An out-of-range integer (too large for float) is clamped to the 10**12 cap, not fed to isfinite,
+    # which only guards the inf/nan floats a plugin might emit.
     counts = {k: min(10**12, max(0, int(v))) for k in ('input_tokens', 'output_tokens', 'cache_read_input_tokens',
-              'cache_creation_input_tokens') if isinstance(v := usage.get(k), (float, int)) and math.isfinite(v)}
+              'cache_creation_input_tokens')
+              if isinstance(v := usage.get(k), (float, int)) and (isinstance(v, int) or math.isfinite(v))}
     failed = event.get('ok') is not True
     return [{'type': 'result', 'subtype': 'error' if failed else 'success', 'is_error': failed,
              'usage': counts, **({'errors': [str(event.get('error') or 'Agent plugin failed')[:1000]]} if failed else {})}]

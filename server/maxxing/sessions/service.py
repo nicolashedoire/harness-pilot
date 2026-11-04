@@ -146,6 +146,7 @@ def public(meta: dict) -> dict:
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
             **({'provider_name': m['provider_name']} if m.get('provider_name') else {}),
+            **({'provider_capabilities': m['provider_capabilities']} if m.get('provider_capabilities') else {}),
             "companion": ({k: m['companion'].get(k) for k in ('id', 'name', 'decision')} if isinstance(m.get('companion'), dict) else None),
             "swarm_agents": m.get("swarm_agents"),
             "team_phase": (m.get("team") or {}).get("phase"),
@@ -370,6 +371,7 @@ def create_session(path: str, message: str | None = None, title: str | None = No
                           permission_mode=permission_mode, provider=provider)
     if adapter and not adapter['builtin']:
         meta['provider_name'] = adapter['name']
+        meta['provider_capabilities'] = adapter['capabilities']
     if swarm_agents is not None:
         meta['swarm_agents'] = swarm_agents
     if provider in ("discussion", "debate"):
@@ -753,6 +755,11 @@ def update_session(sid: str, title: str | None = None, model: str | None = None,
                    plan_mode: bool | None = None, favorite: bool | None = None,
                    path: str | None = None) -> dict:
     cur = _require(sid)
+    if plan_mode and str(cur.get('provider') or '').startswith('plugin:'):
+        from .. import agent_providers
+        adapter = agent_providers.get(cur['provider'])
+        if not adapter or 'plan' not in adapter['capabilities']:
+            raise SessionError(400, 'unsupported', 'This agent adapter does not support plan mode.')
     if cur.get("provider") in ("discussion", "debate") and plan_mode:
         raise SessionError(400, "unsupported", "Plan mode is not available for debates.")
     if model is not None:

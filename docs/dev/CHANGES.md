@@ -2,6 +2,8 @@
 
 ## Unreleased - 2026-11-04
 
+- Agent engines: `agent_providers.py` (stdlib-only) defines a removable `type: agent` extension using `pilot-jsonl-v1` over stdin/stdout. Registry discovery validates manifests without importing code or invoking executables. `/api/agent-providers` exposes names/capabilities without commands. Generic processes use session stop/timeouts and bounded text history, normalize display/result events, and attribute usage by provider id. Companion profiles persist an engine; native Claude and Codex keep their existing adapters. Python companion tests pin imports to their disposable source copy. Generic plan and attachment support is validated; unsupported native compaction/handoff stays unavailable. Large integer token counts clamp without float conversion, with a real detached-process regression. See AGENT-PROVIDERS.md for the protocol and explicit trusted-program/OS-sandbox distinction.
+
 - `SpaceBadge` (`features/spaces/SpaceLabel.tsx`) renders nothing for `unclassified` (the default), a badge for `personal`, `agents` and `shared`; `SpaceMenuItems`, `/api/space-labels` and the stored labels are unchanged.
 - Settings side nav (`pages/settings/index.tsx`): a mask gradient (24 px) on each edge it can scroll to, measured on scroll and by a `ResizeObserver`; `scroll-py-6` and the keep-active-in-view effect keep the focused or active section out of the fade.
 - `SettingsCard` (`pages/settings/sections/ui.tsx`): `children` optional; without them the description is the card's text (no body, the header takes the bottom padding). Backup's *What this backup covers* uses it instead of a paragraph in the body, whose top padding made a larger gap under the title than in the other cards.
