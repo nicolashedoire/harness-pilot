@@ -1,0 +1,610 @@
+[
+ {
+  "id": "bucket:cloudflare:r2:media",
+  "kind": "bucket",
+  "name": "media",
+  "location": "cloudflare",
+  "provider": "cloudflare",
+  "urls": [
+   "https://cdn.example.com/"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "engine": "r2",
+   "created": null,
+   "location": null,
+   "dashboard": "https://dash.cloudflare.com/acc/r2/default/buckets/media"
+  },
+  "links": [
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "db:local:sqlite:/root/harness-pilot/projects/acme/data.db",
+  "kind": "database",
+  "name": "data.db",
+  "location": "local",
+  "provider": "server",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "engine": "sqlite",
+   "path": "/root/harness-pilot/projects/acme/data.db",
+   "size": 4096,
+   "modified": null,
+   "repo": null,
+   "scan_incomplete": null
+  },
+  "links": [
+   "server:local"
+  ],
+  "project": "acme",
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "db:local:postgres:native:postgres",
+  "kind": "database",
+  "name": "postgres",
+  "location": "local",
+  "provider": "server",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "engine": "postgres",
+   "where": "native",
+   "container": null,
+   "image": null,
+   "port": 5432,
+   "version": null,
+   "compose_project": null,
+   "size": 7,
+   "owner": "postgres",
+   "system": true
+  },
+  "links": [
+   "server:local"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "db:local:postgres:native:shop",
+  "kind": "database",
+  "name": "shop",
+  "location": "local",
+  "provider": "server",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "engine": "postgres",
+   "where": "native",
+   "container": null,
+   "image": null,
+   "port": 5432,
+   "version": null,
+   "compose_project": null,
+   "size": 9000,
+   "owner": "shop",
+   "system": false
+  },
+  "links": [
+   "server:local"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "db:cloudflare:d1:blogdb",
+  "kind": "database",
+  "name": "blogdb",
+  "location": "cloudflare",
+  "provider": "cloudflare",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "engine": "d1",
+   "size": 10,
+   "tables": null,
+   "created": null,
+   "dashboard": "https://dash.cloudflare.com/acc/workers/d1/databases/None"
+  },
+  "links": [],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "db:far:redis:redis-1",
+  "kind": "database",
+  "name": "redis (redis-1)",
+  "location": "far",
+  "provider": "server",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "engine": "redis",
+   "where": "docker",
+   "container": "redis-1",
+   "image": null,
+   "port": null,
+   "version": null,
+   "compose_project": null,
+   "error": null
+  },
+  "links": [
+   "server:far"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "domain:example.org",
+  "kind": "domain",
+  "name": "example.org",
+  "location": "hostinger",
+  "provider": "hostinger",
+  "urls": [
+   "https://example.org/"
+  ],
+  "status": "warn",
+  "status_detail": "domain_expiring",
+  "details": {
+   "name": "example.org",
+   "registrar": "hostinger",
+   "expires": null,
+   "auto_renew": null,
+   "dns": null,
+   "name_servers": [],
+   "sources": [
+    "hostinger"
+   ],
+   "dns_error": null,
+   "registrar_status": "active",
+   "hostinger_dashboard": "https://hpanel.hostinger.com/domain/example.org/dns",
+   "records": [],
+   "days_left": -2499
+  },
+  "links": [],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "domain:example.com",
+  "kind": "domain",
+  "name": "example.com",
+  "location": "other",
+  "provider": "other",
+  "urls": [
+   "https://example.com/"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "name": "example.com",
+   "registrar": null,
+   "expires": null,
+   "auto_renew": null,
+   "dns": "cloudflare",
+   "name_servers": [
+    "a.ns"
+   ],
+   "sources": [
+    "cloudflare"
+   ],
+   "dns_error": null,
+   "zone_status": null,
+   "dashboard": "https://dash.cloudflare.com/acc/example.com",
+   "records": [
+    {
+     "type": "A",
+     "name": "shop.example.com",
+     "content": "198.51.100.9"
+    },
+    {
+     "type": "A",
+     "name": "blog.example.com",
+     "content": "198.51.100.9"
+    }
+   ]
+  },
+  "links": [
+   "site:local:ui.example.com/demo",
+   "site:local:ui.example.com/blog",
+   "site:local:ui.example.com",
+   "site:local:shop.example.com",
+   "site:local:www.example.com",
+   "site:far:blog.example.com",
+   "worker:cloudflare:api",
+   "bucket:cloudflare:r2:media"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "server:local",
+  "kind": "server",
+  "name": "this server",
+  "location": "local",
+  "provider": "server",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "server": "local",
+   "host": null,
+   "user": null,
+   "ips": [
+    "203.0.113.5"
+   ],
+   "os": null,
+   "cpus": null,
+   "mem_total": null,
+   "mem_available": null,
+   "disk_total": 100,
+   "disk_free": 50,
+   "load": null,
+   "uptime_s": null,
+   "hostname": "box",
+   "web_servers": [
+    "caddy"
+   ],
+   "probe_ms": null,
+   "probe_errors": {},
+   "collected_at": null,
+   "this": true
+  },
+  "links": [
+   "site:local:ui.example.com/demo",
+   "site:local:ui.example.com/blog",
+   "site:local:ui.example.com",
+   "site:local:shop.example.com",
+   "site:local:www.example.com",
+   "db:local:postgres:native:postgres",
+   "db:local:postgres:native:shop",
+   "db:local:sqlite:/root/harness-pilot/projects/acme/data.db"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "server:far",
+  "kind": "server",
+  "name": "far",
+  "location": "far",
+  "provider": "server",
+  "urls": [],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "server": "far",
+   "host": "198.51.100.9",
+   "user": "root",
+   "ips": [
+    "198.51.100.9"
+   ],
+   "os": null,
+   "cpus": null,
+   "mem_total": null,
+   "mem_available": null,
+   "disk_total": null,
+   "disk_free": null,
+   "load": null,
+   "uptime_s": null,
+   "hostname": "far",
+   "web_servers": [],
+   "probe_ms": null,
+   "probe_errors": {},
+   "collected_at": null,
+   "hostinger": {
+    "id": 7,
+    "hostname": "far.example.net",
+    "state": "running",
+    "ips": [
+     "198.51.100.9"
+    ],
+    "_matched": "server:far"
+   }
+  },
+  "links": [
+   "site:far:blog.example.com",
+   "db:far:redis:redis-1"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "site:local:shop.example.com",
+  "kind": "site",
+  "name": "shop.example.com",
+  "location": "local",
+  "provider": "server",
+  "urls": [
+   "https://shop.example.com"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "host": "shop.example.com",
+   "path": "",
+   "kind": "proxy",
+   "upstreams": [
+    "localhost:3000"
+   ],
+   "root": null,
+   "redirect": null,
+   "sandbox": false,
+   "server": "caddy",
+   "services": [
+    {
+     "port": 3000,
+     "unit": "shop.service",
+     "process": "node",
+     "cwd": "/root/harness-pilot/projects/acme/topics/shop/app",
+     "container": null,
+     "repo": {
+      "path": "/root/harness-pilot/projects/acme/topics/shop/app",
+      "github": "acme/shop",
+      "branch": "main",
+      "git": "/root/harness-pilot/projects/acme/topics/shop/app"
+     }
+    }
+   ],
+   "dns": [
+    {
+     "type": "A",
+     "name": "shop.example.com",
+     "content": "198.51.100.9"
+    }
+   ],
+   "dns_elsewhere": [
+    "server:far"
+   ]
+  },
+  "links": [
+   "server:local",
+   "domain:example.com"
+  ],
+  "project": "acme",
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "site:local:ui.example.com",
+  "kind": "site",
+  "name": "ui.example.com",
+  "location": "local",
+  "provider": "server",
+  "urls": [
+   "https://ui.example.com"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "host": "ui.example.com",
+   "path": "",
+   "kind": "proxy",
+   "upstreams": [
+    "127.0.0.1:8787"
+   ],
+   "root": null,
+   "redirect": null,
+   "sandbox": false,
+   "server": "caddy",
+   "services": [],
+   "harness": true,
+   "dns": []
+  },
+  "links": [
+   "server:local",
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "site:local:ui.example.com/blog",
+  "kind": "site",
+  "name": "ui.example.com/blog",
+  "location": "local",
+  "provider": "server",
+  "urls": [
+   "https://ui.example.com/blog/"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "host": "ui.example.com",
+   "path": "/blog",
+   "kind": "static",
+   "upstreams": [],
+   "root": "/var/www/blog",
+   "redirect": null,
+   "sandbox": false,
+   "server": "caddy",
+   "services": [],
+   "dns": []
+  },
+  "links": [
+   "server:local",
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "site:local:ui.example.com/demo",
+  "kind": "site",
+  "name": "ui.example.com/demo",
+  "location": "local",
+  "provider": "server",
+  "urls": [
+   "https://ui.example.com/demo/"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "host": "ui.example.com",
+   "path": "/demo",
+   "kind": "static",
+   "upstreams": [],
+   "root": "/srv/demo",
+   "redirect": null,
+   "sandbox": true,
+   "server": "caddy",
+   "services": [],
+   "dns": []
+  },
+  "links": [
+   "server:local",
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "site:local:www.example.com",
+  "kind": "site",
+  "name": "www.example.com",
+  "location": "local",
+  "provider": "server",
+  "urls": [
+   "https://www.example.com"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "host": "www.example.com",
+   "path": "",
+   "kind": "redirect",
+   "upstreams": [],
+   "root": null,
+   "redirect": "https://example.com{http.request.uri}",
+   "sandbox": false,
+   "server": "caddy",
+   "services": [],
+   "dns": []
+  },
+  "links": [
+   "server:local",
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "site:far:blog.example.com",
+  "kind": "site",
+  "name": "blog.example.com",
+  "location": "far",
+  "provider": "server",
+  "urls": [
+   "https://blog.example.com"
+  ],
+  "status": "warn",
+  "status_detail": "http_404",
+  "details": {
+   "host": "blog.example.com",
+   "path": "",
+   "kind": "static",
+   "upstreams": [],
+   "root": "/var/www/blog",
+   "redirect": null,
+   "sandbox": null,
+   "server": null,
+   "services": [],
+   "dns": [
+    {
+     "type": "A",
+     "name": "blog.example.com",
+     "content": "198.51.100.9"
+    }
+   ]
+  },
+  "links": [
+   "server:far",
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ },
+ {
+  "id": "worker:cloudflare:api",
+  "kind": "worker",
+  "name": "api",
+  "location": "cloudflare",
+  "provider": "cloudflare",
+  "urls": [
+   "https://api.example.com/",
+   "https://api.acme.workers.dev/"
+  ],
+  "status": "ok",
+  "status_detail": "",
+  "details": {
+   "modified": null,
+   "routes": [],
+   "dashboard": "https://dash.cloudflare.com/acc/workers/services/view/api/production"
+  },
+  "links": [
+   "domain:example.com"
+  ],
+  "project": null,
+  "note": "",
+  "hidden": false,
+  "declared": false,
+  "missing": false
+ }
+]
