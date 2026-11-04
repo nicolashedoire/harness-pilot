@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 from .. import bus, config, voice, workspace
 from . import clip, normalize, spawn, store, titles, voicejobs, wake
-from .runner import SUMMARY_PROMPT  # noqa: F401  (also used by the runner's automatic compaction)
+from .runner import DEBATE_SUMMARY_PROMPT, SUMMARY_PROMPT  # noqa: F401  (also used by the runner's automatic compaction)
 
 log = logging.getLogger("maxxing.sessions")
 
@@ -829,13 +829,13 @@ def _idle_with_history(sid: str) -> dict:
 
 
 def compact(sid: str) -> None:
-    """Summary turn, then the runner switches to a fresh Claude thread seeded with it."""
+    """Summary turn, then the runner switches to a fresh Claude thread seeded with it. A discussion / debate: a summary
+    of its exchanges, then both agents continue in fresh threads (runner `_debate_compact`; also while paused)."""
     if _require(sid).get("provider", '').startswith('plugin:'):
         raise SessionError(409, 'unsupported', 'Native thread compaction is owned by this agent adapter.')
-    if _require(sid).get("provider") in ("discussion", "debate"):
-        raise SessionError(409, "unsupported", "Compaction is not yet available for debates.")
+    debate = _require(sid).get("provider") in ("discussion", "debate")
     _idle_with_history(sid)
-    _enqueue(sid, _item(SUMMARY_PROMPT, [], "system", "compact"))
+    _enqueue(sid, _item(DEBATE_SUMMARY_PROMPT if debate else SUMMARY_PROMPT, [], "system", "compact"))
 
 
 def handoff(sid: str) -> dict:
