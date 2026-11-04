@@ -5,9 +5,9 @@ import { toast } from 'sonner'
 import { Check, Pause, Play, Plus, Square, TriangleAlert } from 'lucide-react'
 import { useT, useLang, tDyn } from '@/i18n'
 import { api, errorMessage, isApiError } from '@/lib/api'
-import { fmtNumber } from '@/lib/format'
+import { fmtDate, fmtNumber } from '@/lib/format'
 import type { AgentProvider } from '@/lib/types'
-import { useWorkspace } from '@/lib/queries'
+import { useSettings, useWorkspace } from '@/lib/queries'
 import { Badge, Button, Checkbox, EmptyState, FormField, Input, Select, Textarea, confirm } from '@/components/ui'
 import { SettingsCard, SectionStack } from './ui'
 
@@ -41,6 +41,7 @@ export function MissionsSection() {
   const [runs, setRuns] = React.useState(8), [minutes, setMinutes] = React.useState(60), [tokens, setTokens] = React.useState(1000000)
   const [concurrent, setConcurrent] = React.useState('1'), [interval, setInterval] = React.useState(0), [cycles, setCycles] = React.useState(1)
   const { data: ws } = useWorkspace()
+  const { data: settings } = useSettings()
   const topics = (ws?.projects || []).flatMap((p) => p.topics)
   const list = useQuery({ queryKey: ['missions'], queryFn: () => api.get<Mission[]>('/api/missions'), refetchInterval: 2000 })
   const profiles = useQuery({ queryKey: ['companions'], queryFn: () => api.get<{ companions: Role[] }>('/api/companions') })
@@ -82,6 +83,7 @@ export function MissionsSection() {
         <div className="flex flex-wrap items-center gap-3"><Badge variant="outline">{stateText(data.phase)}</Badge><span className="text-xs text-muted-foreground">{t('resident.progress', { runs: data.launches.length, max: data.max_runs, cycle: data.cycle, cycles: data.max_cycles })}</span></div>
         {!!data.reason && <p role="status" className="text-muted-foreground">{tDyn(t, `resident.reason.${data.reason}`, data.reason)}</p>}
         <p className="text-xs text-muted-foreground">{t('resident.usage', { count: fmtNumber(data.tokens, lang), max: fmtNumber(data.max_tokens, lang), minutes: Math.round(data.max_seconds / 60), elapsed: Math.floor((data.spent_seconds + (data.active_since ? Math.max(0, Date.now() / 1000 - data.active_since) : 0)) / 60) })}</p>
+        {data.phase === 'active' && !!data.next_cycle && <p className="text-xs text-muted-foreground">{t('resident.nextCycle', { date: fmtDate(data.next_cycle, lang, settings?.timezone) })}</p>}
         <div className="flex flex-wrap gap-2">
           {editable && !data.planner && <Button variant="outline" loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'plan' })}>{t('resident.askArchitect')}</Button>}
           {!editable && ['draft', 'plan_review', 'paused'].includes(data.phase) && !!data.steps.length && <Button loading={control.isPending} onClick={() => control.mutate({ id: data.id, action: 'start', fingerprint: data.plan_fingerprint })}><Play className="size-4" />{t('resident.start')}</Button>}

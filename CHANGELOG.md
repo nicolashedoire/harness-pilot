@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- A resident mission's time limit now counts working time only: waiting between cycles or for your decision on a proposal is free, so long intervals still reach their next cycle. The mission shows its working minutes and the date of its next cycle.
 - Stopping a resident mission now asks for confirmation and explains that it is final, unlike a pause.
 - Starting a resident mission now also approves the instructions and engine of each role it uses, shown under every step. Editing one of those roles afterwards pauses the mission until you review and start it again.
 - Review pull requests from all channels in Settings → Pull requests, arrange prerequisites and approve an exact commit for integration. The queue starts paused and requires successful checks and repository rules; changed commits require another review. [Show me](#show:pull-requests)
