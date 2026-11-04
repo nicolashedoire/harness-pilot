@@ -59,9 +59,11 @@ thumbnails with `ffmpeg` and PDF thumbnails with `pdftoppm`, and the local setup
 | `ffmpeg` with WebP | thumbnails and previews of images and videos, lighter copies of videos, voice messages | `brew install ffmpeg-full` |
 | `pdftoppm` | the first page of a PDF as its thumbnail | `brew install poppler` |
 
-Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one but is
-not put on the PATH by Homebrew: start the local app with
-`PATH="$(brew --prefix ffmpeg-full)/bin:$PATH" bash scripts/dev-local.sh`. To check a `ffmpeg`:
+Homebrew's plain `ffmpeg` has no WebP encoder, so thumbnails still fail with it. `ffmpeg-full` has one, and
+Homebrew does not put it on the PATH, but `scripts/dev-local.sh` uses it first as soon as it is installed: restart
+the local app after `brew install ffmpeg-full`. While a tool is missing, Settings → System shows a **Thumbnails and
+previews** card with the command to run, `bash scripts/dev-local.sh cli doctor` warns (`media_tools`), and the
+server says so in its terminal at start. Nothing is installed for you. To check a `ffmpeg` by hand:
 `ffmpeg -hide_banner -encoders | grep libwebp` must print a line.
 
 **What Settings → System shows locally.** The version card shows the version and commit of your clone, and
@@ -96,6 +98,7 @@ checks and the logs, explains, and fixes what is safe to fix.
 | security | firewall (ufw), fail2ban and automatic security updates active - warning only; fix: `bash /opt/claude-maxxing/install.sh --secure` |
 | state_files | a damaged `config.json` / `secrets.json` was found and replaced; its copy (`*.damaged-<date>`) is kept next to it - compare, restore what is missing (keys: Settings -> Keys), delete the copy |
 | tools | Node.js, Remotion, Scrapling and the shared Chromium ready (videos, PDFs, scraping) - warning only; fix: `pilot deps update` |
+| media_tools | `ffmpeg` with its WebP encoder and `pdftoppm` found: thumbnails and previews of images, videos and PDFs - warning only; the fix names the install command (`brew install ffmpeg-full`, `brew install poppler` on a Mac) |
 | deps_files | external components (`pilot deps list`): ✘ when a binary changed since it was installed or a file is not owned by root (another user could replace it), ! when one is missing or not at the version of this release; fix: `pilot deps update` |
 | bind | not listening on a public address |
 | public_url, caddy | your URL reachable, Caddy config valid |
@@ -136,7 +139,7 @@ of memory".
 The firewall only lets SSH, 80/443 and Tailscale in. Open the port on purpose (`ufw allow 3000/tcp`),
 or better, serve it behind Caddy on your domain.
 
-**Installation and updates.** The inherited Linux installer and update flow have not been validated for this repository. For the verified local setup, see [Installation](installation). No enterprise license key is required.
+**Installation and updates.** See [Installation](installation) for the local setup and for a Linux server (Debian 12, Ubuntu 24.04); on a server, `pilot update` follows the `main` branch of this repository. No enterprise license key is required.
 
 **The page does not load.**
 `systemctl status claude-maxxing`. If it is failing, read the journal. After a manual `git pull`,

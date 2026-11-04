@@ -1209,7 +1209,7 @@ function R(method, pattern, handler, opts = {}) {
   const keys = []
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)' }).replace(/\*$/, '(.*)') + '$')
   if (pattern.endsWith('*')) keys.push('rest')
-  routes.push({ method, re, keys, handler, public: !!opts.public })
+  routes.push({ method, re, keys, handler, public: !!opts.public, csrf: opts.csrf !== false })
 }
 
 /* ---- auth */
@@ -1582,6 +1582,53 @@ R('POST', '/api/uploads', ({ q, req, rawBody }) => {
     return { path: p, name: path.basename(p), size: f.data.length, mime: f.mime }
   })
   return { files: out }
+})
+
+/* ---- side question, hidden messages, summary to memory (api/sessions.py): canned answers, real checks */
+const sideBusy = new Set()
+R('POST', '/api/sessions/:id/ask', async ({ params, body }) => {
+  const s = findSession(params.id), question = String(body.question || '').trim()
+  if (!question) fail(422, 'invalid', 'question is required')
+  if (!s.turns) fail(409, 'no_thread', 'This session has no answer yet')
+  if (sideBusy.has(s.id)) fail(409, 'busy', 'A side question is already running for this session')
+  if (sideBusy.size >= 2) fail(429, 'busy', 'Two side questions are already running')
+  sideBusy.add(s.id)
+  try { await sleep(1500) } finally { sideBusy.delete(s.id) }
+  return { answer: `From this conversation (“${s.title}”): ${s.last_text ? s.last_text.slice(0, 160) : 'nothing has been decided yet.'}\n\nNothing was changed and this answer is not saved in the thread.`, cost_usd: 0.012, duration_ms: 1500 }
+})
+R('POST', '/api/sessions/:id/hide', ({ params, body }) => {
+  const s = findSession(params.id), hidden = body.hidden !== false
+  const evs = S.events[s.id] || []
+  if (!evs.some((e) => e.type === 'user' && e.at === body.at)) fail(404, 'not_found', 'No user message at this time')
+  const last = evs.filter((e) => e.type === 'hide' && e.ref === body.at).at(-1)
+  if ((last ? last.hidden : false) !== hidden) addEvents(s, { type: 'hide', ref: body.at, hidden, at: now() })
+  return { ok: true }
+})
+const summaryBusy = new Set()
+R('POST', '/api/sessions/:id/summary', async ({ params }) => {
+  const s = findSession(params.id)
+  if (!(S.events[s.id] || []).some((e) => e.type === 'assistant' || e.type === 'user')) fail(400, 'empty_session', 'Nothing to summarize yet')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  if (summaryBusy.has(s.id)) fail(409, 'summary_busy', 'A summary is already being written for this session')
+  if (summaryBusy.size >= 2) fail(429, 'summary_limit', 'Two summaries are already being written')
+  summaryBusy.add(s.id)
+  try { await sleep(2200) } finally { summaryBusy.delete(s.id) }
+  return { summary: `The conversation “${s.title}” reviewed the current state and agreed on the next steps.${s.last_text ? ` Latest answer: ${s.last_text.slice(0, 140)}` : ''}`,
+    decisions: ['Keep the current structure and change one thing at a time.', 'Check the result on a phone before publishing.'],
+    actions: [{ title: `Follow up: ${s.title.slice(0, 60)}`, notes: 'Review the proposed change and confirm it in this topic.' }, { title: 'Add a test for the fixed case', notes: '' }], truncated: false }
+})
+R('POST', '/api/sessions/:id/summary/memory', ({ params, body }) => {
+  const s = findSession(params.id), text = String(body.text || '').trim()
+  if (!text || text.length > 12000) fail(400, 'empty_memory', 'Nothing to add to the memory')
+  if (!s.path) fail(409, 'no_topic', 'This session is not in a topic')
+  const file = `${ROOT}/${s.path}/memory.md`, node = S.fs.get(file)
+  if (!node) fail(409, 'memory_unavailable', 'The topic has no memory.md')
+  if (node.type !== 'file') fail(409, 'invalid_memory', 'memory.md is not a regular file')
+  const next = `${String(node.content || '').replace(/\n*$/, '\n')}\n## Discussion — ${new Date().toISOString().slice(0, 10)}\n\n${text}\n`
+  if (Buffer.byteLength(next) > 32768) fail(409, 'memory_full', 'memory.md would pass 32 KiB')
+  fsAdd(S, file, next, now(), 'text/markdown')
+  bus('workspace')
+  return { ok: true }
 })
 
 /* ---- mixed teams (server/maxxing/sessions/teams.py): a Claude Code and a Codex worker analyse the mission in their own
@@ -2416,6 +2463,71 @@ R('POST', '/api/backup/instance/resume-integrations', () => {
   return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
 })
 
+/* ---- Git page (server/maxxing/gitview.py): clones under the files root and the repositories of the GitHub tokens.
+   Histories are generated from a seed per repository (stable across reads): a main line, a merged feature branch,
+   a branch still open, a tag. */
+const GIT_LOCAL = [
+  { path: `${ROOT}/projects/acme/topics/website/app`, name: 'app', branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, changed: 3, untracked: 1, remote: 'git@github.com:acme/website.git', github: 'acme/website', error: null, worktrees: 1 },
+  { path: `${ROOT}/projects/ops/topics/server/scripts`, name: 'scripts', branch: 'main', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, remote: null, github: null, error: null, worktrees: 0 },
+]
+const GIT_HUB = [
+  ['acme/website', 'Marketing site and shop front', 'TypeScript', false, 'admin', 12, 4],
+  ['acme/platform', 'Back office and APIs', 'Python', true, 'push', 3, 9],
+  ['acme/blog', 'Articles and newsletter archive', 'MDX', false, 'maintain', 41, 1],
+]
+const GIT_SUBJECTS = ['Fix the hero image on small screens', 'Add the pricing page', 'Bump dependencies', 'Write the FAQ', 'Speed up the build', 'Refactor the checkout steps',
+  'Add tests for the cart', 'Update the footer links', 'Translate the about page', 'Clean up unused styles', 'Log failed payments', 'Tidy the README']
+function gitHistory(id) {
+  const r = rng([...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)), t = now()
+  const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(r() * 16)]).join('')
+  const who = () => ['Alex Martin', 'Sam Lee', 'Codex'][Math.floor(r() * 3)]
+  const main = [], out = []
+  for (let i = 0; i < 40; i++) main.push({ sha: hex(), parents: [], refs: [], author: who(), date: t - (40 - i) * 9 * HOUR - Math.floor(r() * HOUR), subject: GIT_SUBJECTS[Math.floor(r() * GIT_SUBJECTS.length)] })
+  for (let i = 1; i < main.length; i++) main[i].parents = [main[i - 1].sha]
+  const feat = [] // merged into main at 30, branched at 24
+  for (let i = 0; i < 4; i++) feat.push({ sha: hex(), parents: [i ? feat[i - 1].sha : main[24].sha], refs: [], author: 'Codex', date: main[24].date + (i + 1) * 2 * HOUR, subject: ['Checkout: one page', 'Checkout: keep Apple Pay on top', 'Checkout: tests', 'Checkout: review fixes'][i] })
+  main[30].parents.push(feat[3].sha); main[30].subject = 'Merge branch feat/one-page-checkout'
+  const open = [{ sha: hex(), parents: [main[37].sha], refs: [{ name: 'feat/dark-mode', kind: 'branch' }], author: 'Sam Lee', date: main[37].date + HOUR, subject: 'Dark mode: first pass' }]
+  main[39].refs = [{ name: 'HEAD', kind: 'head' }, { name: 'main', kind: 'branch', current: true }, { name: 'origin/main', kind: 'remote' }]
+  main[20].refs = [{ name: 'v1.2.0', kind: 'tag' }]
+  out.push(...main, ...feat, ...open)
+  return out.sort((a, b) => b.date - a.date)
+}
+function gitRepo(id) {
+  if (id.startsWith('github:')) {
+    const g = GIT_HUB.find(([full]) => `github:${full}` === id) || fail(404, 'not_found', 'Repository not found')
+    return { kind: 'github', id, name: g[0].split('/')[1], branch: 'main', github: g[0], url: `https://github.com/${g[0]}`, private: g[3], permission: g[4], description: g[1], branches: 13, branches_shown: 13 }
+  }
+  const l = GIT_LOCAL.find((x) => x.path === id) || fail(404, 'not_found', 'Not a repository')
+  return { kind: 'local', id, ...l }
+}
+R('GET', '/api/git/repos', () => ({ root: S.settings.files_root || ROOT,
+  local: GIT_LOCAL.map((l) => { const h = gitHistory(l.path)[0]; return { ...l, last_commit: h.date, last_subject: h.subject } }),
+  github: { connected: true, login: 'acme-dev', error: null, errors: [], accounts: [{ login: 'acme-dev', name: 'Acme', avatar: null, keys: ['GITHUB_TOKEN'], repos: GIT_HUB.length }],
+    repos: GIT_HUB.map(([full, description, language, priv, permission, stars, issues]) => ({ full_name: full, owner: full.split('/')[0], name: full.split('/')[1], description, private: priv, fork: false,
+      archived: false, permission, default_branch: 'main', pushed_at: new Date((now() - stars * HOUR) * 1000).toISOString(), url: `https://github.com/${full}`, language, stars, open_issues: issues,
+      keys: ['GITHUB_TOKEN'], accounts: ['acme-dev'], local_paths: GIT_LOCAL.filter((l) => l.github === full).map((l) => l.path) })) } }))
+R('GET', '/api/git/graph', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), limit = Math.min(1000, Math.max(1, Number(q.get('limit')) || 200))
+  const all = gitHistory(repo.id)
+  return { repo, commits: all.slice(0, limit), truncated: all.length > limit }
+})
+R('GET', '/api/git/commit', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), c = gitHistory(repo.id).find((x) => x.sha === q.get('sha')) || fail(404, 'no_commit', 'No such commit')
+  const r = rng(parseInt(c.sha.slice(0, 8), 16)), pool = ['src/pages/checkout.tsx', 'src/styles/hero.css', 'README.md', 'tests/cart.test.ts', 'package.json', 'src/i18n/en.ts', 'src/components/Footer.tsx']
+  const files = pool.filter(() => r() < 0.45).map((p) => ({ path: p, additions: Math.floor(r() * 60) + 1, deletions: Math.floor(r() * 25) }))
+  if (!files.length) files.push({ path: pool[0], additions: 4, deletions: 1 })
+  return { sha: c.sha, parents: c.parents, author: c.author, email: `${c.author.split(' ')[0].toLowerCase()}@example.com`, date: c.date,
+    message: `${c.subject}\n\nKeeps the change small; tested on a phone and a desktop browser.`, files, files_total: files.length, ...(repo.github ? { url: `https://github.com/${repo.github}/commit/${c.sha}` } : {}) }
+})
+R('GET', '/api/git/pulls', ({ q }) => {
+  const id = q.get('repo') || ''
+  if (!id.startsWith('github:')) fail(400, 'not_github', 'Pull requests come from GitHub repositories')
+  const repo = gitRepo(id)
+  return [[18, 'Dark mode: first pass', 'sam-lee', 'feat/dark-mode', false], [17, 'Translate the about page', 'acme-dev', 'i18n/about', true]].map(([number, title, author, head, draft], i) => ({
+    number, title, author, head, base: 'main', draft, url: `https://github.com/${repo.github}/pull/${number}`, updated: now() - (i + 1) * 5 * HOUR }))
+})
+
 /* ---- settings & secrets */
 R('GET', '/api/settings', () => S.settings)
 R('PUT', '/api/settings', ({ body }) => {
@@ -2424,6 +2536,24 @@ R('PUT', '/api/settings', ({ body }) => {
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
 })
+/* ---- profile (api/settings.py): the pseudo shown on the user's messages and in notifications. The legacy hello /
+   feedback / license routes talk to the original project's cloud: like the server by default (no MAXXING_LICENSE_PING),
+   they answer 404 not_found after sign-in, whatever the method. */
+const PROFILE_COLORS = ['clay', 'blue', 'violet', 'green', 'amber', 'rose', 'teal', 'zinc']
+const profileState = () => (S.profile ||= S.scenario === 'ready' || S.scenario === 'maxxing' ? { name: 'Alex', color: 'blue', emoji: '' } : { name: '', color: '', emoji: '' })
+R('GET', '/api/settings/profile', () => ({ ...profileState() }))
+R('PUT', '/api/settings/profile', ({ body }) => {
+  const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').split(/\s+/).filter(Boolean).join(' ').slice(0, 32)
+  const color = String(body.color || ''), emoji = String(body.emoji || '').replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  if (color && !PROFILE_COLORS.includes(color)) fail(400, 'invalid_color', `color: ${PROFILE_COLORS.join(', ')} or empty`)
+  if ([...emoji].length > 8 || /\s/.test(emoji)) fail(400, 'invalid_emoji', 'emoji: one emoji or initials (8 characters at most) or empty')
+  const next = { name, color, emoji }
+  if (JSON.stringify(next) !== JSON.stringify(profileState())) { S.profile = next; bus('profile') }
+  return { ...S.profile }
+})
+for (const what of ['register', 'feedback', 'license']) for (const method of ['GET', 'PUT', 'POST', 'DELETE'])
+  R(method, `/api/settings/${what}`, () => fail(404, 'not_found', 'Not available in this project'))
+
 // The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
 R('PUT', '/api/settings/look', ({ body }) => {
   if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
@@ -2687,6 +2817,98 @@ R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => 
   return { url: run.pull_request.url, target: 'acme/platform' }
 })
 
+/* ---- Infra page (server/maxxing/infra): servers, sites, databases, buckets, workers and domains of this server, a
+   registered one and Cloudflare / Hostinger. infra-resources.json is the output of the real builder (infra/build.py)
+   on the fixture of server/tests/test_infra.py; the owner's annotations, servers and domains live in the mock state. */
+const INFRA_RESOURCES = JSON.parse(fs.readFileSync(path.join(__dirname, 'infra-resources.json'), 'utf8'))
+function infraState() {
+  if (S.infra) return S.infra
+  S.infra = { refreshing: false, generated_at: now() - 7 * MIN, registry: {}, domains: [], servers: [{ name: 'far', label: 'Far VPS', host: '198.51.100.9', user: 'root', port: 22, note: '' }] }
+  return S.infra
+}
+function infraView() {
+  const st = infraState(), t = now()
+  const remote = new Set(INFRA_RESOURCES.filter((r) => r.kind === 'server' && r.location !== 'local').map((r) => r.location)) // registered servers of the fixture
+  const resources = INFRA_RESOURCES.filter((r) => !remote.has(r.location) || st.servers.some((s) => s.name === r.location))
+    .concat(st.domains.map((name) => ({ id: `domain:${name}`, kind: 'domain', name, location: 'other', provider: 'rdap', urls: [`https://${name}/`], status: 'ok', status_detail: '',
+      details: { name, registrar: 'Example Registrar', expires: t + 200 * DAY, auto_renew: true, dns: [{ type: 'A', name, content: '203.0.113.5' }], name_servers: ['ns1.example.net', 'ns2.example.net'], sources: ['rdap', 'dns'] },
+      links: [], project: null, note: '', hidden: false, declared: true, missing: false })))
+    .map((r) => {
+      const out = { ...clone(r), ...(st.registry[r.id] || {}) }
+      if (r.id === 'domain:example.org') out.details.expires = t + 20 * DAY // expiring soon: the warn state
+      if (r.kind === 'server' && r.location !== 'local') { const s = st.servers.find((x) => x.name === r.location); if (s) out.name = s.label || s.name }
+      return out
+    })
+  return { enabled: true, refreshing: st.refreshing, error: null, refresh_min: 15, generated_at: st.generated_at, took_ms: 2840, harness_host: 'ui.example.com',
+    sources: { servers: Object.fromEntries([['local', { ok: true, error: null, took_ms: 410 }], ...st.servers.map((s) => [s.name, { ok: true, error: null, took_ms: 1220 }])]),
+      cloudflare: { connected: true, key: 'CLOUDFLARE_API_TOKEN', error: null, sections: { zones: 'ok', workers: 'ok', worker_domains: 'ok', pages: 'ok', r2: 'ok', d1: 'ok', registrar: 'missing_permission', dns: 'ok' } },
+      hostinger: { connected: true, key: 'HOSTINGER_API_TOKEN', sections: { domains: 'ok', vps: 'ok' } },
+      ...Object.fromEntries(['vercel', 'netlify', 'supabase', 'github'].map((p) => [p, { connected: p === 'github', key: p === 'github' ? 'GITHUB_TOKEN' : null, error: null, label: p[0].toUpperCase() + p.slice(1),
+        beta: p !== 'github', token_url: `https://${p}.example.com/account/tokens`, keys: [`${p.toUpperCase()}_TOKEN`], sections: p === 'github' ? { sites: 'ok' } : {} }])) },
+    resources, servers: clone(st.servers) }
+}
+R('GET', '/api/infra', () => infraView())
+R('POST', '/api/infra/refresh', () => {
+  const st = infraState()
+  if (st.refreshing) return { started: false, refreshing: true }
+  st.refreshing = true
+  const g = GEN
+  setTimeout(() => { if (g === GEN) { st.refreshing = false; st.generated_at = now(); bus('infra') } }, 2500).unref()
+  bus('infra')
+  return { started: true, refreshing: true }
+})
+R('POST', '/api/infra/annotate', ({ body }) => {
+  const st = infraState(), cur = { ...(st.registry[body.id] || {}) }
+  if (body.project !== undefined) cur.project = String(body.project || '').trim().replace(/^\/+|\/+$/g, '') || null
+  if (body.note !== undefined) cur.note = String(body.note || '').trim().slice(0, 500)
+  if (body.hidden !== undefined) cur.hidden = !!body.hidden
+  const kept = Object.fromEntries(Object.entries(cur).filter(([, v]) => v !== null && v !== '' && v !== false))
+  if (Object.keys(kept).length) st.registry[body.id] = kept; else delete st.registry[body.id]
+  bus('infra')
+  return kept
+})
+R('GET', '/api/infra/reserved', () => ({ names: ['api', 'ext', 'assets', 'icons', 'sessions', 'files', 'tasks', 'crons', 'settings', 'infra', 'git', 'team', 'x', 'login', 'sw.js', 'manifest', 'index.html', 'favicon'] }))
+R('POST', '/api/infra/servers/connect', async ({ body }) => {
+  const st = infraState()
+  const host = String(body.host || '').trim(), user = String(body.user || 'root'), port = Number(body.port || 22)
+  if (!host && !body.id) fail(422, 'not_found', 'Give a host or a Hostinger server')
+  if (st.servers.some((s) => s.host === host)) fail(409, 'exists', 'This server is already connected')
+  await sleep(1500)
+  if (!/^192\.0\.2\.\d+$/.test(host) && !body.id) // only the documentation range 192.0.2.0/24 "accepts" the key in the mock
+    return { connected: false, message: 'No key of this server works yet: add the Harness public key to the server, then try again.', public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com',
+      command: `mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com' >> ~/.ssh/authorized_keys` }
+  let name = (body.label || host || 'server').toLowerCase().replace(/[^a-z0-9-]+/g, '-').split('.')[0].slice(0, 36) || 'server'
+  for (let n = 2; st.servers.some((s) => s.name === name); n++) name = `${name.replace(/-\d+$/, '')}-${n}`
+  const s = { name, label: String(body.label || '').slice(0, 60), host: host || '203.0.113.40', user, port, note: '' }
+  st.servers.push(s); bus('infra')
+  return { connected: true, name: s.name, label: s.label, host: s.host, user: s.user, port: s.port, via: body.id ? 'added_key' : 'existing_key' }
+})
+R('POST', '/api/infra/servers/rename', ({ body }) => {
+  const s = infraState().servers.find((x) => x.name === body.name) || fail(404, 'not_found', `no server named ${body.name}`)
+  s.label = String(body.label || '').trim().slice(0, 60); bus('infra')
+  return { name: s.name, label: s.label }
+})
+R('POST', '/api/infra/servers/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.servers.some((x) => x.name === body.name)) fail(404, 'not_found', `no server named ${body.name}`)
+  st.servers = st.servers.filter((x) => x.name !== body.name); bus('infra')
+  return { removed: true }
+})
+R('POST', '/api/infra/domains', ({ body }) => {
+  const name = String(body.name || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name)) fail(400, 'invalid_domain', 'not a domain name (example: example.com)')
+  const st = infraState()
+  if (!st.domains.includes(name) && !INFRA_RESOURCES.some((r) => r.id === `domain:${name}`)) st.domains.push(name)
+  bus('infra')
+  return { name }
+})
+R('POST', '/api/infra/domains/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.domains.includes(body.name)) fail(404, 'not_found', 'This domain was not added by hand')
+  st.domains = st.domains.filter((x) => x !== body.name); bus('infra')
+  return { removed: true }
+})
+
 /* ---- system */
 R('GET', '/api/system/health', () => healthObj())
 R('GET', '/api/system/services', () => S.services)
@@ -2937,6 +3159,65 @@ R('POST', '/api/system/update/fix', () => {
   if (!S.updateReport || S.updateReport.ok) fail(409, 'nothing_to_fix', 'The last verification found nothing broken')
   return { session: updateSession(`Fix after the update to ${S.updateReport.version}`, 'The last verification found a problem: Broken widget (SyntaxError in api.py line 12). Fix it and verify again.') }
 })
+/* ---- import from another agent (server/maxxing/importer.py): the prompt to paste into the old agent, then its zip.
+   The mock does not unzip: any ZIP file (PK header) gives the same preview, and applying it creates its project. */
+const IMPORT_HINTS = {
+  hermes: 'You are Hermes Agent: your memory lives in ~/.hermes/ (MEMORY.md, USER.md, memories/, skills/, sessions, cron jobs). Read all of it.',
+  'claude-code': 'You are Claude Code: read every CLAUDE.md and memory file you use (~/.claude/CLAUDE.md, the project folders, ~/.claude/projects/*/memory/), your skills (~/.claude/skills/, .claude/skills/) and anything the user keeps notes in.',
+  openclaw: 'You are OpenClaw: read your workspace (by default ~/.openclaw/workspace/: AGENTS.md, SOUL.md, USER.md, MEMORY.md, memory/*.md, skills/) and your scheduled jobs.',
+  other: 'Read every place where you keep memory, notes, instructions, skills and scheduled jobs.',
+}
+const importPrompt = (agent) => `I am moving to harness-pilot, a control room for Claude Code. Please export everything you know and keep about me and my work into ONE zip file that it can import. ${IMPORT_HINTS[agent]}
+
+Build a folder \`harness-pilot-export/\` with this layout (Markdown, UTF-8): memory.md, projects/<project>/CLAUDE.md and memory.md, projects/<project>/topics/<topic>/CLAUDE.md, memory.md and useful files, skills/<skill-name>/SKILL.md, tasks.md, crons.md, SECRETS.md (key NAMES only).
+
+NEVER write a secret value anywhere - only their names in SECRETS.md. Then zip it and give me the file.`
+const importsState = () => (S.imports ||= { uploads: {}, applying: false })
+R('GET', '/api/import/prompt', ({ q }) => {
+  const agent = Object.keys(IMPORT_HINTS).includes(q.get('agent')) ? q.get('agent') : 'other'
+  return { agent, agents: Object.keys(IMPORT_HINTS), prompt: importPrompt(agent) }
+})
+R('POST', '/api/import/upload', ({ req, rawBody }) => {
+  const [file] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!file || !file.data.length) fail(400, 'empty', 'The file is empty')
+  if (file.data.length > 600 * 1024 * 1024) fail(413, 'too_big', 'The archive is larger than 600 MB')
+  if (!file.data.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) fail(400, 'bad_zip', 'This is not a ZIP archive')
+  const exists = (p, t) => S.projects.some((x) => x.name === p && (!t || x.topics.some((y) => y.name === t)))
+  const plan = { id: crypto.randomBytes(12).toString('hex'), name: file.name,
+    projects: [{ name: 'freelance', exists: exists('freelance'), topics: [{ name: 'clients', source: 'projects/freelance/topics/clients', files: 6, exists: exists('freelance', 'clients') },
+      { name: 'invoices', source: 'projects/freelance/topics/invoices', files: 3, exists: exists('freelance', 'invoices') }] },
+    { name: 'acme', exists: exists('acme'), topics: [{ name: 'blog', source: 'projects/acme/topics/blog', files: 4, exists: exists('acme', 'blog') }] }],
+    skills: ['weekly-report'], aside: ['tasks.md', 'crons.md', 'SECRETS.md'], root_memory: true, files: 19, size: file.data.length,
+    skipped: [{ file: 'harness-pilot-export/.DS_Store', reason: 'hidden' }], secrets: [{ file: 'projects/freelance/topics/invoices/stripe.md', kinds: ['stripe_key'] }],
+    renamed: [{ from: 'projects/Freelance Work', to: 'projects/freelance' }] }
+  importsState().uploads[plan.id] = { plan, at: now() }
+  return plan
+})
+R('POST', '/api/import/:id/apply', async ({ params }) => {
+  const st = importsState(), up = st.uploads[params.id]
+  if (!up || now() - up.at > DAY) fail(404, 'not_found', 'This upload expired: upload the file again')
+  if (st.applying) fail(409, 'busy', 'Another import is being applied')
+  st.applying = true
+  try { await sleep(1200) } finally { st.applying = false }
+  const merged = [], topics = []
+  for (const p of up.plan.projects) {
+    let proj = S.projects.find((x) => x.name === p.name)
+    if (!proj) { proj = { name: p.name, description: '', topics: [] }; S.projects.push(proj); fsAdd(S, `${projPath(p.name)}/CLAUDE.md`, `# Project ${p.name}\n\n@memory.md\n`, now()) }
+    for (const t of p.topics) {
+      topics.push(`${p.name}/${t.name}`)
+      if (proj.topics.some((x) => x.name === t.name)) merged.push(`${topicPath(p.name, t.name)}/memory.md`)
+      else { proj.topics.push({ name: t.name, description: '' }); fsAdd(S, `${topicPath(p.name, t.name)}/memory.md`, `# ${t.name} — memory\n\n## Imported\n\nImported from the previous agent.\n`, now()) }
+    }
+  }
+  const stamp = new Date().toISOString().slice(0, 10), folder = `imports/${stamp}`, report = `${folder}/REPORT.md`
+  fsAdd(S, report, `# Import ${stamp}\n\n${up.plan.files} files from ${up.plan.name}.\n`, now(), 'text/markdown')
+  delete st.uploads[params.id]
+  bus('workspace')
+  return { ok: true, projects: up.plan.projects.map((p) => p.name), topics, files: up.plan.files - 1, merged, renamed: [{ from: 'skills/weekly-report', to: 'skills/weekly-report-imported' }],
+    skills: ['weekly-report-imported'], aside: up.plan.aside.map((a) => `${folder}/${a}`), secrets: up.plan.secrets, skipped: up.plan.skipped, folder, report,
+    finish_prompt: `An import from my previous agent was just applied. Read ${report} first, then finish it with me: merge duplicates in memory, create the open tasks from tasks.md, propose the jobs of crons.md (ask before creating any), list the keys of SECRETS.md to add in Settings -> Keys.` }
+})
+R('DELETE', '/api/import/:id', ({ params }) => { delete importsState().uploads[params.id]; return { ok: true } })
 
 /* ---- docs */
 R('GET', '/api/docs', () => DOCS.map(({ slug, title, section, order }) => ({ slug, title, section, order })))
@@ -2961,7 +3242,7 @@ index 1a2b3c4..5d6e7f8 100644
 +++ b/docs/user/notes.md
 @@ -1,3 +1,4 @@
  # Notes
- 
+
  Short notes about the product.
 +- ${prqRemote(item).title}.
 `
@@ -3052,6 +3333,45 @@ R('POST', '/api/pr-queue/:id/retry', ({ params }) => {
   Object.assign(item, { state: 'queued', reason: 'checks', checked_at: 0, revision: item.revision + 1 })
   return prqOut()
 })
+
+/* ---- small gaps: tree order, one job, backup preview, search index stats, incoming webhooks */
+const orderBy = (items, names) => { // listed names first in that order, the others A-Z (projects/.order.json, .maxxing.json)
+  const at = new Map(names.map((n, i) => [n, i]))
+  return [...items].sort((a, b) => (at.has(a.name) ? at.get(a.name) : 1e6) - (at.has(b.name) ? at.get(b.name) : 1e6) || a.name.localeCompare(b.name))
+}
+R('PUT', '/api/workspace/order', ({ body }) => {
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  S.projects = orderBy(S.projects, body.names.map(String)); bus('workspace')
+  return { projects: S.projects.map((p) => p.name) }
+})
+R('PUT', '/api/workspace/projects/:project/order', ({ params, body }) => {
+  const p = S.projects.find((x) => x.name === params.project) || fail(404, 'not_found', 'Unknown project')
+  if (!Array.isArray(body.names)) fail(422, 'invalid', 'names must be a list')
+  p.topics = orderBy(p.topics, body.names.map(String)); bus('workspace')
+  return { topics: p.topics.map((t) => t.name) }
+})
+R('GET', '/api/crons/:id', ({ params }) => cronOut(S.crons.find((x) => x.id === params.id) || fail(404, 'not_found', 'Cron not found')))
+R('POST', '/api/backup/preview', async ({ body }) => {
+  if (!S.backup.configured) fail(409, 'not_configured', 'Configure the backup repository first')
+  await sleep(900)
+  const files = [...S.fs.entries()].filter(([, n]) => n.type === 'file').map(([k]) => k.slice(ROOT.length + 1)).filter((k) => /(^|\/)(CLAUDE|memory)\.md$|^tasks\.json$/.test(k)).sort()
+  const paths = { create: ['projects/acme/topics/newsletter/memory.md'], replace: files.filter((f) => f.endsWith('memory.md')).slice(0, 3), unchanged: files.filter((f) => !f.endsWith('memory.md')),
+    held: ['extensions/shop-sales/api.py'], skip: [] }
+  return { ok: true, commit: (body.ref && /^[0-9a-f]{7,40}$/.test(body.ref) ? body.ref : S.backup.history.filter((h) => h.ok).at(-1)?.commit || sha().slice(0, 7)).padEnd(40, '0'), hold: true,
+    counts: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, v.length])), paths, settings: true, crons: true, mcp: false }
+})
+R('GET', '/api/search/stats', () => ({ counts: { session: S.sessions.length, file: [...S.fs.values()].filter((n) => n.type === 'file').length,
+  memory: [...S.fs.keys()].filter((k) => k.endsWith('/memory.md')).length, task: S.tasks.tasks.length }, bytes: 3.4e6, refreshed_at: now() - 4 * MIN }))
+// Incoming webhook: the token is the permission. Signatures are not verified in the mock; the rules of a missing secret are.
+R('POST', '/api/hooks/:token', ({ params, body }) => {
+  const h = S.feed.hooks.find((x) => x.token === params.token) || fail(404, 'not_found', 'Unknown hook')
+  if (h.kind !== 'generic' && !h.secret) fail(401, 'secret_required', `A ${h.kind} hook needs its signing secret`)
+  if (typeof body !== 'object' || Array.isArray(body)) fail(400, 'bad_payload', 'Unexpected payload')
+  const title = h.kind === 'generic' ? String(body.title || 'Webhook') : h.kind === 'stripe' ? String(body.type || 'stripe event') : h.kind === 'github' ? 'GitHub event' : 'Shopify event'
+  const e = feedAdd(S, { source: h.name, kind: 'webhook', level: ['info', 'success', 'warning', 'error'].includes(body.level) ? body.level : 'info', title: title.slice(0, 200), body: String(body.body || '').slice(0, 2000) })
+  bus('feed')
+  return { ok: true, duplicate: false, id: e.id }
+}, { public: true, csrf: false }) // called by Stripe, GitHub…: no cookie, no CSRF header
 
 /* ---- dashboard & extensions */
 R('GET', '/api/dashboard', () => dashboard())
@@ -3542,7 +3862,7 @@ async function handleApi(req, res, url) {
   if (!candidates.length) return sendJson(res, 404, { error: 'not_found', message: `No route for ${p}` })
   const route = candidates.find((r) => r.method === req.method)
   if (!route) return sendJson(res, 405, { error: 'method_not_allowed', message: `${req.method} not allowed on ${p}` })
-  if (req.method !== 'GET' && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
+  if (req.method !== 'GET' && route.csrf && req.headers['x-maxxing'] !== '1') return sendJson(res, 403, { error: 'csrf', message: 'Missing X-Maxxing header' })
   const authed = isAuthed(req)
   if (!route.public && !authed) return sendJson(res, 401, { error: 'auth_required', message: 'Please log in' })
   const m = route.re.exec(p)

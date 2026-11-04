@@ -82,7 +82,10 @@ def state() -> dict:
 
 
 def _call(method: str, path: str, body: dict) -> dict:
-    """The cloud's JSON answer, error answers included ({"ok": false, "error": ...}); raises only when offline."""
+    """The cloud's JSON answer, error answers included ({"ok": false, "error": ...}); raises only when the network
+    fails. While the original service is off (_offline), nothing is sent: {"ok": false, "error": "offline"}."""
+    if _offline():
+        return {"ok": False, "error": "offline"}
     req = urllib.request.Request(license.API + path, data=json.dumps(body).encode(), method=method,
                                  headers={"content-type": "application/json", "user-agent": license.USER_AGENT})
     try:
