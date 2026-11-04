@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# The inherited Linux installer still targets upstream services and has not been validated for this project.
-# Refuse execution before it can download code or change the host; keep library mode for its regression tests.
-if [ "${MAXXING_INSTALL_LIB:-}" != 1 ]; then
-  printf '%s\n' 'The legacy Linux installer is disabled for this project: it is not yet validated.' \
-    'For the verified local setup, see README.md and run: bash scripts/dev-local.sh' >&2
-  exit 1
-fi
+# bash 4 or newer (associative arrays): Debian and Ubuntu have it; `sh install.sh` and the bash 3.2 of macOS do not
+if [ -z "${BASH_VERSION:-}" ]; then echo "Run this installer with bash: sudo bash install.sh" >&2; exit 1; fi
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then echo "This installer needs bash 4 or newer (this is bash $BASH_VERSION)." >&2; exit 1; fi
 # =============================================================================================
 #  harness-pilot - server installer (Ubuntu / Debian with systemd, x86_64 or arm64, as root)
 #
@@ -823,12 +819,12 @@ choose_access() {
   choose_source
   [ "$ACCESS" = domain ] && dns_check
 
-  SYS_TZ=$(system_tz)
-  [ -n "$TIMEZONE" ] || TIMEZONE=$(cfg_get timezone)
-  [ -n "$TIMEZONE" ] || TIMEZONE=$SYS_TZ                 # chosen in the web onboarding
   if [ ! -d /usr/share/zoneinfo ] || [ ! -e /usr/share/zoneinfo/UTC ]; then   # minimal images ship without tzdata
     apt_get update -qq >/dev/null 2>&1; apt_get install -y -qq tzdata >/dev/null 2>&1 || true
   fi
+  SYS_TZ=$(system_tz)                                    # after tzdata: without it systemd says UTC, then Etc/UTC
+  [ -n "$TIMEZONE" ] || TIMEZONE=$(cfg_get timezone)
+  [ -n "$TIMEZONE" ] || TIMEZONE=$SYS_TZ                 # chosen in the web onboarding
   valid_tz "$TIMEZONE" || die "unknown time zone '$TIMEZONE' (see: timedatectl list-timezones)"
   if [ "$TIMEZONE" != "$SYS_TZ" ] && [ "$SYSTEM_CLOCK" = keep ]; then
     ok "time zone: $TIMEZONE (the server clock stays at $SYS_TZ, jobs follow your zone)"

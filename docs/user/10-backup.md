@@ -149,7 +149,7 @@ In local mode, scheduled backups run only while the app is running; missed runs 
 
 ## Moving to a new server
 
-The inherited new-server restore procedure has not yet been validated for this version. Do not pass your backup token to an upstream installer. Keep your existing backup and see [Installation](installation) for the currently verified local setup.
+The new-server restore procedure (`RESTORE_FROM` during a [Linux server installation](installation)) has not yet been verified for this version. Do not pass your backup token to an installer from another project. Keep your existing backup.
 
 ## Command line
 
