@@ -4,10 +4,10 @@
 import { isAccentName, type AccentName } from '@/lib/theme'
 
 /** The mascot stays the same when the interface accent changes. */
-export const logoSrc = (_accent?: AccentName) => `/icons/harness-pilot.png`
+export const logoSrc = (_accent?: AccentName) => `/icons/pilot-companion-v2.png`
 
 /** App icon for installed apps and notifications. */
-export const appIconSrc = (_accent?: AccentName) => `/icons/harness-pilot-192.png`
+export const appIconSrc = (_accent?: AccentName) => `/icons/pilot-companion-v2-192.png`
 
 function setLink(rel: string, href: string, type?: string) {
   let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)
@@ -24,7 +24,7 @@ function setLink(rel: string, href: string, type?: string) {
 
 /** Apply the mascot icons and the chosen interface manifest. */
 export function applyFavicon(accent: AccentName) {
-  setLink('icon', logoSrc(accent), 'image/png')
+  setLink('icon', '/icons/pilot-companion-v2-32.png', 'image/png')
   setLink('manifest', `/manifest-${isAccentName(accent) ? accent : 'blue'}.webmanifest`)
-  setLink('apple-touch-icon', '/icons/harness-pilot-192.png')
+  setLink('apple-touch-icon', '/icons/pilot-companion-v2-apple.png')
 }

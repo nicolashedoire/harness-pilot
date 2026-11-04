@@ -8,6 +8,9 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 - Give resident companions a bounded mission: ask the architect for a read-only plan, review role assignments and prerequisites, then follow isolated experiments and approve their proposals. Finite recurring checks, pause/stop and explicit run/time/reported-token limits are available. [Show me](#show:resident-missions)
 
+
+- The application now uses the blue crew companion as its icon across sign-in, the sidebar, browser tabs, offline pages and installed-app icons. Its identity stays consistent when the accent colour changes.
+- Reverse-engineering companions can use an REA installation you already have: point the `pilot-rea-investigation` skill at its executable (`REA_BIN` or a connection file) and check the runtime it really uses. For resident runs whose sandbox blocks process inspection, an opt-in launcher connects REA over local MCP with only two analysis tools allowed. REA is not bundled; the platform works without it.
 - Space labels: unclassified items (the default) no longer carry an *Unclassified* badge on every row of the session list and of Files; **Personal**, **Agents** and **Shared** still show theirs, and the *Space* menu still sets and ticks every label.
 - Settings: in a short window, the list of sections fades at the edge it can still scroll to, so the last visible section no longer looks cut off.
 - Settings -> Backup: the *What this backup covers* card is spaced like the other cards.
