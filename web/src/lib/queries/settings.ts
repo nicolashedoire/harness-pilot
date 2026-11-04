@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { LicenseState, Ok, Profile, RegisterState, Settings } from '../types'
+import type { LicenseState, Ok, Profile, Settings } from '../types'
 import { qk } from './keys'
 import { useMut } from './util'
 
@@ -72,14 +72,6 @@ export function useSendFeedback() {
   return useMut((b: { email: string; type: FeedbackType; message: string }) => api.post<{ ok: boolean }>('/api/settings/feedback', b), {
     invalidate: [qk.feedback],
     errorToast: false,
-  })
-}
-export function useRegister() {
-  return useQuery({ queryKey: qk.register, queryFn: () => api.get<RegisterState>('/api/settings/register') })
-}
-export function useSaveRegister() {
-  return useMut((b: Partial<Pick<RegisterState, 'count' | 'email' | 'news' | 'asked'>>) => api.put<RegisterState>('/api/settings/register', b), {
-    invalidate: [qk.register, qk.onboarding],
   })
 }
 
