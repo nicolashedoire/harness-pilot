@@ -515,25 +515,28 @@ function cronNext(expr, n = 5, from = Date.now()) {
   }
   return out
 }
+// Like the server (crons.humanize): in the UI language (settings.language), times HH:MM
+const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 function cronHuman(expr) {
-  if (expr === '@reboot') return 'At boot'
-  if (!cronValid(expr)) return 'Invalid expression'
+  const fr = S?.settings?.language === 'fr'
+  if (expr === '@reboot') return fr ? 'Au démarrage' : 'At boot'
+  if (!cronValid(expr)) return fr ? 'Expression invalide' : 'Invalid expression'
   const [mi, h, dom, mon, dow] = expr.trim().split(/\s+/)
   const pad = (x) => String(x).padStart(2, '0')
   const num = (v) => /^\d+$/.test(v)
   const rest = dom === '*' && mon === '*' && dow === '*'
-  if (mi === '*' && h === '*' && rest) return 'Every minute'
-  if (/^\*\/\d+$/.test(mi) && h === '*' && rest) return `Every ${mi.slice(2)} minutes`
-  if (num(mi) && h === '*' && rest) return `Every hour at :${pad(mi)}`
-  if (num(mi) && /^\*\/\d+$/.test(h) && rest) return `Every ${h.slice(2)} hours at :${pad(mi)}`
+  if (mi === '*' && h === '*' && rest) return fr ? 'Toutes les minutes' : 'Every minute'
+  if (/^\*\/\d+$/.test(mi) && h === '*' && rest) return fr ? `Toutes les ${mi.slice(2)} minutes` : `Every ${mi.slice(2)} minutes`
+  if (num(mi) && h === '*' && rest) return fr ? `Toutes les heures à la minute ${+mi}` : `Every hour at :${pad(mi)}`
+  if (num(mi) && /^\*\/\d+$/.test(h) && rest) return fr ? `Toutes les ${h.slice(2)} heures à la minute ${+mi}` : `Every ${h.slice(2)} hours at :${pad(mi)}`
   if (num(mi) && num(h)) {
     const at = `${pad(h)}:${pad(mi)}`
-    if (rest) return `Every day at ${at}`
-    if (dom === '*' && mon === '*' && num(dow)) return `Every ${DOW[+dow % 7]} at ${at}`
-    if (dom === '*' && mon === '*' && dow === '1-5') return `Weekdays at ${at}`
-    if (num(dom) && mon === '*' && dow === '*') return `On day ${dom} of every month at ${at}`
+    if (rest) return fr ? `Tous les jours à ${at}` : `Every day at ${at}`
+    if (dom === '*' && mon === '*' && num(dow)) return fr ? `À ${at} le ${JOURS[+dow % 7]}` : `Every ${DOW[+dow % 7]} at ${at}`
+    if (dom === '*' && mon === '*' && dow === '1-5') return fr ? `À ${at} en semaine` : `Weekdays at ${at}`
+    if (num(dom) && mon === '*' && dow === '*') return fr ? `À ${at} le ${dom === '1' ? '1er' : dom} du mois` : `On day ${dom} of every month at ${at}`
   }
-  return `Custom schedule (${expr})`
+  return fr ? `Planification personnalisée (${expr})` : `Custom schedule (${expr})`
 }
 const cronOut = (c) => ({ ...c, next_run: c.enabled ? cronNext(c.schedule, 1)[0] ?? null : null, human: cronHuman(c.schedule), running: c.id === 'c_blog' })
 
@@ -1727,7 +1730,7 @@ function applyCron(c, body) {
   if (c.kind === 'claude' && !c.prompt) fail(422, 'invalid', 'prompt is required for Claude jobs')
   if (!['never', 'failure', 'always'].includes(c.notify)) fail(422, 'invalid', 'Unknown notify mode')
 }
-R('GET', '/api/crons', () => ({ jobs: S.crons.map(cronOut), external: S.external }))
+R('GET', '/api/crons', () => ({ jobs: S.crons.map(cronOut), external: S.external.map((e) => ({ ...e, human: cronHuman(e.schedule) })) }))
 R('GET', '/api/crons/runs', ({ q }) => {
   const cid = q.get('cron_id'), limit = Math.min(500, parseInt(q.get('limit') || '50', 10) || 50)
   return S.cronRuns.filter((r) => !cid || r.cron_id === cid).slice(0, limit)
