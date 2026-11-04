@@ -15,6 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -139,6 +140,7 @@ function buildState(scenario) {
       { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true },
     ],
     fs: new Map(),
+    blocks: blocksState(),
   }
 
   if (scenario !== 'setup' && scenario !== 'onboarding') {
@@ -147,6 +149,7 @@ function buildState(scenario) {
   }
   if (ready) {
     seedSessions(st, t)
+    seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -1855,6 +1858,7 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
   return { ok: true }
 })
 R('GET', '/api/extensions', () => S.extensions)
+installBlocks({ R, state: () => S, fail, bus })
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
   const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown extension')
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
@@ -2391,6 +2395,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true })
     }
     if (url.pathname.startsWith('/api/') || url.pathname === '/api') return await handleApi(req, res, url)
+    if (url.pathname.startsWith('/ext/_blocks/')) return serveBlockFrame(req, res, url, isAuthed(req), () => S)
     if (url.pathname.startsWith('/ext/')) return serveExt(req, res, url)
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method_not_allowed', message: 'Static files are read-only' })
     return serveStatic(req, res, url)
