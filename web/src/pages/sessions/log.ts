@@ -2,7 +2,7 @@
 // - first load: GET /events?tail=100 (TAIL_EVENTS) (the server reads the log backwards: a 500 MB log opens instantly);
 // - older events on demand: GET /events?before=<start> ("Show earlier messages"), prepended;
 // - then poll /events?from=<next> for new events without occupying a persistent connection per session;
-// - `reset` (log rewritten by `maxxing sessions compact-logs`): the tail is reloaded;
+// - `reset` (log rewritten by `pilot sessions compact-logs`): the tail is reloaded;
 // - events are folded into render *items* incrementally (tool_use + tool_result = one item), so
 //   existing items keep their identity and memoised rows never re-render on append.
 // The cache survives column moves / remounts (no reload, no flash).

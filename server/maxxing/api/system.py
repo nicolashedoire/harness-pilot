@@ -110,7 +110,7 @@ _ver_lock = threading.Lock()
 
 def _git(*args: str, timeout: float = 10, auth: bool = False) -> str | None:
     from ..cmd_core import git_auth_env
-    tok = config.get_secret("github_update_token") if auth else None   # private repository: same token as `maxxing update`
+    tok = config.get_secret("github_update_token") if auth else None   # private repository: same token as `pilot update`
     env = git_auth_env(tok, {**os.environ, "GIT_ASKPASS": "true"})
     cmd = ["git"]
     try:
@@ -150,7 +150,7 @@ _local: dict[str, Any] = {"at": 0.0, "sig": None, "commit": None, "custom": None
 
 def _git_sig() -> tuple:
     """Cheap fingerprint of the code clone: HEAD, the branch ref, packed refs, the index. A commit,
-    checkout, rebase or `maxxing custom save` (another process) changes it."""
+    checkout, rebase or `pilot custom save` (another process) changes it."""
     g = config.CODE / ".git"
     paths = [g / "HEAD", g / "packed-refs", g / "index"]
     try:
@@ -237,7 +237,7 @@ async def version(refresh: bool = False):
 
 
 def _spawn_update(smart: bool = True) -> None:
-    """Start `maxxing update` apart from the server (it restarts it). `smart`: the Update button also opens the
+    """Start `pilot update` apart from the server (it restarts it). `smart`: the Update button also opens the
     Harness session that applies the upgrade notes; the automatic update does not (nobody is there)."""
     if os.environ.get('HARNESS_PILOT_LOCAL_MODE') == '1':
         raise _err(409, 'local_update_unsupported', 'Updates from the application are unavailable in local mode.')
@@ -390,7 +390,7 @@ _after_task: asyncio.Task | None = None
 
 
 async def _after_update() -> None:
-    """Just updated (marker written by `maxxing update`): verify extensions and customizations, and for the
+    """Just updated (marker written by `pilot update`): verify extensions and customizations, and for the
     Update button open the upgrade-notes session. Waits a little so the server is fully up."""
     from .. import smartupdate
     await asyncio.sleep(float(os.environ.get("MAXXING_AFTER_UPDATE_DELAY", "15")))

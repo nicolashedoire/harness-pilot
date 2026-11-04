@@ -62,6 +62,10 @@ The companion can use an independently installed [REA](https://github.com/morlut
 
 For resident runs whose shell sandbox prevents REA's process inspection, the workflow also provides an opt-in Codex launcher that connects REA over local MCP. It exposes and preapproves only two analysis tools for the reverse-engineering role, with the agent's shell sandbox unchanged. Other sessions pass through normally; no global agent configuration is edited.
 
+## Optional local-model experiments
+
+The [Model evolution plugin](docs/user/31-model-evolution.md) pairs a companion skill with a removable Model Lab page. External adapters keep model code, weights and frameworks independent of the host. Companions can prepare bounded adaptation or architecture-design trials, compare metrics and regressions, and submit exact candidate artifacts for user review. This is an experimental workflow, not a promise of automatic model improvement.
+
 ## Documentation and contributions
 
 Start with the [welcome guide](docs/user/01-welcome.md), [local installation](docs/user/02-installation.md), [sessions](docs/user/04-sessions.md), or [backup guide](docs/user/10-backup.md). Some legacy pages are still being updated; the [current audit](docs/AUDIT.md) tracks known limitations. See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions. Never share private session data, credentials, or API keys in an issue.

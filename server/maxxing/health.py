@@ -406,7 +406,7 @@ def _collect() -> dict:
     for r in failed_crons():
         issues.append(_issue("warn", "cron_failed", f"Scheduled job \"{r.get('name', r.get('cron_id'))}\" failed "
                                                      f"(code {r.get('code')})"))
-    from . import security                        # imports FastAPI: not at module level (CLI `maxxing status`)
+    from . import security                        # imports FastAPI: not at module level (CLI `pilot status`)
     fails = security.failures_last_hour()
     if fails >= security.FAIL_MAX:
         issues.append(_issue("warn", "login_failures", f"{fails} failed sign-ins in the last hour"))

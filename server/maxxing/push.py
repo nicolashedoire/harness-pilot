@@ -8,9 +8,9 @@ new feed events their preferences ask for. See docs/dev/API.md#web-push.
 - Subscriptions in <state>/push.json (mode 600): {subs: [{id, endpoint, keys: {p256dh, auth}, label, created, last_ok,
   last_error, prefs: {levels, sound, kinds: {<kind>: {enabled, sound}}, sources: {<source>: {enabled, sound}}}}]}.
   A push service answering 404 / 410 means the subscription is gone: removed. The payload says `silent` when the
-  source / kind (or the default) has no sound. Quiet events (`maxxing feed post --quiet`) are never pushed.
+  source / kind (or the default) has no sound. Quiet events (`pilot feed post --quiet`) are never pushed.
 - dispatch() is called by the server's feed watcher (api/feed.py, in a thread) after any change of feed.db: it sends
-  the rows added since the last pass (any process may have written them: cron runs, `maxxing feed post`). Rows that
+  the rows added since the last pass (any process may have written them: cron runs, `pilot feed post`). Rows that
   were there when the server started are never sent (prime()).
 Blocking module: call it through asyncio.to_thread from async code. Tests replace `http_transport`.
 """

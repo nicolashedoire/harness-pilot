@@ -3,7 +3,7 @@ section: Extending
 ---
 # Skills
 
-Skills are instructions Claude Code may load when a task matches their description. The inherited Linux setup installs project skills in Claude's skills directory. The local startup script does not install or overwrite your personal Claude skills; availability depends on your existing Claude configuration and workspace. Codex has its own skills mechanism, and parity with the Claude skills below has not been validated.
+Skills are instructions Claude Code may load when a task matches their description. The inherited Linux setup installs project skills in Claude's skills directory. The local startup script installs them in `.harness-pilot-local/.claude/skills` at every start: Claude Code reads them for the sessions of the local workspace only, and your personal Claude skills (`~/.claude/skills`) are never changed. A personal skill with the same name as a product skill wins. Codex has its own skills mechanism, and parity with the Claude skills below has not been validated.
 
 ## Shipped skills
 
@@ -19,11 +19,13 @@ Skills are instructions Claude Code may load when a task matches their descripti
 | `pilot-tasks` | you talk about your tasks or the board |
 | `pilot-notifications` | you say "notify me when…", or want sales, orders, deployments, e-mails or a script's results reported (webhooks, `pilot feed post`) |
 | `pilot-mcp` | you want Claude to use a service through MCP ("connect the Google Ads MCP"), an MCP tool is missing or needs a sign-in |
+| `pilot-infra` | you want a site online, a database or an S3 bucket on this server, another server added, or ask "where is X, what runs where, is it up" (sites, databases, buckets, domains, servers; see [Infra](infra)) |
 | `pilot-widgets-pages` | you want a dashboard widget (Card, or HTML: a game, a canvas) or a custom page |
 | `pilot-blocks` | an answer is clearer as a chart, a table, a form, a terminal output or a file preview ([Conversation blocks](conversation-blocks)), or you want a new kind of block |
 | `pilot-customize` | you want to change the product itself, or an update reports that your customizations need adapting |
 | `pilot-theme` | you ask for a colour theme or a palette for harness-pilot ("colours like my logo", a light version, more contrast); used by Settings -> Appearance -> Create with harness-pilot (see [Customizing](customizing)) |
 | `pilot-rea-investigation` | you want a local application, packaged JavaScript or a binary investigated with an optional external REA installation (not bundled); used by the reverse-engineering companion (see [Settings](settings-and-keys#resident-companions)) |
+| `pilot-model-evolution` | you want a local AI model evaluated, adapted or redesigned through bounded experiments with an external adapter, and the candidate submitted for your review (see [Model evolution plugin](model-evolution)) |
 | `video-motion-design` | you ask for a video, an animation, a short / reel or a trailer (Remotion, see [Videos, PDFs and images](tools)) |
 | `pdf-document` | you ask for a PDF: a quote, an invoice, a report, a guide |
 | `image-edit` | you want images resized, converted, compressed or batch-processed |
@@ -58,9 +60,9 @@ The product skills used to start with `maxxing-`. They now start with `pilot-`, 
 The update installs the new names and removes the old copies by itself (an old copy it did not install is
 moved to the trash). It also replaces the old names in the lines of your workspace `CLAUDE.md` files that are
 still the text the product wrote, and in the prompts of the default jobs you never edited. Text you wrote
-yourself - your own notes, jobs or skills that name an old skill - is left as it is: Claude still finds the
-skill most of the time, but ask it to "replace the old skill names in my notes and jobs" to tidy up (it shows
-you each change first).
+yourself - your own notes, jobs or skills that name an old skill - is left as it is: after the update,
+Claude looks for the old names in it and offers each change (nothing changes without your yes). You can also
+ask it any time to "replace the old skill names in my notes and jobs".
 
 ## Adding your own skills
 

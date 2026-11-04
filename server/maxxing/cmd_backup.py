@@ -1,4 +1,4 @@
-"""`maxxing backup run|status|restore|held|release` - memory backup from a shell, a cron job or the installer."""
+"""`pilot backup run|status|restore|held|release` - memory backup from a shell, a cron job or the installer."""
 from __future__ import annotations
 
 import datetime as dt
@@ -22,7 +22,7 @@ def _configure(p) -> None:
     s.add_argument("--ref", help="commit to restore (default: latest)")
     s.add_argument("--hold", action="store_true",
                    help="keep what would run code here off (jobs, extensions, hooks, local MCP servers) even on a "
-                        "new server, until `maxxing backup release`")
+                        "new server, until `pilot backup release`")
     sub.add_parser("held", help="what the last restore kept off (jobs, extensions, hooks, local MCP servers)")
     sub.add_parser("release", help="turn on what the last restore kept off, once you checked it")
 
@@ -63,7 +63,7 @@ def _handler(a) -> int:
         if not lines:
             print("Nothing held.")
             return 0
-        print("Restored but kept off (turn on once checked: maxxing backup release):")
+        print("Restored but kept off (turn on once checked: pilot backup release):")
         for ln in lines:
             print("  - " + ln)
         return 0
@@ -90,7 +90,7 @@ def _handler(a) -> int:
           + (f". Previous versions: {r['trash']}" if r.get("trash") else "."))
     lines = backup.held_lines(r.get("held") or {})
     if lines:
-        print("Kept off until you check them (maxxing backup held / maxxing backup release):")
+        print("Kept off until you check them (pilot backup held / pilot backup release):")
         for ln in lines:
             print("  - " + ln)
     return 0

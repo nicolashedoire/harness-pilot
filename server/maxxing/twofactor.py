@@ -1,4 +1,4 @@
-"""Two-step sign-in with Telegram (Settings -> Telegram, `maxxing 2fa`).
+"""Two-step sign-in with Telegram (Settings -> Telegram, `pilot 2fa`).
 
 - On: config `telegram.two_factor` = true, and only effective while a bot and a chat with its owner are linked
   (`enabled()`); forgetting Telegram turns it off.
@@ -10,8 +10,8 @@
 - Turning it on is itself a challenge (purpose "enable"): it is only stored once Telegram answered, so a broken
   bridge cannot lock the owner out.
 - Trusted browser: cookie `mx_device` (path /api/auth, 30 days) signed with secrets.device_key. Rotating the key
-  (password change, `maxxing 2fa off|forget-browsers`, the Settings button) forgets every trusted browser.
-- Way out without the UI: `maxxing 2fa off` over SSH.
+  (password change, `pilot 2fa off|forget-browsers`, the Settings button) forgets every trusted browser.
+- Way out without the UI: `pilot 2fa off` over SSH.
 """
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ WORDS = {
            "allow": "✅ Allow", "deny": "❌ Deny",
            "allowed": "✅ Allowed", "allowed_code": "✅ Allowed with the code", "denied": "❌ Denied",
            "gone": "This request expired.",
-           "on": "🔐 Two-step sign-in is on. Without the web UI (Telegram down...): on the server, run maxxing 2fa off",
-           "off_cli": "🔓 Two-step sign-in was turned off from the server (maxxing 2fa off)."},
+           "on": "🔐 Two-step sign-in is on. Without the web UI (Telegram down...): on the server, run pilot 2fa off",
+           "off_cli": "🔓 Two-step sign-in was turned off from the server (pilot 2fa off)."},
     "fr": {"login": "🔐 <b>Demande de connexion</b>", "enable": "🔐 <b>Activer la double authentification</b>",
            "ip": "IP", "browser": "Navigateur", "code": "Code", "expires": "Expire dans {m} min.",
            "hint_login": "Ce n'est pas toi ? Refuse, puis change le mot de passe : le bon a été tapé.",
@@ -59,8 +59,8 @@ WORDS = {
            "allow": "✅ Autoriser", "deny": "❌ Refuser",
            "allowed": "✅ Autorisée", "allowed_code": "✅ Autorisée avec le code", "denied": "❌ Refusée",
            "gone": "Cette demande a expiré.",
-           "on": "🔐 La double authentification est activée. Sans l'interface web (Telegram en panne…) : sur le serveur, lance maxxing 2fa off",
-           "off_cli": "🔓 La double authentification a été désactivée depuis le serveur (maxxing 2fa off)."},
+           "on": "🔐 La double authentification est activée. Sans l'interface web (Telegram en panne…) : sur le serveur, lance pilot 2fa off",
+           "off_cli": "🔓 La double authentification a été désactivée depuis le serveur (pilot 2fa off)."},
 }
 
 
@@ -218,7 +218,7 @@ def start(purpose: str, ip: str, ua: str) -> Challenge:
         with _lock:
             _ch.pop(c.id, None)
         raise Refused("two_factor_unavailable",
-                      "Telegram did not accept the sign-in request - on the server, `maxxing 2fa off` turns "
+                      "Telegram did not accept the sign-in request - on the server, `pilot 2fa off` turns "
                       "two-step sign-in off")
     return c
 
@@ -245,7 +245,7 @@ def check(cid: str, code: str | None = None) -> tuple[str, Challenge | None]:
         c = _ch.get(cid or "")
         if c is None:
             return "expired", None
-        if c.created <= _not_before():              # revoked from another process (maxxing password, 2fa off...)
+        if c.created <= _not_before():              # revoked from another process (pilot password, 2fa off...)
             del _ch[cid]
             _close(c, _w("gone"))
             return "expired", None

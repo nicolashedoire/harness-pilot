@@ -33,7 +33,7 @@ REVERSE = {'id': 'reverse-engineer', 'name': 'Reverse engineering investigator',
            'role': 'Use the pilot-rea-investigation skill and optional external REA tools to investigate source, '
                    'application behavior and dependencies. Keep evidence and internal maps, distinguish observations '
                    'from hypotheses, and guide tested improvements. Report tool/provider availability honestly. '
-                   'For local model changes, use the model-evolution workflow when available; REA is not a weight-semantic decoder.'}
+                   'For local model changes, use the pilot-model-evolution skill when available; REA is not a weight-semantic decoder.'}
 DEFAULTS = (DEFAULT, SECURITY, ARCHITECT, REVERSE)
 MAX_PATCH = 2 * 1024 * 1024
 

@@ -13,7 +13,7 @@ Thank you for reporting responsibly.
 
 Please include:
 
-- the version (`maxxing status`) and how Harness Maxxing is installed (git, license key, local copy);
+- the version (`pilot status`) and how Harness Maxxing is installed (git, license key, local copy);
 - what an attacker can do, and from where (internet, the local network, another user of the server, a session);
 - the steps to reproduce, or a proof of concept;
 - any idea of a fix.
@@ -28,7 +28,7 @@ Please include:
 
 Only the latest version receives security fixes: the `stable` branch, which installs follow (`main` gets each
 version first). Update with
-`maxxing update`.
+`pilot update`.
 
 ## Scope
 

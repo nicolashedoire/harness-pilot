@@ -1,6 +1,6 @@
 """Scheduled jobs. See docs/dev/API.md#crons and maxxing/crons.py.
 
-Runs are recorded by `maxxing cron run` in another process, so a small watcher polls the
+Runs are recorded by `pilot cron run` in another process, so a small watcher polls the
 mtime of runs.jsonl / jobs.json / the lock dir every 2 s and invalidates the "crons" bus topic.
 """
 from __future__ import annotations

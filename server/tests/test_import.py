@@ -139,7 +139,7 @@ def test_cli(mx, tmp_path, capsys):
 
 def test_video_project_and_tools_status(mx, tmp_path, capsys):
     from maxxing import cli, cmd_core, cmd_video, commands  # noqa: F401
-    assert cli.main(["video", "status"]) == 1 and "maxxing deps update" in capsys.readouterr().out
+    assert cli.main(["video", "status"]) == 1 and "pilot deps update" in capsys.readouterr().out
     assert cmd_core.check_tools()["level"] == cmd_core.WARN
     shared = cmd_video.tools_dir() / "node_modules" / "remotion"
     shared.mkdir(parents=True)

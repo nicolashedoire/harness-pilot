@@ -379,7 +379,7 @@ def cf_point(host: str, ip: str) -> dict:
             return {"done": False, "message": f"{host} already has a DNS record pointing elsewhere: change it on purpose"}
         r = cf.c.post(f"{cf_api()}/zones/{zone['id']}/dns_records",
                       json={"type": rtype, "name": host, "content": ip, "proxied": False, "ttl": 1,
-                            "comment": "maxxing infra site add"})
+                            "comment": "pilot infra site add"})
         body = r.json()
         if not body.get("success"):
             if r.status_code in (401, 403) or any(e.get("code") in (10000, 9109) for e in body.get("errors") or []):

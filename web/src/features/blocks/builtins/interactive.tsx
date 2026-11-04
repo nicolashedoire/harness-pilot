@@ -159,7 +159,7 @@ export function FormBlock({ block, memoKey, onRaw }: RendererProps) {
         ) : (
           <div className="grid gap-4">
             {d.description && <p className="text-[13px] text-muted-foreground"><Sensitive>{d.description}</Sensitive></p>}
-            <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-x-6 gap-y-4 sm:grid-cols-2">
               {fields.map((f) => (
                 <FormFieldView key={f.id} f={f} id={`${memoKey}-${f.id}`} value={values[f.id]} onChange={(v) => set(f.id, v)} error={!!errors[f.id]} disabled={disabled} />
               ))}
@@ -194,6 +194,7 @@ function FormFieldView({ f, id, value, onChange, error, disabled }: { f: Field; 
             onChange={(v) => !disabled && onChange(v)}
             options={opts.map((o) => ({ value: o.value, label: o.label }))}
             aria-label={f.label}
+            wrap
             className={cn(disabled && 'pointer-events-none opacity-60')}
           />
         )

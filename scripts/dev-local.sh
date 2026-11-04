@@ -13,6 +13,10 @@ export MAXXING_CLAUDE_UPDATE=0
 export MAXXING_AUTH_CHECK=0
 export MAXXING_SHORT_TITLES=0
 export HARNESS_PILOT_WORKSPACE="$LOCAL_DIR/workspace"
+# Product skills (pilot-theme for "Create with harness-pilot"...) go next to the workspace, not into ~/.claude/skills:
+# Claude Code reads .claude/skills from a session's folder and its parents, so only this workspace's sessions see
+# them and the personal skills of this computer are never replaced (a personal skill of the same name wins).
+export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"
 mkdir -p "$MAXXING_STATE" "$HARNESS_PILOT_WORKSPACE"
 chmod 700 "$LOCAL_DIR" "$MAXXING_STATE"
 cd "$ROOT/server"
@@ -29,6 +33,10 @@ if not config.config_path().exists():
                         'permission_mode': 'default', 'claude_auto_update': False,
                         'auto_update': False})
 cmd_core.copy_templates(ws)
+try:
+    cmd_core.install_skills()                   # like `pilot init`, into MAXXING_SKILLS_DIR
+except Exception as e:                          # never keeps the server from starting
+    print(f"product skills not installed: {e}", flush=True)
 PY
 if [ "${1:-}" = "link" ]; then
   exec uv run --locked pilot setup-link

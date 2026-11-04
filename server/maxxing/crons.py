@@ -3,8 +3,8 @@
 Storage (state_dir("crons")):
   jobs.json     {"version": 1, "jobs": [job]}         - edited by the API (and sometimes by hand)
   jobs.seen.json the job list as last written or synced - to notice a job that vanished
-  deleted.jsonl {at, reason, job} per removed job       - last MAX_DELETED kept; `maxxing cron restore <id>`
-  runs.jsonl    one Run per line (last MAX_RUNS kept)  - appended by `maxxing cron run` (other process)
+  deleted.jsonl {at, reason, job} per removed job       - last MAX_DELETED kept; `pilot cron restore <id>`
+  runs.jsonl    one Run per line (last MAX_RUNS kept)  - appended by `pilot cron run` (other process)
   sessions.json {cron_id: session_id}                  - session reused by `reuse_session` Claude jobs
   locks/<id>.lock                                      - flock held while a job runs (no overlap)
 
@@ -55,7 +55,7 @@ JOBS_SLICE = "maxxing-jobs.slice"        # every job unit runs in it: its Memory
 UNIT_RUNTIME_MARGIN_S = 120              # RuntimeMaxSec of a job unit = timeout + this (the run's own kill comes first)
 SYSTEMD_DIR = Path("/run/systemd/system")   # present when systemd is PID 1 (absent in most containers)
 
-_lock = config.ProcessLock("crons")      # jobs.json + crontab: also written by `maxxing cron` and the runs
+_lock = config.ProcessLock("crons")      # jobs.json + crontab: also written by `pilot cron` and the runs
 log = logging.getLogger("maxxing.crons")
 
 
@@ -180,27 +180,34 @@ def tz() -> ZoneInfo:
 
 
 def iter_runs(expr: str | CronExpr, after: float | None = None, zone: ZoneInfo | None = None) -> Iterator[float]:
-    """Yield the next fire times (Unix seconds, strictly after `after`) in time zone `zone`."""
+    """Yield the next fire times (Unix seconds, strictly after `after`) in time zone `zone`.
+
+    Instants are compared, never wall-clock times: in the hour repeated when clocks go back, a wall-clock
+    comparison took 02:30 of the first pass for a time still to come. That hour fires in both passes, as
+    is_due() (the local scheduler, guarded crontab lines) sees it."""
     c = parse(expr) if isinstance(expr, str) else expr
     if c.reboot:
         return
     zone = zone or tz()
-    start = dt.datetime.fromtimestamp(after if after is not None else time.time(), zone)
-    start = start.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
+    first = (math.floor((after if after is not None else time.time()) / 60) + 1) * 60   # next whole minute
     hours, minutes = sorted(c.hours), sorted(c.minutes)
-    day = start.date()
+    day = dt.datetime.fromtimestamp(first, zone).date()
     last = -1.0
     for _ in range(366 * 5):                      # at most 5 years ahead (e.g. Feb 29 on a Monday)
         if c.day_matches(day):
+            nxt = day + dt.timedelta(days=1)
+            shifts = (dt.datetime(day.year, day.month, day.day, tzinfo=zone).utcoffset()
+                      != dt.datetime(nxt.year, nxt.month, nxt.day, tzinfo=zone).utcoffset())
             for h in hours:
-                for m in minutes:
-                    local = dt.datetime(day.year, day.month, day.day, h, m, tzinfo=zone)
-                    if local < start:
-                        continue
-                    ts = local.timestamp()
-                    if ts > last:                 # DST: never yield the same/earlier instant twice
-                        last = ts
-                        yield ts
+                for fold in (0, 1) if shifts else (0,):
+                    for m in minutes:
+                        local = dt.datetime(day.year, day.month, day.day, h, m, fold=fold, tzinfo=zone)
+                        ts = local.timestamp()
+                        if fold and ts <= local.replace(fold=0).timestamp():
+                            continue              # not a repeated time (or one skipped in spring)
+                        if ts >= first and ts > last:   # never the same or an earlier instant twice
+                            last = ts
+                            yield ts
         day += dt.timedelta(days=1)
 
 
@@ -363,7 +370,7 @@ def _load_for_write() -> list[dict]:
 def _save_raw(jobs: list[dict], reason: str = "removed") -> None:
     old = _read_raw()
     if old is not None:
-        _remember(old, "vanished (jobs.json edited outside Harness Maxxing)")
+        _remember(old, "vanished (jobs.json edited outside harness-pilot)")
     config.write_json(jobs_path(), {"version": 1, "jobs": jobs})
     _remember(jobs, reason)
 
@@ -852,7 +859,7 @@ def sync_crontab(jobs: list[dict] | None = None) -> str:
             if jobs is None:
                 log.warning("jobs.json cannot be read: crontab left as it is")
                 return read_crontab()
-            _remember(jobs, "vanished (jobs.json edited outside Harness Maxxing)")
+            _remember(jobs, "vanished (jobs.json edited outside harness-pilot)")
         outside, _ = split_crontab(read_crontab())
         while outside and not outside[-1].strip():
             outside.pop()
@@ -891,7 +898,7 @@ def external_jobs() -> list[dict]:
 
 
 # =============================================================================================
-# Running a job (`maxxing cron run <id>`, executed by cron or by "Run now")
+# Running a job (`pilot cron run <id>`, executed by cron or by "Run now")
 # =============================================================================================
 def _lock_path(cid: str) -> Path:
     return config.state_dir("crons", "locks") / f"{cid}.lock"
@@ -1302,7 +1309,7 @@ def unit_properties(job: dict | None) -> list[str]:
 
 
 def spawn_run(cid: str) -> None:
-    """Start `maxxing cron run <id>` detached: in a transient systemd unit (`maxxing-cron-<id>`), or a plain
+    """Start `pilot cron run <id>` detached: in a transient systemd unit (`maxxing-cron-<id>`), or a plain
     subprocess when units are not available (MAXXING_SPAWN=direct, no systemd). Used by "Run now" and by the
     crontab lines (MAXXING_CRON_DETACH / `--detach`). Raises CronError('already_running') if the job is running."""
     if is_running(cid):
@@ -1315,7 +1322,7 @@ def spawn_run(cid: str) -> None:
     env_args = [f"--setenv={k}={v}" for k, v in os.environ.items()
                 if k.startswith("MAXXING_") and k != DETACH_ENV]          # the unit runs it inline, not again detached
     r = subprocess.run(["systemd-run", "--collect", "--quiet", "--unit", unit_name(cid),
-                        "--description", f"Harness Maxxing job {cid}", *unit_properties(_raw_job(cid)),
+                        "--description", f"harness-pilot job {cid}", *unit_properties(_raw_job(cid)),
                         *env_args, "--", *cmd],
                        capture_output=True, text=True, timeout=15)
     if r.returncode != 0:

@@ -77,24 +77,25 @@ BUILTINS: list[dict[str, Any]] = [
                      "type": "array", "minItems": 2, "maxItems": 2, "items": [_NUM_OR_STR, {"type": "number"}]}}}}}}}},
     {"type": "table", "icon": "table", "category": "data", "pin": True,
      "hint": "Tabular data the user can sort, filter and export as CSV.",
-     "fields": '{columns: [label | {label, type?: "text"|"number"|"percent"|"delta"|"bar", align?}], rows: [[cell]], '
-               'title?, source?, page_size?}',
+     "fields": '{columns: [label | {label, type?: "text"|"number"|"percent"|"delta"|"bar", unit?, align?}], '
+               'rows: [[cell]], title?, source?, page_size?}',
      "schema": {"type": "object", "required": ["columns", "rows"], "properties": {
          **_HEAD, "page_size": {"type": "integer", "minimum": 1, "maximum": 500},
          "columns": {"type": "array", "minItems": 1, "maxItems": 40, "items": {"anyOf": [
              _s(120),
              {"type": "object", "required": ["label"], "properties": {
-                 "label": _s(120), "align": {"enum": ["left", "right", "center"]},
+                 "label": _s(120), "align": {"enum": ["left", "right", "center"]}, "unit": _s(20),
                  "type": {"enum": ["text", "number", "percent", "delta", "bar"]}}}]}},
          "rows": {"type": "array", "maxItems": 5000, "items": {
              "type": "array", "maxItems": 40, "items": {"type": ["string", "number", "boolean", "null"]}}}}}},
     {"type": "stats", "icon": "gauge", "category": "data", "pin": True,
      "hint": "A few key figures (KPIs), each with an optional change and tone.",
-     "fields": '{items: [{label, value, delta?, hint?, tone?: "ok"|"warn"|"error"}] (1-12), title?}',
+     "fields": '{items: [{label, value, unit?, delta?, hint?, tone?: "ok"|"warn"|"error"}] (1-12), title?}',
      "schema": {"type": "object", "required": ["items"], "properties": {
          **_HEAD, "items": {"type": "array", "minItems": 1, "maxItems": 12, "items": {
              "type": "object", "required": ["label", "value"], "properties": {
-                 "label": _s(80), "value": _NUM_OR_STR, "delta": _NUM_OR_STR, "hint": _s(120), "tone": _TONE}}}}}},
+                 "label": _s(80), "value": _NUM_OR_STR, "unit": _s(20), "delta": _NUM_OR_STR, "hint": _s(120),
+                 "tone": _TONE}}}}}},
     {"type": "list", "icon": "list", "category": "data", "pin": True,
      "hint": "A short list of items with an optional value, status, icon or link (grid: tiles).",
      "fields": '{items: [{title, subtitle?, value?, status?: "ok"|"warn"|"error", icon?, href?}], grid?, title?}',
@@ -665,8 +666,8 @@ def to_card(btype: str, data: dict, title: str = "") -> dict:
         cols = [c if isinstance(c, str) else str(c.get("label") or "") for c in data["columns"]]
         blocks = [{"type": "table", "columns": cols, "rows": [r[:len(cols)] for r in data["rows"][:50]]}]
     elif btype == "stats":
-        blocks = [{"type": "stats", "items": [{k: it[k] for k in ("label", "value", "delta", "hint", "tone") if k in it}
-                                              for it in data["items"]]}]
+        keys = ("label", "value", "unit", "delta", "hint", "tone")
+        blocks = [{"type": "stats", "items": [{k: it[k] for k in keys if k in it} for it in data["items"]]}]
     elif btype == "list":
         blocks = [{"type": "list", "items": data["items"][:50], **({"grid": True} if data.get("grid") else {})}]
     elif btype == "progress":
@@ -812,7 +813,7 @@ _last_sync: dict[str, Any] = {"at": None}
 def sync_agent_files(light: bool = False) -> dict:
     """Write the enabled types where the agents read them: `<state>/blocks/agents.md` (Codex) and `reference.md`
     (full schemas), and the installed `pilot-blocks` skill rendered again with the list (Claude Code; only when it
-    is installed - `maxxing init` installs it). Idempotent: files are rewritten only when they change."""
+    is installed - `pilot init` installs it). Idempotent: files are rewritten only when they change."""
     ps = enabled_plugins(light)
     changed: list[str] = []
     with _sync_lock:
@@ -821,7 +822,8 @@ def sync_agent_files(light: bool = False) -> dict:
         if _write(reference_path(), agent_reference(ps)):
             changed.append(str(reference_path()))
         src = config.SKILLS_DIR / SKILL / "SKILL.md"
-        dst = config.claude_dir() / "skills" / SKILL / "SKILL.md"
+        from .cmd_core import skills_target
+        dst = skills_target() / SKILL / "SKILL.md"
         if src.is_file() and dst.parent.is_dir():
             from .cmd_core import render_template, template_vars
             text = render_template(src.read_text("utf-8"), {**template_vars(config.workspace()), **skill_vars(ps)})
@@ -833,5 +835,6 @@ def sync_agent_files(light: bool = False) -> dict:
 
 def agents_summary() -> dict:
     types = [t for p in enabled_plugins() for t in p["renders"]]
-    return {"types": types, "count": len(types), "skill": str(config.claude_dir() / "skills" / SKILL / "SKILL.md"),
+    from .cmd_core import skills_target
+    return {"types": types, "count": len(types), "skill": str(skills_target() / SKILL / "SKILL.md"),
             "codex": str(agents_path()), "reference": str(reference_path()), "synced_at": _last_sync["at"]}

@@ -1,4 +1,4 @@
-"""`maxxing license activate|status|remove|release` - the Enterprise key of this server (optional)."""
+"""`pilot license activate|status|remove|release` - the Enterprise key of this server (optional)."""
 from __future__ import annotations
 
 import argparse
@@ -23,7 +23,7 @@ def _show(st: dict) -> None:
         else:
             line(INFO, "no Enterprise key (none is needed for yourself or one organisation's own needs)",
                  "for affiliates, clients or a paid offer: https://harness-maxxing.com/#enterprise, then "
-                 "maxxing license activate")
+                 "pilot license activate")
         line(INFO, "updates come from the git repository" + (f" (since {_date(st['moved_to_git'])})" if st.get("moved_to_git") else ""))
         return
     # an install from before 2.0.0a87, still on the code of a signed archive
@@ -31,7 +31,7 @@ def _show(st: dict) -> None:
         line(OK, f"Enterprise key {st.get('key_hint', '')} ({st.get('kind') or '?'})"
              + (f" - {st['email']}" if st.get("email") else ""))
     line(INFO, "this server moves to the public git repository by itself"
-         + (f" - not yet: {st['move_error']}" if st.get("move_error") else ""), "maxxing update  (moves it now)")
+         + (f" - not yet: {st['move_error']}" if st.get("move_error") else ""), "pilot update  (moves it now)")
 
 
 def _configure(p) -> None:
@@ -56,7 +56,7 @@ def _handler(a) -> int:
                 import getpass                          # asked, hidden: the key stays out of the shell history
                 key = getpass.getpass("License key (HM-XXXX-XXXX-XXXX-XXXX): ").strip()
             if not key:
-                line(FAIL, "give the license key", "maxxing license activate  (it asks for the key)")
+                line(FAIL, "give the license key", "pilot license activate  (it asks for the key)")
                 return 2
             r = license.activate(key)
             line(OK, f"Enterprise key recorded ({r['license'].get('kind')}, {r['license'].get('email')})",
@@ -76,7 +76,7 @@ def _handler(a) -> int:
         if act == "release":
             license.release()
             line(OK, "this server no longer uses a place on the license",
-                 "it keeps working; activate the key on the new server with: maxxing license activate <key>")
+                 "it keeps working; activate the key on the new server with: pilot license activate <key>")
             return 0
     except license.LicenseError as e:
         line(FAIL, str(e))

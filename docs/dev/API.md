@@ -101,6 +101,12 @@ Session = {
   permission_mode: string,            // set by its cron ("" = the topic's, else the global mode)
   plan_ready: bool,                   // a plan-mode turn finished OK: its plan waits for POST /plan/approve
   provider: "claude"|"codex"|"discussion"|"debate",
+  // Mixed teams (POST /api/teams):
+  team_phase: "launching"|"working"|"synthesizing"|"completed"|"stopped"|"error"|null,   // on the coordinator
+  team_parent: string|null,           // on a worker: its coordinator session
+  team_turn: bool,                    // a worker whose last turn ran its team assignment: its stop raises no
+                                      // notification (feed, push, browser); the team notifies once, at the end
+                                      // of its coordinator's synthesis. A message sent to it later is its own turn
   // Claude Code + Codex conversations (provider discussion / debate; null / 0 / false for the others), see
   // "Discussion periods" below the table:
   debate_paused: bool,                // the automatic exchange is paused (Resume continues it)
@@ -158,7 +164,7 @@ writing them (2 000 characters per tool result, images → `[image]`, Write/Edit
 gets `mx_clipped`), keeps only `cwd, session_id, model, permissionMode, apiKeySource, claude_code_version,
 output_style, fast_mode_state, mcp_servers, uuid` of `system/init` lines (the tool / skill / slash-command
 lists, ~20 kB per turn, are dropped), drops the `signature` of `thinking` blocks and the `data` of
-`redacted_thinking` blocks (read by the API only) and does not write `system/thinking_tokens` lines; `maxxing sessions
+`redacted_thinking` blocks (read by the API only) and does not write `system/thinking_tokens` lines; `pilot sessions
 compact-logs [--dry-run]` applies the same to existing logs (atomic
 rewrite, running sessions skipped), and the server does it every night at 04:30 for the logs written since the
 previous night — open streams then receive `reset`. **Event** (normalised):
@@ -392,7 +398,7 @@ Telegram: voice notes and video notes in a session thread (not audio files: atta
 | POST | `/api/system/services/{name}/{start\|stop\|restart}` | – | `{ok}` (self restart deferred 2 s) |
 | GET | `/api/system/logs?unit=&lines=200` | – | `{lines:[str]}` |
 | GET | `/api/system/version?refresh=1` | – | `{version, commit, latest_commit\|null, behind:int\|null, checking:bool, checked_at:float\|null, custom:{count, titles, dirty, rebase}, pending:{at, reason:"conflict"\|"health"\|"dependencies", target_version?, conflicts?}\|null, license:{enabled, key_hint, email, kind, updates_until, expires_at, channel, latest, message, max_servers, moved_to_git, move_error}, report:{at, version, ok, problems}\|null, after:{to, at, notes_session?, notes_path?, done}\|null}` (remote checked every 10 min with git and the update token; nothing on an install still on archives until it has moved to git; `refresh=1` checks now and waits; `commit` and `custom` count/titles/dirty are cached 30 s and while the clone's HEAD / branch ref / index are unchanged, `refresh=1` re-reads them, `rebase` and `pending` are always fresh) |
-| POST | `/api/system/update` | – | `{ok}` starts `maxxing update --smart` in a transient unit (after the restart the server verifies, then opens the upgrade-notes session) |
+| POST | `/api/system/update` | – | `{ok}` starts `pilot update --smart` in a transient unit (after the restart the server verifies, then opens the upgrade-notes session) |
 | GET | `/api/system/update/preflight?refresh=` | – | `Preflight` = `{ok, verdict: up_to_date\|simple\|adapt, current, latest, behind, customs:[{id, title, why, files, status: ok\|review\|included\|conflict\|unknown, conflicts, overlap}], unsaved, unsaved_overlap?, web_changes, extensions:[{id, name, api, reason}], notes:[{version}], changelog}` - the update simulated in a throw-away git worktree; cached until HEAD / target / unsaved files change; `refresh` fetches first · `502 preflight_failed` |
 | POST | `/api/system/update/assist` | – | `{session}`: a session in the update topic that adapts this server's changes then updates |
 | GET | `/api/system/update/report` | – | `{report}` = last verification `{at, version, ok, problems, extensions:[{id, name, type, ok, error, skipped?}], checks:[{id, title, check, ok, output}]}` or null |
@@ -498,7 +504,8 @@ Between servers (public, no cookie, `404` while `team_page` is off; protocol in 
 ```
 Card = {title?, status?:"ok"|"warn"|"error", link?:string, blocks:[Block], updated?:float}
 Block =
-  {type:"stat", label, value, hint?, delta?, tone?:"ok"|"warn"|"error"}
+  {type:"stat", label, value, unit?, hint?, delta?, tone?:"ok"|"warn"|"error"}
+    // a number value / delta is written in the user's language (Intl.NumberFormat), `unit` after it ("%" as a percentage)
 | {type:"stats", items:[stat…]}
 | {type:"list", items:[{title, subtitle?, value?, href?, status?, icon?, emoji?}], empty?, grid?} (grid = tiles 2-3 per row; icon = lucide name drawn with the accent colour, preferred over emoji)
 | {type:"chart", kind:"bar"|"line", series:[{name, points:[[x,y]]}], unit?}
@@ -637,7 +644,7 @@ never a dashboard widget. Hot reload like other extensions (block.json, block.ht
 What the agents get (never the user's own CLAUDE.md files): the product skill `pilot-blocks`, rendered with the
 enabled types (its description, listed in every Claude Code prompt, and its body); `<state>/blocks/agents.md`, added
 to every Codex turn's shared context; `<state>/blocks/reference.md` (full schemas). Rewritten on server start, on
-`GET /api/blocks`, on a toggle, after an extension rescan, and by `maxxing init`.
+`GET /api/blocks`, on a toggle, after an extension rescan, and by `pilot init`.
 
 ## Memory
 
@@ -663,7 +670,7 @@ FeedEvent = {
   pending: bool,             // needs attention: level warning|error AND unread AND not resolved
   resolved_at: number|null,  // the problem went away (resolved by its producer, or POST /api/feed/resolve)
   first_at: number,          // first occurrence of a folded row (= at while count is 1)
-  quiet: bool                // posted with `quiet` (`maxxing feed post --quiet`): never sent to Telegram nor pushed,
+  quiet: bool                // posted with `quiet` (`pilot feed post --quiet`): never sent to Telegram nor pushed,
                              // and the web shows no notice / sound for it (it is in the feed like any other)
 }
 FeedAction = {id, label, type: "link"|"post", url}
@@ -689,7 +696,7 @@ FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest 
   `link`: navigate (an app path in the SPA, an `https://` URL in a new tab). `post`: the web sends `POST <url>` (no
   body, usual cookie + `X-Maxxing` header), then refetches the feed. Only built-in server producers can create `post`
   actions, and only for these paths: `/api/crons/{id}/run`, `/api/sessions/{id}/discussion/resume` - the web should
-  run a `post` action only when its url matches one of them. External events (`POST /api/feed`, `maxxing feed post`,
+  run a `post` action only when its url matches one of them. External events (`POST /api/feed`, `pilot feed post`,
   webhooks) may only carry `link` actions whose url is an app path (`/…`, not `//…`) or an `https://` URL:
   `POST /api/feed` refuses anything else with `400 bad_action`, a webhook's are dropped. At most 4 actions per event;
   `id` matches `[a-z0-9_-]{1,32}`, `label` <= 60 characters.
@@ -723,7 +730,7 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 
 | kind | source | level | params | actions | resolved by |
 |---|---|---|---|---|---|
-| `session.done` | sessions | success | `session_id, title, path, provider, turns` | `open_session` | – |
+| `session.done` | sessions | success | `session_id, title, path, provider, turns` (never for a mixed-team worker on its assignment, `team_turn`: its coordinator notifies for the team) | `open_session` | – |
 | `session.failed` | sessions | error | `session_id, title, path, provider, error` | `open_session` | the next `session.done` of that session |
 | `discussion.paused` | sessions | warning | `session_id, title, path, provider ("discussion"\|"debate"), turns, turn_limit, duration_s, duration_limit_s` (limits: number or null) | `resume` (post), `open_session` | resume, a new message, Stop or deletion of that session |
 | `cron.succeeded` | crons | success | `cron_id, name, run_id, duration_s` (folded over all jobs, group `ok`: params of the latest run) | – | – |
@@ -779,7 +786,7 @@ never pushed. In a POST / PATCH, `levels`, `sound`, `kinds` and `sources` left o
 `sources` given replaces that whole map (a bare `true` / `false` for an entry = `enabled` with the default sound; at
 most 200 entries per map; source names as in `POST /api/feed`). The web sets `kinds` for the built-in rows of
 Settings -> Notifications and `sources` for the webhooks and scripts listed there (columns *Browser* and *Sound*).
-Only new rows are pushed (a fold does not push again), whatever process posted them (cron runs and `maxxing feed post`
+Only new rows are pushed (a fold does not push again), whatever process posted them (cron runs and `pilot feed post`
 too), within ~3 s; rows already there when the server starts are never pushed. A subscription the push service
 answers 404 / 410 is removed. Sounds inside an open tab are the web's business (per device), not the server's.
 

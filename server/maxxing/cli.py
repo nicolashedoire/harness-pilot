@@ -24,7 +24,7 @@ def cmd_serve(a) -> int:
     from . import logs
     logs.setup()
     if not security.password_is_set():           # the link itself never goes to the journal (readable by admins)
-        print("First run - run `maxxing setup-link` on the server for the one-time setup link", flush=True)
+        print("First run - run `pilot setup-link` on the server for the one-time setup link", flush=True)
     port = a.port or cfg["port"]
     os.environ["MAXXING_LISTEN_PORT"] = str(port)   # local clients of this server (pcbridge) follow --port
     uvicorn.run(create_app(), host=a.host or cfg["bind"], port=port,
@@ -41,7 +41,7 @@ def cmd_setup_link(a) -> int:
     from . import security
     cfg = config.load_config()
     if security.password_is_set() and not a.reset:
-        print("A password is already set. Use `maxxing password` (or --reset to start the setup again).")
+        print("A password is already set. Use `pilot password` (or --reset to start the setup again).")
         return 1
     if a.reset:
         config.set_secret("password_hash", None)

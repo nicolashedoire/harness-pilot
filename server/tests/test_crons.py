@@ -65,6 +65,23 @@ def test_dst_is_monotonic():
     assert runs == sorted(set(runs))
 
 
+def test_next_run_is_never_in_the_past_in_the_repeated_hour(org):  # noqa: F811
+    # 25 October 2026 in Paris: 03:00 CEST -> 02:00 CET, so 02:00-03:00 happens twice. A wall-clock
+    # comparison returned 02:30 of the first pass (00:30 UTC) when asked at 02:10 of the second (01:10 UTC).
+    second_pass = dt.datetime(2026, 10, 25, 2, 10, fold=1, tzinfo=PARIS).timestamp()
+    assert second_pass == ts(2026, 10, 25, 1, 10)
+    assert crons.next_runs("30 2 * * *", 2, second_pass, PARIS) == [ts(2026, 10, 25, 1, 30), ts(2026, 10, 26, 1, 30)]
+    # hour by hour through the night: 02:00 CEST, 02:00 CET, 03:00 CET, 04:00 CET
+    assert crons.next_runs("0 * * * *", 4, ts(2026, 10, 24, 23, 30), PARIS) == \
+        [ts(2026, 10, 25, 0), ts(2026, 10, 25, 1), ts(2026, 10, 25, 2), ts(2026, 10, 25, 3)]
+    # the next run shown is the next minute the scheduler fires (is_due, in config.timezone)
+    config.update_config(timezone="Europe/Paris")
+    for expr in ("30 2 * * *", "*/15 * * * *", "0 3 * * *", "45 1-3 * * *"):
+        due = [m for m in range(int(ts(2026, 10, 24, 22)), int(ts(2026, 10, 26, 4)), 60) if crons.is_due(expr, m)]
+        for after in range(int(ts(2026, 10, 24, 22)), int(ts(2026, 10, 25, 4)), 300):
+            assert crons.next_runs(expr, 1, after, PARIS) == [next(m for m in due if m > after)], (expr, after)
+
+
 @pytest.mark.parametrize("expr,text", [
     ("* * * * *", "every minute"),
     ("*/5 * * * *", "every 5 minutes"),
@@ -458,7 +475,7 @@ def test_removed_jobs_are_kept_and_restored(org, monkeypatch, capsys):
 
     rows = crons.deleted_jobs()
     assert [(d["job"]["id"], d["reason"]) for d in rows] == [
-        (b["id"], "vanished (jobs.json edited outside Harness Maxxing)"), (a["id"], "deleted")]
+        (b["id"], "vanished (jobs.json edited outside harness-pilot)"), (a["id"], "deleted")]
     assert cmd_cron._handler(types.SimpleNamespace(cron_cmd="deleted")) == 0
     assert a["id"] in capsys.readouterr().out
 

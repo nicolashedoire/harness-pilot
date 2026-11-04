@@ -1,10 +1,10 @@
 """Core CLI sub-commands: init, doctor, update, status, uninstall.
 
-  maxxing init        create/refresh state dir, config, workspace, shipped skills, default jobs
-  maxxing doctor      check the installation (human or --json output, exit code 0/1)
-  maxxing update      git pull (ff-only) + uv sync + init + service restart + changelog
-  maxxing status      one-screen summary
-  maxxing uninstall   remove service, Caddy site, crontab block, CLI link (+ --purge)
+  pilot init        create/refresh state dir, config, workspace, shipped skills, default jobs
+  pilot doctor      check the installation (human or --json output, exit code 0/1)
+  pilot update      git pull (ff-only) + uv sync + init + service restart + changelog
+  pilot status      one-screen summary
+  pilot uninstall   remove service, Caddy site, crontab block, CLI link (+ --purge)
 
 Every call to the system (systemctl, caddy, crontab, git, uv) goes through `run()` so tests can
 monkeypatch it; system paths are module constants for the same reason.
@@ -187,7 +187,10 @@ def product_skill_names() -> list[str]:
 
 
 def skills_target() -> Path:
-    return config.claude_dir() / "skills"
+    """Where the product skills are installed: `<claude dir>/skills`, or MAXXING_SKILLS_DIR (the local setup's
+    `<local dir>/.claude/skills`: the sessions under it read them, the computer's personal skills stay untouched)."""
+    own = os.environ.get("MAXXING_SKILLS_DIR")
+    return Path(own) if own else config.claude_dir() / "skills"
 
 
 def _skill_vars() -> dict[str, str]:
@@ -643,7 +646,7 @@ def cmd_init(a) -> int:
     if a.quiet:
         return 0
     c = r["config"]
-    print(f"Harness Maxxing {__version__} - init")
+    print(f"harness-pilot {__version__} - init")
     line(OK, f"state      {config.STATE}")
     line(OK, f"config     bind {c['bind']}:{c['port']}  tz {c['timezone']}  lang {c['language']}"
              + (f"  url {c['public_url']}" if c["public_url"] else ""))
@@ -663,7 +666,7 @@ def cmd_init(a) -> int:
     if r.get("secret"):
         line(OK, f"secret     {r['secret']}")
     if r.get("setup_link"):
-        print(f"\nFirst sign-in (one-time link, valid 1 h - `maxxing setup-link` for a fresh one):\n  {r['setup_link']}")
+        print(f"\nFirst sign-in (one-time link, valid 1 h - `pilot setup-link` for a fresh one):\n  {r['setup_link']}")
     return 0
 
 
@@ -677,7 +680,7 @@ def _cfg_init(p: argparse.ArgumentParser) -> None:
     p.add_argument("--language", choices=["en", "fr"], help="UI language")
     p.add_argument("--system-clock", choices=["follow", "keep"],
                    help="follow: the system zone follows the configured one; keep: never touch it (shared server)")
-    p.add_argument("--claude-dir", help="Claude Code folder for Harness Maxxing (default ~/.claude): another one keeps "
+    p.add_argument("--claude-dir", help="Claude Code folder for harness-pilot (default ~/.claude): another one keeps "
                                         "it apart from a Claude Code already used here ('' = ~/.claude)")
     p.add_argument("--secret-from-stdin", metavar="NAME",
                    help=f"store a secret read from stdin ({', '.join(STDIN_SECRETS)})")
@@ -722,9 +725,9 @@ def uv_bin() -> str | None:
 def claude_auth() -> tuple[str | None, str]:
     """-> (method, detail). method None = not signed in."""
     if config.get_secret("claude_oauth_token"):
-        return "oauth_token", "long-lived token stored in Harness Maxxing"
+        return "oauth_token", "long-lived token stored in harness-pilot"
     if config.get_secret("anthropic_api_key"):
-        return "api_key", "API key stored in Harness Maxxing"
+        return "api_key", "API key stored in harness-pilot"
     if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return "oauth_token", "CLAUDE_CODE_OAUTH_TOKEN in the environment"
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -809,17 +812,74 @@ def check_python() -> Check:
 def check_uv() -> Check:
     b = uv_bin()
     if not b:
-        return _c("uv", WARN, "uv not found", "needed by `maxxing update`",
+        return _c("uv", WARN, "uv not found", "needed by `pilot update`",
                   f"bash {config.CODE}/install.sh (installs a pinned, checksum-verified uv)")
     code, out = run([b, "--version"], timeout=10)
     return _c("uv", OK if code == 0 else WARN, out.strip() or "uv", b)
+
+
+CLI_SCRIPT_MARKERS = (b"maxxing.cli", b"claude-maxxing CLI wrapper")   # uv's console script, install.sh's wrapper
+
+
+def _is_our_cli(found: str) -> bool:
+    """`found` (a `pilot` on a PATH) is this program: it resolves to the installed command or to the venv's script,
+    or it is a small script starting `maxxing.cli` (another checkout's venv, the state-dir wrapper)."""
+    try:
+        real = Path(found).resolve()
+    except (OSError, RuntimeError):
+        return False
+    venv_bin = Path(sys.executable).parent
+    for ours in (BIN_LINK, venv_bin / "pilot", venv_bin / "maxxing"):
+        try:
+            if ours.exists() and ours.resolve() == real:
+                return True
+        except (OSError, RuntimeError):
+            pass
+    try:
+        with open(real, "rb") as f:
+            head = f.read(4096)
+    except OSError:
+        return False
+    return head.startswith(b"#!") and any(m in head for m in CLI_SCRIPT_MARKERS)
+
+
+def check_cli_name() -> Check | None:
+    """The `pilot` that a shell and the sessions run first must be ours: some systems ship an unrelated program of
+    that name. `maxxing` is the same command under its earlier name, the way round."""
+    from .sessions import spawn
+    paths = {"this shell": os.environ.get("PATH", "")}
+    try:
+        paths["sessions"] = spawn.base_env()["PATH"]
+    except Exception:  # noqa: BLE001 - the shell's answer is still worth giving
+        pass
+    found = {where: shutil.which("pilot", path=p) for where, p in paths.items()}
+    for where, f in found.items():
+        if f and not _is_our_cli(f):
+            ours_in = [w for w, g in found.items() if g and w != where and _is_our_cli(g)]
+            if _pilot_link_is_ours() and Path(f).parent != PILOT_LINK.parent:
+                other = f"or put {PILOT_LINK.parent} before {Path(f).parent} in the PATH"
+            elif BIN_LINK.is_symlink() or BIN_LINK.exists():
+                other = f"or remove that program, then `maxxing init` links {PILOT_LINK} to this one"
+            else:
+                other = "or remove that program"
+            return _c("cli", WARN, f"another `pilot` comes first on the PATH ({where}): {f}",
+                      "a program of the same name that is not harness-pilot (some systems ship one)"
+                      + (f"; for {', '.join(ours_in)}, `pilot` is ours" if ours_in else ""),
+                      f"use `maxxing`, the same command (e.g. `maxxing doctor`) - {other}")
+    if not any(found.values()):
+        if not (BIN_LINK.is_symlink() or BIN_LINK.exists()):
+            return None                                  # a checkout run without `uv run`: nothing installed to name
+        return _c("cli", INFO, "command `pilot` not found on the PATH", f"`maxxing` works ({BIN_LINK})",
+                  f"maxxing init  (creates {PILOT_LINK})")
+    first = next(f for f in found.values() if f)
+    return _c("cli", OK, "command `pilot` (alias `maxxing`)", first)
 
 
 def check_claude_cli() -> Check:
     b = claude_bin()
     if not b:
         return _c("claude_cli", FAIL, "Claude Code CLI not installed", "",
-                  "maxxing deps update claude  (the pinned build, checked by its sha256)")
+                  "pilot deps update claude  (the pinned build, checked by its sha256)")
     code, out = run([b, "--version"], timeout=20)
     if code != 0:
         return _c("claude_cli", FAIL, "Claude Code CLI does not start", out.strip()[:200], f"run `{b} --version`")
@@ -848,13 +908,15 @@ def check_claude_version(fetch: bool = True) -> Check | None:
     else:
         why = "releases carry fixes, security ones included; automatic update is off (Settings -> Claude)"
     return _c("claude_version", INFO, f"Claude Code {installed}, {latest} available ({n} release(s) behind)",
-              why[:300], f"{b} update   (then maxxing doctor --live)")
+              why[:300], f"{b} update   (then pilot doctor --live)")
 
 
 def check_skill_listing(cfg: dict) -> Check | None:
     """Every skill's name + description is in every prompt; past Claude Code's budget, descriptions are dropped."""
     from . import depcheck
     roots = [Path(str(cfg.get("workspace") or "/root/maxxing")) / ".claude" / "skills", skills_target()]
+    if os.environ.get("MAXXING_SKILLS_DIR") and config.claude_dir() / "skills" not in roots:   # personal ones too
+        roots.append(config.claude_dir() / "skills")
     st = depcheck.skill_listing(roots)
     if not st["count"]:
         return None
@@ -869,7 +931,7 @@ def check_skill_listing(cfg: dict) -> Check | None:
 
 
 def check_deps() -> Check:
-    """`maxxing doctor --deps`: known vulnerabilities (OSV) in the installed lockfiles."""
+    """`pilot doctor --deps`: known vulnerabilities (OSV) in the installed lockfiles."""
     from . import depcheck
     try:
         r = depcheck.osv_scan()
@@ -879,7 +941,7 @@ def check_deps() -> Check:
         return _c("deps", OK, f"no known vulnerability in {r['checked']} installed packages", "osv.dev")
     lines = [f"{v['where']}: {v['name']} {v['version']} ({', '.join(v['ids'])})" for v in r["vulnerable"]]
     return _c("deps", WARN, f"{len(lines)} installed package(s) with a known vulnerability", "; ".join(lines),
-              "maxxing update --check (a newer release may fix it), else tell the maintainers")
+              "pilot update --check (a newer release may fix it), else tell the maintainers")
 
 
 def check_claude_auth(live: bool = False) -> Check:
@@ -894,7 +956,7 @@ def check_claude_auth(live: bool = False) -> Check:
         if st["method"] == method and not st["ok"]:
             return _c("claude_auth", FAIL, "Claude sign-in expired", st.get("error") or st["detail"],
                       "run `claude` then /login on the server, or `claude setup-token` and paste the token "
-                      "in Settings -> Claude (`maxxing doctor --live` re-tests)")
+                      "in Settings -> Claude (`pilot doctor --live` re-tests)")
         when = (f", verified {time.strftime('%Y-%m-%d %H:%M', time.localtime(st['checked_at']))}"
                 if st["method"] == method and st.get("checked_at") else ", not verified yet")
         return _c("claude_auth", OK, f"Claude auth: {method}{when}", detail)
@@ -928,7 +990,7 @@ def check_service() -> Check:
         return _c("service", WARN, "systemd not available", "the service cannot be checked")
     if not UNIT_PATH.exists() and state != "active":
         return _c("service", WARN, f"service {SERVICE} not installed", "",
-                  "run install.sh (or start manually: maxxing serve)")
+                  "run install.sh (or start manually: pilot serve)")
     if state == "active":
         return _c("service", OK, f"service {SERVICE} active")
     return _c("service", FAIL, f"service {SERVICE} {state}", "",
@@ -949,7 +1011,7 @@ def service_memory_path() -> Path:
 
 
 def ensure_service_memory() -> str:
-    """A web service unit written before 2.0.0a70 has no MemoryMax: a drop-in adds one (every `maxxing init`, so
+    """A web service unit written before 2.0.0a70 has no MemoryMax: a drop-in adds one (every `pilot init`, so
     every update; install.sh now writes it in the unit itself, sized from the RAM)."""
     if os.environ.get("MAXXING_SPAWN") == "direct" or not SYSTEMD_DIR.is_dir() or not UNIT_PATH.is_file():
         return "skipped"
@@ -974,10 +1036,10 @@ def check_hardening() -> Check | None:
     p = hardening_path()
     if not p.is_file():
         return _c("hardening", INFO, "service sandboxing not applied", "installed before 2.0.0a32",
-                  "maxxing harden  (restarts the service)")
+                  "pilot harden  (restarts the service)")
     if p.read_text(errors="replace") != HARDENING:
         return _c("hardening", INFO, "service sandboxing differs from this version", str(p),
-                  "maxxing harden  (restarts the service)")
+                  "pilot harden  (restarts the service)")
     return _c("hardening", OK, "service sandboxing applied", str(p))
 
 
@@ -1023,7 +1085,7 @@ def check_caddy_site(cfg: dict) -> Check | None:
 
 
 def check_infra_paths() -> Check | None:
-    """Path sites (`maxxing infra site add`) named like a route of this version of the UI would hide that page."""
+    """Path sites (`pilot infra site add`) named like a route of this version of the UI would hide that page."""
     try:
         from .infra import caddy
         sites = [x for x in caddy.list_sites() if x["mode"] == "path"]
@@ -1036,7 +1098,7 @@ def check_infra_paths() -> Check | None:
         return _c("infra_paths", OK, f"{len(sites)} site(s) under the Harness address", str(caddy.paths_dir()))
     return _c("infra_paths", WARN, "a site hides a page of Harness",
               ", ".join(f"/{n}/" for n in taken) + " is now used by the app",
-              "; ".join(f"move it: maxxing infra site remove {n} && maxxing infra site add <new name> ..." for n in taken))
+              "; ".join(f"move it: pilot infra site remove {n} && pilot infra site add <new name> ..." for n in taken))
 
 
 MEMINFO = Path("/proc/meminfo")
@@ -1066,7 +1128,7 @@ def check_bind(cfg: dict) -> Check:
     bind, port = str(cfg.get("bind")), int(cfg.get("port") or 8787)
     if _is_public_bind(bind) and not _is_hostname(bind):
         return _c("bind", FAIL, f"configured to listen on {bind}:{port} (reachable from the internet)", "",
-                  "maxxing init --bind 127.0.0.1 && systemctl restart claude-maxxing (put Caddy or Tailscale in front)")
+                  "pilot init --bind 127.0.0.1 && systemctl restart claude-maxxing (put Caddy or Tailscale in front)")
     live = _listen_addrs(port)
     public = [a for a in live if _is_public_bind(a)]
     if public:
@@ -1118,7 +1180,7 @@ def check_caddy(cfg: dict) -> Check | None:
         return _c("caddy", OK, "served by your own web server (no Caddy)", str(config.STATE / "reverse-proxy.conf"))
     if not CADDY_SITE.exists():
         if (cfg.get("public_url") or "").startswith("https://"):
-            return _c("caddy", WARN, "public URL is https but no Caddy site for Harness Maxxing",
+            return _c("caddy", WARN, "public URL is https but no Caddy site for harness-pilot",
                       str(CADDY_SITE), "re-run install.sh with ACCESS=domain (or configure your own proxy)")
         return None
     code, out = run(["caddy", "validate", "--config", str(CADDYFILE), "--adapter", "caddyfile"], timeout=30)
@@ -1154,7 +1216,7 @@ def check_crontab() -> Check | None:
     missing = [j.get("name") or j.get("id") for j in enabled if str(j.get("id", "\0")) not in text]
     if missing:
         return _c("crontab", WARN, f"{len(missing)} enabled job(s) missing from the crontab",
-                  ", ".join(map(str, missing)), "maxxing cron sync")
+                  ", ".join(map(str, missing)), "pilot cron sync")
     return _c("crontab", OK, f"crontab in sync ({len(enabled)} enabled job(s))")
 
 
@@ -1169,7 +1231,7 @@ def check_timezone(cfg: dict) -> Check:
     return _c("timezone", WARN, f"config time zone {want} differs from the system zone {sys_tz}",
               "scheduled jobs fire in the system zone, the UI shows times in the config zone",
               f"timedatectl set-timezone {want} && systemctl restart cron "
-              f"(or: maxxing init --timezone {sys_tz})")
+              f"(or: pilot init --timezone {sys_tz})")
 
 
 def check_telegram(cfg: dict) -> Check:
@@ -1205,17 +1267,17 @@ def check_telegram(cfg: dict) -> Check:
         return _c("telegram", WARN, "Telegram linked but the server is not reading its messages" + two,
                   f"poller stopped; last answer from Telegram {seen}"
                   + (f"; {st['poll_error']}" if st.get("poll_error") else ""),
-                  f"systemctl restart {SERVICE} ; maxxing telegram status")
+                  f"systemctl restart {SERVICE} ; pilot telegram status")
     if st.get("poll_error"):
         return _c("telegram", WARN, "Telegram linked, the poller reports an error" + two, str(st["poll_error"]),
-                  "maxxing telegram test")
+                  "pilot telegram test")
     if age is not None and age > 300:
         return _c("telegram", WARN, f"Telegram linked but no answer from Telegram for {int(age // 60)} min" + two,
-                  "the poller runs but getUpdates has not succeeded lately", "maxxing telegram test")
+                  "the poller runs but getUpdates has not succeeded lately", "pilot telegram test")
     err = st.get("sync_error") if ("sync_error" in st or "poll_error" in st) else st.get("last_error")
     if err:
         return _c("telegram", WARN, "Telegram linked, last thread sync failed" + two, str(err),
-                  "maxxing telegram test" + (" (sign-in blocked? maxxing 2fa off)" if two else ""))
+                  "pilot telegram test" + (" (sign-in blocked? pilot 2fa off)" if two else ""))
     note = " · threads off (Threaded Mode in @BotFather)" if st.get("topics_notice") else ""
     return _c("telegram", OK, f"Telegram linked (chat {chat.get('title') or chat.get('id')}){two}{note}",
               f"last answer from Telegram {seen}" if age is not None else "")
@@ -1247,13 +1309,13 @@ def check_backup(cfg: dict) -> Check:
     if not b["repo"]:
         return _c("backup", INFO, "memory backup not configured (recommended)", "", "Settings -> Backup")
     if b["age_h"] is None:
-        return _c("backup", WARN, f"backup to {b['repo']}: never ran", "", "maxxing backup run")
+        return _c("backup", WARN, f"backup to {b['repo']}: never ran", "", "pilot backup run")
     if b["last_ok"] is False:
         return _c("backup", WARN, f"backup to {b['repo']}: last run failed ({b['age_h']:.0f} h ago)", "",
-                  "maxxing backup run ; see Settings -> Backup for the error")
+                  "pilot backup run ; see Settings -> Backup for the error")
     lvl = OK if b["age_h"] < 48 else WARN
     return _c("backup", lvl, f"backup to {b['repo']}, last run {b['age_h']:.0f} h ago", "",
-              "" if lvl == OK else "maxxing backup run ; check the job in Crons")
+              "" if lvl == OK else "pilot backup run ; check the job in Crons")
 
 
 def check_voice() -> Check:
@@ -1271,7 +1333,7 @@ def check_tools() -> Check:
     missing = ", ".join(x for x, ok in (("Node.js", st["node"]), ("Remotion", st["remotion"]),
                                          ("headless browser", st["browser"]), ("Scrapling", st["scrapling"])) if not ok)
     return _c("tools", WARN, f"tools not ready ({missing})", "",
-              "maxxing deps update  (or: bash " + str(config.CODE) + "/install.sh --tools)")
+              "pilot deps update  (or: bash " + str(config.CODE) + "/install.sh --tools)")
 
 
 NODE_PARTS = ("bin/node", "bin/npm", "bin/npx", "bin/corepack", "include/node", "lib/node_modules/npm",
@@ -1333,14 +1395,14 @@ def check_managed_deps() -> Check | None:
     if bad:
         return _c("deps_files", FAIL, "external components failed verification",
                   "; ".join(f"{r['name']}: {r['text']}" for r in bad)[:400],
-                  "maxxing deps update (re-installs the pinned, checked versions) - or chown -R root:root on them")
+                  "pilot deps update (re-installs the pinned, checked versions) - or chown -R root:root on them")
     late = [r for r in rows if r["state"] in ("missing", "outdated")]
     if late:
         return _c("deps_files", WARN, f"{len(late)} external component(s) not at the version of this release",
                   ", ".join(f"{r['name']} {r['installed'] or 'missing'} (expected {r['expected'] or '-'})" for r in late),
-                  "maxxing deps update")
+                  "pilot deps update")
     return _c("deps_files", OK, f"{sum(r['state'] == 'ok' for r in rows)} external components verified",
-              "maxxing deps list")
+              "pilot deps list")
 
 
 def _run_ok(cmd: list[str]) -> tuple[bool, str]:
@@ -1394,11 +1456,11 @@ def check_disk(cfg: dict) -> Check:
 def check_workspace(cfg: dict) -> Check:
     ws = Path(cfg.get("workspace") or "")
     if not ws.is_dir():
-        return _c("workspace", FAIL, f"workspace {ws} missing", "", "maxxing init")
+        return _c("workspace", FAIL, f"workspace {ws} missing", "", "pilot init")
     if not os.access(ws, os.W_OK):
         return _c("workspace", FAIL, f"workspace {ws} not writable", "", f"chown -R root: {ws}")
     if not (ws / "CLAUDE.md").is_file():
-        return _c("workspace", WARN, f"workspace {ws} has no CLAUDE.md", "", "maxxing init")
+        return _c("workspace", WARN, f"workspace {ws} has no CLAUDE.md", "", "pilot init")
     return _c("workspace", OK, f"workspace {ws}")
 
 
@@ -1408,14 +1470,14 @@ def check_skills() -> Check:
     if not st:
         return _c("skills", WARN, "no product skills found in the code", str(config.SKILLS_DIR))
     if bad:
-        return _c("skills", WARN, f"{len(bad)} skill(s) not up to date", ", ".join(bad), "maxxing init")
+        return _c("skills", WARN, f"{len(bad)} skill(s) not up to date", ", ".join(bad), "pilot init")
     return _c("skills", OK, f"{len(st)} skills installed", str(skills_target()))
 
 
 def check_web() -> Check:
     if (config.WEB_DIST / "index.html").is_file():
         return _c("web", OK, "web UI build present")
-    return _c("web", FAIL, "web UI build missing", str(config.WEB_DIST), "maxxing update (web/dist is shipped in the repo)")
+    return _c("web", FAIL, "web UI build missing", str(config.WEB_DIST), "pilot update (web/dist is shipped in the repo)")
 
 
 def check_git(fetch: bool = True) -> Check:
@@ -1432,7 +1494,7 @@ def check_git(fetch: bool = True) -> Check:
     detail = f"{config.CODE} ({branch})" + (f", {n} customization(s): see CUSTOMIZATIONS.md" if n else "")
     if st["rebase"]:
         return _c("git", WARN, "customizations are being adapted (rebase in progress)", detail,
-                  "finish the rebase then: maxxing update --resume  (or: maxxing update --rollback)")
+                  "finish the rebase then: pilot update --resume  (or: pilot update --rollback)")
     p = st["pending"]
     if p:
         what = {"conflict": "customizations conflict with the new version",
@@ -1442,9 +1504,9 @@ def check_git(fetch: bool = True) -> Check:
                   f"open the topic {update_topic()} and say: update  (skill pilot-customize)")
     if st["dirty"]:
         return _c("git", WARN, f"{len(st['dirty'])} unsaved change(s) in the code directory", detail,
-                  'maxxing custom save "what it does" --why "why"  (skill pilot-customize)')
+                  'pilot custom save "what it does" --why "why"  (skill pilot-customize)')
     if behind:
-        return _c("git", WARN, f"{behind} update(s) available", detail, "maxxing update")
+        return _c("git", WARN, f"{behind} update(s) available", detail, "pilot update")
     return _c("git", OK, ("up to date" if behind == 0 else "version check unavailable")
               + (f" ({n} customization(s))" if n else ""), detail)
 
@@ -1468,7 +1530,7 @@ def check_update_signature() -> Check | None:
     if ok:
         return _c("update_signature", OK, f"update signatures checked ({detail})")
     return _c("update_signature", WARN, f"update_verify_signature is on but {ref} is not signed by a trusted key",
-              detail, "maxxing update will stop until it is: import the maintainer's key (gpg --import) or set "
+              detail, "pilot update will stop until it is: import the maintainer's key (gpg --import) or set "
                       "gpg.ssh.allowedSignersFile; or set update_verify_signature to false in config.json")
 
 
@@ -1482,9 +1544,9 @@ def check_license() -> Check:
     # an install from before 2.0.0a87 (code of a signed archive): moves to the public git repository by itself
     if st.get("move_error"):
         return _c("license", INFO, f"moving to the public git repository: not yet - {st['move_error']}",
-                  "tried again by itself every few hours", "maxxing update  (moves it first)")
+                  "tried again by itself every few hours", "pilot update  (moves it first)")
     return _c("license", INFO, "moving to the public git repository (by itself, a few minutes after the start)",
-              "", "maxxing update  (moves it now)")
+              "", "pilot update  (moves it now)")
 
 
 def _password_set() -> bool:
@@ -1495,13 +1557,13 @@ def _password_set() -> bool:
 def check_setup() -> Check:
     if _password_set():
         return _c("setup", OK, "UI password set")
-    return _c("setup", WARN, "first sign-in not done yet", "", "maxxing setup-link  (open the printed link)")
+    return _c("setup", WARN, "first sign-in not done yet", "", "pilot setup-link  (open the printed link)")
 
 
 def collect_checks(live: bool = False, fetch: bool = True, deps: bool = False) -> list[Check]:
     cfg = config.load_config()
     steps: list[Callable[[], Check | None]] = [
-        check_python, check_uv, check_claude_cli, lambda: check_claude_version(fetch), lambda: check_claude_auth(live),
+        check_python, check_uv, check_cli_name, check_claude_cli, lambda: check_claude_version(fetch), lambda: check_claude_auth(live),
         lambda: check_skill_listing(cfg), check_setup,
         check_service, check_hardening, lambda: check_caddy_site(cfg), check_infra_paths, lambda: check_bind(cfg), lambda: check_http(cfg), lambda: check_public_url(cfg),
         lambda: check_caddy(cfg), check_crontab, lambda: check_timezone(cfg), lambda: check_telegram(cfg), lambda: check_backup(cfg), check_voice, check_tools, check_managed_deps, check_security, check_state_files,
@@ -1526,7 +1588,7 @@ def cmd_doctor(a) -> int:
         print(json.dumps({"ok": ok, "version": __version__, "state": str(config.STATE),
                           "checks": checks}, indent=2))
         return 0 if ok else 1
-    print(f"Harness Maxxing {__version__} - doctor")
+    print(f"harness-pilot {__version__} - doctor")
     for c in checks:
         line(c["level"], c["title"] + (f"  ({c['detail']})" if c["detail"] and c["level"] == OK else ""),
              "" if c["level"] == OK else "; ".join(x for x in (c["detail"], c["fix"]) if x))
@@ -1601,13 +1663,13 @@ def _fetch(branch: str) -> tuple[bool, str]:
     if license.enabled():                              # pre-a87 install still on archives: git once it has moved
         err = (license.status().get("move_error") or "").strip()
         return False, ("this server still runs the code of a signed archive and has not moved to the public git "
-                       "repository yet" + (f": {err}" if err else "") + " - `maxxing update` moves it first")
+                       "repository yet" + (f": {err}" if err else "") + " - `pilot update` moves it first")
     token = config.get_secret(UPDATE_TOKEN) or None
     code, out = _git("fetch", "-q", "origin", "--", branch, timeout=120, token=token)
     if code != 0:
         return False, out.strip()[-300:] + (
             "" if token else " | private repo? store a read token: "
-            "printf %s TOKEN | maxxing init --quiet --secret-from-stdin github_update_token")
+            "printf %s TOKEN | pilot init --quiet --secret-from-stdin github_update_token")
     return True, ""
 
 
@@ -1668,7 +1730,7 @@ def notify_update(info: dict) -> bool:
                 params={"version": info["latest"], "current": info["current"], "topic": update_topic()},
                 actions=[feed.link("open", "Open", url)])
     url = (config.load_config().get("public_url") or "").rstrip("/")
-    text = (f"Harness Maxxing {info['latest']} is available (installed: {info['current']}, "
+    text = (f"harness-pilot {info['latest']} is available (installed: {info['current']}, "
             f"{info['behind']} new commit(s)).\nOpen the topic {update_topic()}"
             + (f" ({url}/sessions)" if url else "") + " and say: update")
     try:
@@ -1685,7 +1747,7 @@ def cmd_update_check(a) -> int:
     if a.json:
         print(json.dumps(info, indent=2))
         return 0 if info.get("ok") else 1
-    print(f"Harness Maxxing {__version__} - update check")
+    print(f"harness-pilot {__version__} - update check")
     if not info.get("ok"):
         line(FAIL, "cannot check for updates", info.get("error", ""))
         return 1
@@ -1697,7 +1759,7 @@ def cmd_update_check(a) -> int:
         line(OK, "up to date")
         return 0
     line(WARN, f"available  {info['latest']} ({info['behind']} new commit(s), {info['latest_commit'][:8]})",
-         f"maxxing update  (or open the topic {update_topic()} and say: update)")
+         f"pilot update  (or open the topic {update_topic()} and say: update)")
     if info.get("customs"):
         line(INFO, f"{len(info['customs'])} customization(s) will be carried over: "
              + "; ".join(c["title"] for c in info["customs"]), "see CUSTOMIZATIONS.md in the workspace")
@@ -1745,7 +1807,7 @@ def _healthy(version: str, wait: float = 45) -> bool:
     return False
 
 
-_UPDATE_CTX: dict = {}        # branch + web stash of the running `maxxing update` (put back on a rollback)
+_UPDATE_CTX: dict = {}        # branch + web stash of the running `pilot update` (put back on a rollback)
 PRE_UPDATE_BRANCH = "update/pre-update-branch.json"   # branch that ran at refs/maxxing/pre-update ("" = detached)
 
 
@@ -1851,7 +1913,7 @@ def cmd_update(a) -> int:
     if a.notify or a.json:
         print("--notify and --json only apply to --check", file=sys.stderr)
         return 2
-    print(f"Harness Maxxing {__version__} - update")
+    print(f"harness-pilot {__version__} - update")
     if not (config.CODE / ".git").exists():
         line(FAIL, f"{config.CODE} is not a git clone - re-run install.sh")
         return 1
@@ -1871,7 +1933,7 @@ def cmd_update(a) -> int:
         return _update_finish(a, old)
     if customs.rebase_in_progress():
         line(FAIL, "a rebase is in progress in the code directory (customizations being adapted)",
-             "finish it then run: maxxing update --resume   (or abandon: git -C "
+             "finish it then run: pilot update --resume   (or abandon: git -C "
              f"{config.CODE} rebase --abort)")
         return 1
     from . import license
@@ -1880,7 +1942,7 @@ def cmd_update(a) -> int:
         if dirty:                                      # the move needs a clean tree: keep them as a customization
             try:
                 it = customs.save("Unsaved changes found by the update",
-                                  why=f"auto-saved by maxxing update ({', '.join(dirty[:5])}) - "
+                                  why=f"auto-saved by pilot update ({', '.join(dirty[:5])}) - "
                                       f"give it a real title and reason (topic {update_topic()})")
                 line(WARN, f"{len(dirty)} uncommitted change(s) saved as customization {it['id']}",
                      "Claude: rename it with the real purpose (skill pilot-customize)")
@@ -1893,7 +1955,7 @@ def cmd_update(a) -> int:
                      f"{r.get('version') or '?'}), customizations kept")
         else:
             line(FAIL, "this server still runs the code of a signed archive and could not move to the public git "
-                       f"repository yet: {r.get('error') or '?'}", "fix what is said, then: maxxing update")
+                       f"repository yet: {r.get('error') or '?'}", "fix what is said, then: pilot update")
             return 1
     branch = a.branch or _current_branch()
     old = _rev("HEAD")                                 # what runs now: a rollback goes back here, on this branch
@@ -1913,7 +1975,7 @@ def cmd_update(a) -> int:
                  f"{detail} | check: git -C {config.CODE} verify-commit {target[:8]} ; import the maintainer's "
                  "key (gpg --import) or set gpg.ssh.allowedSignersFile ; or turn the check off: "
                  "update_verify_signature false in config.json")
-            _notify(f"Harness Maxxing update stopped: the new version {target[:8]} is not signed by a trusted "
+            _notify(f"harness-pilot update stopped: the new version {target[:8]} is not signed by a trusted "
                     "key (update_verify_signature). Nothing changed.")
             return 1
         line(OK, detail)
@@ -1938,13 +2000,13 @@ def cmd_update(a) -> int:
                          f" - nothing changed, {__version__} keeps running", out.strip()[-300:])
                     print(f"\nFor Claude (topic {update_topic()}, skill pilot-customize): adapt it on {branch}"
                           f"\n  cd {config.CODE} && git checkout {branch} && git cherry-pick {c['commit'][:12]}"
-                          "\n  # resolve, git add, GIT_EDITOR=true git cherry-pick --continue, then: maxxing update")
+                          "\n  # resolve, git add, GIT_EDITOR=true git cherry-pick --continue, then: pilot update")
                     return 3
             line(OK, f"{len(todo)} customization(s) carried to branch {branch}")
     web = [f for f in customs.dirty_files() if f.startswith("web/")]
     if web:                                            # the pre-built UI cannot be a customization: kept aside
         code, out = customs.git("stash", "push", "-u", "-q", "-m",
-                                f"maxxing update {time.strftime('%Y-%m-%d %H:%M')}: edits of the web UI", "--", "web/")
+                                f"pilot update {time.strftime('%Y-%m-%d %H:%M')}: edits of the web UI", "--", "web/")
         if code != 0:
             line(FAIL, "edits of the pre-built web UI cannot be set aside", out.strip()[-300:])
             return 1
@@ -1955,7 +2017,7 @@ def cmd_update(a) -> int:
     if dirty:                                          # never lose a change made in the code directory
         try:
             it = customs.save("Unsaved changes found by the update",
-                              why=f"auto-saved by maxxing update ({', '.join(dirty[:5])}) - "
+                              why=f"auto-saved by pilot update ({', '.join(dirty[:5])}) - "
                                   f"give it a real title and reason (topic {update_topic()})")
             line(WARN, f"{len(dirty)} uncommitted change(s) saved as customization {it['id']}",
                  "Claude: rename it with the real purpose (skill pilot-customize)")
@@ -2009,12 +2071,12 @@ def cmd_update(a) -> int:
                  "conflicting files: " + (", ".join(files) or "?"))
             print(f"\nFor Claude (topic {update_topic()}, skill pilot-customize):"
                   f"\n  cd {config.CODE} && "
-                  + ('git stash push -u -q -m "maxxing update: edits of the web UI" -- web/ && ' if web_back else "")
+                  + ('git stash push -u -q -m "pilot update: edits of the web UI" -- web/ && ' if web_back else "")
                   + (f"git checkout {branch} && " if switched else "") + f"git rebase origin/{branch}"
                   "\n  # adapt each conflicting file so the customization still does what CUSTOMIZATIONS.md says"
                   "\n  git add <files> && GIT_EDITOR=true git rebase --continue      # repeat until done"
-                  "\n  maxxing update --resume")
-            _notify(f"Harness Maxxing {info['target_version'] or 'update'}: your customizations need to be adapted "
+                  "\n  pilot update --resume")
+            _notify(f"harness-pilot {info['target_version'] or 'update'}: your customizations need to be adapted "
                     f"before updating (nothing changed). Open the topic {update_topic()} and say: update")
             return 3
         line(OK, f"{len(mine)} customization(s) carried over onto the new version")
@@ -2077,7 +2139,7 @@ def _update_finish(a, old: str) -> int:
         return 0
     code, out = systemctl("is-enabled", SERVICE, timeout=10)
     if code == 127 or not UNIT_PATH.exists():
-        line(INFO, "service not installed - restart `maxxing serve` yourself")
+        line(INFO, "service not installed - restart `pilot serve` yourself")
         customs.clear_pending()
         _mark_updated(new_version, a)
         return 0
@@ -2085,7 +2147,7 @@ def _update_finish(a, old: str) -> int:
     if code != 0 or not _healthy(new_version):
         line(FAIL, "the new version does not start" if code == 0 else "restart failed", out.strip()[-300:])
         _rollback(old, "health", restart=True, target=new, target_version=new_version)
-        _notify(f"Harness Maxxing {new_version} did not start and was rolled back - nothing lost. "
+        _notify(f"harness-pilot {new_version} did not start and was rolled back - nothing lost. "
                 f"Open the topic {update_topic()} and say: update")
         return 4
     line(OK, f"service {SERVICE} restarted ({new_version} answers)")
@@ -2110,7 +2172,7 @@ def _deps_background_update() -> None:
     """After a healthy restart: the other components of deps.toml move to this release's versions in a background
     unit (downloads can take minutes; each is checked, installed next to the old one, then switched)."""
     if os.environ.get("MAXXING_SPAWN") == "direct" or not Path("/run/systemd/system").is_dir():
-        line(INFO, "external components: run `maxxing deps update` to move them to this release's versions")
+        line(INFO, "external components: run `pilot deps update` to move them to this release's versions")
         return
     log = config.STATE / "logs" / "deps-update.log"
     code, out = run(["systemd-run", "--quiet", "--collect", "--unit", f"maxxing-deps-update-{int(time.time())}",
@@ -2138,7 +2200,7 @@ def cmd_update_preflight(a) -> int:
     if a.json:
         print(json.dumps(rep, indent=2, default=str))
         return 0 if rep.get("ok") else 1
-    print(f"Harness Maxxing {__version__} - update preflight (nothing is changed)")
+    print(f"harness-pilot {__version__} - update preflight (nothing is changed)")
     if not rep.get("ok"):
         line(FAIL, "cannot check", rep.get("error", ""))
         return 1
@@ -2163,7 +2225,7 @@ def cmd_update_preflight(a) -> int:
     for n in rep.get("notes", []):
         line(INFO, f"upgrade note {n['version']}: Harness applies it after the update")
     if rep["verdict"] == "simple":
-        line(OK, "verdict: simple - `maxxing update` (or the Update button) does it all")
+        line(OK, "verdict: simple - `pilot update` (or the Update button) does it all")
     elif rep["verdict"] == "adapt":
         line(WARN, "verdict: some changes need adapting first",
              f"Settings -> System -> Update with Harness, or the topic {update_topic()}: say \"update\"")
@@ -2176,7 +2238,7 @@ def cmd_update_verify(a) -> int:
     if a.json:
         print(json.dumps(rep, indent=2, default=str))
         return 0 if rep["ok"] else 1
-    print(f"Harness Maxxing {__version__} - verification")
+    print(f"harness-pilot {__version__} - verification")
     for x in rep["extensions"]:
         if x.get("skipped"):
             line(INFO, f"extension {x['id']}: turned off")
@@ -2185,7 +2247,7 @@ def cmd_update_verify(a) -> int:
     for x in rep["checks"]:
         line(OK if x["ok"] else FAIL, f"customization {x['id']} \"{x['title']}\": {x['check']}", "" if x["ok"] else x["output"])
     if not rep["checks"]:
-        line(INFO, "no customization check recorded", "maxxing custom check ID \"COMMAND\"")
+        line(INFO, "no customization check recorded", "pilot custom check ID \"COMMAND\"")
     line(OK if rep["ok"] else FAIL, "everything works" if rep["ok"] else f"{rep['problems']} problem(s)")
     return 0 if rep["ok"] else 1
 
@@ -2266,7 +2328,7 @@ def cmd_status(a) -> int:
     b = s["backup"]
     rows = [
         ("Version", s["version"]),
-        ("URL", s["url"] + ("" if s["password_set"] else "   (setup not done: maxxing setup-link)")),
+        ("URL", s["url"] + ("" if s["password_set"] else "   (setup not done: pilot setup-link)")),
         ("Service", s["service"]),
         ("Claude", s["claude_auth"] or "not signed in"),
         ("Telegram", s["telegram"]),
@@ -2444,7 +2506,7 @@ def cmd_uninstall(a) -> int:
     if not _confirm(f"Remove {what}?", a.yes):
         print("Aborted.")
         return 1
-    print("Harness Maxxing - uninstall")
+    print("harness-pilot - uninstall")
     try:
         changed = (config.STATE / "install-manifest").read_text().splitlines()
     except OSError:
@@ -2487,14 +2549,14 @@ def cmd_uninstall(a) -> int:
         if _is_state_dir(config.STATE):
             _purge_dir(config.STATE, "state")
         elif config.STATE.is_dir():
-            line(WARN, f"{config.STATE} does not look like a Harness Maxxing state directory (no config.json) - kept")
+            line(WARN, f"{config.STATE} does not look like a harness-pilot state directory (no config.json) - kept")
     if a.purge_workspace:
         ws = Path(cfg["workspace"])
         if _is_workspace_dir(ws):
             shutil.rmtree(ws.resolve(), ignore_errors=True)
             line(OK, f"workspace removed ({ws})")
         elif ws.exists() or ws.is_symlink():
-            line(WARN, f"{ws} does not look like a Harness Maxxing workspace (a link, a system directory, or no "
+            line(WARN, f"{ws} does not look like a harness-pilot workspace (a link, a system directory, or no "
                        "CLAUDE.md nor projects/) - kept")
     else:
         line(INFO, f"workspace kept: {cfg['workspace']}")
@@ -2578,7 +2640,7 @@ def _uninstall_components(changed: list[str], purge: bool) -> None:
                 sw.unlink()
             line(OK, f"swap file removed ({sw})")
     if Path(deps.get("garage")["path"]).exists():
-        line(INFO, "Garage (S3 buckets) kept: it holds your buckets - maxxing deps remove garage removes the program")
+        line(INFO, "Garage (S3 buckets) kept: it holds your buckets - pilot deps remove garage removes the program")
 
 
 def _cfg_uninstall(p: argparse.ArgumentParser) -> None:
