@@ -45,6 +45,7 @@ Settings -> **Companions** (experimental) runs a Codex companion that reviews th
   create a **draft GitHub pull request** for that exact proposal (a GitHub origin and a signed-in GitHub CLI are
   needed); nothing is merged automatically.
 - The reverse-engineering role can use an optional external REA installation; it is neither bundled nor installed.
+- When the companions cannot be loaded, the section shows the reason and a **Retry** button instead of the form.
 - Runs start manually and need a Git checkout and the Codex CLI. The source copy is meant for reviewable experiments,
   not as a security boundary for untrusted code.
 

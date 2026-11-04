@@ -51,6 +51,7 @@ export const fr: Record<keyof typeof en, string> = {
   'companions.selectTopic': 'Choisir un sujet',
   'companions.loading': 'Chargement…',
   'companions.error': 'Impossible de charger l’expérience.',
+  'companions.loadError': 'Impossible de charger les compagnons.',
   'companions.saved': 'Rôle enregistré.',
   'companions.started': 'Expérience lancée.',
   'companions.approved': 'Validée',
