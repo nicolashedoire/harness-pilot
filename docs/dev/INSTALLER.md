@@ -81,19 +81,20 @@ Outside the installer, now pointing to this repository: the `pilot update` hint 
 (`cmd_core.check_update`), `pilot license status` (no Enterprise link), the "Move to a new server" step of the
 `pilot-backup` skill (this repository's `install.sh`, no pipe into a shell), `SECURITY.md`, `CODE_OF_CONDUCT.md` and
 `.github/` (this repository's private vulnerability reporting; the funding, Enterprise and X links are gone). Two
-unused interface texts that named the original project's API were removed.
+unused interface texts that named the original project's API were removed. The computer agent's release URL
+(`server/maxxing/pc_agent.json`) points to this repository's releases (`pc-agent-v<version>` tags). No such release
+exists yet, so its `files` list stays empty and the PC card says the agent is not available yet. See
+`docs/dev/PC-AGENT.md` for the release steps.
 
 What still names the original project (none of it is contacted by default):
 
-- `server/maxxing/pc_agent.json`: the computer agent's release URL points to the original project's releases. Its
-  `files` list is empty, so nothing is downloaded and the PC page says no agent is available (see `docs/AUDIT.md`).
 - `server/maxxing/license.py`: `API` (`https://api.harness-maxxing.com`, also used by `register.py` for the
   anonymous counter and by `feedback.py`) and `GIT_URL` / `GIT_BRANCH` (`stable`, used only to move an install from
   before 2.0.0a87 off signed archives). Every call is refused unless `MAXXING_LICENSE_PING=1`
   (`register._offline`), and the register, feedback and license routes answer 404 (`api/settings._legacy_cloud`).
 - The docstrings of `feedback.py`, `register.py` and `api/settings.post_feedback`, which name that service.
 - Internal names with no network effect: the PC agent's Go module `harnessmaxxing/pcagent` and its launchd label
-  `com.harnessmaxxing.pc` (renaming the label needs a migration of the paired computers).
+  `com.harnessmaxxing.pc` (renaming the label needs a migration of the paired computers; `docs/dev/PC-AGENT.md`).
 - Kept on purpose: `LICENSE.original` (the previous notices), the inherited entries of `CHANGELOG.md` and
   `docs/dev/CHANGES.md`, the `MAXXING_LICENSE_API` row of `docs/dev/INTERNALS.md`, and `docs/upgrade/2.0.0a85.md`
   (marked as inherited).

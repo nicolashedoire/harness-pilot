@@ -644,6 +644,7 @@ def do_init(a: argparse.Namespace) -> dict:
     from . import renames                         # old skill names in what earlier versions generated
     report["renamed"] = renames.migrate(ws)
     report["cli"] = ensure_cli_alias()
+    report["cli_guidance"] = renames.refresh_cli_guidance(ws)   # after the link: once, and only if `pilot` is ours
     report["jobs_slice"] = ensure_jobs_slice()
     report["service_memory"] = ensure_service_memory()
     cr = _optional("crons")
@@ -692,6 +693,8 @@ def cmd_init(a) -> int:
     rn = r["renamed"]
     if rn["files"] or rn["jobs"]:
         line(OK, f"renamed    new skill names in {len(rn['files'])} workspace file(s), {len(rn['jobs'])} job prompt(s)")
+    if r["cli_guidance"]:
+        line(OK, f"renamed    command `pilot` in the product instructions of {len(r['cli_guidance'])} workspace file(s)")
     line(OK if r["cli"] in ("ok", "created") else INFO, f"command    pilot: {r['cli']} (maxxing still works)")
     line(OK, f"claude     {r['claude_settings']}")
     line(INFO if "skipped" in r["crons"] or "not" in r["crons"] else OK, f"jobs       {r['crons']}")
@@ -886,6 +889,18 @@ def _is_our_cli(found: str) -> bool:
     except OSError:
         return False
     return head.startswith(b"#!") and any(m in head for m in CLI_SCRIPT_MARKERS)
+
+
+def sessions_run_our_pilot() -> bool:
+    """The first `pilot` on the sessions' PATH (what the agents run) is this program, the rule of check_cli_name:
+    false when it is another program (ensure_cli_alias kept it: the agents use `maxxing`) or there is none. Then the
+    product instructions keep `maxxing` (renames.refresh_cli_guidance)."""
+    from .sessions import spawn
+    try:
+        found = shutil.which("pilot", path=spawn.base_env()["PATH"])
+    except Exception:  # noqa: BLE001 - unknown: keep `maxxing`, a later init tries again
+        return False
+    return bool(found) and _is_our_cli(found)
 
 
 def check_cli_name() -> Check | None:
