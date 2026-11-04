@@ -3191,7 +3191,7 @@ R('POST', '/api/settings/themes', ({ body }) => {
   const same = S.myThemes.find((e) => themeColours(e.theme) === themeColours(body.theme))
   if (same) return same
   if (S.myThemes.length >= 50) fail(409, 'too_many_themes', '50 saved themes at most: delete one first')
-  const e = { id: 'th_' + crypto.randomBytes(5).toString('hex'), theme: { schema: 1, id: 'custom', name: '', base: 'zinc', accent: 'blue', buttons: 'accent', tint: 'neutral', tokens: { light: {}, dark: {} }, ...body.theme }, source: body.source || 'imported', from: String(body.from || '').slice(0, 60), saved: now() }
+  const e = { id: 'th_' + crypto.randomBytes(5).toString('hex'), theme: { schema: 1, id: 'custom', name: '', base: 'zinc', accent: 'blue', buttons: 'accent', tint: 'neutral', tokens: { light: {}, dark: {} }, ...body.theme }, source: body.source || 'imported', from: String(body.from || '').slice(0, 60), saved: now(), ...(body.source === 'created' && body.session ? { session: String(body.session) } : {}) }
   S.myThemes.unshift(e)
   bus('themes')
   return e

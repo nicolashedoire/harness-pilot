@@ -51,7 +51,10 @@ def _themes() -> list[dict]:
         name = t.get("name") or e.get("from") or "Theme"
         on = applied is not None and themes._colours(t) == applied                    # noqa: SLF001
         origin = None
-        if e.get("source") == "created":                    # the theme generator (a session wrote it)
+        if e.get("session"):                                # the theme generator's session that made it
+            from . import atelier
+            origin = atelier.origin(e["session"], None, e.get("saved"), None)
+        elif e.get("source") == "created":                  # the theme generator, before sessions were recorded
             origin = {"agent": "unknown", "session": None, "session_title": None, "session_path": None,
                       "at": e.get("saved"), "summary": None}
         elif e.get("source") == "received":
@@ -242,7 +245,13 @@ def _crons() -> list[dict]:
             err = {"message": f"the last run failed (exit code {last.get('code')})", "where": "run",
                    "at": last.get("at"), "count": 1}
         state = "disabled" if not j.get("enabled") else "error" if err else "active"
-        out.append(_ro("cron", j["id"], str(j.get("name") or j["id"])[:80], "clock", state, error=err,
+        o = j.get("origin") if isinstance(j.get("origin"), dict) else None
+        origin = None
+        if o:
+            from . import atelier
+            origin = atelier.origin(o.get("session") if isinstance(o.get("session"), str) else None,
+                                    o.get("agent") if isinstance(o.get("agent"), str) else None, o.get("at"), None)
+        out.append(_ro("cron", j["id"], str(j.get("name") or j["id"])[:80], "clock", state, error=err, origin=origin,
                        updated=j.get("updated") or j.get("created"), href=f"/crons?job={j['id']}",
                        description=j.get("human") or "", job_kind=j.get("kind")))
     return out

@@ -1,6 +1,6 @@
 // The Atelier (API.md#atelier): the creations of the agents, their drafts and versions. Live: the bus topic `atelier`
 // refreshes every key below (keys.ts BUS_KEYS).
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, seg } from '../api'
 import type { AtelierDecision, AtelierDraft, AtelierDraftDetail, AtelierItem, AtelierItemDetail, AtelierList, AtelierPreview, AtelierSettings, AtelierVersionDiff, Extension, Ok, Session } from '../types'
 import { qk } from './keys'
@@ -117,4 +117,15 @@ export function useAcceptChanges() {
 /** Retention and auto-activation (config `atelier`). */
 export function useAtelierSettings() {
   return useQuery({ queryKey: qk.atelier.settings, queryFn: () => api.get<AtelierSettings>('/api/atelier/settings'), staleTime: 5 * 60_000 })
+}
+
+/** Changes some of them (PUT returns them all). A switch changes at once (optimistic, a toast if refused); `inline`:
+ *  a form that shows the refusal under its fields and keeps what was typed. */
+export function useSaveAtelierSettings({ inline = false }: { inline?: boolean } = {}) {
+  const qc = useQueryClient()
+  return useMut((body: Partial<AtelierSettings>) => api.put<AtelierSettings>('/api/atelier/settings', body), {
+    ...(!inline && { optimistic: (body: Partial<AtelierSettings>) => [{ key: qk.atelier.settings, update: (old: AtelierSettings) => ({ ...old, ...body }) }] }),
+    onSuccess: (s) => void qc.setQueryData(qk.atelier.settings, s),
+    errorToast: !inline,
+  })
 }

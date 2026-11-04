@@ -125,6 +125,7 @@ def nearest_accent(theme: dict) -> str:
 SAVED_MAX = 50                                  # themes kept (a theme is LIMITS["bytes"] at most: <= ~800 KB in all)
 SOURCES = ("created", "imported", "received", "custom")   # by the theme generator, a file / code, Team, the settings
 _SAVED_ID = re.compile(r"^th_[0-9a-f]{10}$")
+_SESSION_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")   # a session UUID
 _saved_lock = threading.RLock()
 
 
@@ -157,8 +158,11 @@ def _entry(e: object) -> dict | None:
         theme = clean_theme(e.get("theme"))
     except ThemeError:
         return None
-    return {"id": e["id"], "theme": theme, "source": e.get("source") if e.get("source") in SOURCES else "imported",
-            "from": _text(e.get("from"), LIMITS["author"]), "saved": _when(e.get("saved"))}
+    out = {"id": e["id"], "theme": theme, "source": e.get("source") if e.get("source") in SOURCES else "imported",
+           "from": _text(e.get("from"), LIMITS["author"]), "saved": _when(e.get("saved"))}
+    if isinstance(e.get("session"), str) and _SESSION_ID.match(e["session"]):
+        out["session"] = e["session"]
+    return out
 
 
 def saved() -> list[dict]:
@@ -180,9 +184,10 @@ def _colours(t: dict) -> tuple:
     return (t["base"], t["accent"], t["buttons"], t["tint"], json.dumps(t["tokens"], sort_keys=True))
 
 
-def save_theme(theme: object, source: str = "imported", frm: str = "") -> dict:
+def save_theme(theme: object, source: str = "imported", frm: str = "", session: str | None = None) -> dict:
     """Keep a theme (validated). The same colours already kept -> that entry, nothing added. ThemeError: not a
-    usable theme; ThemeLimit: SAVED_MAX reached."""
+    usable theme; ThemeLimit: SAVED_MAX reached. `session`: the theme generator's session that made it (`created`
+    only; the Atelier shows it as the theme's origin)."""
     clean = clean_theme(theme)
     if source not in SOURCES:
         raise ThemeError(f"source: {', '.join(SOURCES)}")
@@ -195,6 +200,8 @@ def save_theme(theme: object, source: str = "imported", frm: str = "") -> dict:
             raise ThemeLimit(f"{SAVED_MAX} saved themes at most: delete one first")
         entry = {"id": "th_" + secrets.token_hex(5), "theme": clean, "source": source,
                  "from": _text(frm, LIMITS["author"]), "saved": time.time()}
+        if source == "created" and isinstance(session, str) and _SESSION_ID.match(session):
+            entry["session"] = session
         _write([entry] + items)
         return entry
 

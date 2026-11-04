@@ -594,7 +594,8 @@ def _raw_job(cid: str) -> dict | None:
 _STORED = tuple(DEFAULTS) + ("id", "created", "updated")
 
 
-def create_job(fields: dict) -> dict:
+def create_job(fields: dict, origin: dict | None = None) -> dict:
+    """`origin`: who made it, {agent, session, at} (shown by the Atelier; kept as it is by later edits)."""
     j = _clean({k: v for k, v in fields.items() if k in DEFAULTS})
     now = time.time()
     with _lock:
@@ -602,10 +603,33 @@ def create_job(fields: dict) -> dict:
         j.update(id=new_id(), created=now, updated=now)
         while any(x["id"] == j["id"] for x in jobs):
             j["id"] = new_id()
-        jobs.append({k: j[k] for k in _STORED})
+        jobs.append({k: j[k] for k in _STORED} | ({"origin": origin} if origin else {}))
         _save_raw(jobs)
         sync_crontab(jobs)
     return get_job(j["id"])  # type: ignore[return-value]
+
+
+ORIGIN_RECENT_S = 86400
+
+
+def stamp_origins(sid: str, agent: str | None, now: float | None = None) -> list[str]:
+    """`pilot cron sync` run from a session (the pilot-crons skill writes jobs.json, then syncs): the jobs without an
+    origin created in the last ORIGIN_RECENT_S get that session as theirs -> their ids. Older jobs stay unknown."""
+    now = now or time.time()
+    with _lock:
+        jobs = _load_for_write()
+        stamped = []
+        for j in jobs:
+            try:
+                created = float(j.get("created") or now)
+            except (TypeError, ValueError):
+                created = now
+            if isinstance(j, dict) and not j.get("origin") and now - created <= ORIGIN_RECENT_S:
+                j["origin"] = {"agent": agent or "unknown", "session": sid, "at": created}
+                stamped.append(j["id"])
+        if stamped:
+            _save_raw(jobs)
+    return stamped
 
 
 def update_job(cid: str, fields: dict) -> dict | None:

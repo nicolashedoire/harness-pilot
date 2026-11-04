@@ -571,3 +571,42 @@ def test_a_link_never_brings_a_file_from_outside(client, mx, topic, capsys, monk
     atelier.write_request(elsewhere, "other", None, None, "codex")
     (mx["ws"] / topic / ".atelier" / "other").symlink_to(elsewhere)
     assert atelier.ingest_session({"id": "x", "path": topic}) == []
+
+
+def test_who_made_a_cron_job_or_a_theme(client, mx, topic, capsys, monkeypatch):
+    from maxxing import crons
+    s = client.post("/api/sessions", json={"path": topic, "message": "hi NOTOOL"}).json()
+    wait_idle(client, s["id"])
+    # a job made in the app: by the user
+    jid = client.post("/api/crons", json={"name": "Made here", "schedule": "0 3 * * *", "kind": "shell",
+                                          "command": "true"}).json()["id"]
+    it = client.get(f"/api/atelier/cron/{jid}").json()["item"]
+    assert it["origin"]["agent"] == "user" and it["origin"]["session"] is None
+    # a job an agent wrote in jobs.json, then `pilot cron sync` from its session: that session
+    path = crons.jobs_path()
+    data = json.loads(path.read_text())
+    import time as _t
+    data["jobs"].append({**crons.DEFAULTS, "id": "c_agent1", "name": "By Codex", "command": "true",
+                         "created": _t.time(), "updated": _t.time()})
+    data["jobs"].append({**crons.DEFAULTS, "id": "c_old001", "name": "Old", "command": "true",
+                         "created": _t.time() - 30 * 86400, "updated": _t.time() - 30 * 86400})
+    path.write_text(json.dumps(data))
+    monkeypatch.setenv("MAXXING_SESSION", s["id"])
+    monkeypatch.setenv("MAXXING_AGENT", "codex")
+    assert cli.main(["cron", "sync"]) == 0
+    it = client.get("/api/atelier/cron/c_agent1").json()["item"]
+    assert it["origin"]["agent"] == "codex" and it["origin"]["session"] == s["id"]
+    assert it["origin"]["session_path"] == topic
+    assert client.get("/api/atelier/cron/c_old001").json()["item"]["origin"] is None        # older: unknown
+    assert client.get(f"/api/atelier/cron/{jid}").json()["item"]["origin"]["agent"] == "user"
+    client.patch("/api/crons/c_agent1", json={"enabled": False})                             # edits keep it
+    assert client.get("/api/atelier/cron/c_agent1").json()["item"]["origin"]["session"] == s["id"]
+    # a theme saved from the theme generator: its session
+    pal = {"name": "Dusk", "base": "slate", "accent": "violet"}
+    th = client.post("/api/settings/themes", json={"theme": pal, "source": "created", "session": s["id"]}).json()
+    assert th["session"] == s["id"]
+    it = client.get(f"/api/atelier/theme/{th['id']}").json()["item"]
+    assert it["origin"]["session"] == s["id"] and it["origin"]["agent"] == "claude"
+    other = client.post("/api/settings/themes", json={"theme": {"name": "X", "base": "zinc", "accent": "green"},
+                                                       "source": "imported", "session": s["id"]}).json()
+    assert "session" not in other                                  # only the generator's themes carry one
