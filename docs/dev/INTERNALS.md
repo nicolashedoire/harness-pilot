@@ -42,6 +42,14 @@ Python modules call each other only through these functions. Keep signatures sta
   passes a list; tests may call `_scan(primed)` as before). Used by `sessionfeed.on_stop` (registered by
   `api/feed.startup`). `resume_debate`, a message to a paused discussion (`_enqueue`), `stop` and `delete_session`
   resolve the session's `discussion.paused` feed event (`_resolve_paused`, never raises).
+- Discussions (provider `discussion` / `debate`): `pause_debate(sid)`, `resume_debate(sid)`,
+  `update_discussion(sid, turn_limit=UNSET, duration_s=UNSET) -> Session` (PATCH /discussion: `UNSET` keeps, `None`
+  removes; `SessionError 400 unsupported|bad_limit`, same ranges as `create_session`). Meta of the current period:
+  `discussion_turns`, `discussion_elapsed` (+ `discussion_started` while it runs), limits `discussion_turn_limit` /
+  `discussion_duration_seconds`; `_limit_reached(m)` compares them. A limit pause (set by the runner's
+  `_debate_followup`) resets the counters on resume / a new message only while `_limit_reached` is still true.
+  `discussion_paused_at` (time.time()) is set by `pause_debate` (when it was running) and by the runner's limit pause,
+  and dropped wherever `debate_paused` turns false (resume, `_enqueue`, `stop`, the runner on an error / empty answer).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
@@ -180,6 +188,8 @@ Python modules call each other only through these functions. Keep signatures sta
   `POST_ACTIONS`), params coerced instead of refused; external callers (API, CLI, webhooks) are not trusted
   (`clean_kind` / `clean_params(strict)` / `clean_actions(trusted, strict)` raise `FeedError 400 bad_kind|bad_params|
   bad_action`; feedhooks drops a generic payload's bad actions with `strict=False`).
+  `notify=False` = a quiet event (CLI `--quiet`, API `quiet`): the new row gets `quiet = 1`, it is not sent to
+  Telegram and `push.wants` refuses it (a fold never changes the flag of the row it grows).
   `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
   raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
   `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
@@ -187,9 +197,9 @@ Python modules call each other only through these functions. Keep signatures sta
   `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
   and documented with its params in API.md.
 - Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
-  after 2.0.0a108: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
+  after 2.0.0a108, `quiet` (0 / 1) after them: `_migrate` (run once per process on first open, under `_lock`) adds the missing ones with
   `ALTER TABLE` (a "duplicate column" from a concurrent process is ignored) and the index `events_grp(source, grp)`.
-  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`. A fold (`group`) only matches an unread, unresolved row of
+  Old rows: kind "custom", `{}` / `[]`, `first_at` = `at`, not quiet. A fold (`group`) only matches an unread, unresolved row of
   the same level younger than 24 h and pushes the previous state into `occurrences` (seeded with the row itself).
 - `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
   `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,
@@ -230,7 +240,9 @@ Python modules call each other only through these functions. Keep signatures sta
   `encrypt(plaintext, p256dh, auth, *, salt=None, private_key=None)` (test vector of RFC 8291 appendix A in the tests).
 - Subscriptions in `<state>/push.json` (mode 600, max 50): `subscriptions()`, `subscribe(endpoint, keys, label, prefs)`
   (upsert by endpoint), `update(id, label, prefs)`, `remove(id)`, `test(id)`; errors `PushError(status, code, msg)`.
-  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}}`: `wants(prefs, ev)`, `sound(prefs, ev)`.
+  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}, sources: {source: {enabled, sound}}}` (`_prefs`; `sources`
+  checked by `_source_prefs`): `wants(prefs, ev)` (a quiet event: never; then the source's entry, the kind's entry, the
+  level), `sound(prefs, ev)` (the same entry's sound, else `prefs.sound`); `_entry(p, ev)` picks the entry.
 - `prime()` (cursor = feed max id, at server start) and `dispatch()` (rows after the cursor, oldest first, at most 50
   per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
   by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:

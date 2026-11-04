@@ -7,6 +7,7 @@ export const GROUPS = {
   settings: [
     'mcp', 'system', 'stats', 'keys', 'memory', 'trash', 'features', 'security', 'profile', 'fonts', 'accent',
     'density', 'tint', 'backup', 'import', 'telegram', 'packs', 'pc', 'license', 'register', 'cdef', 'nset',
+    'codex', 'update',
   ],
   auth: ['onb', 'setup', 'login', 'pw', 'twofa'],
   infra: ['infra'],
@@ -18,6 +19,9 @@ export const GROUPS = {
   media: ['media'],
   // the project / topic cards of a session header: loaded on the first hover
   where: ['where'],
+  // the notifications centre (opened from the sidebar) and the /notifications page; the badges, the To handle card
+  // and the notices use feed.* (core)
+  ncentre: ['ncentre'],
   show: ['show'],
   feedback: ['feedback'],
   // Maxxing mode (beta, off by default): its texts load only once its controls show

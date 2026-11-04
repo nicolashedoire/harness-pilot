@@ -99,7 +99,17 @@ Session = {
   error: string|null,
   plan_mode: bool,                    // turns run read-only (`--permission-mode plan`) and end with a plan
   permission_mode: string,            // set by its cron ("" = the topic's, else the global mode)
-  plan_ready: bool                    // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  plan_ready: bool,                   // a plan-mode turn finished OK: its plan waits for POST /plan/approve
+  provider: "claude"|"codex"|"discussion"|"debate",
+  // Claude Code + Codex conversations (provider discussion / debate; null / 0 / false for the others), see
+  // "Discussion periods" below the table:
+  debate_paused: bool,                // the automatic exchange is paused (Resume continues it)
+  discussion_pause_reason: "limit"|"user"|null,   // why: a limit reached, or the pause button
+  discussion_paused_at: number|null,  // when it paused (limit or pause button); null while not paused
+  discussion_turns: int,              // replies of the current period
+  discussion_elapsed: int,            // its running time in seconds up to its last pause (a run in progress not counted)
+  discussion_turn_limit: int|null,    // replies per period (1-200), null = no limit
+  discussion_duration_seconds: int|null   // duration of a period (60-86400 s), null = no limit
 }
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
@@ -115,6 +125,9 @@ Session = {
 | POST | `/api/sessions/{id}/hide` | `{at, hidden=true}` | `{ok}` — hides (or shows again) the user message whose `at` is given: appends `{type:"mx_hide", ref, hidden}` to the raw log (nothing is erased; Claude's own thread is untouched), streamed as a `hide` event; 404 when no user message has that `at`, nothing written when it is already in that state. The UI offers it for a message whose turn ended without any answer (stopped) and drops that turn's rows |
 | POST | `/api/sessions/{id}/steer` | – | `{steered:bool, interrupted:bool, session}` — while a turn runs: the queued user messages become ONE message (`steer: true`) at the head of the queue and the runner gets SIGUSR1: it ends the current turn (only that one: meta `steer_turn` = `turn_id`) and runs that message next in the same Claude thread, prefaced so Claude continues the task with it. A compact / handoff turn is not interrupted (`interrupted:false`, the message runs right after it). `steered:false` when idle or nothing is queued |
 | POST | `/api/sessions/{id}/stop` | – | `{ok}` (clears the queue, aborts the running turn; returns once settled, ≤ ~10 s). During an idle-compaction summary only the summary is aborted: the message waiting behind it (queue item `held`) stays and runs |
+| POST | `/api/sessions/{id}/discussion/pause` | – | `Session` — a discussion / debate pauses after the current reply (reason `user`) · `400 unsupported` (not a discussion), `409 not_running` |
+| POST | `/api/sessions/{id}/discussion/resume` | – | `Session` — continues from the saved next prompt (see *Discussion periods*) · `400 unsupported`, `409 not_paused` |
+| PATCH | `/api/sessions/{id}/discussion` | `{turn_limit?: int\|null, duration_minutes?: int\|null}` | `Session` — changes the limits of a discussion / debate (running, paused or stopped): `turn_limit` 1-200 replies, `duration_minutes` 1-1440 (stored as `discussion_duration_seconds`); a field left out keeps its value, `null` removes that limit. They apply to the current period: while it runs, a limit already reached pauses it after the current reply; paused on its limit, Resume continues the period once no limit is reached any more · `400 unsupported` (not a discussion), `422 invalid` (out of range, not an integer) |
 | POST | `/api/sessions/{id}/compact` | – | `{ok}` summary → fresh Claude context, same session · `409 busy` while running · `400 empty_session` |
 | POST | `/api/sessions/{id}/handoff` | – | `Session` (new session seeded with a summary; old one archived). Messages sent to the new session before the summary arrives are queued (`queued:true`) and run after the seed (10 min at most, or at once when the summary fails) |
 | POST | `/api/sessions/{id}/seen` | – | `{ok}` |
@@ -124,6 +137,14 @@ Session = {
 | GET | `/api/sessions/{id}/stream?from=0` | – | **SSE**. `event: events` `data: {events, next}` · `event: state` `data: Session` · `event: reset` `data: {}` then end of stream when the log was rewritten or shrank (or `from` is stale): reload with `?tail=` · heartbeat comment every 15 s. New lines and state changes are pushed ~0.05-0.15 s after they are written (inotify on the sessions folder; without it the stream polls every 0.1 s while the session runs) |
 | GET | `/api/sessions/search?q=` | – | `[{id, title, path, snippet, at}]` (served by the full-text index, see Search; max 50) |
 | POST | `/api/uploads?path=<topic path>` | multipart `file` (multi) | `{files:[{path, name, size, mime}]}` saved in `<topic>/attachments/YYYY-MM/` · each file `413 too_large` over `upload_max_mb`, `507 disk_full` when it would leave less than `upload_min_free_mb` free on the destination disk (files saved before it in the same request are kept); the whole request is capped too (see Conventions) |
+
+**Discussion periods.** A Claude Code + Codex conversation counts its replies and its running time per *period*: the
+first message starts one, and the exchange pauses after the reply that reaches a limit (`debate_paused`, reason
+`limit`, feed event `discussion.paused`). Resume (or a new message) after a limit pause starts a new period (counters
+back to 0) when a limit is still reached, and continues the current one when the limits were changed so that none is
+reached any more; after the pause button the period always continues. Stop ends the exchange; the next message
+starts a new period. `discussion_paused_at` is set by both pauses and cleared by Resume, a new message and Stop (the
+thread can show it as a dated separator).
 
 `from`/`next`/`start`/`before` = byte offsets in the raw log (always line boundaries). Backward reads scan at
 most 64 MB per call (then `more_before` with the `start` reached). A `task` whose `task_started` line is before the
@@ -510,7 +531,9 @@ FeedEvent = {
   category: "sessions"|"crons"|"system"|"webhooks",   // the type filter, from the source (below)
   pending: bool,             // needs attention: level warning|error AND unread AND not resolved
   resolved_at: number|null,  // the problem went away (resolved by its producer, or POST /api/feed/resolve)
-  first_at: number           // first occurrence of a folded row (= at while count is 1)
+  first_at: number,          // first occurrence of a folded row (= at while count is 1)
+  quiet: bool                // posted with `quiet` (`maxxing feed post --quiet`): never sent to Telegram nor pushed,
+                             // and the web shows no notice / sound for it (it is in the feed like any other)
 }
 FeedAction = {id, label, type: "link"|"post", url}
 FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest first, at most 20 (body <= 300 chars);
@@ -545,7 +568,7 @@ FeedDetail = FeedEvent & {occurrences: [{at, title, body, params}]}   // newest 
 | GET | `/api/feed?source=&category=&kind=&unread=1&pending=1&before=<id>&limit=50` | – | `{events: FeedEvent[], more, unread, pending, sources: [{source, total, unread, pending}], categories: {<category>: {total, unread, pending}}, kinds: {<kind>: {total, unread, pending}}}` newest first (`limit` <= 200). The counts cover the last 30 days and ignore the filters; every category is always present · `400 bad_category` |
 | GET | `/api/feed/summary` | – | `{unread, pending, sources, categories, kinds}` (the same counts, no events: badges) |
 | GET | `/api/feed/{id}` | – | `{event: FeedDetail}` · `404 not_found` |
-| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?}` | `{event, duplicate}` (`dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
+| POST | `/api/feed` | `{title, body?, level?, source?, url?, dedupe?, group?, kind?, params?, actions?, quiet?: bool}` | `{event, duplicate}` (`quiet`: in the feed only - no Telegram, no push, no notice in the web; `dedupe` = idempotent per source; `group` folds, see above; `kind` defaults to `custom`, the built-in kinds of the sessions / crons / system categories are reserved; `params`: at most 20 names `[a-z_][a-z0-9_]{0,31}`, values string (<= 500 chars) / number / boolean / null; `actions`: links only) · `400 empty\|bad_level\|bad_source\|bad_kind\|bad_params\|bad_action` |
 | POST | `/api/feed/read` | `{ids?: number[], source?, all?: bool}` | `{unread, pending}` |
 | POST | `/api/feed/resolve` | `{ids: number[]}` | `{pending}` (resolved by hand: out of "À traiter", read state unchanged) |
 | DELETE | `/api/feed/{id}` | – | `{ok}` |
@@ -562,7 +585,7 @@ event). `rule` = the kind's own rule (`"auto"` = none); `default` = what `"auto"
 the rule of its source when one is set, else `"off"` for the sources that have their own Telegram thread or are already
 mirrored (`crons`, `system`, `security`, `sessions`: `own_thread`), else by `level` (error -> loud, warning -> silent,
 else off). Effective rule of an event: its kind's rule unless auto, else its source's rule unless auto, else that
-default. Telegram posts only new rows (a fold never posts again).
+default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
 `open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
@@ -612,15 +635,19 @@ pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscripti
 ```
 PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}
 PushPrefs = {
-  levels: Level[],                                  // kinds not listed below are pushed when their level is here
-  sound: bool,                                      // the sound of the kinds not listed below
-  kinds: {<kind>: {enabled: bool, sound: bool}}     // per kind: pushed or not, with or without sound
-}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}}
+  levels: Level[],                                  // events not matched below are pushed when their level is here
+  sound: bool,                                      // the sound of the events not matched below
+  kinds: {<kind>: {enabled: bool, sound: bool}},    // per kind: pushed or not, with or without sound
+  sources: {<source>: {enabled: bool, sound: bool}} // per source (a webhook, a script's --source): every event of it
+}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}, sources: {}}
 ```
-An event is pushed to a subscription when `prefs.kinds[kind]` is set (its `enabled` decides), else when its level is
-in `prefs.levels`; it rings when that kind's `sound` (else `prefs.sound`) is true - the payload carries
-`silent: !sound` for `showNotification`. In a POST / PATCH, `levels`, `sound` and `kinds` left out keep their saved
-value; `kinds` given replaces the whole map (a bare `true` / `false` for a kind = `enabled` with the default sound).
+An event is pushed to a subscription when `prefs.sources[source]` is set (its `enabled` decides), else when
+`prefs.kinds[kind]` is set (same), else when its level is in `prefs.levels`; it rings when the `sound` of that same
+entry (else `prefs.sound`) is true - the payload carries `silent: !sound` for `showNotification`. A `quiet` event is
+never pushed. In a POST / PATCH, `levels`, `sound`, `kinds` and `sources` left out keep their saved value; `kinds` or
+`sources` given replaces that whole map (a bare `true` / `false` for an entry = `enabled` with the default sound; at
+most 200 entries per map; source names as in `POST /api/feed`). The web sets `kinds` for the built-in rows of
+Settings -> Notifications and `sources` for the webhooks and scripts listed there (columns *Browser* and *Sound*).
 Only new rows are pushed (a fold does not push again), whatever process posted them (cron runs and `maxxing feed post`
 too), within ~3 s; rows already there when the server starts are never pushed. A subscription the push service
 answers 404 / 410 is removed. Sounds inside an open tab are the web's business (per device), not the server's.

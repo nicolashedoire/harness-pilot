@@ -46,7 +46,7 @@ export function useFeedNotifier() {
     const { prefs, pathname, actions, openCentre, t } = live.current
     const now = Date.now() / 1000
     const fresh = data.events
-      .filter((e) => e.id > last && !e.read && now - e.at < FRESH_S && categoryOf(e) !== 'sessions' && browserOn(prefs, e))
+      .filter((e) => e.id > last && !e.read && !e.quiet && now - e.at < FRESH_S && categoryOf(e) !== 'sessions' && browserOn(prefs, e))
       .sort((a, b) => a.id - b.id)
     if (!fresh.length) return
     const { pushOn, soundPrefs } = useUI.getState()

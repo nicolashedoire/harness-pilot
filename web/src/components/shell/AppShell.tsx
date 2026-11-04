@@ -86,7 +86,7 @@ const FileViewerHost = React.lazy(withGroups(['files'], () => import('@/features
 const TeamLive = React.lazy(() => import('@/features/team/Live').then((m) => ({ default: m.TeamLive })))
 const TeamPanel = React.lazy(withGroups(['team'], () => import('@/features/team/TeamPanel').then((m) => ({ default: m.TeamPanel }))))
 const FeedbackDialog = React.lazy(withGroups(['feedback'], () => import('./FeedbackDialog').then((m) => ({ default: m.FeedbackDialog }))))
-const NotificationCenter = React.lazy(() => import('@/features/notifications/NotificationCenter'))
+const NotificationCenter = React.lazy(withGroups(['ncentre'], () => import('@/features/notifications/NotificationCenter')))
 
 /** The notifications centre (desktop): its code loads the first time it opens, then it stays for its animations. */
 function NotificationCenterHost() {

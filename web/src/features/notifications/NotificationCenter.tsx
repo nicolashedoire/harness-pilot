@@ -92,8 +92,8 @@ export default function NotificationCenter() {
         >
           <div className="flex items-center gap-1 px-4 pt-4 pb-3">
             <DialogPrimitive.Title className="flex-1 text-base font-semibold tracking-tight">{t('feed.title')}</DialogPrimitive.Title>
-            <Tooltip content={t('feed.markAllRead')}>
-              <Button variant="ghost" size="icon-sm" disabled={!summary?.unread} onClick={() => read.mutate({ all: true })} aria-label={t('feed.markAllRead')}>
+            <Tooltip content={t('ncentre.markAllRead')}>
+              <Button variant="ghost" size="icon-sm" disabled={!summary?.unread} onClick={() => read.mutate({ all: true })} aria-label={t('ncentre.markAllRead')}>
                 <CheckCheck />
               </Button>
             </Tooltip>
@@ -103,7 +103,7 @@ export default function NotificationCenter() {
               </Button>
             </Tooltip>
             <DialogPrimitive.Close asChild>
-              <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={t('feed.close')}>
+              <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={t('ncentre.close')}>
                 <X />
               </Button>
             </DialogPrimitive.Close>
@@ -129,7 +129,7 @@ export default function NotificationCenter() {
             onClick={() => go(filter === 'all' ? '/notifications' : `/notifications?filter=${filter}`)}
             className="h-12 shrink-0 border-t pb-[var(--safe-bottom)] text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent"
           >
-            {t('feed.seeAll')}
+            {t('ncentre.seeAll')}
           </button>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

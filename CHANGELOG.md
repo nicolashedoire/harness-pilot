@@ -9,6 +9,10 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 - Find notifications in their own place: Notifications in the sidebar opens a panel with what needs you on top (To handle, with Run again, Resume or Add the secret), the activity by day, and a full page with details. The dashboard shows a To handle card only when something needs you.
 - Get notified when a session finishes or fails, and when a Claude Code + Codex discussion pauses on its limit. Notifications are shown in your language.
 - Choose per kind of event what reaches this browser (with or without sound), push notifications on a phone or computer, and Telegram. Push delivery has not yet been verified end to end. Repeated cron failures now fold into one row per job.
+- Change the reply and time limits of a Claude Code + Codex discussion paused on its limit, right from its banner: raise the limit and resume to continue the same period, or keep the limits and resume to start a new one.
+- See when a discussion paused and which limit it reached (*Paused at 03:12 · limit of 20 replies*).
+- Unticking a webhook or a script in Settings -> Notifications now also stops its push notifications; a ticked one is pushed with all its events, sales ringing by default.
+- `maxxing feed post --quiet` keeps an event in the notifications only: no Telegram message, no push notification, and no sound or notice in an open tab.
 - Request a Claude subagent team for a session and use the agent map to inspect detected assignments, statuses and results. Claude decides how to delegate; mixed Claude–Codex teams are not yet available.
 - Run Claude Code, Codex, or both in an automatic discussion or debate. Choose their roles and models, intervene, pause, resume, stop, or set response and time limits.
 - Review a conversation summary, select suggested tasks, and explicitly save edited text to the topic's shared memory. Summary generation uses Codex and is not yet included in turn statistics.

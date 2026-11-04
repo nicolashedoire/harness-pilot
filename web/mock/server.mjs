@@ -1921,7 +1921,7 @@ const sessionUrl = (s) => `/sessions?path=${encodeURIComponent(s.path)}&session=
 function feedAdd(st, ev) {
   const t = ev.at ?? now()
   const e = { id: st.feed.nextId++, at: t, source: 'custom', level: 'info', title: '', body: '', url: '', count: 1, read: false,
-    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], ...ev }
+    kind: 'custom', params: {}, actions: [], resolved_at: null, first_at: t, group: null, occurrences: [], quiet: false, ...ev }
   if (e.group) {
     const row = st.feed.events.find((x) => x.source === e.source && x.group === e.group && x.level === e.level && !x.read && !x.resolved_at && t - x.at < DAY)
     if (row) {
@@ -1995,7 +1995,8 @@ function seedFeed(st, t) {
   const disc = { id: uuid(), title: 'Compare hosting offers', path: topicPath('ops', 'server'), state: 'idle', queue: 0, created: t - 3 * HOUR, updated: t - 40 * MIN,
     turns: 12, cost_usd: 1.9, model: '', real_model: 'claude-opus-5-5', context_tokens: 64000, context_window: 1000000, archived: false, notify: false,
     source: 'web', unread: true, last_text: 'Codex: the managed option wins on maintenance, the VPS on price. Shall we write the decision record?', error: null,
-    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_turns: 12, discussion_turn_limit: 12, discussion_duration_seconds: null }
+    provider: 'discussion', debate_paused: true, discussion_pause_reason: 'limit', discussion_paused_at: t - 40 * MIN, discussion_turns: 12, discussion_turn_limit: 12,
+    discussion_duration_seconds: null, discussion_elapsed: 22 * MIN }
   st.sessions.push(disc)
   st.events[disc.id] = conversation(disc, { last: disc.last_text, turns: disc.turns })
   // ---- three days ago
@@ -2149,7 +2150,7 @@ R('POST', '/api/feed', ({ body }) => {
   const source = String(body.source || 'custom').toLowerCase()
   if (body.dedupe && S.feed.events.some((e) => e.source === source && e.dedupe === body.dedupe)) return { event: null, duplicate: true }
   const ev = feedAdd(S, { source, level, title, body: String(body.body || ''), url: String(body.url || ''), dedupe: body.dedupe || undefined, group: body.group || null,
-    kind, params: feedParams(body.params), actions: feedActions(body.actions) })
+    kind, params: feedParams(body.params), actions: feedActions(body.actions), quiet: body.quiet === true })
   bus('feed')
   return { event: feedPublic(ev), duplicate: false }
 })
@@ -2196,7 +2197,10 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be resumed.')
   if (!s.debate_paused) fail(409, 'not_paused', 'The conversation is not paused.')
-  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_turns: 0, updated: now() })
+  // after a limit pause: a new period only while a limit is still reached (API.md "Discussion periods")
+  const reached = (s.discussion_turn_limit && s.discussion_turns >= s.discussion_turn_limit) || (s.discussion_duration_seconds && (s.discussion_elapsed || 0) >= s.discussion_duration_seconds)
+  if (s.discussion_pause_reason === 'limit' && reached) Object.assign(s, { discussion_turns: 0, discussion_elapsed: 0 })
+  Object.assign(s, { debate_paused: false, discussion_pause_reason: null, discussion_paused_at: null, updated: now() })
   feedResolve(S, 'sessions', `discussion:${s.id}`)
   bus('sessions', 'feed')
   return s
@@ -2204,7 +2208,19 @@ R('POST', '/api/sessions/:id/discussion/resume', ({ params }) => {
 R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
   const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
   if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations can be paused.')
-  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', updated: now() })
+  Object.assign(s, { debate_paused: true, discussion_pause_reason: 'user', discussion_paused_at: s.debate_paused ? s.discussion_paused_at : now(), updated: now() })
+  bus('sessions')
+  return s
+})
+R('PATCH', '/api/sessions/:id/discussion', ({ params, body }) => {
+  const s = S.sessions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Session not found')
+  if (!['discussion', 'debate'].includes(s.provider)) fail(400, 'unsupported', 'Only agent conversations have limits.')
+  const ok = (v, hi) => v === null || (Number.isInteger(v) && v >= 1 && v <= hi)
+  if ('turn_limit' in body && !ok(body.turn_limit, 200)) fail(422, 'invalid', 'turn_limit: 1-200')
+  if ('duration_minutes' in body && !ok(body.duration_minutes, 1440)) fail(422, 'invalid', 'duration_minutes: 1-1440')
+  if ('turn_limit' in body) s.discussion_turn_limit = body.turn_limit
+  if ('duration_minutes' in body) s.discussion_duration_seconds = body.duration_minutes === null ? null : body.duration_minutes * 60
+  s.updated = now()
   bus('sessions')
   return s
 })
@@ -2212,20 +2228,24 @@ R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
 // ---- web push (the mock never sends anything: /test answers ok)
 const PUSH_KEY = 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM'
 const pushOut = (p) => ({ id: p.id, endpoint: p.endpoint, label: p.label, created: p.created, last_ok: p.last_ok, last_error: p.last_error, prefs: p.prefs })
-function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {} }) {
+function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {}, sources: {} }) {
   if (p == null) return clone(base)
-  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds}')
-  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true, kinds = p.kinds ?? base.kinds
+  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds, sources}')
+  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true
   if (!Array.isArray(levels) || levels.some((l) => !FEED_LEVELS.includes(l))) fail(400, 'bad_prefs', 'prefs.levels')
   if (typeof sound !== 'boolean') fail(400, 'bad_prefs', 'prefs.sound')
-  if (typeof kinds !== 'object' || Array.isArray(kinds)) fail(400, 'bad_prefs', 'prefs.kinds')
-  const out = {}
-  for (const [k, v] of Object.entries(kinds)) {
-    if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
-    if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.kinds.${k}: {enabled, sound}`)
-    out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+  // kinds / sources: {<name>: {enabled, sound}} (a bare boolean = enabled with the default sound)
+  const entries = (name, map) => {
+    if (typeof map !== 'object' || map === null || Array.isArray(map)) fail(400, 'bad_prefs', `prefs.${name}`)
+    const out = {}
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
+      if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.${name}.${k}: {enabled, sound}`)
+      out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+    }
+    return out
   }
-  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: out }
+  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: entries('kinds', p.kinds ?? base.kinds ?? {}), sources: entries('sources', p.sources ?? base.sources ?? {}) }
 }
 R('GET', '/api/push', () => ({ available: true, public_key: PUSH_KEY, subscriptions: S.push.subs.map(pushOut) }))
 R('POST', '/api/push/subscriptions', ({ body }) => {
