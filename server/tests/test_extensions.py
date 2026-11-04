@@ -78,9 +78,11 @@ def handle(ctx, method, path, query, body):
         return {"x": object()}
     raise LookupError("unknown " + path)
 '''
-    _ext(org, "svc", {"type": "page"}, api, "export function mount(el){ el.textContent='hi' }")
-    from maxxing import vault
+    _ext(org, "svc", {"type": "page", "permissions": {"secrets": ["API_TOKEN"]}}, api,
+         "export function mount(el){ el.textContent='hi' }")
+    from maxxing import permissions, vault
     vault.put("API_TOKEN", "tok-123456")
+    permissions.accept("svc")                                   # the user allowed the key it declares
     r = client.post("/api/ext/svc/echo?a=1", json={"x": 2}).json()
     assert r == {"method": "POST", "path": "echo", "query": {"a": "1"}, "body": {"x": 2}, "ws": str(org.ws),
                  "secret": "tok-123456", "tz": "UTC"}

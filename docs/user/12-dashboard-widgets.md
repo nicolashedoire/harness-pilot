@@ -59,6 +59,27 @@ mode, on desktop and phone. (Need free-form drawing or interaction - a game, a c
 The fastest way: ask Claude in a session, "create a dashboard widget that shows ...". The
 `pilot-widgets-pages` skill knows everything below.
 
+### Approving what harness-pilot makes (the Atelier)
+
+When Claude or Codex builds a widget, a page or a conversation block plugin, it does not add it to your dashboard by
+itself: it **proposes** it. The proposal waits for you in the **Atelier**, with a notification "… is waiting for your
+approval". There you see what it asks for (the sites it connects to, the keys of Settings -> Keys it reads), its files
+and, for a change, what changed in each file; for a card widget or an HTML widget you can try it first with your real
+data. Then you **activate** it, **ask for a change** (your message goes back to the session that made it, which
+proposes a new version) or **refuse** it (its files go to the trash). Nothing of a proposal runs before you approve
+it.
+
+Every approval is a **version**: the Atelier shows who made each one (which session, Claude or Codex, when, and
+what it said it did) and keeps them for 90 days, at least the 10 latest of each creation. The widgets and pages you
+had before the Atelier are version 1, with an unknown origin. A file of an extension changed by hand (or by Claude
+working directly in `<workspace>/extensions/`) keeps working and is marked **changed outside the Atelier** until you
+accept it as a new version.
+
+In the Atelier settings, **Activate safe creations without asking** (off by default) activates at once a proposal
+that connects to no site and reads no key; you still get a notification. To build one yourself, the steps below still
+apply: a folder you write by hand in `<workspace>/extensions/` works at once (and shows as changed outside the
+Atelier); `pilot ext draft` and `pilot ext propose` ([CLI reference](cli-reference)) give you the same review.
+
 ### 1. Create the folder
 
 ```
@@ -115,11 +136,11 @@ timeout) only blocks other extensions ("extensions are busy" until it returns), 
 | `id` | the extension id |
 | `workspace` | workspace path |
 | `state_dir` | a folder reserved for this extension (cache, data) |
-| `secret(name)` | value of a key from Settings -> Keys, or `None` |
+| `secret(name)` | value of a key from Settings -> Keys (`None` when it is missing), if the extension may read it (see [Permissions](#permissions)) |
 | `config` | `{"timezone", "language", "public_url"}` |
 
-Never hard-code a token: store it in Settings -> Keys and read it with `ctx["secret"]("MY_TOKEN")`, and declare it in
-the manifest's `permissions`.
+Never hard-code a token: store it in Settings -> Keys, declare it in the manifest's `permissions` and read it with
+`ctx["secret"]("MY_TOKEN")`.
 
 ### Permissions
 
@@ -139,6 +160,23 @@ Every key is optional and `"permissions": {}` means "none of them". The extensio
 are always its own: never list them. A mistake in this block (a host with `https://`, a path with `..`, an unknown
 key) is shown as the extension's error. `pilot ext check` prints what an extension declares, and warns when its
 manifest has no `permissions` at all.
+
+**Keys are limited to what is declared and allowed.** `ctx["secret"](name)` returns a key only when the manifest
+lists it in `secrets` and you allowed it. The first time, the card shows **This widget asks to read the key ...**
+with **Allow** and **Refuse** (also in Settings -> Extensions, on the extension's row, and in the Atelier when you
+approve it). A key the manifest does not list, or one you refused, stops `card()` with a clear error (shown on the
+card, recorded with the extension's errors, reported by `pilot ext check`). A key added to the manifest later asks
+again; **Withdraw the permission** in Settings asks again too.
+
+**Extensions you already had keep working.** An extension that existed before permissions and has no `permissions`
+block still reads the keys it uses. The first time it reads each one, harness-pilot records it as *granted before
+permissions existed* and tells you in the notifications ("... keeps reading the keys ..."); Settings -> Extensions
+lists them on its row with **Permissions not declared**. Once its manifest gets a `permissions` block, the declared
+keys it was already reading stay allowed without asking. An extension created later with no `permissions` block
+reads no key.
+
+The other permissions are shown, not enforced yet: `read` describes the files `api.py` opens, and `network` the sites
+it reaches - `api.py` runs inside the server with its rights (see [Security](security#what-extensions-can-do)).
 
 ### 4. The Card schema
 

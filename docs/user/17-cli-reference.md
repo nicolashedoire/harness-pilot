@@ -137,6 +137,7 @@ harness-pilot runs it after writing or fixing an extension.
 |---|---|
 | `pilot ext check ID` | check the extension in `<workspace>/extensions/ID/` |
 | `pilot ext check` | check every extension |
+| `pilot ext check ID --dir PATH` | check a draft folder (below) as the extension `ID`, on a temporary copy |
 | `--json` | machine-readable result (below) |
 
 What is checked:
@@ -185,6 +186,26 @@ that works also returns the `card` the dashboard would draw. `runtime_errors` li
 ran since its files last changed (`[{where, message, stack, at, count}]`, newest first, the same as Settings ->
 Extensions: `where` is `widget`, `page`, `card` or `api`); they do not change `status` or the exit code. Without
 `--json`, the latest three are printed after the steps.
+
+## pilot ext draft · pilot ext propose
+
+How harness-pilot hands a widget, a page or a block plugin over to you: it writes it in a **draft folder**, then
+**proposes** it. Nothing of a proposal runs or shows on the dashboard until you approve it in the Atelier (see
+[Dashboard widgets](dashboard-widgets)).
+
+| Command | Effect |
+|---|---|
+| `pilot ext draft ID` | create (or find) the draft folder of `ID` and print its path: `.atelier/ID/` in the folder of the session that runs the command (the workspace folder outside a session). For an extension that exists, a copy of what runs now; for a new one, empty |
+| `pilot ext draft ID --reset` | start the draft again from what runs now |
+| `pilot ext draft ID --from-draft D` | start from the files of the earlier proposal `D` (`d_...`) |
+| `pilot ext propose ID [--summary TEXT] [--dir PATH]` | check the draft folder without running its code, then submit it for your approval; `--summary` is what you read first in the Atelier |
+| `--json` | machine-readable result |
+
+`propose` prints the proposal id (`d_` + 12 characters), what it asks for (network hosts, keys) and whether it waits
+for you. A Codex session cannot write the server's own folder: its proposal reaches the Atelier when its turn ends.
+With **Activate safe creations without asking** on (Atelier settings), a proposal that asks for no network access
+and no key is activated at once. Exit codes: `0` submitted, `1` its check failed (nothing was submitted), `2` no
+draft folder or a bad id, `3` this server is a restored copy held for review.
 
 ## pilot deps
 

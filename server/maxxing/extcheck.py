@@ -328,7 +328,7 @@ def _check_card(run: _Run) -> None:
     raw: list[Any] = []
 
     def compute() -> dict:                      # = extensions.compute_card, keeping card()'s own value
-        raw.append(ext.module.card(extensions.make_ctx(ext)))   # type: ignore[union-attr]
+        raw.append(ext.module.card(extensions.make_ctx(ext, "card", record=False)))   # type: ignore[union-attr]
         card = extensions.clean_card(raw[0])
         card.setdefault("updated", time.time())
         return widgets.strip_none(card)
@@ -338,6 +338,13 @@ def _check_card(run: _Run) -> None:
         run.extra["timed_out"] = True
         run.add("card", ERROR, f"card() did not return within {TIMEOUT_S:.0f} s (the dashboard's limit): a network "
                                "call without a timeout?")
+        return
+    except permissions.PermissionDenied as e:
+        run.extra["permission"] = e.detail()
+        if e.needs_consent:                     # the code is right: the user has to allow the key
+            run.add("card", WARN, f"card() stopped: {e} - ask the user to allow it, then check again")
+        else:
+            run.add("card", ERROR, f"card() stopped: {e}")
         return
     except Exception as e:  # noqa: BLE001 - the extension's error is the result
         frames = exterrors.ext_frames(e, ext.dir)
@@ -488,15 +495,56 @@ def _check_page(run: _Run) -> None:
         run.add("api", ERROR, "the page calls ctx.api() but api.py has no handle(ctx, method, path, query, body)")
 
 
+_SECRET_CALL = re.compile(r"""secret['"]?\s*\]?\s*\)?\s*\(\s*(['"])([A-Z][A-Z0-9_]{1,63})\1""")
+
+
+def _secrets_read(ext: extensions.Extension) -> list[tuple[str, int]]:
+    """(key name, line) of each literal ctx["secret"]("NAME") / secret("NAME") call in api.py, first line per name."""
+    try:
+        src = (ext.dir / "api.py").read_text("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    seen: dict[str, int] = {}
+    for m in _SECRET_CALL.finditer(src):
+        seen.setdefault(m.group(2), src.count("\n", 0, m.start()) + 1)
+    return list(seen.items())
+
+
 def _check_permissions(run: _Run) -> None:
-    """What a widget or page declares it uses (manifest "permissions")."""
-    perms = run.ext.permissions
+    """What a widget or page declares it uses (manifest "permissions"), against the keys api.py reads and what the
+    user allowed."""
+    ext = run.ext
+    perms = ext.permissions
+    access = permissions.access(ext)
+    reads = _secrets_read(ext) if ext.has_api else []
     if perms is None:
-        run.add("permissions", WARN, 'manifest.json declares no "permissions": add what it uses beyond its own folder, '
-                                     '{"network": [hosts], "secrets": [key names], "read": [workspace paths]} '
-                                     '({} = none of them)')
+        names = sorted({n for n, _ in reads} | {x["name"] for x in access["legacy"]["secrets"]})
+        hint = ('{"network": [hosts], "secrets": [key names], "read": [workspace paths]} ({} = none of them)'
+                if not names else '"secrets": [' + ", ".join(f'"{n}"' for n in names) + "]")
+        if access["state"] == "legacy":
+            run.add("permissions", WARN, 'manifest.json declares no "permissions": it existed before permissions, so it '
+                                         f"still reads the keys it uses - declare what it uses beyond its own folder: {hint}")
+        elif reads:
+            for n, line in reads:
+                run.add("permissions", ERROR, f'api.py:{line} reads the key {n}, but manifest.json declares no '
+                                              f'"permissions": ctx["secret"] refuses it - add "permissions": {{{hint}}}')
+        else:
+            run.add("permissions", WARN, 'manifest.json declares no "permissions": add what it uses beyond its own '
+                                         f"folder, {hint}")
+        return
+    run.add("permissions", OK, f"declares {permissions.summary(perms)}")
+    for n, line in reads:
+        if n not in perms["secrets"]:
+            run.add("permissions", ERROR, f"api.py:{line} reads the key {n}, which manifest.json does not declare "
+                                          f'(permissions.secrets): ctx["secret"] refuses it')
+    if access["refused"]:
+        run.add("permissions", WARN, "the user refused this extension's keys (Settings -> Extensions): ctx[\"secret\"] "
+                                     "refuses them all")
     else:
-        run.add("permissions", OK, f"declares {permissions.summary(perms)}")
+        waiting = [x["name"] for x in access["secrets"] if x["status"] == "pending"]
+        if waiting:
+            run.add("permissions", WARN, f"waits for the user's permission to read {', '.join(waiting)}: ask them to "
+                                         "allow it (Settings -> Extensions -> Allow)")
 
 
 # ---- entry points ---------------------------------------------------------------------------------------------------

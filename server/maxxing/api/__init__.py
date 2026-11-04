@@ -32,6 +32,7 @@ ROUTERS = [
     "dashboard",
     "extensions",
     "blocks",
+    "atelier",
     "voice",
     "memory",
     "stats",

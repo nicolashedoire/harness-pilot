@@ -22,6 +22,7 @@ import crypto from 'node:crypto'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { blocksState, installBlocks, seedBlocksSessions, serveBlockFrame } from './blocks.mjs'
+import { atelierState, installAtelier, serveDraftFrame } from './atelier.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = process.env.MOCK_DIST || path.resolve(__dirname, '../dist')
@@ -171,9 +172,15 @@ function buildState(scenario) {
           { where: 'api', message: "KeyError: 'notes'", stack: "api.py:9 in handle: return {\"notes\": data[\"notes\"]}", at: t - 2 * HOUR, count: 2 },
         ] },
       { id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0', enabled: false, error: 'SyntaxError in api.py line 12', has_api: true, permissions: null },
+      // created after permissions came in: declares a key that waits for the user (the dashboard card asks)
+      { id: 'stock-levels', name: 'Stock levels', type: 'widget', icon: 'package', version: '1.0.0', enabled: true, error: null, has_api: true,
+        permissions: { network: [], secrets: ['STOCK_API_KEY'], read: [] } },
     ],
     fs: new Map(),
     blocks: blocksState(),
+    // what the user allowed (server: <state>/extension-permissions.json); legacy = existed before permissions
+    extPerms: { since: t - 2 * DAY, legacy: ['shop-sales', 'notes', 'broken-widget'],
+      grants: { 'shop-sales': { secrets: { SHOP_TOKEN: { at: t - 2 * DAY + 600, how: 'legacy' } }, refused: null, denied: [] } } },
   }
 
   if (scenario !== 'setup' && scenario !== 'onboarding') {
@@ -184,6 +191,7 @@ function buildState(scenario) {
     seedSessions(st, t)
     seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR })
     seedDebate(st, t)
+    st.atelier = atelierState(t, { sessions: st.sessions.filter((x) => !x.archived).slice(0, 2) })
     if (scenario === 'maxxing') {
       seedMaxxing(st, t)
       st.settings.maxxing_mode = true
@@ -655,6 +663,8 @@ function seedFiles(st, t) {
   fsAdd(st, 'extensions/notes/page.js', NOTES_PAGE_JS, t - 10 * DAY)
   fsAdd(st, 'extensions/broken-widget/manifest.json', JSON.stringify({ id: 'broken-widget', name: 'Broken widget', type: 'widget', icon: 'triangle-alert', version: '0.1.0' }, null, 2), t - 4 * DAY)
   fsAdd(st, 'extensions/broken-widget/api.py', 'def card(ctx)\n    return {"blocks": []}\n', t - 4 * DAY)
+  fsAdd(st, 'extensions/stock-levels/manifest.json', JSON.stringify({ id: 'stock-levels', name: 'Stock levels', type: 'widget', icon: 'package', version: '1.0.0', api: 1, permissions: { secrets: ['STOCK_API_KEY'] } }, null, 2), t - 3 * HOUR)
+  fsAdd(st, 'extensions/stock-levels/api.py', 'import json\nimport urllib.request\n\n\ndef card(ctx):\n    key = ctx["secret"]("STOCK_API_KEY")\n    return {"blocks": [{"type": "list", "items": []}]}\n', t - 3 * HOUR)
 }
 
 function PLACEHOLDER_SVG(label = 'image', w = 640, h = 400) {
@@ -847,6 +857,7 @@ function widgetDefs() {
     { id: 'uptime', title: 'Website uptime', icon: 'radar', span: 2, source: 'builtin', card: cardUptime },
   ]
   if (ext && ext.enabled) defs.push({ id: 'shop-sales', title: 'Shop sales', icon: 'shopping-cart', span: 1, source: 'extension', card: cardShop })
+  if (S.extensions.find((e) => e.id === 'stock-levels')?.enabled) defs.push({ id: 'stock-levels', title: 'Stock levels', icon: 'package', span: 1, source: 'extension', card: cardStock })
   return defs
 }
 function renderWidget(d) {
@@ -860,7 +871,7 @@ function renderWidget(d) {
     const card = d.card()
     card.updated = S.widgetUpdated[d.id] || now() - 120
     return { ...base, card, error: null }
-  } catch (e) { return { ...base, card: null, error: String(e.message || e) } }
+  } catch (e) { return { ...base, card: null, error: String(e.message || e), ...(e.permission ? { permission: e.permission } : {}) } }
 }
 function dashboard() {
   const defs = widgetDefs()
@@ -932,6 +943,25 @@ function cardUsage() {
 function cardUptime() {
   return { title: 'Website uptime', status: 'warn', blocks: [{ type: 'table', columns: ['Site', 'Status', 'Response', 'Uptime 30 d'], rows: [
     ['www.example.com', '503', '10.0 s', '99.12 %'], ['ui.example.com', '200', '182 ms', '100 %'], ['shop.example.com', '200', '341 ms', '99.98 %']] }] }
+}
+// A key read through ctx["secret"], as permissions.secret_reader answers it (API.md, Permissions).
+function extSecret(id, name) {
+  const e = S.extensions.find((x) => x.id === id)
+  const a = extAccess(e)
+  const deny = (reason, message) => { const err = new Error(message); err.permission = { kind: 'secret', name, reason }; throw err }
+  if (a.refused) deny('refused', `reading the key ${name} was refused for this extension (Settings -> Extensions)`)
+  const s = a.secrets.find((x) => x.name === name)
+  if (a.state === 'legacy') return 'value'
+  if (!s) deny('undeclared', `the key ${name} is not in manifest.json "permissions.secrets": add it there to read it, then allow it (Settings -> Extensions)`)
+  if (s.status !== 'allowed') deny('not_allowed', `reading the key ${name} waits for your permission: Settings -> Extensions -> ${e.name} -> Allow`)
+  return 'value'
+}
+function cardStock() {
+  extSecret('stock-levels', 'STOCK_API_KEY')
+  return { title: 'Stock levels', blocks: [{ type: 'list', items: [
+    { title: 'Mug "Morning"', value: '14 left', status: 'warn', icon: 'package' },
+    { title: 'Tote bag', value: '86 left', status: 'ok', icon: 'package' },
+  ] }] }
 }
 function cardShop() {
   const r = rng(99), t = now()
@@ -4010,12 +4040,57 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
   S.layout = { order: body.order.map(String), hidden: body.hidden.map(String) }
   return { ok: true }
 })
+// Access of a widget or page (API.md, Permissions): what it may use now and what waits for the user.
+function extAccess(e) {
+  if (!e || (e.type !== 'widget' && e.type !== 'page')) return null
+  const g = S.extPerms.grants[e.id] || { secrets: {}, refused: null, denied: [] }
+  const legacy = S.extPerms.legacy.includes(e.id)
+  const refused = !!g.refused
+  const state = e.permissions ? 'declared' : legacy ? 'legacy' : 'undeclared'
+  const secrets = e.permissions
+    ? e.permissions.secrets.map((name) => { const x = g.secrets[name]; return { name, status: refused ? 'refused' : x ? 'allowed' : 'pending', how: x?.how ?? null, at: x?.at ?? null } })
+    : state === 'legacy' ? Object.entries(g.secrets).map(([name, x]) => ({ name, status: refused ? 'refused' : 'allowed', how: x.how, at: x.at })) : []
+  return {
+    state, secrets, refused,
+    legacy: { secrets: Object.entries(g.secrets).filter(([, x]) => x.how === 'legacy').map(([name, x]) => ({ name, at: x.at })) },
+    pending: secrets.some((x) => x.status === 'pending'),
+    denied: g.denied || [],
+  }
+}
+const extPermDetail = (e) => {
+  const a = extAccess(e)
+  const base = e.permissions || { network: [], secrets: [], read: [] }
+  const keep = a.legacy.secrets.map((x) => x.name).filter((n) => !base.secrets.includes(n))
+  return { id: e.id, name: e.name, type: e.type, permissions: e.permissions ?? null, access: a, suggested: { ...base, secrets: [...base.secrets, ...keep] } }
+}
+const permTarget = (id) => {
+  const e = S.extensions.find((x) => x.id === id)
+  if (!e || (e.type !== 'widget' && e.type !== 'page')) fail(404, 'not_found', `no widget or page extension ${id}`)
+  return e
+}
+R('GET', '/api/extensions/permissions', () => ({ since: S.extPerms.since, items: S.extensions.filter((e) => e.type === 'widget' || e.type === 'page').sort((a, b) => a.id.localeCompare(b.id)).map(extPermDetail) }))
+R('GET', '/api/extensions/:id/permissions', ({ params }) => extPermDetail(permTarget(params.id)))
+R('POST', '/api/extensions/:id/consent', ({ params, body }) => {
+  const e = permTarget(params.id)
+  if (!['always', 'deny', 'reset'].includes(body.decision)) fail(422, 'invalid', 'decision must be always, deny or reset')
+  const g = (S.extPerms.grants[e.id] ||= { secrets: {}, refused: null, denied: [] })
+  if (body.decision === 'always') {
+    if (!e.permissions) fail(400, 'not_declared', 'this extension declares no "permissions": nothing to allow')
+    for (const n of e.permissions.secrets) g.secrets[n] ||= { at: now(), how: 'accepted' }
+    g.refused = null
+  } else {
+    g.secrets = Object.fromEntries(Object.entries(g.secrets).filter(([, x]) => x.how === 'legacy'))
+    g.refused = body.decision === 'deny' ? now() : null
+  }
+  bus('extensions')
+  return { ok: true, access: extAccess(e) }
+})
 // `origin`: the session that made it while it exists and is not archived (extfix.origin)
 const extOrigin = (e) => {
   const s = e.origin_session && S.sessions.find((x) => x.id === e.origin_session && !x.archived)
   return s ? { id: s.id, title: s.title, path: s.path } : null
 }
-R('GET', '/api/extensions', () => S.extensions.map(({ origin_session, ...e }) => ({ ...e, origin: extOrigin({ origin_session }) })))
+R('GET', '/api/extensions', () => S.extensions.map(({ origin_session, ...e }) => ({ ...e, origin: extOrigin({ origin_session }), access: extAccess(e) })))
 // "Ask for a fix" (extfix.py): the message, sent to the session that made it or to a new system/harness session
 R('POST', '/api/extensions/:id/fix', ({ params, body }) => {
   const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', `no extension ${params.id}`)
@@ -4037,6 +4112,30 @@ R('POST', '/api/extensions/:id/fix', ({ params, body }) => {
   return { session: updateSession(`Fix the extension ${e.name}`, prompt), reused: false }
 })
 installBlocks({ R, state: () => S, fail, bus })
+installAtelier({
+  R, state: () => S, fail, bus, now,
+  // request-change: continue the draft's session (queued while it runs), else a new session in its topic
+  sendMessage: (sid, path, text, title) => {
+    const s = sid && S.sessions.find((x) => x.id === sid)
+    if (s) {
+      if (s.archived) s.archived = false
+      if (s.state === 'running') {
+        (S.queues[s.id] ||= []).push({ text, attachments: [] })
+        s.queue = S.queues[s.id].length
+        bus('sessions')
+        return { session: s, created: false, queued: true }
+      }
+      startTurn(s, text, [])
+      return { session: s, created: false, queued: false }
+    }
+    const t = now()
+    const n = { id: uuid(), title, path, state: 'idle', queue: 0, created: t, updated: t, turns: 0, cost_usd: 0, model: '', real_model: null, context_tokens: null, context_window: null, archived: false, notify: false, source: 'web', unread: false, last_text: '', error: null }
+    S.sessions.push(n); S.events[n.id] = []
+    startTurn(n, text, [])
+    bus('sessions', 'workspace')
+    return { session: n, created: true, queued: false }
+  },
+})
 // The extensions' own API (`/api/ext/<id>[/<path>]`, forwarded to their api.py `handle()` on the server): the two
 // seeded extensions answer like their example code; a LookupError is 404, a ValueError 400.
 const EXT_HANDLERS = {
@@ -4067,10 +4166,18 @@ for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) for (const patte
   return handler(req.method, p, body || {})
 })
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
-  const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown extension')
+  // an extension listed by the Atelier (atelier() below) is turned on / off there too
+  const a = atelier().items.find((x) => x.kind === 'extension' && x.id === params.id && x.version)
+  const e = S.extensions.find((x) => x.id === params.id) || (a ? null : fail(404, 'not_found', 'Unknown extension'))
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
-  if (body.enabled && e.error) fail(409, 'broken', `Cannot enable: ${e.error}`)
-  e.enabled = body.enabled
+  if (body.enabled && e?.error) fail(409, 'broken', `Cannot enable: ${e.error}`)
+  if (e) e.enabled = body.enabled
+  if (a) {
+    a.state = body.enabled ? (a.error ? 'error' : 'active') : 'disabled'
+    a.actions = [...a.actions.filter((x) => x !== 'enable' && x !== 'disable'), body.enabled ? 'disable' : 'enable']
+    a.updated = now()
+    bus('atelier')
+  }
   bus('extensions')
   return { ok: true }
 })
@@ -4108,6 +4215,86 @@ for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
     fail(404, 'not_found', 'Unknown extension route')
   })
 }
+
+/* ---- Atelier (API.md#atelier, server/maxxing/atelier.py): the creations of the agents, staged as drafts, approved,
+   versioned, rolled back. State created on first use (`S.atelier`); the `ready` and `maxxing` scenarios get the rows of
+   the design mock-up: two drafts (a new HTML widget, an update of a widget), a broken page, a customization to review
+   after an update, a block changed outside the Atelier, an applied theme, a skill, a pinned card, an extension from
+   before the Atelier (unknown origin) and a cron job turned off. Origins point at seeded sessions (by title).
+   Web PR 1: the list only. Drafts, approval, versions and rollback are added below by the server side. */
+function atelier() {
+  if (S.atelier) return S.atelier
+  const seeded = S.scenario === 'ready' || S.scenario === 'maxxing'
+  const t = now()
+  const from = (title, agent, ago, summary = null) => {
+    const s = S.sessions.find((x) => x.title === title)
+    return { agent, session: s ? s.id : null, session_title: s ? s.title : null, session_path: s ? s.path : null, at: t - ago, summary }
+  }
+  const unknown = (ago) => ({ agent: 'unknown', session: null, session_title: null, session_path: null, at: t - ago, summary: null })
+  const item = (kind, id, type, name, icon, state, extra = {}) => ({
+    kind, id, type, name, icon, state, version: null, version_label: null, versions: 0, pending: null, unreviewed: false,
+    unreviewed_since: null, origin: null, approval: null, error: null, updated: t, href: null, actions: [], ...extra,
+  })
+  const ext = (id, type, name, icon, state, version, extra = {}) => item('extension', id, type, name, icon, state, {
+    version, versions: version || 0, approval: version ? { by: 'user', at: t - 3 * DAY } : null,
+    actions: version ? ['rollback', state === 'disabled' ? 'enable' : 'disable'] : [], ...extra,
+  })
+  const weather = from('Editorial calendar for November', 'claude', 12 * MIN, 'An HTML widget with today and the next three days for the office, refreshed every hour. It calls api.open-meteo.com.')
+  const refunds = from('Keyword research: project management tools', 'codex', 40 * MIN, 'Adds the refunds of the day under the revenue, and a link to the orders to ship.')
+  const items = !seeded ? [] : [
+    ext('weather', 'html_widget', 'Weather', 'cloud-sun', 'pending', null, {
+      pending: { draft: 'd_5f2c8a91b3e4', at: weather.at, change: 'new', origin: weather }, origin: weather, updated: weather.at,
+      actions: ['approve', 'reject', 'request_change'],
+    }),
+    ext('shop-sales', 'widget', 'Shop sales', 'shopping-cart', 'active', 3, {
+      version_label: '1.3.0', pending: { draft: 'd_a41b09c7e2d0', at: refunds.at, change: 'update', origin: refunds },
+      origin: from('Draft: 5 ways to speed up checkout', 'claude', 3 * DAY, 'Orders and revenue of the day, with the orders to ship.'),
+      updated: refunds.at, href: '/?widget=shop-sales', actions: ['approve', 'reject', 'request_change', 'rollback', 'disable'],
+    }),
+    ext('notes', 'page', 'Notes', 'notebook-pen', 'error', 2, {
+      version_label: '0.2.0', origin: from('Add pricing page', 'claude', 2 * DAY, 'A page to jot down and search short notes.'),
+      error: { message: "TypeError: Cannot read properties of undefined (reading 'map')", where: 'page', at: t - 25 * MIN, count: 3 },
+      updated: t - 25 * MIN, href: '/x/notes',
+    }),
+    item('customization', 'c-20261020-7f3a', 'customization', 'Telegram threads limit', 'wrench', 'review', {
+      origin: from('Caddy: add security headers', 'codex', 5 * DAY, 'Up to 80 open threads in the Telegram group instead of 40.'),
+      updated: t - HOUR, href: '/settings/updates',
+    }),
+    ext('trip-map', 'block', 'Trip map', 'map', 'active', 1, {
+      version_label: '1.0.0', unreviewed: true, unreviewed_since: t - 2 * HOUR,
+      origin: from('Investigate high disk usage', 'claude', 4 * DAY, 'Draws the stops of a trip on a map in the conversation.'),
+      updated: t - 2 * HOUR, href: '/settings/blocks', actions: ['rollback', 'accept', 'disable'],
+    }),
+    item('theme', 'ember', 'theme', 'Ember', 'palette', 'active', {
+      origin: from('Fix hero image on mobile', 'claude', 6 * DAY, 'Warm dark palette with an orange accent.'), updated: t - 6 * DAY, href: '/settings/appearance',
+    }),
+    ext('morning-brief', 'pin', 'Morning brief', 'pin', 'active', 1, {
+      origin: { agent: 'user', session: null, session_title: null, session_path: null, at: t - 7 * DAY, summary: 'Pinned from a conversation.' },
+      updated: t - 7 * DAY, href: '/?widget=morning-brief',
+    }),
+    item('skill', 'invoice-pdf', 'skill', 'Invoice to PDF', 'file-text', 'active', {
+      origin: from('Categorise September expenses', 'codex', 9 * DAY, 'Turns an order into a printable invoice.'), updated: t - 9 * DAY,
+    }),
+    ext('server-clock', 'widget', 'Server clock', 'clock', 'active', 1, {
+      version_label: '1.0.0', origin: unknown(40 * DAY), approval: { by: 'migration', at: t - 40 * DAY }, updated: t - 40 * DAY, href: '/?widget=server-clock',
+    }),
+    item('cron', 'c_report', 'cron', 'Weekly SEO report', 'clock', 'disabled', { updated: t - 12 * DAY, href: '/crons?job=c_report' }),
+  ]
+  S.atelier = { items }
+  return S.atelier
+}
+const ATELIER_RANK = { pending: 0, error: 1, review: 2 }
+const atelierRank = (it) => (it.pending ? 0 : ATELIER_RANK[it.state] ?? (it.unreviewed ? 3 : 4))
+R('GET', '/api/atelier', async ({ q }) => {
+  await sleep(120)
+  const all = [...atelier().items].sort((a, b) => atelierRank(a) - atelierRank(b) || (b.updated ?? 0) - (a.updated ?? 0))
+  const kind = q.get('kind'), state = q.get('state')
+  const count = (f) => all.filter(f).length
+  return {
+    items: all.filter((it) => (!kind || it.kind === kind) && (!state || it.state === state)),
+    counts: { pending: count((it) => it.pending), error: count((it) => it.state === 'error'), unreviewed: count((it) => it.unreviewed), review: count((it) => it.state === 'review'), disabled: count((it) => it.state === 'disabled'), total: all.length },
+  }
+})
 
 /* =================================================================== feed (notifications) + web push */
 // docs/dev/API.md#feed-notifications and #web-push. In-memory: S.feed = {events, nextId, settings, hooks}, S.push.
@@ -4650,6 +4837,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/') || url.pathname === '/api') return await handleApi(req, res, url)
     if (url.pathname.startsWith('/ext/_blocks/')) return serveBlockFrame(req, res, url, isAuthed(req), () => S)
+    if (url.pathname.startsWith('/ext/_drafts/')) return serveDraftFrame(req, res, url, isAuthed(req), () => S)
     if (url.pathname.startsWith('/ext/')) return serveExt(req, res, url)
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method_not_allowed', message: 'Static files are read-only' })
     return serveStatic(req, res, url)

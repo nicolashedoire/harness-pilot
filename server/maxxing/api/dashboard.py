@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import bus, config, exterrors, extensions, widgets
+from .. import bus, config, exterrors, extensions, permissions, widgets
 from ..security import require_auth
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], dependencies=[Depends(require_auth)])
@@ -110,6 +110,9 @@ async def _render(d: dict, force: bool = False, soft: float | None = None) -> di
         out["error"] = str(e)
     except ImportError as e:
         out["error"] = f"not available yet ({e.name or e})"
+    except permissions.PermissionDenied as e:     # already recorded by the refusal itself (permissions.secret_reader)
+        out["error"] = str(e)[:500]
+        out["permission"] = e.detail()
     except Exception as e:
         log.warning("widget %s failed: %s", d["id"], e)
         out["error"] = f"{type(e).__name__}: {e}"[:500]

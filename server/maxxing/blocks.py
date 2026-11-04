@@ -717,6 +717,8 @@ def pin(btype: str, data: dict, title: str = "") -> str:
     config.write_json(d / "manifest.json", {"id": eid, "name": label, "type": "widget", "icon": icon,
                                             "version": "1", "span": 2 if btype in ("chart", "table", "timeline") else 1,
                                             "ttl": 86400})
+    from . import atelier                              # the user pinned it: a version approved by the user
+    atelier.record_user_install(eid, "pinned from a conversation")
     extensions.scan()
     return eid
 
