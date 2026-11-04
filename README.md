@@ -40,7 +40,18 @@ bash scripts/dev-local.sh link
 
 Open the configuration link and choose a password in your browser. Then use `http://127.0.0.1:8787`. The local instance binds to your computer only and stores its workspace and state in `.harness-pilot-local/`, which Git ignores. Stop the server with `Ctrl+C` in its terminal.
 
-The local script uses an isolated workspace and does not change your system crontab. A local scheduler runs jobs while the application is running; it does not replay jobs missed during sleep or shutdown, and does not support `@reboot`. Scheduled prompts currently use Claude Code. A new local configuration starts in Claude's default permission mode. The application's legacy installation counter, registration and license communication with the upstream service are disabled. Agent CLIs and optional integrations have their own network and privacy settings. To run it as a service on a Linux server (Debian 12, Ubuntu 24.04), see [Installation](docs/user/02-installation.md).
+The local script uses an isolated workspace and does not change your system crontab. A local scheduler runs jobs while the application is running; it does not replay jobs missed during sleep or shutdown, and does not support `@reboot`. Scheduled prompts currently use Claude Code. A new local configuration starts in Claude's default permission mode. The application's legacy installation counter, registration and license communication with the upstream service are disabled. Agent CLIs and optional integrations have their own network and privacy settings.
+
+## Run on a Linux server
+
+Requirements: Debian 12 or Ubuntu 24.04 with systemd, x86_64 or arm64, root access, about 5 GB of free disk. Download the installer, read it if you wish, then run it as root:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.com/nicolashedoire/harness-pilot/main/install.sh
+sudo bash install.sh
+```
+
+It installs the code of this repository's `main` branch, Claude Code, the `claude-maxxing` service (run as root, sandboxed, listening on `127.0.0.1` or your Tailscale address only), security updates, fail2ban and, on a fresh server, a firewall, then prints a one-time setup link. Reach it through an SSH tunnel, Tailscale, or your own domain with automatic HTTPS (needed for mobile push, webhooks and Team). `sudo pilot update` updates it and `sudo pilot doctor` checks it. This path has been verified on Debian 12 and Ubuntu 24.04 (arm64) in systemd containers, not yet on x86_64 or on a real server; see [Installation](docs/user/02-installation.md) for the details and the access options.
 
 ## Start an automatic conversation
 

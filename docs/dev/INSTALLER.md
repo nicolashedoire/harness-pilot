@@ -144,3 +144,15 @@ docker rm -f pilot-test
 
 Tests on Linux: `cd server && MAXXING_STATE=$(mktemp -d) uv run pytest tests/test_install_reliability.py
 tests/test_install_security.py`.
+
+## Public install and tools (step 5)
+
+From the public path, in a fresh Ubuntu 24.04 arm64 systemd container: `curl -fsSLo install.sh` of the raw `main`
+file, then `ASSUME_YES=1 bash install.sh` with every other default (local access, local voice, background tools).
+9 steps in 48 s; the background unit installed Node.js 22.23.3, Scrapling 0.4.15, Chromium 1248 (found in
+`chrome-linux-arm64/`), Remotion 4.0.534 and the Whisper `small` model; `pilot video status` was all ready. Then, for
+real: `pilot pdf page.html page.pdf` (text read back with `pdftotext`), `scrapling extract get` and `scrapling extract
+fetch` (browser) on example.com, `pilot video new` then `npm run render` (h264, 1920x1080, 5 s, rendered in 22 s).
+A manual `pilot deps update` during the background one broke both before the deps lock (Node.js and Remotion
+missing); with the lock (`deps.exclusive`), the second one waits. User docs: `README.md` (Run on a Linux server), `docs/user/02-installation.md`,
+`docs/user/22-tools.md`.
