@@ -37,7 +37,7 @@ read, or solved.
 | Source | Events |
 |---|---|
 | **Sessions** | a session finished or failed (folded per session); a Claude Code + Codex discussion paused because it reached its number of replies or its duration (**Resume** right from the notification) |
-| **Cron jobs** | every run: failures folded per job (with the latest error, **Run again**), successes folded into one row |
+| **Cron jobs** | every run: failures folded per job (with the latest error, **Run again**), successes folded into one row; a missed run caught up at startup |
 | **harness-pilot** | an update is available or needs attention, Claude Code updated (or could not), a server health issue (disk full, Claude signed out, old backup...), vulnerable dependencies, a [task reminder](tasks) |
 | **Sign-ins** | sign-ins (folded), several wrong passwords, a webhook refused for lack of its signing secret |
 

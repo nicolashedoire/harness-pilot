@@ -16,6 +16,7 @@ import { useDocumentTitle } from '@/components/shell/Page'
 import { RegionFields } from '@/features/general/RegionFields'
 import { ClaudeConnect } from '@/features/claude/ClaudeConnect'
 import { ClaudeDefaults } from '@/features/claude/ClaudeDefaults'
+import { CodexStatus, useCodexStatus } from '@/features/codex/CodexStatus'
 import { CreateProjectTopic } from '@/features/workspace/CreateProjectTopic'
 import { TelegramSetup } from '@/features/telegram/TelegramSetup'
 import { BackupSetup, BackupWhy } from '@/features/backup/BackupSetup'
@@ -25,11 +26,12 @@ import { requestTourAfterOnboarding } from '@/tour/store'
 import { ImportWizard } from '@/features/import/ImportWizard'
 import { PackChooser } from '@/features/packs/PackPicker'
 
-type StepId = 'language' | 'profile' | 'claude' | 'import' | 'workspace' | 'telegram' | 'backup' | 'done'
+type StepId = 'language' | 'profile' | 'claude' | 'codex' | 'import' | 'workspace' | 'telegram' | 'backup' | 'done'
 const STEPS: { id: StepId; label: TKey; optional?: boolean }[] = [
   { id: 'language', label: 'onb.step.language' },
   { id: 'profile', label: 'onb.step.profile', optional: true },
   { id: 'claude', label: 'onb.step.claude' },
+  { id: 'codex', label: 'onb.step.codex', optional: true },
   { id: 'import', label: 'onb.step.import', optional: true },
   { id: 'workspace', label: 'onb.step.workspace' },
   { id: 'telegram', label: 'onb.step.telegram', optional: true },
@@ -132,6 +134,7 @@ export default function OnboardingPage() {
             {current === 'language' && <LanguageStep onNext={next} />}
             {current === 'profile' && <ProfileStep onNext={next} onBack={back} />}
             {current === 'claude' && <ClaudeStep onNext={next} onBack={back} />}
+            {current === 'codex' && <CodexStep onNext={next} onBack={back} />}
             {current === 'import' && <ImportStep onNext={next} onBack={back} />}
             {current === 'workspace' && <WorkspaceStep onNext={next} onBack={back} />}
             {current === 'telegram' && <TelegramStep onNext={next} onBack={back} done={stepDone('telegram', onboarding)} />}
@@ -273,6 +276,37 @@ function ClaudeStep({ onNext, onBack }: { onNext: () => void; onBack: () => void
   )
 }
 
+function CodexStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const t = useT()
+  const q = useCodexStatus()
+  const ok = q.data?.authenticated === true
+  return (
+    <>
+      <StepHeader step="codex" title={t('onb.codex.title')} description={t('onb.codex.desc')} />
+      <div className="grid max-w-2xl gap-5" data-testid="onb-codex">
+        <div className="grid gap-3 rounded-xl border p-4">
+          <CodexStatus />
+          <Button variant="outline" size="sm" className="w-fit" onClick={() => void q.refetch()} loading={q.isFetching}>
+            {t('onb.codex.check')}
+          </Button>
+        </div>
+        {!ok && (
+          <ol className="grid list-decimal gap-2 pl-5 text-sm text-muted-foreground">
+            <li>
+              {t('onb.codex.install')} <code>npm install -g @openai/codex</code>
+            </li>
+            <li>
+              {t('onb.codex.login')} <code>codex login</code>
+            </li>
+            <li>{t('onb.codex.recheck')}</li>
+          </ol>
+        )}
+      </div>
+      <StepFooter onBack={onBack} onNext={ok ? onNext : undefined} onSkip={ok ? undefined : onNext} />
+    </>
+  )
+}
+
 function WorkspaceStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const t = useT()
   const [own, setOwn] = React.useState(false)
@@ -367,6 +401,7 @@ function DoneStep({ onBack, onboarding }: { onBack: () => void; onboarding: Onbo
   const rows: { label: TKey; ok: boolean; optional?: boolean }[] = [
     { label: 'onb.summary.password', ok: !!onboarding?.steps.password },
     { label: 'onb.summary.claude', ok: !!onboarding?.steps.claude },
+    { label: 'onb.summary.codex', ok: !!onboarding?.steps.codex, optional: true },
     { label: 'onb.summary.workspace', ok: !!onboarding?.steps.workspace },
     { label: 'onb.summary.telegram', ok: !!onboarding?.steps.telegram, optional: true },
     { label: 'onb.summary.backup', ok: !!onboarding?.steps.backup, optional: true },

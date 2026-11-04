@@ -10,7 +10,7 @@ import { useSessionsUI } from './store'
 
 type Act = { kind: 'read' | 'search' | 'run' | 'edit' | 'web' | 'say' | 'other'; target: string }
 type Agent = { id: string; provider: string; role: string; custom_role?: boolean; state: string; started_at: number | null; finished_at: number | null; activity?: Act[]; report?: string | null }
-type Team = { phase: string; created?: number; agents: Agent[] }
+type Team = { phase: string; created?: number; coordinator?: 'claude' | 'codex'; agents: Agent[] }
 
 const ACTIVE = ['launching', 'working', 'synthesizing']
 const STEPS = ['launching', 'working', 'synthesizing', 'completed'] as const
@@ -61,7 +61,8 @@ export function MixedTeam({ sid }: { sid: string }) {
   const over = data.phase === 'stopped' || data.phase === 'error'
   const reached = over ? -1 : STEPS.indexOf(data.phase as (typeof STEPS)[number])
   const ready = data.agents.filter((a) => a.state !== 'running').length
-  const footer = t(data.phase === 'synthesizing' || data.phase === 'completed' || over ? (`teamx.footer.${data.phase}` as TKey) : 'teamx.footer.wait')
+  const lead = data.coordinator === 'codex' ? 'codex' : 'claude'
+  const footer = t(data.phase === 'synthesizing' || data.phase === 'completed' || over ? (`teamx.footer.${data.phase}` as TKey) : 'teamx.footer.wait', { agent: lead === 'codex' ? 'Codex' : 'Claude' })
   return (
     <section className="mx-auto grid w-full max-w-(--mx-read,860px) gap-2 px-3 py-2" aria-label={t('mixedTeam.title')}>
       <div className="@container max-h-[50dvh] overflow-y-auto rounded-xl border bg-card">
@@ -102,7 +103,7 @@ export function MixedTeam({ sid }: { sid: string }) {
               ))}
             </div>
             <div className="flex items-center gap-2 border-t px-3 py-2.5 text-[13px] text-muted-foreground">
-              <AgentIcon agent="claude" size={15} label={null} />
+              <AgentIcon agent={lead} size={15} label={null} />
               <span className="min-w-0 flex-1">{footer}</span>
               {(data.phase === 'launching' || data.phase === 'working') && <span className="shrink-0 text-xs tabular-nums">{t('teamx.footer.ready', { count: ready, total: data.agents.length })}</span>}
             </div>

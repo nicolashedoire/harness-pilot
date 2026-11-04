@@ -96,19 +96,22 @@ Python modules call each other only through these functions. Keep signatures sta
 
 
 ## maxxing.sessions.teams  (owner: core) - mixed Claude + Codex teams
-API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a Claude
-coordinator (the parent, returned by `create`) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
+API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a
+coordinator (the parent, returned by `create`; Claude Code or Codex) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
 - State: coordinator meta `team: {phase, goal, attachments, agents: [{id, provider, role, stopped}], created}`, worker meta
   `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
   (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
-- `create(path, message, title=None, attachments=None, roles=None)`: mission of 1-24 000 characters (else 400
-  `bad_mission`); `roles` `{claude?, codex?}` replace `ROLES` (the defaults) for that worker when not blank;
+- `create(path, message, title=None, attachments=None, roles=None, coordinator='claude', models=None)`: mission of
+  1-24 000 characters (else 400 `bad_mission`); `roles` `{claude?, codex?}` replace `ROLES` (the defaults) for that
+  worker when not blank; `coordinator` (`claude` | `codex`, else 400 `bad_provider`) is the provider of the parent
+  session; `models` `{claude?, codex?}` (`service._check_model`, 400 `bad_model`) go to that provider's worker and
+  to the coordinator of that provider;
   attachments checked by `service._check_attachments` (400 `bad_attachment`) before anything is created. Creates the
   coordinator then the workers, logs the mission and its attachments as the coordinator's `mx_user` line, then, inside the coordinator's
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+- `get(sid)` -> `{id, phase, created, coordinator, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
   `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
   session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
   (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
@@ -452,6 +455,11 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   or resolves the feed group `instance-backup-schedule`. The loop is `api.instance_backup.scheduler(export)`, a task
   of the app lifespan outside the pausable modules, given the app's snapshot wrapper (`export_instance(None,
   scheduled=True)`): pausing services for the snapshot never cancels it.
+- Copy folder: config `instance_backup_copy` `{folder}`; `instance_backup.set_copy_folder()` (absolute, existing,
+  writable, outside the included roots) / `disable_copy()` / `copy_status()`; `copy_export(id)` streams, fsyncs,
+  reads back and compares size + SHA-256 before the rename, stores the record in the export's `.json` and posts or
+  resolves the feed group `instance-backup-copy`. The app's `export_instance` calls it after services resume and
+  outside the activation lock, for manual and scheduled exports alike.
 - User secrets (Keys vault) live in secrets.json under `"vault": {name: {value, note, expose, updated}}`.
   `config.exposed_env()` (owner: organisation, in maxxing/vault.py) -> dict of secrets flagged `expose`,
   merged into every Claude turn's environment by the runner spawner (sessions/spawn.py currently reads the vault
@@ -514,9 +522,15 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
-- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.boot()` once (every
-  enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while `integrations_paused`), then
-  `localcron.tick()` every 15 s (the current minute, claimed in `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.catch_up()`, then
+  `localcron.boot()` once (every enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while
+  `integrations_paused`), then `localcron.tick()` every 15 s (the current minute, claimed in
+  `<state>/local-cron-minutes.json`; never `@reboot`).
+- Local scheduler catch-up (`localcron.catch_up(now)`): heartbeat
+  `<state>/local-cron-alive.json` `{at}` written by `tick()` once per minute (also while `integrations_paused`) and by
+  `catch_up` itself before it starts anything (a crash never repeats it). For each enabled job with `catch_up` (not
+  `@reboot`, not due this minute) and at least one `iter_runs` time after max(heartbeat, job `created`, `updated`) and
+  before the current minute: one `spawn_run` + `feed.system` `cron.caught_up` (info). No heartbeat yet = first start: nothing.
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
@@ -720,6 +734,12 @@ is gone (2.0.0a93): the old code that still runs on those servers does it.
 Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
 `LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
 against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
+
+## maxxing.sessions.spawn - companion sandbox
+`settings_args(cfg, sandbox)` adds `COMPANION_SANDBOX` (`{enabled, failIfUnavailable: true, allowUnsandboxedCommands:
+false, autoAllowBashIfSandboxed: false}`) to the turn's `--settings`; the runner passes `companion_sandbox(cfg, meta)`
+= config `companion_sandbox` and `meta.companion` set (experiments, mission steps, planner). Codex turns and external
+adapters are unchanged. Options and limits: `docs/dev/COMPANION-SANDBOX.md`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission
