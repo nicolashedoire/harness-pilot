@@ -2212,20 +2212,24 @@ R('POST', '/api/sessions/:id/discussion/pause', ({ params }) => {
 // ---- web push (the mock never sends anything: /test answers ok)
 const PUSH_KEY = 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM'
 const pushOut = (p) => ({ id: p.id, endpoint: p.endpoint, label: p.label, created: p.created, last_ok: p.last_ok, last_error: p.last_error, prefs: p.prefs })
-function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {} }) {
+function pushPrefs(p, base = { levels: ['warning', 'error'], sound: true, kinds: {}, sources: {} }) {
   if (p == null) return clone(base)
-  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds}')
-  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true, kinds = p.kinds ?? base.kinds
+  if (typeof p !== 'object' || Array.isArray(p)) fail(400, 'bad_prefs', 'prefs: {levels, sound, kinds, sources}')
+  const levels = p.levels ?? base.levels, sound = p.sound ?? base.sound ?? true
   if (!Array.isArray(levels) || levels.some((l) => !FEED_LEVELS.includes(l))) fail(400, 'bad_prefs', 'prefs.levels')
   if (typeof sound !== 'boolean') fail(400, 'bad_prefs', 'prefs.sound')
-  if (typeof kinds !== 'object' || Array.isArray(kinds)) fail(400, 'bad_prefs', 'prefs.kinds')
-  const out = {}
-  for (const [k, v] of Object.entries(kinds)) {
-    if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
-    if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.kinds.${k}: {enabled, sound}`)
-    out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+  // kinds / sources: {<name>: {enabled, sound}} (a bare boolean = enabled with the default sound)
+  const entries = (name, map) => {
+    if (typeof map !== 'object' || map === null || Array.isArray(map)) fail(400, 'bad_prefs', `prefs.${name}`)
+    const out = {}
+    for (const [k, v] of Object.entries(map)) {
+      if (typeof v === 'boolean') { out[k] = { enabled: v, sound }; continue }
+      if (!v || typeof v !== 'object' || typeof (v.enabled ?? true) !== 'boolean' || typeof (v.sound ?? sound) !== 'boolean') fail(400, 'bad_prefs', `prefs.${name}.${k}: {enabled, sound}`)
+      out[k] = { enabled: v.enabled ?? true, sound: v.sound ?? sound }
+    }
+    return out
   }
-  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: out }
+  return { levels: FEED_LEVELS.filter((l) => levels.includes(l)), sound, kinds: entries('kinds', p.kinds ?? base.kinds ?? {}), sources: entries('sources', p.sources ?? base.sources ?? {}) }
 }
 R('GET', '/api/push', () => ({ available: true, public_key: PUSH_KEY, subscriptions: S.push.subs.map(pushOut) }))
 R('POST', '/api/push/subscriptions', ({ body }) => {

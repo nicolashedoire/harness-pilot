@@ -4,7 +4,7 @@
 import * as React from 'react'
 import { BellRing, Check, Volume2 } from 'lucide-react'
 import { ApiError, errorMessage } from '@/lib/api'
-import { useDeletePush, usePushInfo, useSettings, useSubscribePush, useTestPush } from '@/lib/queries'
+import { useDeletePush, useFeedSettings, usePushInfo, useSettings, useSubscribePush, useTestPush } from '@/lib/queries'
 import { useUI, type SoundSet } from '@/stores/ui'
 import { useT } from '@/i18n'
 import { isIOS, isStandalone } from '@/pwa'
@@ -14,6 +14,7 @@ import { SettingsCard } from '@/pages/settings/sections/ui'
 import { showSystemNotification } from '@/features/notify/useDoneNotifier'
 import { usePermission, type Permission } from '../permission'
 import { currentSubscription, ownSubscription, pushReady, pushSupported, subscribeBrowser, unsubscribeBrowser } from '../push'
+import { pushSources } from '../prefs'
 import { previewSounds, soundEnabled } from '../sound'
 import { notifyToast } from '../toast'
 
@@ -50,6 +51,7 @@ function usePush() {
   const pushOn = useUI((s) => s.pushOn)
   const setNotify = useUI((s) => s.setNotify)
   const { data: info } = usePushInfo(pushSupported())
+  const { data: feedSettings } = useFeedSettings()
   const subscribe = useSubscribePush()
   const del = useDeletePush()
   const [ready, setReady] = React.useState<boolean | null>(null)
@@ -71,7 +73,7 @@ function usePush() {
     try {
       if (on) {
         if (!info?.public_key) return
-        const body = await subscribeBrowser(info.public_key)
+        const body = await subscribeBrowser(info.public_key, pushSources(feedSettings))
         await subscribe.mutateAsync(body)
         setNotify({ pushOn: true })
       } else {

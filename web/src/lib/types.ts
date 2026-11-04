@@ -285,7 +285,10 @@ export type FeedSettingsBody = { telegram?: boolean; rules?: Record<string, Feed
 /* ---------------------------------------------------------------- Web Push */
 /** Pushed when `kinds[kind]` is set (its `enabled` decides), else when the level is in `levels`; rings when that kind's
  *  `sound` (else `sound`) is true. */
-export type PushPrefs = { levels: FeedLevel[]; sound: boolean; kinds: Record<string, { enabled: boolean; sound: boolean }> }
+export type PushPref = { enabled: boolean; sound: boolean }
+/** `sources` (per webhook / script source) decides before `kinds`, then `levels` (API.md "Web Push"); absent from an
+ *  older server's copy. */
+export type PushPrefs = { levels: FeedLevel[]; sound: boolean; kinds: Record<string, PushPref>; sources?: Record<string, PushPref> }
 export type PushSubscriptionInfo = { id: string; endpoint: string; label: string; created: number; last_ok: number | null; last_error: string | null; prefs: PushPrefs }
 /** `missing`: the server has no push endpoints (older version). */
 export type PushInfo = { available: boolean; public_key: string | null; subscriptions: PushSubscriptionInfo[]; missing?: boolean }

@@ -634,15 +634,19 @@ pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscripti
 ```
 PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}
 PushPrefs = {
-  levels: Level[],                                  // kinds not listed below are pushed when their level is here
-  sound: bool,                                      // the sound of the kinds not listed below
-  kinds: {<kind>: {enabled: bool, sound: bool}}     // per kind: pushed or not, with or without sound
-}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}}
+  levels: Level[],                                  // events not matched below are pushed when their level is here
+  sound: bool,                                      // the sound of the events not matched below
+  kinds: {<kind>: {enabled: bool, sound: bool}},    // per kind: pushed or not, with or without sound
+  sources: {<source>: {enabled: bool, sound: bool}} // per source (a webhook, a script's --source): every event of it
+}                                                   // default {levels: ["warning", "error"], sound: true, kinds: {}, sources: {}}
 ```
-An event is pushed to a subscription when `prefs.kinds[kind]` is set (its `enabled` decides), else when its level is
-in `prefs.levels`; it rings when that kind's `sound` (else `prefs.sound`) is true - the payload carries
-`silent: !sound` for `showNotification`. In a POST / PATCH, `levels`, `sound` and `kinds` left out keep their saved
-value; `kinds` given replaces the whole map (a bare `true` / `false` for a kind = `enabled` with the default sound).
+An event is pushed to a subscription when `prefs.sources[source]` is set (its `enabled` decides), else when
+`prefs.kinds[kind]` is set (same), else when its level is in `prefs.levels`; it rings when the `sound` of that same
+entry (else `prefs.sound`) is true - the payload carries `silent: !sound` for `showNotification`. A `quiet` event is
+never pushed. In a POST / PATCH, `levels`, `sound`, `kinds` and `sources` left out keep their saved value; `kinds` or
+`sources` given replaces that whole map (a bare `true` / `false` for an entry = `enabled` with the default sound; at
+most 200 entries per map; source names as in `POST /api/feed`). The web sets `kinds` for the built-in rows of
+Settings -> Notifications and `sources` for the webhooks and scripts listed there (columns *Browser* and *Sound*).
 Only new rows are pushed (a fold does not push again), whatever process posted them (cron runs and `maxxing feed post`
 too), within ~3 s; rows already there when the server starts are never pushed. A subscription the push service
 answers 404 / 410 is removed. Sounds inside an open tab are the web's business (per device), not the server's.

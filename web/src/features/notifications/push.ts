@@ -6,10 +6,10 @@ import * as React from 'react'
 import { useNavigate } from 'react-router'
 import { translate, type TKey } from '@/i18n'
 import { appIconSrc } from '@/lib/accent'
-import { usePatchPush, usePushInfo } from '@/lib/queries'
+import { useFeedSettings, usePatchPush, usePushInfo } from '@/lib/queries'
 import type { PushInfo, PushPrefs, PushSubscribeBody } from '@/lib/types'
 import { useUI } from '@/stores/ui'
-import { PREF_ROWS, pushPrefs, rowSound, sourceKey } from './prefs'
+import { PREF_ROWS, pushPrefs, pushSources, rowSound, sourceKey, type PushSource } from './prefs'
 
 /** Read by sw/sw.js (same names there). */
 const PREFS_CACHE = 'mx-prefs'
@@ -41,8 +41,9 @@ function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-/** Asks the browser for a subscription (permission prompt) and returns the body for the server. */
-export async function subscribeBrowser(publicKey: string): Promise<PushSubscribeBody> {
+/** Asks the browser for a subscription (permission prompt) and returns the body for the server. `sources`: the
+ *  webhooks and scripts of the matrix (pushSources). */
+export async function subscribeBrowser(publicKey: string, sources: PushSource[] = []): Promise<PushSubscribeBody> {
   const r = await registration()
   if (!r) throw new Error('no_service_worker')
   if (Notification.permission === 'default' && (await Notification.requestPermission()) !== 'granted') throw new Error('denied')
@@ -51,7 +52,7 @@ export async function subscribeBrowser(publicKey: string): Promise<PushSubscribe
   if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) })
   const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
   const { notifyPrefs, soundPrefs, soundSet } = useUI.getState()
-  return { endpoint: json.endpoint, keys: json.keys, label: deviceLabel(), prefs: pushPrefs(notifyPrefs, soundPrefs, soundSet) }
+  return { endpoint: json.endpoint, keys: json.keys, label: deviceLabel(), prefs: pushPrefs(notifyPrefs, soundPrefs, soundSet, sources) }
 }
 
 export async function unsubscribeBrowser(): Promise<string | null> {
@@ -121,11 +122,15 @@ async function writeSwPrefs() {
   }
 }
 
-/** Same preferences whatever the key order of the server's copy. */
+function sameMap(a: PushPrefs['kinds'], b: PushPrefs['kinds']): boolean {
+  return Object.keys(a).length === Object.keys(b).length && Object.entries(b).every(([k, v]) => a[k]?.enabled === v.enabled && a[k]?.sound === v.sound)
+}
+
+/** Same preferences whatever the key order of the server's copy. `sources` only when the server keeps them (an
+ *  older one drops the map: comparing it would patch forever). */
 function samePrefs(a: PushPrefs | undefined, b: PushPrefs): boolean {
   if (!a || a.sound !== b.sound || [...(a.levels ?? [])].sort().join() !== [...b.levels].sort().join()) return false
-  const ka = a.kinds ?? {}
-  return Object.keys(ka).length === Object.keys(b.kinds).length && Object.entries(b.kinds).every(([k, v]) => ka[k]?.enabled === v.enabled && ka[k]?.sound === v.sound)
+  return sameMap(a.kinds ?? {}, b.kinds) && (a.sources === undefined || sameMap(a.sources, b.sources ?? {}))
 }
 
 /** The subscription of this browser among the server's ones. */
@@ -145,6 +150,8 @@ export function usePushSync() {
   const language = useUI((s) => s.language)
   const accent = useUI((s) => s.accent)
   const { data: info } = usePushInfo(pushOn)
+  // the webhooks and scripts of the matrix: pushed per source
+  const { data: feedSettings, isPending: feedPending } = useFeedSettings(pushOn)
   const patch = usePatchPush()
   const patchRef = React.useRef(patch.mutate)
   patchRef.current = patch.mutate
@@ -156,7 +163,7 @@ export function usePushSync() {
 
   // the server's copy of what to push (debounced: a row of checkboxes is several clicks)
   React.useEffect(() => {
-    if (!pushOn || !info) return
+    if (!pushOn || !info || feedPending) return
     const id = setTimeout(async () => {
       const own = await ownSubscription(info)
       if (!own) {
@@ -164,11 +171,11 @@ export function usePushSync() {
         if (!(await currentSubscription())) useUI.getState().setNotify({ pushOn: false })
         return
       }
-      const want = pushPrefs(notifyPrefs, soundPrefs, soundSet)
+      const want = pushPrefs(notifyPrefs, soundPrefs, soundSet, pushSources(feedSettings))
       if (!samePrefs(own.prefs, want)) patchRef.current({ id: own.id, prefs: want })
     }, 800)
     return () => clearTimeout(id)
-  }, [pushOn, info, notifyPrefs, soundPrefs, soundSet])
+  }, [pushOn, info, notifyPrefs, soundPrefs, soundSet, feedSettings, feedPending])
 
   // sw.js asks the app to open a page (a click on a push while the app is running)
   React.useEffect(() => {

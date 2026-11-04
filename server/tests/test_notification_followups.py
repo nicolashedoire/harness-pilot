@@ -1,7 +1,8 @@
-"""Notifications follow-ups: changing the limits of a Claude Code + Codex discussion, its pause time and quiet feed
-posts (docs/dev/API.md#sessions, #feed-notifications)."""
+"""Notifications follow-ups: changing the limits of a Claude Code + Codex discussion, its pause time, per-source push
+preferences and quiet feed posts (docs/dev/API.md#sessions, #feed-notifications, #web-push)."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 
@@ -10,7 +11,7 @@ import pytest
 
 from conftest import all_events, wait_for
 from maxxing import config, feed, push
-from test_notifications import _b64, _ua_keys
+from test_notifications import _b64, _decrypt, _ua_keys
 
 
 # ---- discussion limits -----------------------------------------------------------------------------------------
@@ -174,3 +175,61 @@ def test_an_older_feed_db_gets_the_quiet_column(mx):
     feed._ready.discard(str(path))
     assert [e["quiet"] for e in feed.list_events()["events"]] == [False]
     assert feed.post("New quiet row", notify=False)["quiet"] is True
+
+
+# ---- per-source push preferences --------------------------------------------------------------------------------
+def test_push_prefs_per_source_api(client, mx):
+    _, pub, auth = _ua_keys()
+    sub = {"endpoint": "https://push.example.com/send/src", "keys": {"p256dh": pub, "auth": _b64(auth)}}
+    created = client.post("/api/push/subscriptions", json={**sub, "prefs": {"sources": {
+        "shop": {"enabled": False, "sound": True}, "deploy.bot": True}}}).json()
+    assert created["prefs"]["sources"] == {"shop": {"enabled": False, "sound": True},
+                                           "deploy.bot": {"enabled": True, "sound": True}}
+    sid = created["id"]
+    p = client.patch(f"/api/push/subscriptions/{sid}", json={"prefs": {"levels": ["error"]}}).json()
+    assert p["prefs"]["sources"]["shop"] == {"enabled": False, "sound": True}            # left out: kept
+    p = client.patch(f"/api/push/subscriptions/{sid}", json={"prefs": {"sources": {"mail": {"enabled": True,
+                                                                                         "sound": False}}}}).json()
+    assert p["prefs"]["sources"] == {"mail": {"enabled": True, "sound": False}}           # given: replaced
+    for prefs in ({"sources": {"Bad Name": True}}, {"sources": {"x": "yes"}}, {"sources": ["shop"]},
+                  {"sources": {"x": {"enabled": True, "volume": 1}}},
+                  {"sources": {f"s{i}": True for i in range(push.PREF_KINDS_MAX + 1)}}):
+        r = client.patch(f"/api/push/subscriptions/{sid}", json={"prefs": prefs})
+        assert r.status_code == 400 and r.json()["error"] == "bad_prefs", prefs
+    # a push.json written before `sources` existed reads back with an empty map
+    data = json.loads((mx["state"] / "push.json").read_text())
+    data["subs"][0]["prefs"].pop("sources")
+    (mx["state"] / "push.json").write_text(json.dumps(data))
+    assert client.get("/api/push").json()["subscriptions"][0]["prefs"]["sources"] == {}
+
+
+def test_a_source_entry_decides_before_the_kind_and_the_level():
+    prefs = {"levels": ["warning", "error"], "sound": True,
+             "kinds": {"stripe.sale": {"enabled": True, "sound": True}, "cron.failed": {"enabled": True, "sound": False}},
+             "sources": {"shop-b": {"enabled": False, "sound": True}, "shop-a": {"enabled": True, "sound": False},
+                         "mail": {"enabled": True, "sound": True}}}
+    sale_b = {"kind": "stripe.sale", "source": "shop-b", "level": "success"}
+    sale_a = {"kind": "stripe.sale", "source": "shop-a", "level": "success"}
+    assert not push.wants(prefs, sale_b)                                   # unticked source: muted, kind ignored
+    assert push.wants(prefs, sale_a) and not push.sound(prefs, sale_a)     # ticked, silent
+    assert push.wants(prefs, {"kind": "custom", "source": "mail", "level": "info"})   # info, but its source is on
+    assert push.wants(prefs, {"kind": "cron.failed", "source": "crons", "level": "error"})
+    assert not push.sound(prefs, {"kind": "cron.failed", "source": "crons", "level": "error"})
+    assert push.wants(prefs, {"kind": "custom", "source": "other", "level": "error"})  # no entry: by level
+    assert not push.wants(prefs, {"kind": "custom", "source": "other", "level": "info"})
+
+
+def test_dispatch_follows_the_source_preferences(mx, monkeypatch):
+    priv, pub, auth = _ua_keys()
+    push.subscribe("https://fcm.example.com/send/phone", {"p256dh": pub, "auth": _b64(auth)}, "Phone",
+                   {"sources": {"shop": {"enabled": True, "sound": True}, "noisy": {"enabled": False, "sound": True},
+                                "deploy": {"enabled": True, "sound": False}}})
+    got: list[httpx.Request] = []
+    monkeypatch.setattr(push, "http_transport", httpx.MockTransport(lambda r: got.append(r) or httpx.Response(201)))
+    push.prime()
+    feed.post("Sale: 49.00 EUR", source="shop", level="success", kind="stripe.sale")   # info level, source on
+    feed.post("Something broke", source="noisy", level="error")                        # error, source off
+    feed.post("Deployed", source="deploy", level="info")                               # on, silent
+    assert push.dispatch() == 2
+    sent = [json.loads(_decrypt(r.content, priv, auth)) for r in got]
+    assert [(d["source"], d["silent"]) for d in sent] == [("shop", False), ("deploy", True)]

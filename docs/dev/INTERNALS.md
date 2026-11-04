@@ -240,7 +240,9 @@ Python modules call each other only through these functions. Keep signatures sta
   `encrypt(plaintext, p256dh, auth, *, salt=None, private_key=None)` (test vector of RFC 8291 appendix A in the tests).
 - Subscriptions in `<state>/push.json` (mode 600, max 50): `subscriptions()`, `subscribe(endpoint, keys, label, prefs)`
   (upsert by endpoint), `update(id, label, prefs)`, `remove(id)`, `test(id)`; errors `PushError(status, code, msg)`.
-  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}}`: `wants(prefs, ev)`, `sound(prefs, ev)`.
+  Prefs `{levels, sound, kinds: {kind: {enabled, sound}}, sources: {source: {enabled, sound}}}` (`_prefs`; `sources`
+  checked by `_source_prefs`): `wants(prefs, ev)` (a quiet event: never; then the source's entry, the kind's entry, the
+  level), `sound(prefs, ev)` (the same entry's sound, else `prefs.sound`); `_entry(p, ev)` picks the entry.
 - `prime()` (cursor = feed max id, at server start) and `dispatch()` (rows after the cursor, oldest first, at most 50
   per pass; one httpx client per pass; 404 / 410 drop the subscription, others stamp `last_ok` / `last_error`), called
   by `api/feed._watch` after each change of feed.db (any process). `payload(ev, silent)` <= `PAYLOAD_MAX` (3000 bytes:
