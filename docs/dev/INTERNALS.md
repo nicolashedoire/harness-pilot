@@ -56,7 +56,10 @@ Python modules call each other only through these functions. Keep signatures sta
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
   meta change (`sessions/wake.py`: one inotify watch of the sessions folder through `watchfiles`, which also wakes
   the session SSE streams; `MAXXING_INOTIFY=0` or no inotify: the old polling, 0.25 s while a session runs) and
-  passes at least every 2 s while a session runs, every 1 s otherwise. `result` = last
+  passes at least every 2 s while a session runs, every 1 s otherwise. A pass reads a meta again when its file's
+  (inode, size, mtime_ns) changed, when it was last read less than `RACY_S` (1 s) after its mtime (two saves in one
+  timestamp tick keep the mtime and can reuse the inode number at the same size), or every `RUNNING_RECHECK_S` while
+  it runs; a digest of its content and the derived (turns, state, unread) tell whether it changed. `result` = last
   normalised `result` event of the turn (None if the turn produced none). The watcher stamps its last pass in
   `<state>/session-watcher.json` `{at}` (after its first pass, at once after reporting, and at most every
   `PASS_STAMP_S` = 5 s after passes that saw a session change; no fsync): its first pass
@@ -155,9 +158,30 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - `pending(sid) -> bool` - a short title is being made (between `schedule` and the end of its thread) or meta
   `title_auto` is set: the Telegram sync waits for it (60 s at most) before creating the session's thread.
 ## maxxing.claude_auth  (stdlib only, also used by the runner)
+- `auth_method()` is shared by the web app and CLI, including macOS Keychain's boolean CLI status.
+  Legacy non-authentication failures from an explicit test are not relevant sign-in records.
 - `record(ok, error=None, source="turn"|"test"|"check")` - outcome of a real call; `detect(text) -> str|None`
   finds a sign-in error; `status() -> {ok, method, detail, checked_at, error}` (GET /api/claude/status `auth`,
   health, doctor); `needs_check()` - no verification in the last 6 h (background check in api/claude.py).
+
+## maxxing.claude_probe (stdlib only)
+- `run(model, prompt, timeout_s)` makes the one-line authentication probe used by Settings, the background
+  checker and `pilot doctor --live`. A temporary directory outside the workspace is removed after the call;
+  no tools, MCP servers, setting sources, skills or saved conversation are used. Results are
+  `{ok, model, ms, error?}`; callers record successes or genuine authentication failures only. No FastAPI
+  dependency in the CLI.
+- Success = exit 0 and a result that is not an error (`is_error` false, `subtype` success) with a non-empty
+  answer, whatever its wording ("OK.", "ok!"): the probe checks the sign-in, not the model's obedience. An
+  answer that `claude_auth.detect` reads as a sign-in error is not a success.
+- `binary()` = the executable sessions run (`spawn.claude_bin()`, executable or found on `spawn.base_env()`
+  PATH; also `api/claude._resolved_bin`); none -> `{ok: false, error: NOT_INSTALLED}` ("Claude Code is not
+  installed") without a call, and doctor `claude_auth` says so.
+- Same as a session: the credentials the CLI reads itself (the stored token or API key that `spawn.claude_env`
+  exports, `.credentials.json`, macOS Keychain) and the Claude directory (`CLAUDE_CONFIG_DIR`). Not the same:
+  `--setting-sources ""` loads no `settings.json`, so what only settings provide is missing - `apiKeyHelper`,
+  the settings `env` (`ANTHROPIC_BASE_URL`, proxies, `CLAUDE_CODE_USE_BEDROCK` / `_VERTEX`...). A setup that
+  depends on them can fail the probe while sessions work. Kept on purpose: loading the user's settings would
+  also run the user's hooks in a connection test (docs/user/16-troubleshooting.md says it).
 
 ## maxxing.auto_update
 - Harness updates itself while nobody uses it. Off by default (config `auto_update`, Settings -> System -> Updates,
@@ -200,6 +224,21 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
 - Off by default (config `claude_auto_update` false). Tests monkeypatch `installed_version`, `latest_version`,
   `run_update`, `install_method` (never a real update).
 
+## maxxing.codex_models - the Codex model pickers
+`GET /api/system/codex/models` -> `codex_models.models()`, read by `features/codex/CodexModelField.tsx` (new session:
+Codex, discussion and mixed team; cron editor: Codex jobs). codex-cli 0.150.1 has no `models` command, but
+`codex debug models` prints its model catalog as JSON: `{"models": [{slug, display_name, description, visibility:
+"list"|"hide", priority, default_reasoning_level, supported_reasoning_levels, ...}]}` - refreshed for the signed-in
+account (the shipped catalog when signed out, checked with a throw-away `CODEX_HOME`), and `--bundled` gives only
+the one shipped with the binary (10 models, 5 with `visibility` "list": gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna,
+gpt-5.5, gpt-5.2). The pickers get what the CLI's own picker shows (`visibility` "list", sorted by `priority`, ids
+matching `sessions.service._MODEL_ID`, no repeats): `debug models` (15 s), else `--bundled`, else `KNOWN_MODELS` (the
+same five, to update with a Codex release that changes them). Cached 10 min per binary path + mtime, dropped by
+`invalidate()` (`codex_login` calls it when the sign-in changes; the web drops its `codex-models` query then too).
+Nothing is stored: a session or a job keeps the id it was given, and an id outside the list shows as "Other…" with its
+text. `debug` is a CLI debugging command: if a release drops or changes it, the list falls back without breaking the
+pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/components/codex-model-field.test.tsx`.
+
 ## maxxing.telegram.gateway  (owner: connectivity)
 - `alert(text, loud=False)` - sign-in alerts thread (no-op when not configured). Thread-safe.
 - `notify_topic(path, text)` - message in the main chat (topics have no thread; sessions do).
@@ -224,7 +263,7 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   (its text names the agent; the pending entry of `state/telegram/new.json` keeps `provider`, default `claude`, and a
   later `/new` / `/codex` / `/discuss` before the answer changes it); threads off, the topic's new Telegram session.
   `/codex` and `/discuss` first run `sessions.codex.status()` in a worker thread: `authenticated: false` -> the chat
-  is told (not installed / not signed in, with `codex login`) and nothing is created or asked; `null` (status
+  is told (not installed / not signed in: Settings → Codex, or `codex login`) and nothing is created or asked; `null` (status
   unavailable) does not block. `/model` in a session whose provider is `codex` or `plugin:<id>` shows its model and
   changes nothing (`_set_model` refuses too: a Claude id would break its turns); `/status` adds the agent (and the
   replies of the current period for a discussion). A discussion answered on Telegram (`debate_telegram`) that pauses
@@ -278,7 +317,10 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
   stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
   `new_since(after_id, limit)` / `max_id()` (push), `last_id()` / `watch_id()` -> `(max id, sum read, sum count,
-  resolved count)` tuple (changes on posts, folds, reads, resolutions).
+  resolved count)` tuple (changes on posts, folds, reads, resolutions). `watch_id()` (the feed watcher: UI + Web Push)
+  reads it through one kept connection, again only when that connection's `PRAGMA data_version` changed; never from
+  the files' size / mtime (SQLite writes and syncs the WAL frames before it publishes the commit, and rewrites a
+  restarted WAL in place).
 - `feed.rule_for(source, level, s=None, kind=None)` (kind rule, else source rule, else `default_rule`), `event_kinds(s)`
   (rows of the settings matrix), `settings()` / `save_settings(telegram, rules, hooks, kind_rules)` (config `feed`:
   `rules`, `kind_rules`, `telegram`, `hooks`).
@@ -793,6 +835,30 @@ own count, not an estimate, measured against the window Codex itself uses; it de
 Codex: when the file is missing or its format changes, the session keeps its last values (none at first) and the gauge
 stays hidden rather than guessing. No setting overrides the window: Codex records the one it applies.
 
+## maxxing.codex_login - signing Codex in from the web app
+Settings → Codex and the wizard's Codex step sign the CLI of `sessions.codex.binary()` in, with the server's own
+environment (the same `CODEX_HOME` as `codex.status()` and the turns). Codex keeps the credentials in its folder
+(`auth.json`, 0600) as `codex login` in a terminal does; harness-pilot stores nothing. What codex-cli 0.150.1 offers
+(checked with a throw-away `CODEX_HOME`): `login --device-auth` (ChatGPT account), `login --with-api-key` and
+`--with-access-token` (read on stdin), `login status` (exit 0/1, one line on stderr), `logout`. Not used:
+`--with-access-token`, and the browser flow of plain `codex login`, which signs in through a browser on the machine
+that runs Codex (not tried: it would open one).
+- Device code: `start()` runs `codex <privacy_args> login --device-auth` (stdin closed, stdout+stderr piped,
+  `NO_COLOR=1`, own process group) once per server process; a second start joins it. A reader thread strips ANSI
+  and takes the first `https://` link (a later one with `/device` or `auth.` replaces a notice's link), then the first
+  code shaped `XXXX-XXXXX` after it, and "expires in N minutes": both seen → `waiting`. Exit 0 → `succeeded`
+  (`bus.invalidate("health")`), else `failed` with the CLI's last line (codes and `sk-…` masked). A watcher thread
+  stops the CLI (SIGTERM then SIGKILL on the group, then reaps it) with no code after `SHOW_TIMEOUT_S` (30 s) or
+  `GRACE_S` (30 s) after the expiry → `failed` / `expired`. `cancel()` → `cancelled`; the first final state wins.
+  Nothing of the output is logged; the code lives in memory until the flow ends.
+- API key: `with_api_key()` stops a device flow, then `codex login --with-api-key` with the key on stdin (30 s);
+  the error is the CLI's last line with the key and `sk-…` masked. The route checks the key itself (`valid_key`:
+  20-4096 printable ASCII characters, no spaces) so that no validation error repeats it. Codex does not verify a key
+  when it stores it. `logout()` = `codex logout` ("Not logged in" counts as done).
+- `codex.status()` now captures the status line (stderr) to tell `method` (`chatgpt` / `api_key`); the line itself
+  (a masked key) never leaves the function.
+- Tests: `tests/test_codex_login.py` (a fake `codex` with each subcommand, its state in the test folder).
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`
@@ -806,6 +872,10 @@ first call; `_idle_watch` (30 s) closes the browser (`close`) and stops the chil
 an agent disconnect ends every channel and the child. `BLOCKED_TOOLS` (upload_file, screencast, lighthouse) and
 unknown names are refused; the offline answer is a normal tool result (`isError`). One retry when the child dies
 mid-call. Agent binaries: `MAXXING_PC_BIN_DIR`, else `bin/`, else the release in `pc_agent.json` (sha256 checked);
+`pc_agent.json` = `{version, url ("…/releases/download/pc-agent-v{version}/{name}" of this repository), files:
+{<file name of TARGETS>: sha256}}`, written by `pc-agent/build.sh` (`dist/pc_agent.json`, docs/dev/PC-AGENT.md);
+empty `files` = nothing to download (`available()` false, `PcError 409 no_agent` / `404 no_agent`); a release file
+that cannot be fetched is `PcError 502 download_failed`, one that does not match is `502 checksum`.
 `personalised()` appends `<json><uint32 BE len>HMPCCFG1` (server, pairing code, browser, autostart).
 `pc_tools.json` = the tool list shipped for `tools/list` before the first start.
 Security boundaries: `pair()` stores a `candidate` (15 min); `WS /api/pc/ws` holds a candidate's socket
@@ -919,6 +989,19 @@ BIN_LINK or to the venv's `pilot` / `maxxing` script, or it is a small script st
 script, install.sh's state-dir wrapper). Another program named `pilot` first -> WARN naming it, fix: `maxxing`, the
 same command (or a PATH order / removal of the other program). None found while BIN_LINK exists -> INFO, fix
 `maxxing init` (creates PILOT_LINK); none found in a checkout without BIN_LINK -> no check.
+Doctor on macOS (`cmd_core`, read-only): `_listen_addrs` runs `lsof -w -nP -a -iTCP:<port> -sTCP:LISTEN -Ftn`
+(`-w`: lsof warnings such as a stale network mount stay out of the output `run()` merges; `-Ftn`: each socket's
+type before its address, as lsof writes `*` for both wildcards: IPv4 -> `0.0.0.0`, IPv6 -> `::`, unknown -> `*`).
+Exit 1 with no output = nothing listens; any other failure or unreadable line = None, and check `bind` WARNs
+instead of saying nothing listens. IPv6 addresses are shown in brackets (`[::]`, `[::1]`). `check_service`
+describes the launchd configuration (`local_service.status()`, INFO: a terminal run cannot tell whether another
+process is the agent); `check_security` is INFO (ufw, fail2ban, unattended-upgrades do not apply); repair advice
+names the local app instead of systemctl. With `HARNESS_PILOT_LOCAL_MODE=1`, `check_managed_deps` is
+`check_local_tools()` (check `deps_files`): claude, uv and node, their link targets and every parent of both. An
+owner other than root or the current user, or a path writable by everyone (sticky folders aside) -> FAIL;
+writable by the group `admin` (`MAC_ADMIN_GID` 80: Homebrew's `/opt/homebrew/bin` and `Cellar`, and Intel's
+`/usr/local/bin`, are `drwxrwxr-x <user>:admin`) -> fine; writable by another group -> WARN; else INFO (package
+contents are not verified). On Linux, manifest pins, root ownership and the firewall/service checks are unchanged.
 The crontab lines, the default jobs' commands (`crons.maxxing_bin()`) and the Python package keep the
 `maxxing` name on purpose: an existing line never changes. User-facing text (docs, skills, templates, help)
 says `pilot`.
@@ -948,7 +1031,7 @@ message: "no license, no remote"}`, `update --check` exits 0 with "updates unava
 install.json `enable_after_onboarding`; `enable_pending_jobs()` (called by POST /api/onboarding/complete when
 `claude_auth.status().ok`) enables each listed job still disabled and never edited (`created == updated`), then
 clears the list - jobs of existing installs are never touched (their key is already in `default_crons`), `notify_update(info)` (gateway.notify_cron), `version_key(v)`, `upgrade_notes(old, new)` (docs/upgrade).
-`renames.py` (called by `do_init` after the default jobs, report `renamed: {files, jobs}`): `SKILL_RENAMES`
+`renames.py` (`migrate(ws)` called by `do_init` after the default jobs, report `renamed: {files, jobs}`): `SKILL_RENAMES`
 (old -> new skill name, keep every pair), `rename_skills(text)`, `migrate(ws)`. It rewrites only the exact old
 skill names, and only in what the product generated: a line of a workspace file copied from a template
 (`templates/workspace/**`, `templates/packs/<id>/project/**` for `projects/<project>` and `<project>-N`)
@@ -958,6 +1041,24 @@ it equals a shipped prompt (`COMPACTION_JOB`, `MORNING_TASKS_PROMPT`, the packs'
 prompts written or edited by the user are left (upgrade notes ask Claude to propose them to the user).
 Idempotent, runs on every init (cheap: only template-mapped files that still contain an old name are read
 twice). `tests/test_renames.py::test_no_live_text_names_an_old_skill` fails when a merge brings an old name back.
+
+`renames.refresh_cli_guidance(ws)` (`do_init` after `ensure_cli_alias()`, report `cli_guidance: [files]`; also
+`scripts/dev-local.sh` after `migrate_workspace(ws)`) gives the current CLI name to the product lines of the workspace's
+template `CLAUDE.md` files, once per workspace: install.json `cli_guidance` lists the resolved workspaces done, so a
+line the user changes back to `maxxing` afterwards stays. It does nothing, and records nothing, while
+`cmd_core.sessions_run_our_pilot()` is false: the first `pilot` on the sessions' PATH (`spawn.base_env()`, the rule of
+the doctor's `cli` check) is another program (ensure_cli_alias kept it, the agents use `maxxing`) or there is none;
+the next init or local start-up tries again. The pass, `renames.migrate_cli_workspace(ws)`: a line naming `maxxing`
+as the command becomes the current rendered template line equal to it once CLI and product names are ignored
+(`_neutral`), or, for the exact earlier lines that differ by more than the name (`_CLI_LINES`: the root and help-topic
+lines before 2.0.0a109 and the first help-topic alias note), their new version while it is a line of the template.
+A line is replaced by the template's own line, so paths (`/root/maxxing`), `python -m maxxing` and `claude-maxxing`
+stay as the template writes them; edited and custom lines are left. The templates name
+`pilot` with the alias note "`maxxing`, its earlier name, still works" (root, system project, help topic).
+Both migrations of workspace files (`migrate_workspace`, `migrate_cli_workspace`) skip a linked file or parent, a
+file over `MAX_FILE_BYTES` (1 MiB, logged) and a read-only one (no write bit, or `os.access(W_OK)` false), keep each
+line's own end (`\r\n`, but also the form feed, U+2028... that `str.splitlines` cuts on), and rewrite atomically
+keeping the permissions. Conversation history is never rewritten.
 
 ## Service sandboxing (`pilot harden`)
 - `cmd_core.HARDENING` = drop-in `/etc/systemd/system/claude-maxxing.service.d/10-hardening.conf`

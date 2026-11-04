@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 
 from maxxing.sessions import service, store
@@ -71,3 +72,42 @@ def test_an_expired_hold_is_ignored_by_a_new_message(client, topic, mx):
     store.create(meta)
     assert service.send_message(meta["id"], "hello NOTOOL")["queued"] is False
     assert wait_idle(client, meta["id"])["turns"] == 1
+
+
+def test_a_save_in_the_same_timestamp_tick_is_seen(mx, monkeypatch):
+    """Meta saves are atomic renames, but two within one timestamp tick (1 to 10 ms on Linux) keep the mtime, and the
+    second can get the inode number the first freed, at the same size: the watcher must still see it. Here the hold of
+    a continuation cut short right after a pass (its summary will never come): the queued message must not wait for
+    HANDOFF_HOLD_S. Once settled, an unchanged meta is not read again."""
+    for name in ("_known", "_checked", "_damaged", "_held"):
+        monkeypatch.setattr(service, name, {})
+    released: list[str] = []
+    monkeypatch.setattr(service, "release_handoff", released.append)
+    meta = store.new_meta("", "orphan (cont.)")
+    meta["handoff_pending"] = float(int(time.time()))
+    store.create(meta)
+    sid, path = meta["id"], store.meta_path(meta["id"])
+    assert service.send_message(sid, "still there? NOTOOL")["queued"] is True
+    service._scan(True)
+    assert released == [] and sid in service._held                   # held
+    before = os.stat(path)
+    m = json.loads(path.read_text())
+    m["handoff_pending"] -= service.HANDOFF_HOLD_S + 100            # expired, same length: the size is kept
+    with open(path, "r+") as f:                                        # same inode
+        f.write(json.dumps(m, ensure_ascii=False))
+        f.truncate()
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))       # same tick
+    after = os.stat(path)
+    assert (after.st_ino, after.st_size, after.st_mtime_ns) == (before.st_ino, before.st_size, before.st_mtime_ns)
+    service._scan(True)
+    assert released == [sid]                                          # seen: the queued message runs
+
+    service._held.clear()
+    os.utime(path, ns=(after.st_atime_ns, after.st_mtime_ns - 10**10))   # 10 s later: settled
+    service._scan(True)
+    reads: list[str] = []
+    real = store.read
+    monkeypatch.setattr(store, "read", lambda s: reads.append(s) or real(s))
+    for _ in range(3):
+        service._scan(True)
+    assert reads == []

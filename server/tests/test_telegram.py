@@ -455,7 +455,9 @@ async def test_message_to_session_and_reply(api, tg, svc):
     reply = tg.sent()[-1]
     assert reply["message_thread_id"] == thread and reply["parse_mode"] == "HTML"
     assert "<b>the plan</b>" in reply["text"] and "x = 1 &lt; 2" in reply["text"]
-    assert gateway.gateway()._pending == {}
+    # the fake Bot API records the reply when the request arrives; on_turn_end forgets the turn only after the
+    # response, the paused notice and the live refs check (a worker thread), so wait instead of reading it at once
+    await wait_for(lambda: gateway.gateway()._pending == {}, what="turn forgotten")
     # a second message reuses the same session
     tg.message("again", thread=thread)
     await wait_for(lambda: len(svc.sent) == 2, what="second")
@@ -635,6 +637,44 @@ async def test_live_status_message(api, tg, svc, monkeypatch):
     assert last_edit.startswith("✅") and "2 steps" in last_edit and "<blockquote expandable>" in last_edit
     assert "✓ Bash: pytest -q" in last_edit
     assert len([p for p in tg.sent() if "Read src/app.py" in p["text"]]) == n_status == 1   # one message, edited
+
+
+async def test_message_during_the_answer_gets_one_typing_loop(api, tg, svc, monkeypatch):
+    """A message handled while the previous answer is still being sent starts no second typing / status loop: that
+    one was never stopped, kept sending "typing…" and edited the status again after the final summary."""
+    monkeypatch.setattr(gateway, "TICK", 0.02)
+    monkeypatch.setattr(gateway, "TYPING_EVERY", 0.05)
+    monkeypatch.setattr(gateway, "PROGRESS_DELAY", 0.0)
+    monkeypatch.setattr(gateway, "PROGRESS_EVERY", 0.0)
+    real, gate = gateway.Gateway._paused_notice, asyncio.Event()
+
+    async def held(self, *a, **kw):                     # on_turn_end waits here, its answer already sent
+        await gate.wait()
+        return await real(self, *a, **kw)
+    monkeypatch.setattr(gateway.Gateway, "_paused_notice", held)
+    await _link(api, tg)
+    _, thread = await _open(api, svc)
+    tg.message("one", thread=thread)
+    await wait_for(lambda: svc.sent, what="send 1")
+    sid = svc.sent[0]["sid"]
+    svc.finish(sid, "answer one")
+    await wait_for(lambda: tg.sent()[-1]["text"] == "answer one", what="answer 1")
+    tg.message("two", thread=thread)                    # handled before the end of on_turn_end
+    await wait_for(lambda: len(svc.sent) == 2, what="send 2")
+    gate.set()
+    svc.events[sid] = [{"type": "tool_use", "id": "r", "name": "Read", "summary": "Read b.py"}]
+    await wait_for(lambda: any("Read b.py" in p["text"] for p in tg.sent()), what="status of turn 2")
+    gate.clear()
+    svc.finish(sid, "answer two")
+    await wait_for(lambda: tg.sent()[-1]["text"] == "answer two", what="answer 2")
+    assert tg.sent("editMessageText")[-1]["text"].startswith("✅")
+    edits, typing = len(tg.sent("editMessageText")), len(tg.sent("sendChatAction"))
+    await asyncio.sleep(0.3)                            # 15 ticks of a loop that would still run
+    assert len(tg.sent("editMessageText")) == edits, "the status was edited after the final summary"
+    assert len(tg.sent("sendChatAction")) == typing, '"typing…" was sent after the answer'
+    assert len([p for p in tg.sent() if "Read b.py" in p["text"]]) == 1
+    gate.set()
+    await wait_for(lambda: gateway.gateway()._pending == {}, what="turn forgotten")
 
 
 async def test_live_status_ignores_earlier_turns_of_a_big_log(api, tg, svc, monkeypatch, tmp_path):

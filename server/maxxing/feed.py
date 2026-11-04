@@ -586,18 +586,18 @@ def new_since(after: int, limit: int = 50) -> list[dict]:
 
 
 _watch_lock = threading.Lock()
-_watch: dict = {"ident": None, "conn": None, "stamp": None, "last": (0, 0, 0, 0)}
+_watch: dict = {"ident": None, "conn": None, "version": None, "last": (0, 0, 0, 0)}
 
 
 def watch_id() -> tuple:
-    """last_id() for the watcher that tells the UI about events written by other processes (a pass every few
-    seconds): nothing is read while feed.db and its WAL are unchanged, and the read goes through one connection
-    kept open (opened again when feed.db is replaced) instead of a new one per pass."""
+    """last_id() for the watcher that tells the UI about events written by other processes and sends new rows to
+    Web Push (a pass every few seconds). The read goes through one connection kept open (opened again when feed.db
+    is replaced), and the events are read again only when its `PRAGMA data_version` says a commit was made since the
+    last pass. Not the files' size / mtime: SQLite writes (and syncs) the WAL frames before it publishes the commit,
+    and a restarted WAL is rewritten in place, so the files can look unchanged after a commit the previous pass
+    did not see (that event then waited for the next write)."""
     path = db_path()
     with _watch_lock:
-        stamp = (str(path), _db_stamp(path))
-        if stamp == _watch["stamp"]:
-            return _watch["last"]
         try:
             ident: tuple | None = (str(path), os.stat(path).st_ino)
         except OSError:
@@ -606,18 +606,22 @@ def watch_id() -> tuple:
         if ident is None or ident != _watch["ident"] or c is None:
             if c is not None:
                 c.close()
-            _watch.update(conn=None, ident=None, stamp=None)
+            _watch.update(conn=None, ident=None, version=None)
             _conn().close()                             # creates / repairs the database and its table
             c = sqlite3.connect(path, timeout=10, check_same_thread=False)    # used under _watch_lock only
             _watch.update(conn=c, ident=ident)
         try:
+            # first the version, then the rows: a commit in between is read now and once more next pass, never lost
+            version = c.execute("PRAGMA data_version").fetchone()[0]
+            if version == _watch["version"]:
+                return _watch["last"]
             r = c.execute(_STAMP_SQL).fetchone()
         except sqlite3.Error:
             c.close()
-            _watch.update(conn=None, ident=None, stamp=None)
+            _watch.update(conn=None, ident=None, version=None)
             raise
         last = _stamp_of(r)
-        _watch.update(stamp=stamp, last=last)
+        _watch.update(version=version, last=last)
         return last
 
 

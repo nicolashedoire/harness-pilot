@@ -14,14 +14,25 @@ so they hold on every device.
 
 ## Local setup on macOS
 
-The local setup (`bash scripts/dev-local.sh`, see [Local installation](installation)) has no systemd, no
-`journalctl` and no service: the server is the process running in that terminal. The rest of this page, from
+The local setup (`bash scripts/dev-local.sh`, see [Local installation](installation)) has no systemd or
+`journalctl`: it runs in your terminal, or as an optional launchd background service. The rest of this page, from
 **Start with the doctor** on, describes a Linux server installation. On a Mac, use the commands below instead.
 
 **Check it.** From the repository root, `bash scripts/dev-local.sh cli doctor` runs the doctor with the settings
-of your local app (a plain `uv run pilot doctor` looks at the folders of a server installation instead). Some
-lines only concern a Linux server and can be ignored locally: systemd and the service, server hardening
-(firewall, fail2ban), and components that are expected to be owned by root.
+of your local app (a plain `uv run pilot doctor` looks at the folders of a server installation instead).
+On macOS, the doctor recognizes Claude's Keychain sign-in and reads listening addresses with `lsof`. A failed
+port inspection is a warning, not proof that nothing is listening. It describes the launchd configuration
+without claiming that an agent is stopped simply because the command runs in another terminal; use the printed
+`service status` command to inspect it. Linux firewall and service checks are marked as inapplicable.
+Local tool paths may belong to your account or root. Another owner, or a folder anyone can write to, fails
+verification. Folders your Mac's administrators can write to are normal (Homebrew's `/opt/homebrew/bin` and
+`/opt/homebrew/Cellar`, `/usr/local/bin` on an Intel Mac); one that another group can write to is a warning.
+Linux package versions and package contents are not verified for these user-managed tools.
+
+Add `--live` for a small real Claude request, using the same isolated test as **Settings → Claude → Test**.
+A timeout, context or quota error is reported as a failed request, not an expired sign-in. Real authentication
+errors still fail; without Claude Code the line says it is not installed. Missing optional tools and a publicly
+exposed listener remain diagnostic issues.
 
 **Where the logs are.**
 
@@ -166,6 +177,13 @@ certificate on the first request: `journalctl -u caddy` shows why it failed. Val
 
 **Every session fails at once.** Claude is not signed in or the token expired: Settings -> Claude ->
 Test, or `pilot doctor --live`. Renew with `claude setup-token`.
+
+**Settings → Claude → Test fails, but sessions work.** The test, like `pilot doctor --live`, does not read
+Claude Code's `settings.json` files, so none of your hooks runs during a test. What only those files set is
+then missing: an `apiKeyHelper`, or variables of their `env` block such as a gateway in `ANTHROPIC_BASE_URL`, a
+proxy, or `CLAUDE_CODE_USE_BEDROCK`. If Claude Code reaches the model that way, the test can fail while
+sessions work: a session's reply is the better check, or set those variables in the environment of the server
+itself (the test passes that environment on).
 
 **A session stays "running".** Press Stop. If it persists: `systemctl list-units 'maxxing-*'` and
 read that unit's journal.

@@ -6,6 +6,7 @@ rename script on a merged tree leaves this file alone."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -253,3 +254,211 @@ def test_doctor_output_names_the_way_round(env, tmp_path, monkeypatch, capsys):
     run_cli("doctor", "--json", "--offline")
     ids = {c["id"]: c for c in json.loads(capsys.readouterr().out)["checks"]}
     assert ids["cli"]["level"] == "warn" and "maxxing doctor" in ids["cli"]["fix"]
+
+
+# ---- the `pilot` command in the product instructions of an older workspace ----------------------
+OUR_PILOT = "#!/x/python\nfrom maxxing.cli import main\n"              # uv's console script: this program
+OTHER_PILOT = "#!/bin/sh\necho a file browser\n"
+HELP = "projects/system/topics/help/CLAUDE.md"
+ROOT_LINE = "UI; the server CLI is `pilot` (`maxxing`, its earlier name, still works):"
+HELP_LINE = "| `17-cli-reference.md` | every `pilot` command (`maxxing`, its earlier name, still works) |"
+
+
+def _sessions_path(monkeypatch, *dirs) -> None:
+    """The PATH the sessions get (spawn.base_env), where refresh_cli_guidance looks for their `pilot`."""
+    from maxxing.sessions import spawn
+    monkeypatch.setattr(spawn, "base_env", lambda: {"PATH": ":".join(map(str, dirs))})
+
+
+def _as_older_version(ws) -> dict:
+    """The root and help-topic CLAUDE.md as a version before `pilot` wrote them, and an install.json without the
+    record of the refresh -> {relative path: current text}."""
+    current = {}
+    for rel, line, before in (("CLAUDE.md", ROOT_LINE, "UI; the server CLI is `maxxing`:"),
+                              (HELP, HELP_LINE, "| `17-cli-reference.md` | every `maxxing` command |")):
+        f = ws / rel
+        current[rel] = f.read_text()
+        assert line in current[rel].splitlines()
+        f.write_text(current[rel].replace(line, before).replace("`pilot ", "`maxxing "))
+    st = cmd_core._install_state()
+    st.pop(renames.CLI_REFRESHED, None)
+    config.write_json(config.STATE / "install.json", st)
+    return current
+
+
+def test_templates_give_one_alias_note():
+    """The three product texts naming the command say `pilot` with the same note on `maxxing`."""
+    ws = config.TEMPLATES_DIR / "workspace"
+    assert ROOT_LINE in (ws / "CLAUDE.md").read_text().splitlines()
+    assert HELP_LINE in (ws / HELP).read_text().splitlines()
+    assert "`maxxing`, its earlier name, still works)." in (ws / "projects/system/CLAUDE.md").read_text()
+    for f in ws.rglob("CLAUDE.md"):
+        text = f.read_text()
+        assert text.count("earlier name") == text.count("`maxxing`, its earlier name, still works"), f
+
+
+def test_retained_doctor_guidance_is_refreshed_without_rewriting_custom_lines(env):
+    ws = env['ws']
+    cmd_core.copy_templates(ws)
+    root = ws / 'CLAUDE.md'
+    canonical = root.read_text()
+    before = canonical.replace('`pilot ', '`maxxing ').replace(ROOT_LINE, 'UI; the server CLI is `maxxing`:')
+    custom = '\nMy own command: `maxxing doctor --offline` for my legacy script.\n'
+    root.write_text(before + custom)
+    root.chmod(0o640)
+    changed = renames.migrate_cli_workspace(ws)
+    assert 'CLAUDE.md' in changed
+    assert root.read_text() == canonical + custom
+    assert root.stat().st_mode & 0o777 == 0o640
+    assert renames.migrate_cli_workspace(ws) == []
+    from maxxing.sessions import codex
+    context = codex.workspace_context(ws, ws)
+    assert '| `pilot doctor [--json]` |' in context
+    assert '| `maxxing doctor [--json]` |' not in context
+
+
+def test_init_refreshes_the_command_once_so_a_line_changed_back_stays(env, tmp_path, monkeypatch):
+    ws = env["ws"]
+    ours = tmp_path / "venv-bin" / "pilot"
+    _program(ours, OUR_PILOT)
+    _sessions_path(monkeypatch, ours.parent)
+    assert run_cli("init", "--workspace", str(ws), "--quiet") == 0
+    record = json.loads((env["state"] / "install.json").read_text())[renames.CLI_REFRESHED]
+    assert record == [str(ws.resolve())]                              # a new workspace: nothing to do, recorded
+    current = _as_older_version(ws)
+    assert run_cli("init", "--quiet") == 0
+    assert {rel: (ws / rel).read_text() for rel in current} == current
+    root = ws / "CLAUDE.md"
+    mine = current["CLAUDE.md"].replace("| `pilot doctor [--json]` |", "| `maxxing doctor [--json]` |")
+    assert mine != current["CLAUDE.md"]
+    root.write_text(mine)                                             # the user wants `maxxing` there, after the refresh
+    assert run_cli("init", "--quiet") == 0
+    assert root.read_text() == mine                                   # never reverted
+    assert renames.refresh_cli_guidance(ws) == []
+
+
+def test_no_refresh_while_another_program_is_pilot(env, monkeypatch, capsys):
+    """ensure_cli_alias keeps a `pilot` that is not ours and the agents use `maxxing`: the product lines keep it,
+    nothing is recorded; once the link is ours (made by the same init), they get `pilot`."""
+    ws = env["ws"]
+    assert run_cli("init", "--workspace", str(ws), "--quiet") == 0
+    current = _as_older_version(ws)
+    older = {rel: (ws / rel).read_text() for rel in current}
+    monkeypatch.delenv("MAXXING_SPAWN", raising=False)                # a server installation
+    monkeypatch.setattr(cmd_core, "SYSTEMD_DIR", env["tmp"] / "no-systemd")
+    _program(cmd_core.BIN_LINK, OUR_PILOT)
+    _program(cmd_core.PILOT_LINK, OTHER_PILOT)
+    _sessions_path(monkeypatch, cmd_core.PILOT_LINK.parent)
+    assert run_cli("init", "--json") == 0
+    report = json.loads(capsys.readouterr().out)
+    assert "another program" in report["cli"] and report["cli_guidance"] == []
+    assert {rel: (ws / rel).read_text() for rel in current} == older
+    assert renames.CLI_REFRESHED not in cmd_core._install_state()
+    cmd_core.PILOT_LINK.unlink()                                      # the user removes the other program
+    assert run_cli("init") == 0
+    out = capsys.readouterr().out
+    assert "pilot: created" in out and "command `pilot` in the product instructions of 2 workspace file(s)" in out
+    assert "new skill names" not in out
+    assert {rel: (ws / rel).read_text() for rel in current} == current
+    assert cmd_core._install_state()[renames.CLI_REFRESHED] == [str(ws.resolve())]
+
+
+def test_only_the_known_earlier_lines_change_their_alias_note(env):
+    ws = env['ws']; cmd_core.copy_templates(ws)
+    root, help_file = ws / 'CLAUDE.md', ws / HELP
+    current, help_current = root.read_text(), help_file.read_text()
+    first = '| `17-cli-reference.md` | every `pilot` command (`maxxing` = the same command, earlier name) |'
+    help_file.write_text(help_current.replace(HELP_LINE, first))       # the first `pilot` text of the help topic
+    mine = ('| `maxxing doctor [--json]` (`maxxing`, its earlier name, still works) | full health check with fix hints |\n'
+            '| `maxxing status` (`maxxing` = the same command, earlier name) | version, URL, service, Claude auth, '
+            'Telegram, backup |\n' + first + '\n')
+    root.write_text(current + mine)                                    # notes the user wrote, the help line elsewhere
+    assert renames.migrate_cli_workspace(ws) == [HELP]
+    assert help_file.read_text() == help_current
+    assert root.read_text() == current + mine
+
+
+def test_a_read_only_file_is_left(env, caplog):
+    caplog.set_level(logging.INFO, logger='maxxing.renames')
+    ws = env['ws']; cmd_core.copy_templates(ws)
+    root = ws / 'CLAUDE.md'
+    current = root.read_text()
+    older = as_before(current).replace('`pilot ', '`maxxing ')
+    root.write_text(older)
+    root.chmod(0o444)                                                  # the folder stays writable: os.replace could
+    try:
+        assert renames.migrate_cli_workspace(ws) == []
+        assert renames.migrate_workspace(ws) == []
+        assert root.read_text() == older
+        assert 'read-only' in caplog.text
+        root.chmod(0o644)
+        assert renames.migrate_workspace(ws) == ['CLAUDE.md'] and renames.migrate_cli_workspace(ws) == ['CLAUDE.md']
+        assert root.read_text() == current
+    finally:
+        root.chmod(0o644)
+
+
+@pytest.mark.parametrize("end", ["\f", "\u2028", "\x85", "\v"])
+def test_a_line_keeps_its_own_end(env, monkeypatch, end):
+    """str.splitlines also ends a line at a form feed, U+2028, NEL...: a changed line keeps it (never joined)."""
+    template_root = env['tmp'] / 'templates'
+    (template_root / 'workspace').mkdir(parents=True)
+    text = 'Run `pilot doctor`.\nThen `pilot status`.\nUse the pilot-tasks skill.\nEnd.\n'
+    (template_root / 'workspace/CLAUDE.md').write_text(text)
+    monkeypatch.setattr(config, 'TEMPLATES_DIR', template_root)
+    ws = env['ws']; ws.mkdir()
+    f = ws / 'CLAUDE.md'
+    f.write_bytes(as_before(text).replace('`pilot ', '`maxxing ').replace('\n', end, 3).encode())
+    assert renames.migrate_cli_workspace(ws) == ['CLAUDE.md']
+    assert renames.migrate_workspace(ws) == ['CLAUDE.md']
+    assert f.read_bytes() == text.replace('\n', end, 3).encode()
+
+
+def test_a_file_over_the_size_cap_is_skipped(env, caplog):
+    ws = env['ws']; cmd_core.copy_templates(ws)
+    root = ws / 'CLAUDE.md'
+    older = as_before(root.read_text()).replace('`pilot ', '`maxxing ')
+    big = older + ('<!-- notes -->\n' * ((1 << 20) // 15 + 1))         # over 1 MiB: no template's copy
+    assert len(big.encode()) > 1 << 20
+    root.write_text(big)
+    assert renames.migrate_cli_workspace(ws) == [] and renames.migrate_workspace(ws) == []
+    assert root.read_text() == big
+    assert 'larger than' in caplog.text and renames.MAX_FILE_BYTES == 1 << 20
+
+
+def test_guidance_refresh_keeps_modules_services_paths_and_line_endings(env, monkeypatch):
+    template_root = env['tmp'] / 'templates'
+    (template_root / 'workspace').mkdir(parents=True)
+    text = 'Run `pilot doctor`.\nUse `python -m maxxing`.\nService `claude-maxxing`.\nPath `/root/maxxing`.\n'
+    (template_root / 'workspace/CLAUDE.md').write_text(text)
+    monkeypatch.setattr(config, 'TEMPLATES_DIR', template_root)
+    ws = env['ws']; ws.mkdir()
+    mine = ('Run `maxxing doctor`.\n'                                   # the template's line: refreshed
+            'Use `python -m maxxing serve` on my laptop.\n'             # lines that differ from the template: kept
+            'Service `claude-maxxing` restarts at night.\n'
+            'Path `/root/maxxing/projects`, see `maxxing status`.\n'
+            'Run `maxxing doctor` every morning.\n'
+            'Use `python -m maxxing`.\n')                               # equal to the template: nothing to change
+    (ws / 'CLAUDE.md').write_bytes(mine.replace('\n', '\r\n').encode())
+    assert renames.migrate_cli_workspace(ws) == ['CLAUDE.md']
+    expected = mine.replace('Run `maxxing doctor`.\n', 'Run `pilot doctor`.\n', 1)
+    assert (ws / 'CLAUDE.md').read_bytes() == expected.replace('\n', '\r\n').encode()
+
+
+def test_guidance_refresh_never_follows_a_linked_topic(env):
+    ws = env['ws']; cmd_core.copy_templates(ws)
+    topic = ws / 'projects/system/topics/help'
+    outside = env['tmp'] / 'outside-topic'
+    shutil.copytree(topic, outside)
+    original = (outside / 'CLAUDE.md').read_text().replace('`pilot ', '`maxxing ')
+    (outside / 'CLAUDE.md').write_text(original)
+    shutil.rmtree(topic); topic.symlink_to(outside, target_is_directory=True)
+    assert renames.migrate_cli_workspace(ws) == []
+    assert (outside / 'CLAUDE.md').read_text() == original
+
+
+def test_local_launcher_refreshes_workspace_guidance_without_migrating_jobs():
+    script = (config.CODE / 'scripts/dev-local.sh').read_text()
+    assert 'renames.migrate_workspace(ws)' in script
+    assert 'renames.refresh_cli_guidance(ws)' in script               # once, and only when `pilot` is ours
+    assert 'renames.migrate_cli_workspace(ws)' not in script and 'renames.migrate(ws)' not in script

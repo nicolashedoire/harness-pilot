@@ -3,7 +3,7 @@ section: Settings
 ---
 # Settings and keys
 
-Settings provide the main application controls. Some inherited server-only functions are not available in local mode; Codex sign-in is managed by the Codex CLI.
+Settings provide the main application controls. Some inherited server-only functions are not available in local mode.
 
 The menu groups the sections under **You**, **Agents**, **Data**, **Integrations** and **Platform**, with **Support**
 last. On a computer, type in **Search settings** above the menu to keep only the matching sections (Enter opens the
@@ -20,7 +20,7 @@ first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds the
 | **Notifications** | a notification (and an optional sound) when a Claude session finishes, pulsing unread badges - saved per browser |
 | **Security** | change the password, two-step sign-in with an authenticator app (see [Security](security)) or with Telegram (see [Telegram](telegram#two-step-sign-in)), sign out |
 | **Claude** | authentication (status, token or API key, live test), default model, automatic compaction threshold, compaction when you come back to an idle session, smart resume (a summary written for the message you come back with) - these three apply to Codex sessions too -, short session titles (and whether Claude writes them), automatic Claude Code updates, permission mode |
-| **Codex** | checks whether the Codex CLI used by sessions is installed and signed in; explains current capabilities and limitations |
+| **Codex** | whether the Codex CLI used by sessions is installed and signed in, and how (ChatGPT account or API key); sign it in from the browser with a ChatGPT account (a one-time code entered on OpenAI's page) or an OpenAI API key, use another account, sign out; current capabilities and limitations - see [Codex sign-in](#codex-sign-in) |
 | **Companions** | experimental resident companions: built-in roles (observer, security, architect, reverse engineering) or your own, a manual **Start experiment** on a topic, the list of experiments and the review of a proposal - see [Resident companions](#resident-companions) below |
 | **Resident missions** | give companions a bounded mission: an architect's read-only plan, role assignments and prerequisites, limits, pause/stop and the review of each result - see [Resident missions](resident-missions) |
 | **Conversation blocks** | turn each kind of block (charts, tables, forms...) on or off; the agents only use the enabled ones - see [Conversation blocks](conversation-blocks) |
@@ -39,6 +39,12 @@ first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds the
 | **Updates** | every version of harness-pilot, newest first, with a search - the full history of what changed |
 | **Docs** | this documentation |
 | **Starter pack** | add a starter project for your kind of work; an existing project is never overwritten - see [Starter projects](starter-projects) |
+
+**Claude → Test** sends one small real request with the credentials used by the app. It does not load your
+project instructions, skills, hooks or MCP tools, and it does not save a conversation. A network, context or
+quota error appears under the button without marking a valid sign-in as expired. A genuine authentication
+error still asks you to sign in again. On macOS, both the app and the doctor recognize Claude Code's Keychain
+sign-in; no token needs to be copied into the app.
 
 Changing the **time zone** here does not change the server clock: run
 `timedatectl set-timezone <Zone> && systemctl restart cron` too, so scheduled jobs follow (see
@@ -112,6 +118,25 @@ Claude runs its helper agents in the foreground: you get their result in the sam
 side by side). Claude Code's own habit is to send them to the background, where the turn waits for them to report
 back, which is slower; `"background_agents": true` in config.json goes back to it. You can always ask Claude for a
 background agent in your message.
+
+## Codex sign-in
+
+**Settings → Codex** (and the wizard's Codex step) signs in the Codex command that sessions use on this computer, from
+the browser - from a phone too:
+1. **ChatGPT account**: **Get a sign-in code**. The page shows an OpenAI address and a one-time code, valid 15
+   minutes. Open the address on any device, sign in to ChatGPT and enter the code; the page sees it by itself and
+   shows **Codex is signed in**. Enter the code only on that OpenAI page, and only for a sign-in you started here:
+   whoever enters it signs this computer's Codex in to their account. **Cancel** stops the wait.
+2. **API key**: paste an OpenAI API key (usage billed to that API account). It goes straight to Codex, which keeps it
+   in its own folder (`~/.codex` of the account that runs harness-pilot, readable by that account only), like a sign-in from a terminal; harness-pilot keeps no copy
+   and never shows it again. Codex does not check a key when it receives it: a wrong one shows up as an error on the
+   first message.
+3. **Terminal**: `codex login` where harness-pilot runs still works; the page sees it with **Refresh**.
+
+Signed in, the page says how (ChatGPT account or API key). **Use another account** signs in again over the current
+one; **Sign out** signs Codex out (sessions, discussions, mixed teams and scheduled Codex prompts stop until it is
+signed in again). A terminal on the same computer uses the same sign-in, so it changes there too. If the code
+cannot be used, the page shows Codex's message: get a new code, or use an API key or a terminal instead.
 
 ## Claude Code updates
 

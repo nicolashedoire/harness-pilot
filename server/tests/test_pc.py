@@ -300,13 +300,74 @@ def test_tools_never_open_local_files_nor_touch_server_files(pc, monkeypatch):
 
 
 # ---- adapted at integration -----------------------------------------------------------------------------------
-def test_no_agent_to_download_hides_the_feature(client, mx, monkeypatch):
+def test_no_agent_to_download_is_said_clearly(client, mx, monkeypatch):
     monkeypatch.delenv("MAXXING_PC_BIN_DIR", raising=False)
     monkeypatch.setattr(pcbridge, "_manifest", lambda: {"version": "", "files": {}})
     assert client.get("/api/pc").json()["available"] is False
     r = client.post("/api/pc/pairing", json={"browser": "brave", "os": "windows"})
     assert r.status_code == 409 and r.json()["error"] == "no_agent"
     assert client.post("/api/pc/mcp/register").status_code == 409            # no PC: nothing registered
+    with pytest.raises(pcbridge.PcError) as e:
+        pcbridge.agent_file("darwin-arm64")
+    assert (e.value.status, e.value.code) == (404, "no_agent") and "not published" in e.value.message
+
+
+def test_shipped_manifest_points_to_this_repository():
+    """pc_agent.json: the releases of this repository, files named like TARGETS with a SHA-256 (empty until one is
+    published - pc-agent/build.sh writes the filled one)."""
+    import re
+    from pathlib import Path
+    man = json.loads(Path(pcbridge.__file__).with_name("pc_agent.json").read_text())
+    assert set(man) == {"version", "url", "files"}
+    assert man["url"] == "https://github.com/nicolashedoire/harness-pilot/releases/download/pc-agent-v{version}/{name}"
+    assert isinstance(man["files"], dict) and set(man["files"]) <= set(pcbridge.TARGETS.values())
+    assert all(re.fullmatch(r"[0-9a-f]{64}", h) for h in man["files"].values())
+    assert re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", man["version"]) if man["files"] else man["version"] == ""
+
+
+def test_release_download_is_checked_and_its_failures_are_clear(client, mx, monkeypatch):
+    """A release that cannot be fetched (missing file, wrong URL, network) answers 502 download_failed, never a 500;
+    a file that does not match pc_agent.json is refused; a good one is cached and served with its trailer."""
+    import hashlib
+    import httpx
+    good = b"AGENT-harness-pc-darwin-arm64"
+    monkeypatch.delenv("MAXXING_PC_BIN_DIR", raising=False)
+    monkeypatch.setattr(pcbridge, "_manifest", lambda: {
+        "version": "9.9.9", "url": "https://releases.example.com/pc-agent-v{version}/{name}",
+        "files": {"harness-pc-darwin-arm64": hashlib.sha256(good).hexdigest()}})
+    answer: dict = {}
+    urls: list[str] = []
+
+    def fake_get(url, **kw):
+        urls.append(url)
+        if "raise" in answer:
+            raise answer["raise"]
+        return httpx.Response(answer.get("status", 200), content=answer.get("body", good),
+                              request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx, "get", fake_get)
+    code = client.post("/api/pc/pairing", json={"browser": "chrome", "os": "darwin"}).json()["code"]
+
+    def get(target: str = "darwin-arm64"):
+        return client.get(f"/api/pc/download/{target}?code={code}")
+
+    answer.update(status=404)                                                  # a release without this file
+    r = get()
+    assert r.status_code == 502 and r.json()["error"] == "download_failed" and "HTTP 404" in r.json()["message"]
+    answer.clear()
+    answer["raise"] = httpx.ConnectError("no route")
+    r = get()
+    assert r.status_code == 502 and r.json()["error"] == "download_failed" and "network" in r.json()["message"]
+    answer.clear()
+    answer["body"] = good + b"x"
+    assert get().json()["error"] == "checksum"
+    r = get("linux-amd64")
+    assert r.status_code == 404 and r.json()["error"] == "no_agent" and "linux-amd64" in r.json()["message"]
+    answer.clear()
+    r = get()
+    assert r.status_code == 200 and r.content.startswith(good) and r.content.endswith(pcbridge.TRAILER_MAGIC)
+    assert urls[-1] == "https://releases.example.com/pc-agent-v9.9.9/harness-pc-darwin-arm64"
+    n = len(urls)
+    assert get().status_code == 200 and len(urls) == n                     # cached and checked, not fetched again
 
 
 def test_unpair_drives_the_agent_socket_on_the_server_loop(pc):

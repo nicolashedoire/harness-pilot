@@ -59,6 +59,10 @@ def auth_method() -> tuple[str | None, str]:
         return "oauth_token", "Long-lived token stored in harness-pilot"
     if config.get_secret("anthropic_api_key"):
         return "api_key", "API key stored in harness-pilot"
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return "oauth_token", "CLAUDE_CODE_OAUTH_TOKEN in the environment"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "api_key", "ANTHROPIC_API_KEY in the environment"
     f = credentials_file()
     if f.is_file():
         sub = plan_name()
@@ -132,6 +136,9 @@ def forget() -> None:
 def _relevant(rec: dict, method: str | None) -> bool:
     """A result counts for the current method, and not when the credentials changed afterwards."""
     if not rec or rec.get("method") != method:
+        return False
+    # Earlier versions recorded all explicit-test failures as expired authentication, including context limits.
+    if rec.get("ok") is False and rec.get("source") == "test" and not detect(str(rec.get("error") or "")):
         return False
     if method == "credentials":
         try:

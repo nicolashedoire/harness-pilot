@@ -42,8 +42,6 @@ export const qk = {
   },
   settings: ['settings'] as const,
   profile: ['settings', 'profile'] as const,
-  feedback: ['settings', 'feedback'] as const,
-  license: ['settings', 'license'] as const,
   themes: ['themes'] as const,
   secrets: ['secrets'] as const,
   health: ['health'] as const,
@@ -97,7 +95,8 @@ export const BUS_KEYS: Record<BusTopic, readonly (readonly unknown[])[]> = {
   profile: [qk.profile],
   /** the legacy registration changed (only with MAXXING_LICENSE_PING=1): the onboarding's profile step reads it */
   register: [qk.onboarding],
-  license: [qk.license, ['system']],
+  /** the legacy license key changed (only with MAXXING_LICENSE_PING=1): the update info carries it */
+  license: [['system']],
   infra: [['infra']],
   team: [['team']],
   /** someone started / stopped writing, came online: the list and the faces only */

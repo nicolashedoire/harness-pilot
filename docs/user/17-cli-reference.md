@@ -19,6 +19,10 @@ The command is `pilot`. `maxxing` is the same command under its earlier name and
 | `pilot doctor [--json] [--live] [--offline] [--deps]` | check the installation; `--live` makes a real Claude call, `--offline` skips the update checks (GitHub, Claude Code release), `--deps` also looks up known vulnerabilities of the installed packages (osv.dev) |
 | `pilot harden [--undo] [--no-restart]` | apply (or remove) the systemd sandbox of the service, then restart it; restores the previous settings if the service does not come back (see [Security](security)) |
 
+`doctor --live` uses the same small, tool-free request as **Settings → Claude → Test**, without loading project
+instructions, skills, hooks or MCP servers or saving a conversation. An ordinary request failure does not mark
+the sign-in as expired. For macOS listener, launchd and local tool checks, see [Troubleshooting](troubleshooting#local-setup-on-macos).
+
 ## pilot init
 
 Creates or refreshes the configuration, workspace, skills and default jobs. Safe to run again:
@@ -27,6 +31,12 @@ Workspace templates (default projects `general`, `system`, `tutorial`) are copie
 missing, and a default project or topic you deleted is never re-created. Default jobs are created
 once each (Memory compaction, Check for updates, Morning tasks and Renewal reminder disabled).
 Skills renamed by a version (the product skills were called `maxxing-…` before `pilot-…`) are installed under their new name and the old copies removed; the old names are also replaced in the lines of your workspace files that are still the product's own text and in the prompts of default jobs you never edited - text you wrote is never changed (see [Skills](skills)).
+
+The product's own instructions kept from earlier versions (the lines of the workspace `CLAUDE.md` files that are still
+the product's text) get the `pilot` command once: at the first init (so update) or start of the local app where
+`pilot` is harness-pilot. Where another program is called `pilot`, they keep `maxxing`, the same command. Lines you
+wrote or edit, also later, and existing conversation history are kept. The `maxxing` alias still works for existing
+scripts.
 
 | Option | Effect |
 |---|---|

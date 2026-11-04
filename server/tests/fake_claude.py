@@ -51,7 +51,7 @@ def parse(argv: list[str]) -> dict:
                   "--resume": "resume", "--permission-mode": "permission_mode", "-r": "resume",
                   "--input-format": "input", "--settings": "settings", "--tools": "tools",
                   "--system-prompt": "system_prompt", "--append-system-prompt": "append_system_prompt",
-                  "--mcp-config": "mcp_config"}
+                  "--mcp-config": "mcp_config", "--setting-sources": "setting_sources"}
     for a in it:
         if a in ("-p", "--print"):
             o["print"] = True

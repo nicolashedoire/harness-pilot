@@ -28,7 +28,17 @@ export function PcBrowserCard() {
   const t = useT()
   const { data: s } = usePc()
   const [setup, setSetup] = React.useState(false)
-  if (!s || (!s.available && !s.device)) return null   // no Harness PC to download yet: nothing to set up
+  if (!s) return null
+  if (!s.available && !s.device)   // no harness-pilot PC to download yet (nothing in pc_agent.json): say so, nothing to set up
+    return (
+      <div data-tour="pc-browser">
+        <SettingsCard title={t('pc.title')} description={t('pc.desc')}>
+          <Callout tone="info" title={t('pc.unavailableTitle')}>
+            <span data-testid="pc-unavailable">{t('pc.unavailable')}</span>
+          </Callout>
+        </SettingsCard>
+      </div>
+    )
   const paired = !!s.device && !setup
   return (
     <div data-tour="pc-browser">

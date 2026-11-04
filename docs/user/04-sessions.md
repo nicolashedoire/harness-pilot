@@ -25,7 +25,7 @@ When creating a session, choose **Debate** under **Several agents**, then select
 
 You can assign a different role to each agent, choose a built-in pair of roles, and save named configurations for later sessions. Roles are included in the instructions sent to the corresponding agent on every turn. Saved configurations live in the server's local state.
 
-The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
+The new-session form also accepts separate Claude and Codex models. The **Codex model** list shows the models of the Codex command where harness-pilot runs, as Codex's own picker lists them for your account; **Default** lets Codex choose, and **Other…** takes any model identifier your account has. The same list is used for a Codex session, a discussion, a mixed team and a scheduled Codex prompt; a model saved before (or typed in **Other…**) is kept as it is. In a joint conversation, the Claude model is not sent to Codex.
 
 With an agent engine installed as an extension, **Second agent** lets it take Codex's place: its role and model fields replace Codex's, and its replies carry its name. It joins only if it declares what the discussion asks of it: plan mode needs an engine that supports plan mode, and attached files an engine that accepts files; otherwise the discussion is refused with the reason.
 
@@ -34,6 +34,10 @@ From a session's **More actions** menu, **Summary and actions** asks Codex (or C
 You may also review and edit the summary before saving it to the topic's `memory.md`. Saving requires an explicit click and appends the approved text without replacing existing memory. Codex reads it on its next turn; Claude normally loads topic memory when starting a new thread. If the topic memory exceeds Codex's 32 KiB context-file limit, compact it before saving more.
 
 ## What works with Codex
+
+Codex must be installed and signed in where harness-pilot runs: sign it in from **Settings → Codex** with your ChatGPT
+account (a one-time code you enter on OpenAI's page, from any device) or an OpenAI API key, or with `codex login` in a
+terminal there ([Codex sign-in](settings-and-keys#codex-sign-in)).
 
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
 are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact**,

@@ -45,7 +45,7 @@ HARNESS_PILOT_PORT="$PORT" uv run --locked python - <<'PY'
 import os
 import sys
 from pathlib import Path
-from maxxing import config, cmd_core
+from maxxing import config, cmd_core, renames
 
 ws = Path(os.environ['HARNESS_PILOT_WORKSPACE']).resolve()
 port = int(os.environ['HARNESS_PILOT_PORT'])
@@ -57,6 +57,8 @@ if not config.config_path().exists():
 elif config.load_config().get('port') != port:  # the setup link, `cli doctor` and `cli status` name the served port
     config.update_config(port=port)
 cmd_core.copy_templates(ws)
+renames.migrate_workspace(ws)                  # new skill names in the product lines only (jobs: `pilot init`)
+renames.refresh_cli_guidance(ws)               # `pilot` in them: once, when the sessions' `pilot` is this program
 try:
     cmd_core.install_skills()                   # like `pilot init`, into MAXXING_SKILLS_DIR and MAXXING_CODEX_SKILLS_DIR
 except Exception as e:                          # never keeps the server from starting
