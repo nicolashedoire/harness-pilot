@@ -292,14 +292,16 @@ class FakeService(types.ModuleType):
     def create_session(self, path: str, message: str | None = None, title: str | None = None,
                        model: str | None = None, attachments: list | None = None, source: str = "web",
                        notify: bool = False, cron: bool = False, env: dict | None = None,
-                       timeout_s: int | None = None, auto_title: bool = False, plan_mode: bool = False) -> dict:
+                       timeout_s: int | None = None, auto_title: bool = False, plan_mode: bool = False,
+                       provider: str = "claude", discussion_turn_limit: int | None = None) -> dict:
         sid = str(uuid.uuid4())
         now = time.time()
         self.sessions[sid] = {"id": sid, "title": title or "New session", "path": path, "state": "idle",
                               "queue": 0, "created": now, "updated": now, "turns": 0, "cost_usd": 0.0,
                               "model": model or "", "real_model": None, "context_tokens": None,
                               "archived": False, "notify": notify, "source": source, "unread": False,
-                              "last_text": "", "error": None, "cron": cron, "plan_mode": plan_mode}
+                              "last_text": "", "error": None, "cron": cron, "plan_mode": plan_mode,
+                              "provider": provider, "discussion_turn_limit": discussion_turn_limit}
         if auto_title:
             self.auto_titles.append(sid)
         return dict(self.sessions[sid])

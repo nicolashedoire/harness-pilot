@@ -78,7 +78,7 @@ def test_no_download_is_piped_into_a_shell_anywhere():
     bad = []
     for f in files:
         for i, ln in enumerate(f.read_text(errors="ignore").splitlines(), 1):
-            if pat.search(ln) and "get.harness-maxxing.com" not in ln:      # our own signed installer
+            if pat.search(ln):
                 bad.append(f"{f.relative_to(ROOT)}:{i}: {ln.strip()[:80]}")
     assert not bad, bad
     text = INSTALL.read_text()

@@ -50,6 +50,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `_debate_followup`) resets the counters on resume / a new message only while `_limit_reached` is still true.
   `discussion_paused_at` (time.time()) is set by `pause_debate` (when it was running) and by the runner's limit pause,
   and dropped wherever `debate_paused` turns false (resume, `_enqueue`, `stop`, the runner on an error / empty answer).
+  A discussion's second seat (meta `discussion_partner`, default `codex`; `service._check_partner` validates a `plugin:<id>` against its capabilities): `_debate_followup` alternates Claude with it, `_agent_label` writes its note (the plugin's `provider_name`), `codex_role` / `codex_model` apply to it, and `_plugin_turn(..., is_debate)` sends `_debate_history` (from `_debate_turns`, speaker-named, minus what the prompt holds) then calls `_debate_followup` (no overflow retry for a plugin: its state is its own).
 - `on_turn_end(cb)` - `cb(session: dict, result: dict | None)` is awaited/called on the event loop when a
   turn of ANY session finishes, whatever started it (web, Telegram, cron). Fired per turn (the turn counter
   grows, or running -> error); turns ending within the same scan are reported once. The watcher is woken by any
@@ -91,7 +92,7 @@ Python modules call each other only through these functions. Keep signatures sta
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
 - Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
-- Discussion hand-off: `service.handoff` copies `DISCUSSION_CARRIED` (`debate_goal`, roles, `codex_model`, limits) and, when paused, `debate_pending` + `debate_next` (new one paused, reason `user`) to the continuation and queues a `handoff` item (`DEBATE_SUMMARY_PROMPT`, `target`) on the old one; `_pop` also runs a `handoff` head while paused. `_debate_compact` ends with `_debate_handoff(target, summary)`: target meta `discussion_summary` + `discussion_from` (old title: `SEED_DEBATE_HANDOFF` instead of `SEED_DEBATE`, dropped by its next compaction), an `mx_user` `kind: seed` line (`source: system`) with that seed, `_start_target(target, None)`; the old one is archived and unpaused. `resume_debate` does not start a continuation still `_handoff_held`.
+- Discussion hand-off: `service.handoff` copies `DISCUSSION_CARRIED` (`debate_goal`, roles, `codex_model`, limits, and an agent plugin partner: `discussion_partner`, `provider_name`, `provider_capabilities`) and, when paused, `debate_pending` + `debate_next` (new one paused, reason `user`) to the continuation and queues a `handoff` item (`DEBATE_SUMMARY_PROMPT`, `target`) on the old one; `_pop` also runs a `handoff` head while paused. `_debate_compact` ends with `_debate_handoff(target, summary)`: target meta `discussion_summary` + `discussion_from` (old title: `SEED_DEBATE_HANDOFF` instead of `SEED_DEBATE`, dropped by its next compaction), an `mx_user` `kind: seed` line (`source: system`) with that seed, `_start_target(target, None)`; the old one is archived and unpaused. `resume_debate` does not start a continuation still `_handoff_held`.
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
@@ -216,13 +217,26 @@ coordinator (the parent, returned by `create`; Claude Code or Codex) and two wor
   and other 4xx (no right to manage topics, bot removed) drop it (a refusal is not retried at every sync).
   `mirror_web()` (opt-in: `mirror_web` and `mirror_web_chosen`): `on_turn_end` without a pending Telegram turn copies the web turn into the thread
   (`service.last_user_message` + the answer, silent unless `notify`).
+- Agent of a new session (`NEW_COMMANDS`): `/new` = Claude Code (the default, also a plain message in the main chat),
+  `/codex` = provider `codex`, `/discuss` = provider `discussion` with `discussion_turn_limit` = `DISCUSS_TURNS` (6
+  replies: the exchange pauses, a new message starts the next period). Same flows as `/new`: in a session thread a
+  sibling in the same topic with its own thread; in the main chat or a thread the user made, the "where?" question
+  (its text names the agent; the pending entry of `state/telegram/new.json` keeps `provider`, default `claude`, and a
+  later `/new` / `/codex` / `/discuss` before the answer changes it); threads off, the topic's new Telegram session.
+  `/codex` and `/discuss` first run `sessions.codex.status()` in a worker thread: `authenticated: false` -> the chat
+  is told (not installed / not signed in, with `codex login`) and nothing is created or asked; `null` (status
+  unavailable) does not block. `/model` in a session whose provider is `codex` or `plugin:<id>` shows its model and
+  changes nothing (`_set_model` refuses too: a Claude id would break its turns); `/status` adds the agent (and the
+  replies of the current period for a discussion). A discussion answered on Telegram (`debate_telegram`) that pauses
+  on its limit (`debate_paused`, reason `limit`) gets a silent notice in its thread after the reply.
 - `notify_cron(text)` - plain message in the "Crons" thread. `notify_cron_report(header, body, markdown, loud)` - a
   cron run's report: bold header + the Claude answer rendered by `fmt.render` (from its start, `fmt.head` at
   `REPORT_MAX` = 12000) or command output in `<pre>` (`fmt.code`); body packed with room for the header.
 - `status() -> dict` - the GET /api/telegram payload.
 - `start()/stop()/restart()` (async, server loop) and `install_hooks()` (registers
   `sessions.service.on_turn_end` + `workspace.on_change`), called by maxxing.api.telegram.
-- Uses from sessions.service: `create_session`, `get_session`, `list_sessions`, `send_message`, `stop`,
+- Uses from sessions.service: `create_session` (`provider` / `discussion_turn_limit` passed only for another agent
+  than Claude), `get_session`, `list_sessions`, `send_message`, `stop`,
   `update_session(sid, model=…)` (/model), `read_events` / `end_offset` (progress mode), `last_assistant_text`, `models()`.
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
 - `telegram.reviews` (companion decisions): `buttons(ev)` gives a built-in `companion.ready` event (source `system`,
@@ -377,6 +391,26 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `log_missing()` - one warning per missing tool plus the commands, called by `api/system.startup()` in local mode only
   (the terminal of dev-local.sh); `cmd_core.check_media_tools` is the doctor check `media_tools` (warn, never fail).
 
+## maxxing.local_service  (owner: organisation)
+- `status() -> dict` - GET /api/system/local-service, read-only: `{supported: false}` unless `HARNESS_PILOT_LOCAL_MODE=1`
+  and `is_mac()`. Looks for `<agents_dir()>/<label>.plist` (labels tried: `XPC_SERVICE_NAME`,
+  `HARNESS_PILOT_SERVICE_LABEL`, `DEFAULT_LABEL` `local.harness-pilot`, only `[A-Za-z0-9._-]`), read with `plistlib`
+  (64 kB at most, a broken file = absent); it is this installation's when `ProgramArguments` holds this checkout's
+  `scripts/dev-local.sh` and its `HARNESS_PILOT_LOCAL_DIR` (if set) is this local dir (`HARNESS_PILOT_LOCAL_DIR`, else
+  `config.STATE.parent`). `running` = `XPC_SERVICE_NAME` is that label (launchd sets it for the jobs it starts; dev-local.sh,
+  uv and the server inherit it), `since` = `STARTED` (module import, with the API routers). `commands(label, port,
+  local)`: `bash <repo>/scripts/dev-local.sh service <action>` prefixed by the settings that are not the defaults,
+  shell-quoted, plus `update` = `git -C <repo> pull`. Never calls `launchctl`, never writes a LaunchAgent.
+- `agents_dir()` = `MAXXING_LAUNCH_AGENTS_DIR` or `~/Library/LaunchAgents`; conftest points every test to a temporary
+  folder.
+
+## maxxing.hostcheck (DNS rebinding)
+`HostCheck` (ASGI, inside `_SecurityHeaders`, outside every other middleware) refuses an HTTP request with `421
+bad_host` and closes a WebSocket (1008) before it is accepted when `allowed(host)` is false. `allowed`: no Host, an IP
+literal, `localhost` / `*.localhost` / `*.ts.net` / `*.local` (`_OWN_SUFFIXES`), else the hostnames of config `public_url`, `bind`, `allowed_hosts` (list or one
+string) and `MAXXING_ALLOWED_HOSTS` (comma separated, `*` = off); `hostname()` drops port, case and a trailing dot.
+Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=testserver,t` (the test clients' hosts).
+
 ## maxxing.security (session cookie)
 - Cookie `mx_session` = `<issued_at>.<nonce>.<hmac_sha256(cookie_key, "<issued_at>.<nonce>")>` (legacy
   `<issued_at>.<hmac>` from <= 2.0.0a31 still accepted), lifetime `COOKIE_MAX_AGE` = 30 days.
@@ -429,7 +463,8 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   plain recovery codes, 80 bits each, returned once).
 - `verify(code)` under `config._lock`: a 6-digit code must match a step > `last_step` (stored on success: no replay,
   the enrolment code included); otherwise a recovery code (normalised: case, spaces, dashes, 0/1/8 -> O/I/B) is
-  removed from the list on use. `disable(code=None)`: with a code only when it verifies (Settings), without at once
+  removed from the list on use. `regenerate(code)` (under the same lock): a verified code -> a new list of
+  `RECOVERY_COUNT` codes replaces the old one (`TotpError` `bad_code` / `not_on`). `disable(code=None)`: with a code only when it verifies (Settings), without at once
   (`pilot 2fa off`). Throttling is the callers': `twofactor.check` at sign-in, `api/auth._reauth` (password-change
   throttle) for enable / disable.
 
@@ -660,6 +695,64 @@ optional auth scheme word) or a `PLAIN_HEADERS` header; URL userinfo and query v
 `.claude.json` / `.mcp.json` goes through `_dict()` (hand-edited files). `.claude.json` rewrites use a unique
 0600 temp file + `os.replace`.
 
+Codex turns get the same servers (`sessions/codex.mcp_config(cwd, env)`, called by `runner._codex_turn`): the
+servers Claude Code would load in the session's folder (`mcp_auto.candidates`: user scope minus the folder's disabled
+ones, local scope, approved `.mcp.json` of the folder and its parents; `harness-pc` excluded), turned into
+`-c mcp_servers.<name>={...}` inline TOML tables (checked with codex-cli 0.150.1, `codex mcp list --json`), next to
+`--ignore-user-config`, so the user's own Codex config is never read nor changed. `${KEY}` / `${KEY:-default}`
+references are expanded from the turn environment plus the vault keys flagged `expose`; no secret is put on the
+command line: a stdio `env` value that is not plain goes in the Codex process environment under its own name and in
+`env_vars`, a non-plain HTTP header in `MAXXING_MCP_H<n>` and `env_http_headers`; plain values stay in `env` /
+`http_headers`. Skipped, with the reason (`-> skipped [(name, reason)]`): names outside `[A-Za-z0-9_-]{1,64}`,
+`sse` / `ws` transports (Codex has streamable HTTP and stdio only), an address or program arguments carrying a key
+(literal, or a reference to a vault key: it would be on the command line), a secret env value whose name is reserved (`PATH`, `HOME`, `CODEX_*`, `OPENAI_*`...) or already set in
+the turn environment with another value (the same value is forwarded as is and not hidden), a reference with no value.
+Every server gets `default_tools_approval_mode = codex.tools_approval(mode)`: `codex exec` never asks and its sandbox
+does not cover MCP tools; checked with codex-cli 0.150.1 against a stub model and MCP server: unset / `auto` /
+`writes` run only `readOnlyHint` tools and refuse the others ("requires approval, but approval policy is never"),
+`prompt` refuses all, `approve` runs all. So `writes` in plan / default / acceptEdits, `approve` in bypass only; the
+runner notes once (meta `codex_mcp_tools`) when the read-only rule applies. Claude's OAuth sign-ins and claude.ai connectors are not shared (Codex keeps its own tokens).
+The runner notes the skipped servers in the conversation when that list changes (meta `codex_mcp_skipped`).
+
+## maxxing.sessions.codex - sandbox and Protect the secrets
+`codex.sandbox_args(mode)` is the sandbox of every `codex exec` the server starts (`command()`: turns, scheduled jobs,
+companions, summaries; `fork_command()`: side questions, always read-only): read-only in `default` / `plan`,
+workspace-write otherwise, never full access. With config `protect_secrets` off, or when none of
+`spawn.secret_paths()` (`<state>/secrets.json`, `~/.ssh`) exists, it is `--sandbox read-only|workspace-write`.
+Otherwise the same sandbox is given as a Codex permission profile that also denies those paths:
+`-c default_permissions="protected"` and `-c permissions.protected={extends = ":read-only" | ":workspace",
+filesystem = {...}}`, with `"<path>" = "deny"` for each existing path (absolute, not resolved: Codex canonicalizes)
+and, for workspace-write, `":workspace_roots" = {"." = "write", ".git" = "read", ".codex" = "read", ".agents" =
+"read"}` (`WORKSPACE_READ_ONLY`). No `--sandbox` then: it silently replaces `default_permissions`.
+Checked with codex-cli 0.150.1 on macOS (Seatbelt), `codex exec` against a stub Responses API and fake secrets:
+- `deny` refuses read, write, rename, delete, `stat` and directory listing to every command Codex runs (shell,
+  `python open()`, `cp`, `find`), through a symlink, through `/tmp` vs `/private/tmp`, inside the writable folder (it
+  beats `"." = "write"`), and makes `ln` (hard link) fail; spawned sub-agents (`multi_agent_v1.spawn_agent`), `exec
+  resume` (also of a thread started with `--sandbox`) and `exec --ephemeral fork` get the same profile. A missing
+  path is accepted (only existing ones are passed anyway).
+- A profile that `extends = ":workspace"` loses the built-in's read-only `.git`, `.codex` and `.agents` (the built-in
+  `:workspace` and `--sandbox workspace-write` keep them), hence the `:workspace_roots` table; with it, writes match
+  `--sandbox workspace-write` (folder and below, `/tmp`, `$TMPDIR`; not the repository root above the folder, its
+  `.git`, nor other folders; `.git` / `.codex` / `.agents` cannot be created), network stays off, and MCP tool
+  approval (`tools_approval`) behaves the same.
+- A topic's `.codex/config.toml` with `sandbox_mode` does not switch the profile off (`--ignore-user-config`: no
+  folder is trusted); a `sandbox_mode` in `/etc/codex/config.toml` would (the docs say any loaded `sandbox_mode` or
+  `--sandbox` wins over `default_permissions`).
+- Not covered: MCP servers (Codex starts them outside its sandbox: a server could read the file), `view_image`
+  (read by the Codex process: a real image in those folders still reaches the model; a key or `secrets.json` gives
+  "unsupported image data"), and `apply_patch`'s verification, done in the Codex process before the sandboxed write
+  is refused: it never returns the file, but its error tells a matching context line from a wrong one.
+Linux (bubblewrap): the same checks in Debian 12 arm64 containers (codex-cli 0.150.1 from npm, bubblewrap 0.8.0), as
+root (privileged container, like the server's own root) and as uid 1000 (user namespaces): the argv of `command()` /
+`fork_command()` in every mode, resume and fork refuse both paths (`Permission denied`; the path is masked, so `ln`
+gives "Invalid cross-device link" and `mv` "Device or resource busy"), writes / `.git` / `/tmp` / network match
+`--sandbox`, and a missing deny path is accepted. Where bubblewrap cannot create namespaces (a default unprivileged
+container): with `--sandbox` the turn runs and every command fails ("No permissions to create new namespace"); with
+the profile the turn fails at start ("fs sandbox helper failed": Codex reads AGENTS.md through the sandbox). Codex
+refuses to put its `codex-linux-sandbox` helper under `/tmp`: a `CODEX_HOME` there breaks both forms. Managed
+`requirements.toml` `deny_read` would work with `--sandbox` but lives in `/etc/codex` (root, every Codex run of the
+machine): not used.
+
 ## maxxing.pcbridge  (owner: organisation) - Browser of my PC
 State `<state>/pc/devices.json` (0600): `device` (token kept as sha256), `pairing` (code hash, 15 min, single use),
 `settings.idle_min`, `mcp_secret`, `cdp_secret`; `actions.jsonl` (last 500), `tools.json` (tool list cache), `bin/`
@@ -765,7 +858,7 @@ adapters are unchanged. Options and limits: `docs/dev/COMPANION-SANDBOX.md`.
 - `companions.run(ident, path, mission, *, purpose='experiment'|'plan', launch_key='', timeout_s=1800,
   launch_guard=None)`: an existing session tagged with `launch_key` is returned instead of a new run; `plan` =
   `plan_mode` + `permission_mode='plan'` (the engine must declare the `plan` capability) and a read-only prompt.
-- Plan mode in a discussion (runner): its turns use `DEBATE_PLAN_PREFACE` instead of `PLAN_PREFACE` (Claude and Codex paths); a `plan_approved` item becomes `DEBATE_PLAN_APPROVED_PREFACE` + text in `turn`, and `_debate_followup` pauses the exchange after it (`discussion_pause_reason` `user`, next reply in `debate_pending`).
+- Plan mode in a discussion (runner): its turns use `DEBATE_PLAN_PREFACE` instead of `PLAN_PREFACE` (Claude, agent plugin and Codex paths); a `plan_approved` item becomes `DEBATE_PLAN_APPROVED_PREFACE` + text in `turn`, and `_debate_followup` pauses the exchange after it (`discussion_pause_reason` `user`, next reply in `debate_pending`).
   Manual companion runs keep the defaults. `companions.MAX_MISSION` (6000) bounds the mission text; missions check it
   when a plan is created, saved or started (`_check_lengths`, `TooLong` with `details` {step, title, excess}, kept in the
   error body by `api/missions._call`), trim prerequisite reports at launch, and fit the planner's role catalog.
@@ -932,6 +1025,8 @@ To set them on the service: `systemctl edit claude-maxxing` -> `[Service]` `Envi
   `<local dir>/.claude/skills` and installs them at every start: Claude Code reads a `.claude/skills` folder in the
   session's folder and its parents up to the repository root, so the local workspace's sessions get them and the
   personal `~/.claude/skills` of the computer is never written (a personal skill of the same name wins).
+- `MAXXING_CODEX_MCP=0` Codex turns get no MCP server (`codex.mcp_config`; tests: they never read the real
+  `.claude.json`, `test_codex_provider.py` opts back in with a temporary `CLAUDE_CONFIG_DIR`)
 - `MAXXING_CODEX_SKILLS_DIR` where `init` installs the product skills for Codex (`cmd_core.codex_skills_target()`,
   also read by the doctor, uninstall and `blocks.sync_agent_files`) instead of `~/.agents/skills`.
   `scripts/dev-local.sh` sets `<local dir>/.agents/skills`: Codex reads `.agents/skills` in the session's folder and

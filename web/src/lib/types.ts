@@ -109,6 +109,8 @@ export type Session = {
   team_parent?: string | null
   /** A mixed-team worker on its team assignment: the team (its coordinator) notifies, not this session */
   team_turn?: boolean
+  /** A discussion's second agent: `codex`, or `plugin:<id>` (its name in `provider_name`); null for other sessions. */
+  discussion_partner?: string | null
   debate_paused?: boolean
   discussion_pause_reason?: string | null
   /** When it paused (limit or pause button), Unix seconds; null while not paused. */
@@ -147,7 +149,7 @@ export type Session = {
   /** A plan-mode turn finished: its plan waits for the user's validation. */
   plan_ready: boolean
 }
-export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: string; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
+export type CreateSessionBody = { path: string; message?: string; title?: string; model?: string; codex_model?: string; provider?: string; swarm_agents?: number; discussion_turn_limit?: number; discussion_duration_seconds?: number; claude_role?: string; codex_role?: string; /** `plugin:<id>` instead of Codex. */ discussion_partner?: string; attachments?: string[]; plan_mode?: boolean; /** Absolute path of a voice message sent directly. */ voice?: string }
 export type PatchSessionBody = { title?: string; model?: string; archived?: boolean; notify?: boolean; plan_mode?: boolean; favorite?: boolean; /** Move to another topic (idle sessions only). */ path?: string }
 export type SendMessageBody = { text: string; attachments?: string[]; hud?: boolean; /** Absolute path of a voice message sent directly: the server transcribes it, then sends it. */ voice?: string }
 export type SendMessageResult = { queued: boolean; session: Session }
@@ -631,6 +633,21 @@ export type MediaTools = {
   missing: ('ffmpeg' | 'ffmpeg_webp' | 'pdftoppm')[]
   install: string[]
 }
+/** GET /api/system/local-service: the optional macOS background service (launchd agent) of a local installation,
+ *  read-only; `supported` is false elsewhere. `running`: this server was started by it, `since` when. */
+export type LocalService =
+  | { supported: false }
+  | {
+      supported: true
+      installed: boolean
+      label: string
+      plist: string
+      running: boolean
+      since: number | null
+      logs: string
+      url: string
+      commands: { install: string; status: string; restart: string; uninstall: string; update: string }
+    }
 export type VersionInfo = {
   version: string
   local_mode?: boolean

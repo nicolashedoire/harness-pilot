@@ -10,10 +10,10 @@ import { agentName, type AgentId } from './names'
 export { AGENT_NAME, agentName, type AgentId } from './names'
 
 /** Agents a session talks to, in speaking order. */
-export function sessionAgents(provider: Session['provider']): AgentId[] {
+export function sessionAgents(provider: Session['provider'], partner?: string | null): AgentId[] {
   if (provider?.startsWith('plugin:')) return ['plugin']
   if (provider === 'codex') return ['codex']
-  if (provider === 'discussion' || provider === 'debate') return ['claude', 'codex']
+  if (provider === 'discussion' || provider === 'debate') return ['claude', partner?.startsWith('plugin:') ? 'plugin' : 'codex']
   return ['claude']
 }
 

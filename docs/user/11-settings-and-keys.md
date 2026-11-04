@@ -35,7 +35,7 @@ first one, Escape clears the search); the command palette (Ctrl/⌘+K) finds the
 | **MCP** | the MCP servers of Claude Code (a service's tools for Claude): every session or one topic, state, **Connect** (sign-in), **Remove** - see [MCP servers](28-mcp.md) |
 | **Extensions** | installed widgets and pages, enable/disable, reload – see [Dashboard widgets](dashboard-widgets) |
 | **Pull requests** | the reviewed integration queue: arrange prerequisites, approve an exact commit, pause or cancel - see [Reviewed pull request integration](pull-requests) |
-| **System** | version and **Update** (with the smart update preflight), health, services (start/stop/restart), logs, **What's new** (also shown once after each update; the main new features have a **Show me** button that takes you to them and highlights them). In the local setup (`scripts/dev-local.sh`) it keeps the version, **Check now**, health and **What's new**, and says that service controls and automatic updates are unavailable: no **Update** button, services or logs. While `ffmpeg` (with its WebP encoder) or `pdftoppm` is missing, a **Thumbnails and previews** card says what does not work and gives the command that installs it, with a copy button (see [Troubleshooting](troubleshooting)) |
+| **System** | version and **Update** (with the smart update preflight), health, services (start/stop/restart), logs, **What's new** (also shown once after each update; the main new features have a **Show me** button that takes you to them and highlights them). In the local setup (`scripts/dev-local.sh`) it keeps the version, **Check now**, health and **What's new**, and says how to update (`git pull`, then restart the app; on a Mac with the background service, both commands with a copy button): no **Update** button, automatic updates, services or logs. On a Mac, a **Background service** card shows the optional launchd service: installed or not, running the app or not and since when, its service file, logs and address, and the commands that install, restart, check or remove it, to copy into a terminal (see [Installation](installation#keep-it-running-in-the-background)). While `ffmpeg` (with its WebP encoder) or `pdftoppm` is missing, a **Thumbnails and previews** card says what does not work and gives the command that installs it, with a copy button (see [Troubleshooting](troubleshooting)) |
 | **Updates** | every version of harness-pilot, newest first, with a search - the full history of what changed |
 | **Docs** | this documentation |
 | **Starter pack** | add a starter project for your kind of work; an existing project is never overwritten - see [Starter projects](starter-projects) |
@@ -145,8 +145,9 @@ job's mode, else the topic's, else this global one.
 
 **Protect the secrets** (on by default): in every mode, Claude's tools refuse to read or edit the server's secrets
 (`secrets.json`) and the SSH keys (`~/.ssh`). It stops a hidden instruction from simply reading them; a script written
-on purpose to open the file is not stopped, so it does not replace a stricter mode. More rules: `claude_deny` in
-config.json (Claude Code rule syntax, for example `"Bash(rm -rf:*)"`).
+on purpose to open the file is not stopped, so it does not replace a stricter mode. Codex sessions get the same two
+paths denied by Codex's own sandbox, which stops a script too. More rules for Claude only:
+`claude_deny` in config.json (Claude Code rule syntax, for example `"Bash(rm -rf:*)"`).
 
 See [Security](security).
 

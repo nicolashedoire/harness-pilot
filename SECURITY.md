@@ -1,19 +1,17 @@
 # Security policy
 
-Harness Maxxing runs Claude Code with wide permissions on your server, so security reports matter a lot to us.
+harness-pilot runs Claude Code and Codex with wide permissions on your computer or server, so security reports matter a lot to us.
 Thank you for reporting responsibly.
 
 ## Report a vulnerability privately
 
-**Never open a public issue, discussion or pull request for a vulnerability.** Use one of these private channels:
-
-1. **GitHub private vulnerability reporting** (preferred): on the repository, *Security* -> *Report a
-   vulnerability* ([direct link](https://github.com/makushingu/harness-maxxing/security/advisories/new)).
-2. The contact form on [harness-maxxing.com](https://harness-maxxing.com), starting your message with "Security".
+**Never open a public issue, discussion or pull request for a vulnerability.** Use GitHub private vulnerability
+reporting: on the repository, *Security* -> *Report a vulnerability*
+([direct link](https://github.com/nicolashedoire/harness-pilot/security/advisories/new)).
 
 Please include:
 
-- the version (`pilot status`) and how Harness Maxxing is installed (git, license key, local copy);
+- the version (`pilot status`) and how harness-pilot is installed (Linux server or local copy);
 - what an attacker can do, and from where (internet, the local network, another user of the server, a session);
 - the steps to reproduce, or a proof of concept;
 - any idea of a fix.
@@ -26,13 +24,12 @@ Please include:
 
 ## Supported versions
 
-Only the latest version receives security fixes: the `stable` branch, which installs follow (`main` gets each
-version first). Update with
-`pilot update`.
+Only the latest version receives security fixes: the `main` branch, which installs follow (there is no `stable`
+branch, tag or release). Update a Linux server with `pilot update`, and a local copy by pulling `main`.
 
 ## Scope
 
 In scope: the server (`server/`), the web UI (`web/`), the installer (`install.sh`), the PC agent (`pc-agent/`),
-the shipped skills and templates. Out of scope: what Claude Code does with the permissions you gave it on your own
-server, vulnerabilities of third-party components that are already fixed upstream (tell us if we ship an old
-version), and reports from automated scanners without a demonstrated impact.
+the shipped skills and templates. Out of scope: what Claude Code or Codex does with the permissions you gave it on
+your own computer or server, vulnerabilities of third-party components that are already fixed upstream (tell us if
+we ship an old version), and reports from automated scanners without a demonstrated impact.

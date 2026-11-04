@@ -41,7 +41,8 @@ export const isDuo = (provider: Session['provider']) => provider === 'discussion
 
 /** Items -> blocks. A turn opens with the first agent item after a user message (or with an agent note in a
  *  discussion) and ends with its result; notes outside a turn stand alone. */
-export function buildBlocks(items: Item[], provider: Session['provider']): Block[] {
+/** `partnerName`: the name an agent plugin holding a discussion's second seat writes as its note. */
+export function buildBlocks(items: Item[], provider: Session['provider'], partnerName?: string | null): Block[] {
   const duo = isDuo(provider)
   const base: AgentId = provider?.startsWith('plugin:') ? 'plugin' : provider === 'codex' ? 'codex' : 'claude'
   const out: Block[] = []
@@ -64,7 +65,8 @@ export function buildBlocks(items: Item[], provider: Session['provider']): Block
       continue
     }
     if (it.kind === 'note') {
-      const agent = duo && it.ev.level === 'info' ? AGENT_NOTES[it.ev.text.trim()] : undefined
+      const note = it.ev.text.trim()
+      const agent = duo && it.ev.level === 'info' ? (AGENT_NOTES[note] ?? (partnerName && note === partnerName ? 'plugin' : undefined)) : undefined
       if (agent) {
         // the note itself is not shown: the turn's header says who answers
         summary = false

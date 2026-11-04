@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from conftest import all_events, wait_idle
+from conftest import all_events, codex_profile, codex_sandbox, wait_idle
+from maxxing import config
 from maxxing.sessions import codex
 
 
@@ -42,14 +43,17 @@ print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "outpu
     assert asked.json()['answer'] == 'Codex: où en es-tu ?' and asked.json()['agent'] == 'codex'
     fork = [json.loads(line) for line in calls.read_text().splitlines()][-1]['argv']
     assert fork[fork.index('fork') + 1] == 'codex-thread-123' and '--ephemeral' in fork and 'resume' not in fork
-    assert fork[fork.index('--sandbox') + 1] == 'read-only' and fork[-1] == '-'
+    assert codex_sandbox(fork) == 'read-only' and fork[-1] == '-'
+    secrets = str(mx['state'] / 'secrets.json')               # Protect the secrets (on by default) in every run
+    assert codex_profile(requests[0]['argv'])['filesystem'][secrets] == 'deny'
+    assert codex_profile(fork)['filesystem'][secrets] == 'deny'
     assert [e['text'] for e in all_events(client, sid) if e['type'] == 'assistant'] == ['Codex: premier', 'Codex: deuxième']
     assert client.get(f'/api/sessions/{sid}').json()['turns'] == 2
 
 
 def test_codex_sandbox_and_events():
-    assert codex.command('', 'default')[codex.command('', 'default').index('--sandbox') + 1] == 'read-only'
-    assert codex.command('', 'bypass')[codex.command('', 'bypass').index('--sandbox') + 1] == 'workspace-write'
+    assert codex_sandbox(codex.command('', 'default')) == 'read-only'
+    assert codex_sandbox(codex.command('', 'bypass')) == 'workspace-write'
     command = codex.events({'type': 'item.completed', 'item': {'id': 'item-1', 'type': 'command_execution',
                            'command': 'pwd', 'aggregated_output': '/tmp', 'exit_code': 0}})
     assert command[0]['message']['content'][0]['id'] == command[1]['message']['content'][0]['tool_use_id']
@@ -58,6 +62,36 @@ def test_codex_sandbox_and_events():
                           'cache_write_input_tokens': 10, 'output_tokens': 7}})[0]['usage']
     assert usage == {'input_tokens': 50, 'output_tokens': 7, 'cache_read_input_tokens': 40,
                      'cache_creation_input_tokens': 10}
+
+
+def test_protect_secrets_gives_codex_a_profile_that_denies_them(mx, monkeypatch, tmp_path):
+    """Protect the secrets: the same sandbox as a permission profile denying secrets.json and ~/.ssh (checked by hand
+    with codex-cli 0.150.1, INTERNALS.md maxxing.sessions.codex); never `--sandbox` with it, which would replace it."""
+    home = tmp_path / 'h "o" mé'                       # quotes and accents survive the inline TOML
+    (home / '.ssh').mkdir(parents=True)
+    monkeypatch.setenv('HOME', str(home))
+    secrets = mx['state'] / 'secrets.json'
+    secrets.write_text('{}')
+    denied = {str(secrets): 'deny', str(home / '.ssh'): 'deny'}
+    for mode in ('default', 'plan'):
+        assert codex_profile(codex.command('', mode)) == {'extends': ':read-only', 'filesystem': denied}
+    for mode in ('acceptEdits', 'bypass'):                # .git / .codex / .agents stay read-only, as with --sandbox
+        assert codex_profile(codex.command('thread-1', mode)) == {'extends': ':workspace', 'filesystem': {
+            ':workspace_roots': {'.': 'write', '.git': 'read', '.codex': 'read', '.agents': 'read'}, **denied}}
+    fork = codex.fork_command('thread-1')               # side questions: read-only too
+    assert codex_profile(fork) == {'extends': ':read-only', 'filesystem': denied} and fork[-3:] == ['fork', 'thread-1', '-']
+    # only the paths that exist; none left: the plain sandbox
+    (home / '.ssh').rmdir()
+    assert codex_profile(codex.command('', 'plan'))['filesystem'] == {str(secrets): 'deny'}
+    secrets.unlink()
+    assert codex_profile(codex.command('', 'plan')) is None and codex_sandbox(codex.command('', 'plan')) == 'read-only'
+    # the setting off: the plain sandbox, even with the files there
+    secrets.write_text('{}')
+    config.update_config(protect_secrets=False)
+    for mode, sandbox in (('default', 'read-only'), ('bypass', 'workspace-write')):
+        argv = codex.command('', mode)
+        assert codex_profile(argv) is None and argv[argv.index('--sandbox') + 1] == sandbox
+        assert not any(a.startswith(('default_permissions', 'permissions.')) for a in argv)
 
 
 def test_codex_status_reports_login_without_exposing_cli_output(client, monkeypatch):
@@ -340,3 +374,122 @@ sys.exit(1)
     store.create(meta)
     r = client.post(f"/api/sessions/{meta['id']}/ask", json={'question': 'x'})
     assert r.status_code == 502 and 'usage limit reached' in r.json()['message']
+
+
+def _claude_json(tmp_path, monkeypatch, data):
+    own = tmp_path / 'claude-config'
+    own.mkdir(exist_ok=True)
+    (own / '.claude.json').write_text(json.dumps(data))
+    monkeypatch.setenv('CLAUDE_CONFIG_DIR', str(own))       # read like Settings -> MCP and Claude's turns
+    monkeypatch.setenv('MAXXING_CODEX_MCP', '1')            # conftest turns it off everywhere else
+    return own
+
+
+def test_mcp_servers_are_given_to_codex_without_secrets_on_the_command_line(tmp_path, monkeypatch):
+    folder = tmp_path / 'ws' / 'projects' / 'acme' / 'topics' / 'ads'
+    folder.mkdir(parents=True)
+    _claude_json(tmp_path, monkeypatch, {
+        'mcpServers': {
+            'acme': {'command': 'npx', 'args': ['-y', '@acme/mcp', '--region=${REGION:-eu}'],
+                     'env': {'LOG_LEVEL': 'debug', 'ACME_KEY': '${VAULT_ACME}'}},
+            'legacy': {'type': 'sse', 'url': 'https://sse.example.com/sse'},
+            'keyed': {'type': 'http', 'url': 'https://mcp.example.com/mcp?key=a1b2c3d4e5f6g7h8i9j0k1'},
+            'dotted.name': {'command': 'tool'},
+            'pathy': {'command': 'tool', 'env': {'PATH': '${VAULT_ACME}'}},
+            'missing': {'command': 'tool', 'env': {'TOKEN': '${NOT_SET}'}},
+            'argkey': {'command': 'tool', 'args': ['--token', '${VAULT_ACME}']},
+        },
+        'projects': {str(folder): {'mcpServers': {
+            'ads': {'type': 'http', 'url': 'https://ads.example.com/mcp',
+                    'headers': {'Authorization': 'Bearer ${ADS_TOKEN}', 'Content-Type': 'application/json'}}}}},
+    })
+    from maxxing.sessions import spawn
+    monkeypatch.setattr(spawn, '_exposed_vault', lambda s: {'VAULT_ACME': 'acme-secret-123456'})
+    env = {'ADS_TOKEN': 'ads-secret-987654'}
+    args, extra, skipped = codex.mcp_config(str(folder), env)
+    tables = {a.split('=', 1)[0]: a.split('=', 1)[1] for a in args[1::2]}
+    assert set(tables) == {'mcp_servers.acme', 'mcp_servers.ads', 'shell_environment_policy.exclude'}
+    assert tables['mcp_servers.acme'] == ('{command = "npx", args = ["-y", "@acme/mcp", "--region=eu"], '
+                                          'env = {LOG_LEVEL = "debug"}, env_vars = ["ACME_KEY"], '
+                                          'default_tools_approval_mode = "writes"}')
+    assert tables['mcp_servers.ads'] == ('{url = "https://ads.example.com/mcp", env_http_headers = '
+                                         '{Authorization = "MAXXING_MCP_H0"}, http_headers = {Content-Type = "application/json"}, '
+                                         'default_tools_approval_mode = "writes"}')
+    assert extra == {'ACME_KEY': 'acme-secret-123456', 'MAXXING_MCP_H0': 'Bearer ads-secret-987654'}
+    assert not any('secret' in a for a in args)                 # secrets go through the environment only
+    assert tables['shell_environment_policy.exclude'] == '["ACME_KEY", "MAXXING_MCP_H0"]'
+    reasons = dict(skipped)
+    assert set(reasons) == {'legacy', 'keyed', 'dotted.name', 'pathy', 'missing', 'argkey'}
+    assert 'arguments' in reasons['argkey']
+    assert 'sse' in reasons['legacy'] and 'address' in reasons['keyed'] and '${NOT_SET}' in reasons['missing']
+
+
+def test_only_full_access_lets_codex_write_through_mcp_tools(tmp_path, monkeypatch):
+    """codex exec never asks and its sandbox does not cover MCP tools: outside Full access, every server gets
+    default_tools_approval_mode="writes" (codex-cli 0.150.1 then runs only the tools marked readOnlyHint and refuses
+    the others), in Full access "approve"."""
+    folder = tmp_path / 'topic'
+    folder.mkdir()
+    _claude_json(tmp_path, monkeypatch, {'mcpServers': {'slack': {'command': 'slack-mcp'}}})
+    for mode, want in (('plan', 'writes'), ('default', 'writes'), ('acceptEdits', 'writes'), ('bypass', 'approve')):
+        args, _, _ = codex.mcp_config(str(folder), {}, mode)
+        assert args == ['-c', f'mcp_servers.slack={{command = "slack-mcp", args = [], default_tools_approval_mode = "{want}"}}'], mode
+    assert codex.tools_approval('plan') == 'writes' and codex.tools_approval('bypass') == 'approve'
+
+
+def test_a_server_variable_never_replaces_the_sessions_own(tmp_path, monkeypatch):
+    """A forwarded variable already set in the session's environment: the same value is used as is (and stays
+    visible to Codex's shell like before), another value skips the server instead of replacing it."""
+    folder = tmp_path / 'topic'
+    folder.mkdir()
+    _claude_json(tmp_path, monkeypatch, {'mcpServers': {'gh': {'command': 'gh-mcp', 'env': {'GITHUB_TOKEN': '${GH_PAT}'}}}})
+    from maxxing.sessions import spawn
+    monkeypatch.setattr(spawn, '_exposed_vault', lambda s: {'GH_PAT': 'pat-from-vault-1234567890'})
+    args, extra, skipped = codex.mcp_config(str(folder), {'GITHUB_TOKEN': 'the-topics-own-token'})
+    assert args == [] and extra == {}
+    assert skipped == [('gh', "its variable GITHUB_TOKEN has another value in the session's environment")]
+    args, extra, skipped = codex.mcp_config(str(folder), {'GITHUB_TOKEN': 'pat-from-vault-1234567890'})
+    assert skipped == [] and extra == {} and 'env_vars = ["GITHUB_TOKEN"]' in args[1]
+    assert not any('shell_environment_policy' in a for a in args)
+
+
+def test_a_codex_turn_gets_the_mcp_servers_and_says_which_are_left_out(client, topic, mx, monkeypatch):
+    from maxxing import workspace
+    folder = workspace.topic_dir(topic)
+    _claude_json(mx['tmp'], monkeypatch, {
+        'mcpServers': {'acme': {'command': 'npx', 'args': ['-y', '@acme/mcp'], 'env': {'ACME_KEY': '${ACME_SECRET}'}},
+                       'legacy': {'type': 'sse', 'url': 'https://sse.example.com/sse'}},
+        'projects': {str(folder): {'disabledMcpServers': []}},
+    })
+    monkeypatch.setenv('ACME_SECRET', 'turn-secret-42')
+    fake = mx['tmp'] / 'codex-mcp'
+    calls = mx['tmp'] / 'codex-mcp-calls.jsonl'
+    fake.write_text(f'''#!/usr/bin/env python3
+import json, os, sys
+sys.stdin.read()
+with open({str(calls)!r}, "a") as f:
+    f.write(json.dumps({{"argv": sys.argv[1:], "acme": os.environ.get("ACME_KEY")}}) + "\\n")
+print(json.dumps({{"type": "thread.started", "thread_id": "t-mcp"}}), flush=True)
+print(json.dumps({{"type": "item.completed", "item": {{"type": "agent_message", "text": "ok"}}}}), flush=True)
+print(json.dumps({{"type": "turn.completed", "usage": {{"input_tokens": 1, "output_tokens": 1}}}}), flush=True)
+''')
+    fake.chmod(0o755)
+    monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
+    sid = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'go'}).json()['id']
+    wait_idle(client, sid)
+    call = json.loads(calls.read_text().splitlines()[-1])
+    acme = ('mcp_servers.acme={command = "npx", args = ["-y", "@acme/mcp"], env_vars = ["ACME_KEY"], '
+            'default_tools_approval_mode = "approve"}')       # Full access, the default permission mode
+    assert acme in call['argv'] and call['argv'].index('--ignore-user-config') < call['argv'].index(acme)
+    assert call['acme'] == 'turn-secret-42' and not any('turn-secret' in a for a in call['argv'])
+    notes = [e['text'] for e in all_events(client, sid) if e['type'] == 'note']
+    assert any('MCP servers not given to Codex: legacy' in n for n in notes)
+    assert not any('only uses the tools a server marks as read-only' in n for n in notes)
+    # plan mode: only the read-only tools, said once in the conversation
+    plan = client.post('/api/sessions', json={'path': topic, 'provider': 'codex', 'message': 'plan it', 'plan_mode': True})
+    assert plan.status_code == 200, plan.text
+    wait_idle(client, plan.json()['id'])
+    call = json.loads(calls.read_text().splitlines()[-1])
+    assert any(a.startswith('mcp_servers.acme=') and a.endswith('default_tools_approval_mode = "writes"}') for a in call['argv'])
+    notes = [e['text'] for e in all_events(client, plan.json()['id']) if e['type'] == 'note']
+    assert sum('only uses the tools a server marks as read-only' in n for n in notes) == 1

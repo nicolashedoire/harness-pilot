@@ -17,7 +17,7 @@ Open **Agent map** from the session menu to inspect agent calls present in the l
 
 Choose **Mixed team** under **Several agents** and send a written mission, with files or images if needed. Claude examines the approach and steps while Codex independently examines risks, alternatives and verification. The two analyses run in separate sessions; after they finish, the coordinator synthesizes the available reports in its session. Those are the default roles: change either one in the form before sending (**Default roles** puts them back). Choose the **Coordinator** too: Claude Code by default, or Codex; it writes the synthesis in the session you are in, with the topic permissions. The **Claude model** and **Codex model** fields apply to each agent of that kind, coordinator included (empty: its default model). Each agent receives its role with the mission, the team panel shows it, and the coordinator names both in its synthesis. The team does not split a mission into arbitrary subtasks. The two providers must be available and signed in; their normal usage allowances apply.
 
-While the team works, its panel above the message box shows the steps (**Starting**, **Agents working**, **Synthesis**, **Done**) and, for each agent, how long it has worked, its last actions (files read, searches, commands, what it says) and, once it has finished, the start of its report. The panel folds to one line when the team is over; click it to open it again. Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Files and images attached to the mission go to both agents and to the coordinator: Claude opens them itself, Codex receives the images directly (PNG, GIF, WebP or JPEG up to 3.5 MB) and the location of every other file. Each agent reads them with its own subscription. The mission is written: the microphone dictates it into the text instead of sending a voice message.
+While the team works, its panel above the message box shows the steps (**Starting**, **Agents working**, **Synthesis**, **Done**) and, for each agent, how long it has worked, its last actions (files read, searches, commands, what it says) and, once it has finished, the start of its report. The panel folds to one line when the team is over; click it to open it again. Use **Open session** to inspect a worker's live activity and full result. **Stop agent** interrupts that worker without stopping its peer; **Stop team** interrupts both and the coordinator. While the team works, the message box is locked and says so (the text you had started is kept for later); **Stop team** is also there and in the session header (on a computer). A stopped or failed report is identified as missing in the synthesis. Worker sessions remain in the session list and can be reopened. If the web server restarts, orchestration resumes when it is available again. The analysis workers are requested not to edit files or take external actions and use the providers' plan/read-only modes; those settings are not a complete operating-system isolation boundary. The coordinator uses the topic's configured permissions and may act on the mission. Files and images attached to the mission go to both agents and to the coordinator: Claude opens them itself, Codex receives the images directly (PNG, GIF, WebP or JPEG up to 3.5 MB) and the location of every other file. Each agent reads them with its own subscription. The mission can be spoken too: when you stop recording, the recording is transcribed (with the engine of Settings -> Voice) and its text is sent as the mission; with **Send voice messages right away** off, the text lands in the message box first, for review. The recording itself is not sent to the agents.
 
 ## Claude Code and Codex together
 
@@ -26,6 +26,8 @@ When creating a session, choose **Debate** under **Several agents**, then select
 You can assign a different role to each agent, choose a built-in pair of roles, and save named configurations for later sessions. Roles are included in the instructions sent to the corresponding agent on every turn. Saved configurations live in the server's local state.
 
 The new-session form also accepts separate Claude and Codex models. The Codex model is an optional identifier; leave it empty to use the CLI default, or enter a model available to your account. In a joint conversation, the Claude model is not sent to Codex.
+
+With an agent engine installed as an extension, **Second agent** lets it take Codex's place: its role and model fields replace Codex's, and its replies carry its name. It joins only if it declares what the discussion asks of it: plan mode needs an engine that supports plan mode, and attached files an engine that accepts files; otherwise the discussion is refused with the reason.
 
 From a session's **More actions** menu, **Summary and actions** asks Codex (or Claude Code when Codex is not signed in) to summarize a snapshot of the conversation, separate explicit decisions from proposed actions, and show them for review; the dialog says which agent wrote it. Select the actions you want before creating tasks; no tasks are created automatically. Long conversations may be summarized from the most recent portion only, and the interface indicates when that happens. The request uses that agent's account; its tokens (and Claude's indicative amount) are added to the session's statistics, without counting as a turn.
 
@@ -38,18 +40,26 @@ are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn,
 **Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
+On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Codex discussion
+([Telegram](telegram#choosing-the-agent)).
+
+**Protect the secrets** (Settings → Claude, on by default) applies to Codex too: its sandbox refuses to read or change
+the server's `secrets.json` and `~/.ssh` in every mode, for every command Codex runs, a script included. Outside that
+sandbox: the MCP servers Codex starts, and its image viewer, which could still show it a picture stored in those
+folders. Checked on macOS and on Linux. On a Linux machine where Codex's sandbox cannot start (bubblewrap without
+user namespaces, as in some containers), a Codex turn now stops with that error instead of answering without running
+commands; turning **Protect the secrets** off brings the old behaviour back, without this protection.
 
 These features are for Claude Code only for now:
 
-- **MCP servers** (Settings → MCP): only Claude's turns load them. Codex starts without any MCP server, yours
-  (`~/.codex/config.toml`) included.
+- **MCP sign-ins and connectors**: Codex gets the MCP servers of Settings → MCP (see [MCP servers](28-mcp.md#codex);
+  outside Full access, only their read-only tools), but not Claude's sign-ins, the claude.ai connectors nor the
+  Browser of my PC.
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.
-- **Protect the secrets** (Settings → Claude) and the other rules of Claude's permission settings: Codex only
-  follows its own sandbox, which still lets it read those files.
+- The extra rules of Claude's permission settings (`claude_deny`): Codex only follows its own sandbox.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
-- **New sessions started from Telegram** use Claude Code.
 
 **Summary and actions** works with either agent: Codex when it is signed in, otherwise Claude Code.
 
@@ -458,7 +468,8 @@ message is searchable a second after it is written; edited files within half a m
 ## Sessions from Telegram and crons
 
 Telegram conversations and Claude cron jobs create normal sessions (marked with their source).
-A Telegram session can be continued from the web UI and the other way round.
+A Telegram session can be continued from the web UI and the other way round. Telegram starts Claude Code sessions;
+`/codex` and `/discuss` start a Codex session or a Claude Code + Codex discussion instead.
 
 ## Keyboard shortcuts
 

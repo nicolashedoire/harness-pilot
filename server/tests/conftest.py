@@ -6,6 +6,7 @@ import os
 import stat
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from typing import Callable, Iterator
 
@@ -14,6 +15,7 @@ import pytest
 # before importing maxxing: never the real state dir (each test then gets its own, see `mx`)
 os.environ.setdefault("MAXXING_STATE", os.path.join(tempfile.gettempdir(), "mx-test-boot-state"))
 os.environ["MAXXING_SPAWN"] = "direct"
+os.environ.setdefault("MAXXING_ALLOWED_HOSTS", "testserver,t")   # the test clients' Host names; the check stays on
 os.environ["MAXXING_SYSTEM_TZ"] = "0"                # never switch the real system clock
 os.environ.setdefault("MAXXING_AUTH_CHECK", "0")     # no background `claude -p` check (tests opt in)
 os.environ["MAXXING_CLAUDE_UPDATE"] = "0"          # no background `claude update` (tests call tick())
@@ -22,6 +24,7 @@ os.environ["MAXXING_SESSION_MAINTENANCE"] = "0"   # no nightly session files upk
 os.environ["MAXXING_PR_QUEUE_WORKER"] = "0"          # tests never merge a real GitHub PR
 os.environ["MAXXING_MISSIONS_WORKER"] = "0"          # no automatic model requests from test servers
 os.environ["MAXXING_SHORT_TITLES"] = "0"           # no background title call (tests/test_titles.py opts in)
+os.environ["MAXXING_CODEX_MCP"] = "0"              # Codex turns never read the real .claude.json (test_codex_provider opts in)
 # run from a Claude session started by Harness: its turn variables would pass through to the fake `claude`
 for _var in ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"):
     os.environ.pop(_var, None)
@@ -52,6 +55,7 @@ def _never_the_real_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(cmd_core, "BIN_LINK", fake / "usr-local-bin" / "maxxing")    # `pilot` / `maxxing` commands
     monkeypatch.setattr(cmd_core, "PILOT_LINK", fake / "usr-local-bin" / "pilot")
     monkeypatch.setenv("MAXXING_CODEX_SKILLS_DIR", str(fake / "agents-skills"))   # never the real ~/.agents/skills
+    monkeypatch.setenv("MAXXING_LAUNCH_AGENTS_DIR", str(fake / "LaunchAgents"))   # never the real ~/Library/LaunchAgents
 
 
 @pytest.fixture(autouse=True)
@@ -144,3 +148,19 @@ def all_events(client: TestClient, sid: str) -> list[dict]:
             return out
         frm = r["next"]
 
+
+def codex_profile(argv: list[str]) -> dict | None:
+    """The `protected` permission profile of a Codex argv (Protect the secrets), parsed; None with `--sandbox`."""
+    settings = dict(argv[i + 1].split("=", 1) for i, a in enumerate(argv[:-1]) if a == "-c")
+    if "permissions.protected" not in settings:
+        return None
+    assert settings["default_permissions"] == '"protected"' and "--sandbox" not in argv   # it would replace the profile
+    return tomllib.loads("p = " + settings["permissions.protected"])["p"]
+
+
+def codex_sandbox(argv: list[str]) -> str:
+    """The sandbox a Codex argv asks for, whichever form it takes: `--sandbox <mode>`, or the profile's parent."""
+    profile = codex_profile(argv)
+    if profile is None:
+        return argv[argv.index("--sandbox") + 1]
+    return {":read-only": "read-only", ":workspace": "workspace-write"}[profile["extends"]]

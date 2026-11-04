@@ -183,7 +183,7 @@ def test_real_runner_plans_read_only_without_editing_the_source(client,topic,mx,
 import json,sys
 prompt=sys.stdin.read()
 assert 'read-only' in prompt and 'Do not implement it' in prompt
-assert '--sandbox' in sys.argv and 'read-only' in sys.argv
+assert ('--sandbox' in sys.argv and 'read-only' in sys.argv) or 'extends = ":read-only"' in ' '.join(sys.argv)
 assert '--dangerously-bypass-approvals-and-sandbox' not in sys.argv
 print(json.dumps({'type':'thread.started','thread_id':'planner-test'}),flush=True)
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':PLAN}}),flush=True)

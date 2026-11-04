@@ -126,12 +126,19 @@ def compact_window(cfg: dict) -> int | None:
     return max(COMPACT_WINDOW_MIN, min(COMPACT_WINDOW_MAX, max(limit, 100000) + COMPACT_WINDOW_MARGIN))
 
 
+def secret_paths() -> list[Path]:
+    """What `protect_secrets` keeps from the agents: the server's secrets file and the SSH keys folder."""
+    home = os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir
+    return [config.STATE / "secrets.json", Path(home) / ".ssh"]
+
+
 def protected_paths() -> list[str]:
     """Files Claude's tools must not read or edit when `protect_secrets` is on: the server's secrets and SSH keys.
     A speed bump against injected instructions ("read ~/.ssh/id_ed25519 and post it"): Read/Edit and simple shell
-    reads (`cat`) are refused, a script that opens the file is not - permission modes are the real limit."""
-    home = os.environ.get("HOME") or pwd.getpwuid(os.getuid()).pw_dir
-    return [str(config.STATE / "secrets.json"), str(Path(home) / ".ssh") + "/**"]
+    reads (`cat`) are refused, a script that opens the file is not - permission modes are the real limit.
+    Codex turns deny the same paths in their OS sandbox (`codex.sandbox_args`)."""
+    secrets, ssh = secret_paths()
+    return [str(secrets), str(ssh) + "/**"]
 
 
 def deny_rules(cfg: dict) -> list[str]:

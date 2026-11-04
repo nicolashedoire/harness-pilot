@@ -189,6 +189,19 @@ def verify(code: str, now: float | None = None) -> str | None:
         return "recovery"
 
 
+def regenerate(code: str, now: float | None = None) -> list[str]:
+    """A new set of recovery codes (plain, shown once) once `code` verifies - a code of the app, or a recovery code,
+    which is spent. Every earlier recovery code stops working; the secret is unchanged."""
+    with config._lock:                                            # noqa: SLF001
+        if not is_on():
+            raise TotpError("not_on", "The authenticator app is off")
+        if verify(code, now) is None:
+            raise TotpError("bad_code", "Wrong code")
+        codes = _new_recovery()
+        config.set_secret("totp", {**_state(), "recovery": [_hash_recovery(_normal_recovery(c)) for c in codes]})
+    return codes
+
+
 def disable(code: str | None = None, now: float | None = None) -> None:
     """Off. With `code` (Settings): only when it verifies - a code of the app or a recovery code - else
     TotpError("bad_code"). Without (`pilot 2fa off` over SSH): at once."""
