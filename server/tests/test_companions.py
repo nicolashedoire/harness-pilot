@@ -20,6 +20,7 @@ prompt = sys.stdin.read()
 assert 'complete user journey' in prompt and 'visual design and accessibility' in prompt
 assert '--sandbox' in sys.argv and 'workspace-write' in sys.argv
 assert not subprocess.check_output(['git', 'remote']).strip()
+assert pathlib.Path('../architecture.json').is_file()
 pathlib.Path('app.txt').write_text('improved\\n')
 pathlib.Path('proof.txt').write_text('test evidence\\n')
 print(json.dumps({'type':'thread.started','thread_id':'companion-test'}), flush=True)
@@ -29,7 +30,7 @@ print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)
     fake.chmod(0o755)
     monkeypatch.setenv('MAXXING_CODEX_BIN', str(fake))
     defaults = client.get('/api/companions').json()['companions']
-    assert {p['id'] for p in defaults} >= {'observer', 'security'}
+    assert {p['id'] for p in defaults} >= {'observer', 'security', 'architect'}
     r = client.post('/api/companions', json={'name': 'Auditor', 'role': 'Inspect and test'})
     assert r.status_code == 200, r.text
     profile = r.json()
@@ -39,6 +40,8 @@ print(json.dumps({'type':'turn.completed','usage':{}}), flush=True)
     sid = r.json()['id']
     session = wait_idle(client, sid)
     assert session['state'] == 'idle', session
+    graph = client.get(f'/api/companions/runs/{sid}/architecture')
+    assert graph.status_code == 200 and graph.json()['version'] == 1
     r = client.get(f'/api/companions/runs/{sid}/review')
     assert r.status_code == 200, r.text
     proposal = r.json()

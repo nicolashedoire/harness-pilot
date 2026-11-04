@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import fcntl
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -14,7 +15,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import bus, config, feed, workspace
+from . import architecture, bus, config, feed, workspace
 from .sessions import service, store
 
 DEFAULT = {'id': 'observer', 'name': 'Platform observer', 'provider': 'codex',
@@ -25,7 +26,11 @@ SECURITY = {'id': 'security', 'name': 'Security and dependencies', 'provider': '
                     'Use available evidence, prepare a narrowly scoped fix or dependency update, and run relevant tests. '
                     'Do not claim a vulnerability scan or a package version is current without evidence. '
                     'Report when an advisory database, network access, or further review is needed.'}
-DEFAULTS = (DEFAULT, SECURITY)
+ARCHITECT = {'id': 'architect', 'name': 'Application architect and router', 'provider': 'codex',
+             'role': 'Understand how the platform components and features connect. Use the source import map, '
+                     'documentation and code to identify relevant modules and guide other companions with precise '
+                     'file paths, dependencies and verification steps. State uncertainty and missing links.'}
+DEFAULTS = (DEFAULT, SECURITY, ARCHITECT)
 MAX_PATCH = 2 * 1024 * 1024
 
 
@@ -107,6 +112,7 @@ def run(ident: str, path: str, mission: str = '') -> dict:
     run_id = str(uuid.uuid4())
     repo = _clone(run_id)
     base = _git(repo, 'rev-parse', 'HEAD', limit=100).decode().strip()
+    architecture.write(repo)
     try:
         session = service.create_session(path, title=f"{profile['name']} — platform review", provider='codex',
                                          permission_mode='acceptEdits', timeout_s=1800)
@@ -123,6 +129,8 @@ def run(ident: str, path: str, mission: str = '') -> dict:
                 "try the complete user journey where feasible, and assess clarity, visual design and accessibility. "
                 "For interface changes, visually inspect the result when tools permit. Run relevant tests and "
                 "report separately what was verified, what could not be verified, and remaining improvements. "
+                "A static source import map is available at ../architecture.json. "
+                "Use it to navigate, but recognize that runtime and product relationships may be missing. "
                 "Do not claim an unperformed check. The user must review and approve or reject your proposal. "
                 "Respond in French.\n\n"
                 f"Additional mission: {mission.strip() or 'Find a useful, small improvement.'}")
@@ -144,6 +152,14 @@ def _meta(sid: str) -> tuple[dict, dict, Path]:
     if root not in repo.parents or not repo.is_dir():
         raise service.SessionError(404, 'not_found', 'Experiment checkout not found.')
     return meta, c, repo
+
+
+def get_architecture(sid: str) -> dict:
+    _, _, repo = _meta(sid)
+    try:
+        return json.loads((repo.parent / 'architecture.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        raise service.SessionError(404, 'not_found', 'The source map is unavailable for this experiment.') from None
 
 
 def runs() -> list[dict]:

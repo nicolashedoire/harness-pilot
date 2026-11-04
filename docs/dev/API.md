@@ -251,6 +251,7 @@ Companions are persistent, editable role definitions stored in private local sta
 | POST | `/api/companions` | `{name,role}` | Creates a persistent Codex role definition. |
 | PUT | `/api/companions/{id}` | `{name,role}` | Updates a role; existing runs retain their original instructions. |
 | POST | `/api/companions/{id}/runs` | `{path,mission?}` | Clones the installed source at its committed HEAD into private state, starts a Codex session in that clone, and returns the session. The clone has no remote. |
+| GET | `/api/companions/runs/{sid}/architecture` | – | Static import graph for the committed source used at the start of this experiment. |
 | GET | `/api/companions/runs/{sid}/review` | – | Session, bounded patch and untracked-file summaries, plus a fingerprint for the current proposal. |
 | POST | `/api/companions/runs/{sid}/decision` | `{decision:"approved"\|"rejected",fingerprint}` | Records a decision on the exact finished proposal; a changed or running proposal is refused. This does not apply or publish the patch. |
 

@@ -54,6 +54,11 @@ async def start_run(ident: str, body: RunIn):
     return await _call(companions.run, ident, body.path, body.mission)
 
 
+@router.get('/runs/{sid}/architecture')
+async def get_architecture(sid: str):
+    return await _call(companions.get_architecture, sid)
+
+
 @router.get('/runs/{sid}/review')
 async def get_review(sid: str):
     return await _call(companions.review, sid)
