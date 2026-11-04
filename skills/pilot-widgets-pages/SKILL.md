@@ -174,6 +174,11 @@ Always build the page with the **UI kit** (next section) so it looks like the re
 The app only runs scripts from its own server: in page.js, no inline `<script>` added to the page and no `eval` /
 `new Function` - import other modules of the folder instead (`import x from './x.js'`). HTML widgets are not
 affected (their frame has its own policy).
+A long page is split into files of its folder, imported with a **relative** path (`./lib/chart.js`): the app serves
+the `.js`, `.mjs`, `.css` and `.json` files of the folder and its subfolders (no hidden file, no `api.py`, no link
+out of the folder); CSS: `link.href = new URL("./page.css", import.meta.url)`; JSON: `import d from "./d.json" with
+{ type: "json" }`. Editing any of these files gives the page a new version (picked up at the next visit). Keep the
+page's data in `api.py` (`ctx["state_dir"]`), never in a `.json` file of the folder.
 
 ## UI kit - the app's look for pages and HTML widgets
 Page extensions and HTML widgets get the app's design system as CSS classes (loaded for you, they follow the theme,
@@ -216,15 +221,16 @@ Copy `<code dir>/examples/extensions/snake-widget/` (a working game) and adapt i
 ## Steps
 1. Ask what to show, where the data comes from, refresh rate, which secrets are needed.
 2. Create the folder and files; for API calls use `urllib.request` with `timeout=10`.
-3. Test the Python side directly, without the server:
+3. Test it the way the server runs it, and fix until it passes:
    ```bash
-   cd <workspace>/extensions/<id> && python3 -c "
-   import json, api, tempfile
-   ctx = {'id': '<id>', 'workspace': '<workspace>', 'state_dir': tempfile.mkdtemp(),
-          'secret': lambda n: None, 'config': {'timezone': 'UTC', 'language': 'en', 'public_url': ''}}
-   print(json.dumps(api.card(ctx), indent=2))"     # page: api.handle(ctx, 'GET', 'notes', {}, None)
+   pilot ext check <id>            # --json: steps, the first error, the card it computes, the files involved
    ```
-   Check `page.js` syntax with `node --check page.js` if node is available.
+   It loads the manifest and `api.py` (10 s limit), runs `card(ctx)` with the dashboard's 20 s limit through the
+   same cleaning (dropped blocks of an unknown type are reported), checks an HTML widget's frame and every inline
+   script (`node --check`, lines of widget.html), and a page's `page.js` and the modules it imports (served, parse,
+   `mount` exported). Exit `0` = works (warnings allowed), `1` = broken: read `error` / the `trace` lines of your
+   `api.py`, fix, run it again. Do not tell the user it is done while it exits `1`. To try one route of a page's API,
+   call `api.handle(ctx, 'GET', 'notes', {}, None)` from `python3 -c` in the folder.
 4. Tell the user: **Settings -> Extensions -> Reload**, then check the dashboard / the new page.
    Errors (bad manifest, import error, exception in card) are shown on the extension's row there.
 5. Record the extension's purpose and data source in the topic memory (`memory` skill).

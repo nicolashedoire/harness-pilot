@@ -338,6 +338,21 @@ pickers. Tests: `tests/test_codex_models.py` (fake `codex`), `web/tests/componen
 - Telegram: `gateway.feed_notify(ev, loud)` / `feed_message(ev)` (body cut at 700 characters BEFORE HTML escaping); thread key `#feed` (`NOTIFY_ONLY` = Crons, Alerts,
   Notifications: never treated as topic threads by the legacy migration); callback `f:<id>` = Ask Claude.
 
+## maxxing.extensions / maxxing.api.extensions - page modules  (owner: organisation)
+- `module_file(ext, rel) -> Path | None`: the file a page may load from its folder (`MODULE_TYPES` `.js .mjs .css
+  .json` -> content type). Every segment of `rel` AND of the real path relative to the resolved folder (links
+  followed) matches `MODULE_SEG_RE` (starts with a letter, digit or `_`: no hidden file, no `..`, never `@`) and the
+  real path has a module suffix: a link to a file outside, to `api.py` or to a hidden file gives None.
+- `page_version(ext) -> int | None` = `Extension.info()["page_v"]`: newest mtime (ms) over the files `module_file`
+  would serve, by an `os.walk` that does not follow folder links, skips `MODULE_SKIP_DIRS` and hidden folders, and
+  stops after `MODULE_SCAN_MAX` files. Computed at each listing (in a thread: `api.extensions._infos`), not at scan
+  time: a module other than page.js is not part of `_signature()` (no rescan, no api.py import when it changes).
+- Routes: `/ext/{id}/page.js` and the catch-all `/ext/{eid:extid}/{rel:path}` (declared after the fixed
+  `/ext/{id}/...` routes) share `_page_module` (enabled page extension without error, `module_file`). A first segment
+  starting with `@` is the version and is dropped. `extid` (a Starlette convertor registered by api/extensions.py,
+  the `ID_RE` pattern) never matches `_blocks`, so the catch-all leaves `/ext/_blocks/...` to api/blocks.py, whose
+  router is included later. The web (`pages/ext/index.tsx`) imports `/ext/<id>/@<page_v>[-<retry>]/page.js`.
+
 ## maxxing.blocks / maxxing.api.blocks  (owner: organisation)
 Conversation blocks (API.md#conversation-blocks). Stdlib only at import (`extensions` and `cmd_core` are imported
 inside the functions that need them), so `sessions/codex.py` could read its output without it.
@@ -364,6 +379,31 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   on change); called by the API's startup, `GET /api/blocks`, `PATCH`, extension changes and `pilot init`. The
   user's CLAUDE.md files are never touched.
 - `api/blocks.py`: the routes; `BRIDGE` / `APP_LOADER` (frame scripts; the dev mock reads them from this file).
+
+## maxxing.extcheck / maxxing.cmd_ext (`pilot ext check`)  (owner: organisation)
+- `check(id) -> Result | None` (None: no such folder), `check_all() -> [Result]`, `timed_out(results)`. Both start
+  with `extensions.scan()` (the server's loading: manifest / block.json, `api.py` imported apart with
+  `IMPORT_TIMEOUT_S`; the other extensions are loaded too). A turned-off extension (or `restore_hold`) is `skipped`
+  and none of its code runs.
+- Routes taken in-process: a `TestClient` on a FastAPI app with the `api.extensions` and `api.blocks` routers,
+  `require_auth` overridden (`_client()`); GET `/ext/<id>/widget-frame`, `/ext/<id>/@<page_v>/page.js` (the URL
+  pages/ext imports), each module a page imports (resolved with `urljoin` against the module's URL, so
+  `extensions.module_file`'s rules apply: a module the server does not serve is a 404 there too),
+  `/ext/_blocks/<id>/frame`. Nothing listens, no request leaves.
+- Card: `card(ctx)` through `extensions.call(..., timeout=api.dashboard.TIMEOUT_S, key="card:<id>")`, then
+  `clean_card` + `widgets.strip_none` (= `widget_card(force=True)` + the dashboard, keeping the raw value to report
+  dropped blocks). Exception frames inside the extension folder -> `trace`. A timed-out call keeps an extension
+  thread: `cmd_ext` leaves with `os._exit` after printing (the pool's threads are joined at exit otherwise).
+- JavaScript: `_node_check(code, name, module, line, col)` writes the code to a temp `.mjs` / `.js` padded with
+  newlines and spaces so `node --check` reports the file's own positions (inline scripts), then rewrites the temp path
+  (and its realpath) to `name`; None when `node` is missing (a warning step). `_scan_js` is a light scanner (strings,
+  template literals and comments skipped) returning the specifiers after `import` / `from` / `import(` and the code
+  with comments and string contents removed (for the `mount`, `eval`, `.api(`, storage patterns).
+- HTML (`widget.html`, a block's entry): `html.parser` subclass `_Doc` (elements, text, scripts with their
+  position, links); an unclosed `<script>` is detected by the parser never closing it.
+- Result: `{id, name, type, kind, dir, status, error, steps:[{step, status, detail}], files, card?, trace?,
+  timed_out?}`; `status` = worst step (`ok` < `warn` < `error`), `skipped` for an extension that is off.
+- `cmd_ext`: `pilot ext check [ID] [--json]`, exit 0 / 1 broken / 2 unknown id / 3 the named one is off.
 
 ## maxxing.sessionfeed  (owner: organisation)
 - `on_stop(session)` (async, `sessions.service.on_session_stop` callback) -> `record(session)` in a thread: nothing for
@@ -919,8 +959,11 @@ URLs without query / fragment / userinfo. A channel with more than 64 MB waiting
   with `git diff base..target` = review). Never touches the install; cached in `update/preflight.json` keyed by
   [HEAD, target, dirty files]. Extensions vs the target's `EXT_API_MIN..EXT_API` (read with `git show`); upgrade
   notes of the target that ask something (first paragraph not "Nothing to do").
-- `verify() -> report` (`update/report.json`): `extensions.scan()`, `widget_card(force)`, `node --check page.js` when
-  node exists, each customization's `check` (shell, cwd workspace, `MAXXING_CODE`, 60 s).
+- `verify() -> report` (`update/report.json`): `extensions.scan()`, `extensions.compute_card` for each Card widget
+  (no cache; fails on an exception, an invalid card, or a non-empty `error` card() returned instead of raising -
+  `card_error`, read from the raw card because `clean_card` drops that key; `status: "error"` alone is a data alarm,
+  not a failure), `node --check page.js` when node exists, each customization's `check` (shell, cwd workspace,
+  `MAXXING_CODE`, 60 s).
 - `mark_updated(from, to, smart)` (end of `pilot update`) -> `update/after.json`; `after_update()` runs once at
   server start (api/system.startup, after `MAXXING_AFTER_UPDATE_DELAY` s): verify, feed alert if broken, and for
   `smart` the upgrade-notes session (config `update_auto_notes`, default true).

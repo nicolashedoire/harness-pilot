@@ -67,3 +67,5 @@ turn it off like any widget.
 
 For developers: the format agents use and the manifest of a block plugin are described in the skill `pilot-blocks`
 and in `docs/dev/API.md` (section Conversation blocks); `examples/extensions/kanban-block/` is a complete plugin.
+`pilot ext check <id>` checks a plugin the way the server serves it (see
+[Command line reference](cli-reference#pilot-ext-check)).
