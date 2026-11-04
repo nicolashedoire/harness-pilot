@@ -1,16 +1,18 @@
 import { createRoot } from 'react-dom/client'
 import '@/styles/globals.css'
-import { bindUIToDocument, useUI } from '@/stores/ui'
+import { applyPalette, bindUIToDocument, useUI } from '@/stores/ui'
 import { bindCompact } from '@/stores/media'
 import { loadLanguage } from '@/i18n'
 import { initPWA } from '@/pwa'
 import { bootPrefetch } from '@/lib/boot'
 import { App, queryClient } from './App'
 
+// The palette's tokens before the first render (index.html already injected the cached copy).
+applyPalette(useUI.getState().palette)
 // A browser that never picked a look takes the server's as soon as the early auth check (index.html) answers,
 // before the store's defaults are painted over the look index.html already applied.
 const early = useUI.getState().lookChosen ? undefined : window.__mxAuth
-const adopted = early?.then((a) => a?.look && useUI.getState().adoptLook(a.look)).catch(() => {})
+const adopted = early?.then((a) => a?.look && useUI.getState().receiveLook(a.look)).catch(() => {})
 // No wait when the answer is slow: the defaults show, then Root adopts the look.
 void Promise.race([adopted, new Promise((r) => setTimeout(r, 400))]).then(() => bindUIToDocument())
 bindCompact()

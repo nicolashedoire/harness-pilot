@@ -149,7 +149,7 @@ export function PackChooser({ onDone, footer }: { onDone: () => void; footer: (n
                       <Check /> {t('packs.added')}
                     </Badge>
                   ) : mode === 'all' ? (
-                    <span className="flex size-4 items-center justify-center rounded-[4px] bg-primary text-primary-foreground">
+                    <span className="flex size-4 items-center justify-center rounded-[4px] bg-action text-action-foreground">
                       <Check className="size-3" strokeWidth={3} />
                     </span>
                   ) : (
