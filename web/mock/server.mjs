@@ -1222,7 +1222,7 @@ R('POST', '/api/auth/setup', ({ body, res }) => {
   return { ok: true }
 }, { public: true })
 
-R('POST', '/api/auth/login', async ({ body, res }) => {
+R('POST', '/api/auth/login', async ({ req, body, res }) => {
   if (S.setup_required) fail(409, 'setup_required', 'Run the setup first')
   const t = now()
   if (S.lockUntil > t) fail(429, 'throttled', `Too many attempts, retry in ${Math.ceil(S.lockUntil - t)} s`)
@@ -1235,6 +1235,7 @@ R('POST', '/api/auth/login', async ({ body, res }) => {
     fail(401, 'bad_password', 'Wrong password')
   }
   S.failStreak = 0
+  if (S.telegram.settings.two_factor && !tfTrusted(req)) return { ok: false, two_factor: tfChallenge('login') }
   setCookie(res, newToken())
   return { ok: true }
 }, { public: true })
@@ -1249,6 +1250,52 @@ R('POST', '/api/auth/password', ({ body }) => {
   if (body.current !== S.password) fail(400, 'bad_password', 'Current password is wrong')
   if (!body.new || String(body.new).length < 8) fail(422, 'invalid', 'Password must be at least 8 characters')
   S.password = body.new
+  return { ok: true }
+})
+
+/* ---- two-step sign-in (server/maxxing/twofactor.py): with Telegram setting `two_factor` on, a password sign-in from an
+   untrusted browser waits for Allow in Telegram or the code it shows. Mock: Allow is "pressed" 4 s after the challenge
+   is created, and the code is 246810 (5 wrong codes expire the challenge). */
+const TF_CODE = '246810'
+const tfState = () => (S.twoFactor ||= { deviceKey: crypto.randomBytes(12).toString('hex'), challenges: {} })
+function tfChallenge(kind) { // kind: login | enable
+  const c = { id: crypto.randomBytes(16).toString('hex'), kind, at: now(), tries: 0, status: 'pending' }
+  tfState().challenges[c.id] = c
+  const g = GEN
+  setTimeout(() => { if (g === GEN && c.status === 'pending') c.status = 'approved' }, 4000).unref()
+  return { challenge: c.id, expires_in: 300 }
+}
+const tfTrusted = (req) => (req.headers.cookie || '').split(/;\s*/).includes(`mx_device=${tfState().deviceKey}`)
+const tfDeviceCookie = () => `mx_device=${tfState().deviceKey}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=2592000`
+R('POST', '/api/auth/two-factor', ({ req, res, body, authed }) => {
+  const c = tfState().challenges[body.challenge]
+  if (!c || c.status === 'expired' || now() - c.at > 360) fail(410, 'expired', 'This sign-in request expired: sign in again')
+  if (c.kind === 'enable' && !authed) fail(401, 'auth_required', 'Please log in')
+  if (body.code !== undefined && body.code !== null && c.status === 'pending') {
+    if (body.code !== TF_CODE) {
+      c.tries += 1
+      if (c.tries >= 5) { c.status = 'expired'; fail(410, 'expired', 'Too many wrong codes: sign in again') }
+      sendJson(res, 400, { error: 'bad_code', message: 'Wrong code', tries_left: 5 - c.tries })
+      return RAW
+    }
+    c.status = 'approved'
+  }
+  if (c.status === 'pending') return { ok: false, status: 'pending', expires_in: Math.max(0, Math.round(300 - (now() - c.at))) }
+  delete tfState().challenges[c.id] // once only
+  const trust = body.trust !== false || c.kind === 'enable'
+  if (c.kind === 'enable') { S.telegram.settings.two_factor = true; bus('telegram') }
+  res.setHeader('Set-Cookie', [...(c.kind === 'login' ? [`mx_session=${newToken()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`] : []), ...(trust ? [tfDeviceCookie()] : [])])
+  return { ok: true, status: 'approved' }
+}, { public: true })
+R('PUT', '/api/auth/two-factor', ({ body }) => {
+  if (!body.enabled) { S.telegram.settings.two_factor = false; tfState().deviceKey = crypto.randomBytes(12).toString('hex'); bus('telegram'); return { ok: true, enabled: false } }
+  if (!S.telegram.chat) fail(409, 'not_linked', 'Link a Telegram chat first')
+  if (S.telegram.settings.two_factor) return { ok: true, enabled: true }
+  return { ok: false, two_factor: tfChallenge('enable') }
+})
+R('POST', '/api/auth/two-factor/forget-browsers', ({ res }) => {
+  tfState().deviceKey = crypto.randomBytes(12).toString('hex')
+  res.setHeader('Set-Cookie', tfDeviceCookie()) // this browser stays trusted
   return { ok: true }
 })
 
@@ -1970,6 +2017,73 @@ R('DELETE', '/api/tasks/:id', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- voice (server/maxxing/voice.py): speech-to-text on the server (local faster-whisper or Groq / OpenAI keys). The
+   mock never decodes audio: every recording gives the same sentence. An install takes about 6 s. */
+const VOICE_MODELS = [['tiny', 75], ['base', 142], ['small', 466], ['medium', 1530]]
+function voiceState() {
+  if (S.voice) return S.voice
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing'
+  S.voice = { settings: { engine: ready ? 'local' : 'off', model: 'small', language: 'auto', auto_send: false, direct: true }, installed: ready,
+    present: new Set(ready ? ['small'] : []), install: { state: 'idle', step: null, progress: null, model: null, message: '', error: null, at: null } }
+  return S.voice
+}
+function voiceStatus() {
+  const v = voiceState(), st = v.settings, inst = v.install
+  if (inst.state === 'running') { // a background job: dependencies first (when missing), then the model download
+    const p = Math.min(1, (now() - inst.at) / 6)
+    if (p >= 1) { v.installed = true; v.present.add(inst.model); Object.assign(inst, { state: 'done', step: null, progress: 1, message: `Model ${inst.model} ready` }) }
+    else Object.assign(inst, v.installed || p > 0.4 ? { step: 'model', progress: p, message: `Downloading ${inst.model}…` } : { step: 'deps', progress: null, message: 'Installing faster-whisper…' })
+  }
+  const keys = { groq: S.secrets.some((s) => s.name === 'GROQ_API_KEY'), openai: S.secrets.some((s) => s.name === 'OPENAI_API_KEY') }
+  const reason = st.engine === 'off' ? 'off' : st.engine === 'local' ? (v.installed && v.present.has(st.model) ? null : 'not_installed') : keys[st.engine] ? null : 'no_key'
+  return { settings: { ...st }, ready: !reason, reason, ffmpeg: true,
+    local: { installed: v.installed, loaded: v.installed && reason === null && st.engine === 'local' ? st.model : null, recommended: 'small', ram_gb: 7.8, cpus: 4,
+      models: VOICE_MODELS.map(([id, size_mb]) => ({ id, size_mb, present: v.present.has(id) })) },
+    keys, key_names: { groq: 'GROQ_API_KEY', openai: 'OPENAI_API_KEY' }, install: { ...inst }, max_seconds: 900 }
+}
+const formField = (raw, name) => { const m = raw.toString('latin1').match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`)); return m ? Buffer.from(m[1], 'latin1').toString('utf8') : null }
+R('GET', '/api/voice', () => voiceStatus())
+R('PUT', '/api/voice/settings', ({ body }) => {
+  const st = voiceState().settings
+  if (body.engine !== undefined && !['off', 'local', 'groq', 'openai'].includes(body.engine)) fail(422, 'invalid', 'engine')
+  if (body.model !== undefined && !VOICE_MODELS.some(([id]) => id === body.model)) fail(422, 'invalid', 'model')
+  if (body.language !== undefined && body.language !== 'auto' && !/^[a-z]{2,3}$/.test(body.language)) fail(400, 'invalid_language', 'Use auto or an ISO 639-1 code')
+  for (const k of ['engine', 'model', 'language', 'auto_send', 'direct']) if (body[k] !== undefined) st[k] = body[k]
+  return { ok: true, settings: { ...st } }
+})
+R('POST', '/api/voice/install', ({ body }) => {
+  const v = voiceState()
+  if (v.install.state === 'running') fail(409, 'busy', 'An install is already running')
+  const model = body.model || v.settings.model
+  if (!VOICE_MODELS.some(([id]) => id === model)) fail(422, 'invalid', 'model')
+  v.install = { state: 'running', step: v.installed ? 'model' : 'deps', progress: v.installed ? 0 : null, model, message: '', error: null, at: now() }
+  return voiceStatus().install
+})
+R('DELETE', '/api/voice/models/:model', ({ params }) => {
+  if (!VOICE_MODELS.some(([id]) => id === params.model)) fail(422, 'invalid', 'model')
+  voiceState().present.delete(params.model)
+  return { ok: true }
+})
+R('POST', '/api/voice/transcribe', async ({ req, rawBody }) => {
+  const status = voiceStatus()
+  if (status.reason === 'off') fail(409, 'voice_off', 'Voice messages are turned off in Settings')
+  if (status.reason) fail(503, status.reason, status.reason === 'no_key' ? 'No API key for this engine in Secrets' : 'The local engine is not installed')
+  const [audio] = parseMultipart(rawBody, req.headers['content-type'] || '')
+  if (!audio) fail(422, 'bad_audio', 'No audio file in the request')
+  if (audio.data.length < 200) fail(422, 'empty_audio', 'Nothing was heard in this recording')
+  if (audio.data.length > 100 * 1024 * 1024) fail(413, 'too_large', 'Recordings are limited to 100 MB')
+  await sleep(900)
+  const topic = formField(rawBody, 'path'), lang = formField(rawBody, 'language') || status.settings.language
+  let audio_path = null
+  if (topic) {
+    const d = new Date(), ext = path.extname(audio.name) || '.webm'
+    audio_path = `${ROOT}/${topic}/attachments/voice/${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}/voice-${Math.floor(now())}${ext}`
+    fsAdd(S, audio_path, audio.data, now(), audio.mime)
+  }
+  return { text: 'Draft a short reply thanking the client for the feedback, and propose a call next Tuesday.', language: lang === 'auto' ? 'en' : lang,
+    duration_s: Math.max(1, Math.round(audio.data.length / 4000)), engine: status.settings.engine, model: status.settings.engine === 'local' ? status.settings.model : status.settings.engine === 'groq' ? 'whisper-large-v3-turbo' : 'gpt-4o-transcribe', ms: 900, audio_path }
+})
+
 /* ---- crons */
 const CRON_FIELDS = ['name', 'schedule', 'kind', 'command', 'topic_path', 'prompt', 'model', 'reuse_session', 'enabled', 'notify', 'timeout_s']
 function applyCron(c, body) {
@@ -2033,6 +2147,73 @@ R('POST', '/api/crons/:id/run', ({ params }) => {
   return { ok: true }
 })
 
+/* ---- MCP servers (server/maxxing/mcp.py): Claude Code's servers per folder, checked with `claude mcp list` in the
+   background (here: 1.5 s), and the OAuth login of a server that needs one (here: any redirect with ?code= works). */
+const mcpWhere = (rel) => {
+  if (!rel) return { rel: null, project: null, topic: null, exists: true, path: null }
+  const [, project, , topic] = rel.split('/')
+  return { rel, project: project || null, topic: topic || null, exists: S.fs.has(`${ROOT}/${rel}`), path: `${ROOT}/${rel}` }
+}
+function mcpState() {
+  if (S.mcp) return S.mcp
+  const ready = S.scenario === 'ready' || S.scenario === 'maxxing', t = now()
+  const server = (scope, rel, name, def, state, detail = '', extra = {}) => ({ id: `${scope}|${rel || ''}|${name}`, name, scope, where: mcpWhere(rel), ...def,
+    literal_secret: false, keys: [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]), state, detail, checked_at: t - 300, ...extra })
+  S.mcp = { auto: false, checking: false, checked_at: ready ? t - 300 : null, logins: {}, servers: ready ? [
+    server('user', null, 'github', { type: 'http', url: 'https://mcp.example.com/github', headers: { Authorization: 'Bearer ${GITHUB_TOKEN}' } }, 'connected'),
+    server('user', null, 'linear', { type: 'sse', url: 'https://mcp.example.com/linear/sse' }, 'needs_auth', 'Needs authentication'),
+    server('local', topicPath('acme', 'website'), 'playwright', { type: 'stdio', command: 'npx', args: ['@playwright/mcp@latest'] }, 'connected'),
+    server('project', topicPath('ops', 'server'), 'postgres', { type: 'stdio', command: 'uvx', args: ['postgres-mcp'], env: { DATABASE_URI: '•••' } }, 'failed', 'Connection closed', { literal_secret: true, approved: true }),
+  ] : [] }
+  return S.mcp
+}
+function mcpCheck() {
+  const st = mcpState()
+  if (st.checking) return
+  st.checking = true
+  const g = GEN
+  setTimeout(() => { if (g !== GEN) return; st.checking = false; st.checked_at = now(); for (const x of st.servers) { x.checked_at = now(); if (x.state === 'pending') x.state = 'connected' } bus('mcp') }, 1500)
+}
+R('GET', '/api/mcp', () => { const st = mcpState(); if (st.checked_at === null) mcpCheck(); return { servers: st.servers, checking: st.checking, checked_at: st.checked_at, config_file: '/root/.claude.json', auto: st.auto } })
+R('PUT', '/api/mcp/auto', ({ body }) => { const st = mcpState(); st.auto = !!body.enabled; if (st.auto) mcpCheck(); return { ok: true, enabled: st.auto } })
+R('POST', '/api/mcp/check', () => { mcpCheck(); return { checking: true } })
+R('POST', '/api/mcp', ({ body }) => {
+  const st = mcpState(), name = String(body.name || ''), where = String(body.where || '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name)) fail(400, 'bad_name', 'Letters, digits, dot, dash and underscore')
+  if (!['http', 'sse', 'stdio'].includes(body.type)) fail(400, 'bad_type', 'type: http, sse or stdio')
+  if (where && !where.startsWith('projects/')) fail(400, 'bad_where', 'where: empty (all folders) or a projects/… folder')
+  if (where && !S.fs.has(`${ROOT}/${where}`)) fail(404, 'folder_missing', 'This folder does not exist')
+  if (body.type === 'stdio' ? !String(body.command || '').trim() : !/^https?:\/\/\S+$/.test(String(body.url || ''))) fail(400, body.type === 'stdio' ? 'bad_command' : 'bad_url', body.type === 'stdio' ? 'A command is required' : 'An http(s) URL is required')
+  if (JSON.stringify(body).length > 32768) fail(400, 'too_long', 'A value is too long')
+  const scope = where ? 'local' : 'user', id = `${scope}|${where}|${name}`
+  if (st.servers.some((x) => x.id === id)) fail(409, 'exists', 'A server with this name already exists here')
+  const def = { type: body.type, ...(body.type === 'stdio' ? { command: body.command.trim(), args: body.args || [] } : { url: body.url }), ...(body.headers ? { headers: body.headers } : {}), ...(body.env ? { env: body.env } : {}) }
+  const keys = [...JSON.stringify(def).matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1])
+  st.servers.push({ id, name, scope, where: mcpWhere(where || null), ...def, literal_secret: false, keys, state: 'pending', detail: '', checked_at: null })
+  mcpCheck(); bus('mcp')
+  return { id, exposed: keys.filter((k) => S.secrets.some((s) => s.name === k && !s.expose)) }
+})
+R('DELETE', '/api/mcp', ({ q }) => { const st = mcpState(); st.servers = st.servers.filter((x) => x.id !== q.get('id')); bus('mcp'); return { ok: true } })
+R('POST', '/api/mcp/login', ({ body }) => {
+  const x = mcpState().servers.find((s) => s.id === body.id) || fail(404, 'folder_missing', 'Server not found')
+  if (x.type === 'stdio') fail(400, 'no_login_url', 'This server does not offer a login')
+  const login = crypto.randomBytes(8).toString('hex')
+  S.mcp.logins[login] = { id: x.id, at: now() }
+  return { login, url: `https://mcp.example.com/oauth/authorize?client_id=claude-code&state=${login}&redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback` }
+})
+R('POST', '/api/mcp/login/:login', async ({ params, body }) => {
+  const l = mcpState().logins[params.login] || fail(404, 'login_expired', 'This login expired: start it again')
+  if (!/^http:\/\/localhost:\d+\/callback\?/.test(String(body.redirect || ''))) fail(400, 'bad_redirect', 'Paste the whole address of the page that failed to open (http://localhost:…/callback?code=…)')
+  await sleep(800)
+  if (!/[?&]code=/.test(body.redirect)) fail(400, 'login_failed', 'The address has no authorization code')
+  delete S.mcp.logins[params.login]
+  const x = S.mcp.servers.find((s) => s.id === l.id)
+  if (x) Object.assign(x, { state: 'connected', detail: '', checked_at: now() })
+  bus('mcp')
+  return { ok: true, message: `${x ? x.name : 'Server'}: authenticated` }
+})
+R('DELETE', '/api/mcp/login/:login', ({ params }) => { delete mcpState().logins[params.login]; return { ok: true } })
+
 /* ---- telegram */
 function tgStatus() {
   const tg = S.telegram
@@ -2090,6 +2271,57 @@ R('DELETE', '/api/telegram', () => {
   Object.assign(S.telegram, { token: null, bot: null, chat: null, topics_enabled: false, threads: [], last_error: null, link: null })
   bus('telegram', 'workspace')
   return { ok: true }
+})
+
+/* ---- starter packs (server/maxxing/packs.py): read from the repository's templates/packs/<id>/pack.json, so the mock
+   offers the real catalog. Installing adds the project (a free name when taken), its topics and its jobs, disabled. */
+const PACKS_DIR = path.resolve(__dirname, '../../templates/packs')
+function packList() {
+  const lang = S.settings.language === 'fr' ? 'fr' : 'en', txt = (v) => (typeof v === 'object' && v ? v[lang] || v.en : v || '')
+  let ids = []
+  try { ids = fs.readdirSync(PACKS_DIR).filter((d) => fs.existsSync(path.join(PACKS_DIR, d, 'pack.json'))).sort() } catch {}
+  const packs = ids.map((id) => {
+    const d = JSON.parse(fs.readFileSync(path.join(PACKS_DIR, id, 'pack.json'), 'utf8'))
+    const copies = S.projects.filter((p) => p.name === d.project || p.name.startsWith(d.project + '-'))
+    return { id: d.id, project: d.project, emoji: d.emoji || '', icon: d.icon || 'package', title: txt(d.title), description: txt(d.description),
+      topics: d.topics || [], crons: (d.crons || []).map((c) => c.name), installed: copies.length > 0, partial: false, project_exists: S.projects.some((p) => p.name === d.project), basics: false, def: d }
+  })
+  const missing = ['general', 'system'].filter((n) => !S.projects.some((p) => p.name === n))
+  packs.unshift({ id: 'basics', project: 'general, system', emoji: '', icon: 'house', title: lang === 'fr' ? 'Projets de base' : 'Default projects',
+    description: lang === 'fr' ? 'general/inbox et system (tutoriel, aide, Harness) : remet ceux que vous avez supprimés, sans rien écraser.' : 'general/inbox and system (tutorial, help, Harness): puts back the ones you deleted, never overwrites.',
+    topics: ['general/inbox', 'system/help', 'system/harness', 'system/tutorial'], crons: [], installed: missing.length === 0, partial: missing.length === 1, project_exists: missing.length < 2, basics: true })
+  return packs
+}
+const packOut = ({ def, ...p }) => p
+R('GET', '/api/packs', () => ({ packs: packList().map(packOut) }))
+R('POST', '/api/packs/:id/install', async ({ params }) => {
+  const pack = packList().find((p) => p.id === params.id) || fail(404, 'unknown_pack', 'Unknown pack')
+  await sleep(700)
+  let project = '', created = 0
+  const jobs = []
+  if (pack.basics) {
+    for (const [name, topics] of [['general', ['inbox']], ['system', ['help', 'harness', 'tutorial']]]) {
+      let p = S.projects.find((x) => x.name === name)
+      if (!p) { p = { name, description: '', topics: [] }; S.projects.push(p); fsAdd(S, `${projPath(name)}/CLAUDE.md`, `# Project ${name}\n\n@memory.md\n`, now()); created += 1 }
+      for (const t of topics) if (!p.topics.some((x) => x.name === t)) { p.topics.push({ name: t, description: '' }); fsAdd(S, `${topicPath(name, t)}/CLAUDE.md`, `# Topic ${t}\n`, now()); created += 1 }
+    }
+  } else {
+    project = pack.project
+    for (let n = 2; S.projects.some((p) => p.name === project); n++) project = `${pack.project}-${n}`
+    S.projects.push({ name: project, description: pack.description, topics: pack.topics.map((name) => ({ name, description: '' })) })
+    fsAdd(S, `${projPath(project)}/CLAUDE.md`, `# Project ${project}\n\n> ${pack.description}\n\n@memory.md\n`, now())
+    fsAdd(S, `${projPath(project)}/memory.md`, `# ${project} — memory\n`, now())
+    for (const t of pack.topics) fsAdd(S, `${topicPath(project, t)}/CLAUDE.md`, `# Topic ${t}\n`, now())
+    created = 2 + pack.topics.length
+    for (const c of pack.def.crons || []) {
+      const name = project === pack.project ? c.name : `${c.name} (${project})`
+      S.crons.push({ id: rid('c'), name, schedule: c.schedule, kind: 'claude', command: '', topic_path: topicPath(project, c.topic), prompt: c.prompt, model: '',
+        reuse_session: false, enabled: false, notify: c.notify || 'failure', timeout_s: 600, last_run: null })
+      jobs.push(name)
+    }
+  }
+  bus('workspace', 'crons')
+  return { ok: true, pack: packOut(packList().find((p) => p.id === pack.id)), project, created_files: created, jobs }
 })
 
 /* ---- backup */
@@ -2227,6 +2459,71 @@ R('POST', '/api/backup/instance/resume-integrations', () => {
   if (st.restore_hold) fail(409, 'restore_hold', 'Enable this instance’s services before resuming its integrations.')
   st.integrations_paused = false; bus('crons', 'backup', 'telegram')
   return { ok: true, scheduled_jobs: S.crons.filter((c) => c.enabled !== false).length, telegram: !!S.telegram.chat }
+})
+
+/* ---- Git page (server/maxxing/gitview.py): clones under the files root and the repositories of the GitHub tokens.
+   Histories are generated from a seed per repository (stable across reads): a main line, a merged feature branch,
+   a branch still open, a tag. */
+const GIT_LOCAL = [
+  { path: `${ROOT}/projects/acme/topics/website/app`, name: 'app', branch: 'main', upstream: 'origin/main', ahead: 1, behind: 0, changed: 3, untracked: 1, remote: 'git@github.com:acme/website.git', github: 'acme/website', error: null, worktrees: 1 },
+  { path: `${ROOT}/projects/ops/topics/server/scripts`, name: 'scripts', branch: 'main', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, remote: null, github: null, error: null, worktrees: 0 },
+]
+const GIT_HUB = [
+  ['acme/website', 'Marketing site and shop front', 'TypeScript', false, 'admin', 12, 4],
+  ['acme/platform', 'Back office and APIs', 'Python', true, 'push', 3, 9],
+  ['acme/blog', 'Articles and newsletter archive', 'MDX', false, 'maintain', 41, 1],
+]
+const GIT_SUBJECTS = ['Fix the hero image on small screens', 'Add the pricing page', 'Bump dependencies', 'Write the FAQ', 'Speed up the build', 'Refactor the checkout steps',
+  'Add tests for the cart', 'Update the footer links', 'Translate the about page', 'Clean up unused styles', 'Log failed payments', 'Tidy the README']
+function gitHistory(id) {
+  const r = rng([...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7)), t = now()
+  const hex = () => Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(r() * 16)]).join('')
+  const who = () => ['Alex Martin', 'Sam Lee', 'Codex'][Math.floor(r() * 3)]
+  const main = [], out = []
+  for (let i = 0; i < 40; i++) main.push({ sha: hex(), parents: [], refs: [], author: who(), date: t - (40 - i) * 9 * HOUR - Math.floor(r() * HOUR), subject: GIT_SUBJECTS[Math.floor(r() * GIT_SUBJECTS.length)] })
+  for (let i = 1; i < main.length; i++) main[i].parents = [main[i - 1].sha]
+  const feat = [] // merged into main at 30, branched at 24
+  for (let i = 0; i < 4; i++) feat.push({ sha: hex(), parents: [i ? feat[i - 1].sha : main[24].sha], refs: [], author: 'Codex', date: main[24].date + (i + 1) * 2 * HOUR, subject: ['Checkout: one page', 'Checkout: keep Apple Pay on top', 'Checkout: tests', 'Checkout: review fixes'][i] })
+  main[30].parents.push(feat[3].sha); main[30].subject = 'Merge branch feat/one-page-checkout'
+  const open = [{ sha: hex(), parents: [main[37].sha], refs: [{ name: 'feat/dark-mode', kind: 'branch' }], author: 'Sam Lee', date: main[37].date + HOUR, subject: 'Dark mode: first pass' }]
+  main[39].refs = [{ name: 'HEAD', kind: 'head' }, { name: 'main', kind: 'branch', current: true }, { name: 'origin/main', kind: 'remote' }]
+  main[20].refs = [{ name: 'v1.2.0', kind: 'tag' }]
+  out.push(...main, ...feat, ...open)
+  return out.sort((a, b) => b.date - a.date)
+}
+function gitRepo(id) {
+  if (id.startsWith('github:')) {
+    const g = GIT_HUB.find(([full]) => `github:${full}` === id) || fail(404, 'not_found', 'Repository not found')
+    return { kind: 'github', id, name: g[0].split('/')[1], branch: 'main', github: g[0], url: `https://github.com/${g[0]}`, private: g[3], permission: g[4], description: g[1], branches: 13, branches_shown: 13 }
+  }
+  const l = GIT_LOCAL.find((x) => x.path === id) || fail(404, 'not_found', 'Not a repository')
+  return { kind: 'local', id, ...l }
+}
+R('GET', '/api/git/repos', () => ({ root: S.settings.files_root || ROOT,
+  local: GIT_LOCAL.map((l) => { const h = gitHistory(l.path)[0]; return { ...l, last_commit: h.date, last_subject: h.subject } }),
+  github: { connected: true, login: 'acme-dev', error: null, errors: [], accounts: [{ login: 'acme-dev', name: 'Acme', avatar: null, keys: ['GITHUB_TOKEN'], repos: GIT_HUB.length }],
+    repos: GIT_HUB.map(([full, description, language, priv, permission, stars, issues]) => ({ full_name: full, owner: full.split('/')[0], name: full.split('/')[1], description, private: priv, fork: false,
+      archived: false, permission, default_branch: 'main', pushed_at: new Date((now() - stars * HOUR) * 1000).toISOString(), url: `https://github.com/${full}`, language, stars, open_issues: issues,
+      keys: ['GITHUB_TOKEN'], accounts: ['acme-dev'], local_paths: GIT_LOCAL.filter((l) => l.github === full).map((l) => l.path) })) } }))
+R('GET', '/api/git/graph', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), limit = Math.min(1000, Math.max(1, Number(q.get('limit')) || 200))
+  const all = gitHistory(repo.id)
+  return { repo, commits: all.slice(0, limit), truncated: all.length > limit }
+})
+R('GET', '/api/git/commit', ({ q }) => {
+  const repo = gitRepo(q.get('repo') || ''), c = gitHistory(repo.id).find((x) => x.sha === q.get('sha')) || fail(404, 'no_commit', 'No such commit')
+  const r = rng(parseInt(c.sha.slice(0, 8), 16)), pool = ['src/pages/checkout.tsx', 'src/styles/hero.css', 'README.md', 'tests/cart.test.ts', 'package.json', 'src/i18n/en.ts', 'src/components/Footer.tsx']
+  const files = pool.filter(() => r() < 0.45).map((p) => ({ path: p, additions: Math.floor(r() * 60) + 1, deletions: Math.floor(r() * 25) }))
+  if (!files.length) files.push({ path: pool[0], additions: 4, deletions: 1 })
+  return { sha: c.sha, parents: c.parents, author: c.author, email: `${c.author.split(' ')[0].toLowerCase()}@example.com`, date: c.date,
+    message: `${c.subject}\n\nKeeps the change small; tested on a phone and a desktop browser.`, files, files_total: files.length, ...(repo.github ? { url: `https://github.com/${repo.github}/commit/${c.sha}` } : {}) }
+})
+R('GET', '/api/git/pulls', ({ q }) => {
+  const id = q.get('repo') || ''
+  if (!id.startsWith('github:')) fail(400, 'not_github', 'Pull requests come from GitHub repositories')
+  const repo = gitRepo(id)
+  return [[18, 'Dark mode: first pass', 'sam-lee', 'feat/dark-mode', false], [17, 'Translate the about page', 'acme-dev', 'i18n/about', true]].map(([number, title, author, head, draft], i) => ({
+    number, title, author, head, base: 'main', draft, url: `https://github.com/${repo.github}/pull/${number}`, updated: now() - (i + 1) * 5 * HOUR }))
 })
 
 /* ---- settings & secrets */
@@ -2498,6 +2795,98 @@ R('POST', '/api/companions/runs/:sid/pull-request', async ({ params, body }) => 
   run.pull_request ||= { url: `https://github.com/acme/platform/pull/${140 + Object.keys(S.companions.runs).length}`, fingerprint: body.fingerprint }
   bus('companions')
   return { url: run.pull_request.url, target: 'acme/platform' }
+})
+
+/* ---- Infra page (server/maxxing/infra): servers, sites, databases, buckets, workers and domains of this server, a
+   registered one and Cloudflare / Hostinger. infra-resources.json is the output of the real builder (infra/build.py)
+   on the fixture of server/tests/test_infra.py; the owner's annotations, servers and domains live in the mock state. */
+const INFRA_RESOURCES = JSON.parse(fs.readFileSync(path.join(__dirname, 'infra-resources.json'), 'utf8'))
+function infraState() {
+  if (S.infra) return S.infra
+  S.infra = { refreshing: false, generated_at: now() - 7 * MIN, registry: {}, domains: [], servers: [{ name: 'far', label: 'Far VPS', host: '198.51.100.9', user: 'root', port: 22, note: '' }] }
+  return S.infra
+}
+function infraView() {
+  const st = infraState(), t = now()
+  const remote = new Set(INFRA_RESOURCES.filter((r) => r.kind === 'server' && r.location !== 'local').map((r) => r.location)) // registered servers of the fixture
+  const resources = INFRA_RESOURCES.filter((r) => !remote.has(r.location) || st.servers.some((s) => s.name === r.location))
+    .concat(st.domains.map((name) => ({ id: `domain:${name}`, kind: 'domain', name, location: 'other', provider: 'rdap', urls: [`https://${name}/`], status: 'ok', status_detail: '',
+      details: { name, registrar: 'Example Registrar', expires: t + 200 * DAY, auto_renew: true, dns: [{ type: 'A', name, content: '203.0.113.5' }], name_servers: ['ns1.example.net', 'ns2.example.net'], sources: ['rdap', 'dns'] },
+      links: [], project: null, note: '', hidden: false, declared: true, missing: false })))
+    .map((r) => {
+      const out = { ...clone(r), ...(st.registry[r.id] || {}) }
+      if (r.id === 'domain:example.org') out.details.expires = t + 20 * DAY // expiring soon: the warn state
+      if (r.kind === 'server' && r.location !== 'local') { const s = st.servers.find((x) => x.name === r.location); if (s) out.name = s.label || s.name }
+      return out
+    })
+  return { enabled: true, refreshing: st.refreshing, error: null, refresh_min: 15, generated_at: st.generated_at, took_ms: 2840, harness_host: 'ui.example.com',
+    sources: { servers: Object.fromEntries([['local', { ok: true, error: null, took_ms: 410 }], ...st.servers.map((s) => [s.name, { ok: true, error: null, took_ms: 1220 }])]),
+      cloudflare: { connected: true, key: 'CLOUDFLARE_API_TOKEN', error: null, sections: { zones: 'ok', workers: 'ok', worker_domains: 'ok', pages: 'ok', r2: 'ok', d1: 'ok', registrar: 'missing_permission', dns: 'ok' } },
+      hostinger: { connected: true, key: 'HOSTINGER_API_TOKEN', sections: { domains: 'ok', vps: 'ok' } },
+      ...Object.fromEntries(['vercel', 'netlify', 'supabase', 'github'].map((p) => [p, { connected: p === 'github', key: p === 'github' ? 'GITHUB_TOKEN' : null, error: null, label: p[0].toUpperCase() + p.slice(1),
+        beta: p !== 'github', token_url: `https://${p}.example.com/account/tokens`, keys: [`${p.toUpperCase()}_TOKEN`], sections: p === 'github' ? { sites: 'ok' } : {} }])) },
+    resources, servers: clone(st.servers) }
+}
+R('GET', '/api/infra', () => infraView())
+R('POST', '/api/infra/refresh', () => {
+  const st = infraState()
+  if (st.refreshing) return { started: false, refreshing: true }
+  st.refreshing = true
+  const g = GEN
+  setTimeout(() => { if (g === GEN) { st.refreshing = false; st.generated_at = now(); bus('infra') } }, 2500).unref()
+  bus('infra')
+  return { started: true, refreshing: true }
+})
+R('POST', '/api/infra/annotate', ({ body }) => {
+  const st = infraState(), cur = { ...(st.registry[body.id] || {}) }
+  if (body.project !== undefined) cur.project = String(body.project || '').trim().replace(/^\/+|\/+$/g, '') || null
+  if (body.note !== undefined) cur.note = String(body.note || '').trim().slice(0, 500)
+  if (body.hidden !== undefined) cur.hidden = !!body.hidden
+  const kept = Object.fromEntries(Object.entries(cur).filter(([, v]) => v !== null && v !== '' && v !== false))
+  if (Object.keys(kept).length) st.registry[body.id] = kept; else delete st.registry[body.id]
+  bus('infra')
+  return kept
+})
+R('GET', '/api/infra/reserved', () => ({ names: ['api', 'ext', 'assets', 'icons', 'sessions', 'files', 'tasks', 'crons', 'settings', 'infra', 'git', 'team', 'x', 'login', 'sw.js', 'manifest', 'index.html', 'favicon'] }))
+R('POST', '/api/infra/servers/connect', async ({ body }) => {
+  const st = infraState()
+  const host = String(body.host || '').trim(), user = String(body.user || 'root'), port = Number(body.port || 22)
+  if (!host && !body.id) fail(422, 'not_found', 'Give a host or a Hostinger server')
+  if (st.servers.some((s) => s.host === host)) fail(409, 'exists', 'This server is already connected')
+  await sleep(1500)
+  if (!/^192\.0\.2\.\d+$/.test(host) && !body.id) // only the documentation range 192.0.2.0/24 "accepts" the key in the mock
+    return { connected: false, message: 'No key of this server works yet: add the Harness public key to the server, then try again.', public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com',
+      command: `mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample harness@ui.example.com' >> ~/.ssh/authorized_keys` }
+  let name = (body.label || host || 'server').toLowerCase().replace(/[^a-z0-9-]+/g, '-').split('.')[0].slice(0, 36) || 'server'
+  for (let n = 2; st.servers.some((s) => s.name === name); n++) name = `${name.replace(/-\d+$/, '')}-${n}`
+  const s = { name, label: String(body.label || '').slice(0, 60), host: host || '203.0.113.40', user, port, note: '' }
+  st.servers.push(s); bus('infra')
+  return { connected: true, name: s.name, label: s.label, host: s.host, user: s.user, port: s.port, via: body.id ? 'added_key' : 'existing_key' }
+})
+R('POST', '/api/infra/servers/rename', ({ body }) => {
+  const s = infraState().servers.find((x) => x.name === body.name) || fail(404, 'not_found', `no server named ${body.name}`)
+  s.label = String(body.label || '').trim().slice(0, 60); bus('infra')
+  return { name: s.name, label: s.label }
+})
+R('POST', '/api/infra/servers/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.servers.some((x) => x.name === body.name)) fail(404, 'not_found', `no server named ${body.name}`)
+  st.servers = st.servers.filter((x) => x.name !== body.name); bus('infra')
+  return { removed: true }
+})
+R('POST', '/api/infra/domains', ({ body }) => {
+  const name = String(body.name || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0].replace(/\.$/, '')
+  if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(name)) fail(400, 'invalid_domain', 'not a domain name (example: example.com)')
+  const st = infraState()
+  if (!st.domains.includes(name) && !INFRA_RESOURCES.some((r) => r.id === `domain:${name}`)) st.domains.push(name)
+  bus('infra')
+  return { name }
+})
+R('POST', '/api/infra/domains/remove', ({ body }) => {
+  const st = infraState()
+  if (!st.domains.includes(body.name)) fail(404, 'not_found', 'This domain was not added by hand')
+  st.domains = st.domains.filter((x) => x !== body.name); bus('infra')
+  return { removed: true }
 })
 
 /* ---- system */

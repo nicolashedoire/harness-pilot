@@ -31,8 +31,10 @@ def test_chatty_shell_job_keeps_only_the_tail_and_spills_nothing_to_disk(mx, tmp
 
 def test_short_output_failure_and_timeout(mx):
     assert crons._run_shell(_job("echo hello; echo oops >&2; exit 3")) == (False, 3, "hello\noops\n")
-    ok, code, tail = crons._run_shell(_job("echo started; sleep 30", timeout_s=1))
-    assert (ok, code) == (False, 124) and tail.startswith("started") and "[timed out after 1 s]" in tail
+    # 3 s, not 1: the budget includes `bash -l`, which on macOS runs path_helper and the user's profile (0.5 s idle,
+    # more than 1 s on a busy machine: "started" was not printed yet when the job was killed)
+    ok, code, tail = crons._run_shell(_job("echo started; sleep 30", timeout_s=3))
+    assert (ok, code) == (False, 124) and tail.startswith("started") and "[timed out after 3 s]" in tail
 
 
 def test_background_child_holding_the_output_does_not_hold_the_run(mx):

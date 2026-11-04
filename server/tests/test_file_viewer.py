@@ -10,9 +10,8 @@ import pytest
 
 from maxxing.api import filesite
 
+from _needs import ffmpeg_webp, non_utf8_names
 from test_files import tree  # noqa: F401  (fixture)
-
-ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 
 
 def test_archive_listing(client, tree):  # noqa: F811
@@ -109,7 +108,7 @@ def _tiny_pdf() -> bytes:
     return out + b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
 
 
-@ffmpeg
+@ffmpeg_webp
 @pytest.mark.skipif(not shutil.which("pdftoppm"), reason="pdftoppm not installed")
 def test_pdf_thumbnail(client, tree):  # noqa: F811
     pdf = tree / "doc.pdf"
@@ -118,7 +117,7 @@ def test_pdf_thumbnail(client, tree):  # noqa: F811
     assert r.status_code == 200 and r.headers["content-type"] == "image/webp"
 
 
-@ffmpeg
+@ffmpeg_webp
 def test_tiff_always_converted(client, tree):  # noqa: F811
     tif = tree / "small.tiff"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=64x64", "-frames:v", "1", str(tif)], check=True)
@@ -141,6 +140,7 @@ def test_archive_cut_by_the_time_cap_is_listed_again(client, mx, monkeypatch):
     assert again["count"] == 50 and again["truncated"] is False
 
 
+@non_utf8_names
 def test_a_name_that_is_not_utf8_can_be_opened_renamed_and_deleted(client, mx):
     """Listed with U+FFFD in its path (UTF-8 cannot carry the raw byte): that path still opens the file."""
     import os
