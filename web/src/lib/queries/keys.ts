@@ -77,6 +77,13 @@ export const qk = {
     settings: ['feed', 'settings'] as const,
   },
   push: ['push'] as const,
+  atelier: {
+    all: ['atelier'] as const,
+    list: ['atelier', 'list'] as const,
+    draft: (id: string) => ['atelier', 'draft', id] as const,
+    /** a draft's preview RUNS its code: out of the `atelier` domain, so no bus event runs it again */
+    preview: (id: string) => ['atelier-preview', id] as const,
+  },
 }
 
 /** Global bus topic → query key prefixes to invalidate (minus what `busSkips` leaves to the streams). */
@@ -108,6 +115,8 @@ export const BUS_KEYS: Record<BusTopic, readonly (readonly unknown[])[]> = {
   themes: [qk.themes],
   /** a project, topic or file label changed (Personal, Agents, Shared) */
   'space-labels': [['space-labels']],
+  /** a creation of the agents was proposed, validated, refused, rolled back, broke or was fixed (the Atelier) */
+  atelier: [qk.atelier.all],
 }
 
 /** Data the bus keeps fresh on its own (file watchers + every write path): no refetch when the tab is shown
