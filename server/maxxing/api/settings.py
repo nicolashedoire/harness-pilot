@@ -135,6 +135,7 @@ class SavedThemeIn(BaseModel):
     theme: dict
     source: Literal[themes.SOURCES] = "imported"  # type: ignore[valid-type]
     from_: str = Field("", alias="from", max_length=200)
+    session: Optional[str] = Field(None, max_length=64)     # the theme generator's session (source "created")
 
 
 class ThemeNameIn(BaseModel):
@@ -149,7 +150,7 @@ def get_themes():
 @router.post("/themes")
 def post_theme(body: SavedThemeIn):
     try:
-        return themes.save_theme(body.theme, body.source, body.from_)
+        return themes.save_theme(body.theme, body.source, body.from_, body.session)
     except (themes.ThemeError, themes.ThemeLimit) as e:
         raise _theme_error(e) from None
 

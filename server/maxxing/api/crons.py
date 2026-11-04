@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -52,7 +53,8 @@ def list_crons():
 @router.post("")
 def create_cron(body: CronIn):
     try:
-        job = crons.create_job(body.model_dump(exclude_none=True))
+        job = crons.create_job(body.model_dump(exclude_none=True),
+                               origin={"agent": "user", "session": None, "at": time.time()})
     except crons.CronError as e:
         raise _bad(e) from None
     bus.invalidate("crons")

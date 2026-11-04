@@ -518,7 +518,10 @@ def _agent_of(meta: dict | None, claimed: str | None) -> str:
 
 def origin(sid: str | None, agent: str | None, at: float | None, summary: str | None) -> dict:
     meta = _session(sid)
-    return {"agent": _agent_of(meta, agent) if (sid or agent) else "user", "session": meta["id"] if meta else None,
+    who = _agent_of(meta, agent) if (sid or agent) else "user"
+    if sid and meta is None and not agent:             # its session is gone: an agent, which one is unknown
+        who = "unknown"
+    return {"agent": who, "session": meta["id"] if meta else None,
             "session_title": (meta or {}).get("title") or None, "session_path": (meta or {}).get("path") if meta else None,
             "at": at, "summary": (summary or None)}
 
@@ -1472,6 +1475,27 @@ def preview_ctx(ext: extensions.Extension, rec: dict) -> dict:
             legacy = True
     ctx["secret"] = lambda name: vault.get(str(name)) if (legacy or str(name) in allowed) else None
     return ctx
+
+
+def draft_widget(did: str) -> tuple[dict, extensions.Extension]:
+    """A pending draft HTML widget, loaded without code from its frozen copy (no link: registration refuses them)."""
+    rec = load_draft(did)
+    if rec is None or rec.get("status") != "pending" or rec.get("type") != "html_widget":
+        raise AtelierError(404, "not_found", f"no HTML widget in proposal {did}")
+    ext = extensions._load_one(_draft_dir(did) / rec["target"], load_code=False)          # noqa: SLF001
+    if ext.error or not ext.has_html:
+        raise AtelierError(404, "not_found", f"no HTML widget in proposal {did}")
+    return rec, ext
+
+
+def draft_frame_file(did: str, rel: str) -> Path | None:
+    """A file the preview frame of draft `did` may load (its frozen copy, `extensions.module_file` rules with
+    FRAME_TYPES: no hidden file, no link out of the folder, never api.py), or None."""
+    try:
+        _rec, ext = draft_widget(did)
+    except AtelierError:
+        return None
+    return extensions.module_file(ext, rel, extensions.FRAME_TYPES)
 
 
 def forget_preview(did: str) -> None:

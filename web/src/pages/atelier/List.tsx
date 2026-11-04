@@ -4,18 +4,20 @@
 // Desktop: a table. Touch layout: one card per creation.
 import * as React from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Search, TriangleAlert, WandSparkles, X } from 'lucide-react'
+import { Ellipsis, History, Search, Settings2, TriangleAlert, WandSparkles, X } from 'lucide-react'
 import { useAtelier } from '@/lib/queries'
 import { errorMessage } from '@/lib/api'
 import type { AtelierItem, AtelierType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { useT, type TKey } from '@/i18n'
 import { useCompact } from '@/stores/media'
-import { Badge, Button, EmptyState, Input, Sensitive, Skeleton, Tooltip } from '@/components/ui'
+import { Badge, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, EmptyState, Input, Sensitive, Skeleton, Tooltip } from '@/components/ui'
 import { Page } from '@/components/shell/Page'
 import { Origin, StatePill, TypeTile, VersionTag, pillState, typeLabel } from '@/features/atelier/parts'
 import { RowAction } from './RowAction'
 import { itemHref, newSessionHref } from './links'
+import { HistorySheet } from './History'
+import { SettingsSheet } from './Settings'
 
 /** The chips: one per group of types. Agents and cron jobs only show when there are some. */
 const FILTERS = {
@@ -66,13 +68,48 @@ export function AtelierList() {
   }
   const create = () => navigate(newSessionHref(t('atelier.createPrompt')))
 
-  const actions = (
+  const settingsOpen = params.get('settings') === '1'
+  const history = params.get('history') === '1'
+  const createButton = (
     <Tooltip content={touch ? t('atelier.create') : null}>
       <Button size={touch ? 'icon' : 'sm'} onClick={create} aria-label={t('atelier.create')}>
         <WandSparkles />
         <span className="max-md:hidden">{t('atelier.create')}</span>
       </Button>
     </Tooltip>
+  )
+  // touch layout: History and the settings in a "…" menu, so the top bar keeps two buttons beside the app menu
+  const actions = touch ? (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" aria-label={t('atelier.menu')}>
+            <Ellipsis />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => set({ history: '1' })}>
+            <History /> {t('atelier.history.title')}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => set({ settings: '1' })}>
+            <Settings2 /> {t('atelier.settings.title')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {createButton}
+    </>
+  ) : (
+    <>
+      <Tooltip content={t('atelier.settings.title')}>
+        <Button variant="outline" size="icon-sm" onClick={() => set({ settings: '1' })} aria-label={t('atelier.settings.title')}>
+          <Settings2 />
+        </Button>
+      </Tooltip>
+      <Button variant="outline" size="sm" onClick={() => set({ history: '1' })}>
+        <History /> {t('atelier.history.title')}
+      </Button>
+      {createButton}
+    </>
   )
 
   return (
@@ -141,6 +178,8 @@ export function AtelierList() {
           <p className="px-1 text-xs leading-relaxed text-muted-foreground">{t('atelier.footer')}</p>
         </div>
       )}
+      <HistorySheet open={history} onOpenChange={(o) => set({ history: o ? '1' : null })} />
+      <SettingsSheet open={settingsOpen} onOpenChange={(o) => set({ settings: o ? '1' : null })} />
     </Page>
   )
 }

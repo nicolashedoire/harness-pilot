@@ -632,8 +632,13 @@ cron jobs through their own modules, no copy of their data).
   extension's ctx with `record=False`; `secret()` = the declared keys, or without a declaration any key for a
   grandfathered extension and none otherwise, `None` for a key it may not read); card widgets run
   `card()` with `api.dashboard.TIMEOUT_S` on the extension threads (key `draft:<did>`) and get the dashboard's
-  cleaning; HTML widgets get `/ext/_drafts/<did>/widget-frame` (the `widget-frame` document of api/extensions.py) and
-  `/api/atelier/drafts/<did>/api/<path>` (their `handle()`, the `/api/ext/<id>` rules). Pages, blocks and agents:
+  cleaning; HTML widgets get `/ext/_drafts/<did>/widget-frame?grant=` (the installed widget frame's document: `<base>` on
+  an `api/extframes.issue("draft:<did>")` token, `widget_csp(hosts)`; `hosts` = the declared sites only with the
+  one-off grant `POST .../preview` returns, kept in memory an hour for that draft - the user asked to see it work, next
+  to the list of sites it declares; none otherwise), its files through `GET /ext/_drafts/<did>/f/<token>/<path>`
+  (`api/extframes.py`, no cookie, `atelier.draft_frame_file`: `extensions.module_file` on the frozen copy with
+  `FRAME_TYPES`, pending drafts only) and `/api/atelier/drafts/<did>/api/<path>` (their `handle()`, the `/api/ext/<id>`
+  rules). Pages, blocks and agents:
   `kind: none`.
 - **User installs**: `record_user_install(id, note)` records an extension the user made in the app as a version
   approved by the user (`blocks.pin` calls it for dashboard pins).
@@ -884,6 +889,11 @@ Config is read only for names. Tests: conftest sets `MAXXING_ALLOWED_HOSTS=tests
   `catch_up` itself before it starts anything (a crash never repeats it). For each enabled job with `catch_up` (not
   `@reboot`, not due this minute) and at least one `iter_runs` time after max(heartbeat, job `created`, `updated`) and
   before the current minute: one `spawn_run` + `feed.system` `cron.caught_up` (info). No heartbeat yet = first start: nothing.
+- Origin of a job (`origin` = `{agent, session, at}`, shown by the Atelier): `create_job(fields, origin)` (the API passes
+  `agent: "user"`); `pilot cron sync` run with `$MAXXING_SESSION` (a session's turn) calls `stamp_origins(sid,
+  $MAXXING_AGENT)`: the jobs without one created in the last `ORIGIN_RECENT_S` (24 h) - those the pilot-crons skill just
+  wrote in jobs.json - get that session; older jobs stay unknown. `update_job` keeps it (`{**cur, ...}`). A read-only
+  state (Codex's sandbox) records nothing.
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 

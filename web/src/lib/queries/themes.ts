@@ -10,14 +10,14 @@ import type { TeamMessage } from './team'
 // docs/dev/API.md "Settings & secrets". Every theme here is validated by the server (themes.clean_theme) and again
 // by the browser (normalizeTheme) before it is previewed or applied.
 export type ThemeSource = 'created' | 'imported' | 'received' | 'custom'
-export type SavedTheme = { id: string; theme: Theme; source: ThemeSource; from: string; saved: number }
+export type SavedTheme = { id: string; theme: Theme; source: ThemeSource; from: string; saved: number; session?: string }
 export type SessionTheme = { theme: Theme; file: string; at: number }
 
 export function useSavedThemes(enabled = true) {
   return useQuery({ queryKey: qk.themes, queryFn: () => api.get<{ themes: SavedTheme[]; max: number }>('/api/settings/themes'), enabled })
 }
 export function useSaveTheme() {
-  return useMut((b: { theme: Theme; source: ThemeSource; from?: string }) => api.post<SavedTheme>('/api/settings/themes', b), { invalidate: [qk.themes] })
+  return useMut((b: { theme: Theme; source: ThemeSource; from?: string; session?: string }) => api.post<SavedTheme>('/api/settings/themes', b), { invalidate: [qk.themes] })
 }
 export function useRenameTheme() {
   return useMut(({ id, name }: { id: string; name: string }) => api.patch<SavedTheme>(`/api/settings/themes/${seg(id)}`, { name }), {

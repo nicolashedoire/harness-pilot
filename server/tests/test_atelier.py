@@ -313,21 +313,40 @@ def test_preview_runs_the_draft_only_when_asked(client, mx, capsys, monkeypatch)
 
 
 def test_html_widget_preview_frame(client, mx, capsys, monkeypatch):
+    import re
     d = mx["ws"] / ".atelier" / "game"
     d.mkdir(parents=True)
-    (d / "manifest.json").write_text(json.dumps({"id": "game", "name": "Game", "type": "widget"}))
-    (d / "widget.html").write_text("<div id=x>hi</div>")
+    (d / "manifest.json").write_text(json.dumps({"id": "game", "name": "Game", "type": "widget",
+                                                 "permissions": {"network": ["api.example.com"]}}))
+    (d / "widget.html").write_text('<div id=x>hi</div><script src="./app.js"></script>')
+    (d / "app.js").write_text("document.getElementById('x').textContent = 'ran'\n")
     (d / "api.py").write_text("def handle(ctx, method, path, query, body):\n    return {'path': path}\n")
     _, out, _ = _cli(capsys, monkeypatch, "propose", "game")
     did = _draft_id(out)
-    assert client.post(f"/api/atelier/drafts/{did}/preview").json() == {
-        "kind": "html", "url": f"/ext/_drafts/{did}/widget-frame", "height": 260}
-    r = client.get(f"/ext/_drafts/{did}/widget-frame")
+    r = client.post(f"/api/atelier/drafts/{did}/preview").json()
+    assert r["kind"] == "html" and r["height"] == 260
+    url = r["url"]
+    assert url.startswith(f"/ext/_drafts/{did}/widget-frame?grant=")
+    # with the preview's grant: the declared site, and the draft's own files through the frame token
+    r = client.get(url)
     assert r.status_code == 200 and "<div id=x>hi</div>" in r.text
-    assert r.headers["content-security-policy"].startswith("sandbox allow-scripts")
+    csp = r.headers["content-security-policy"]
+    assert csp.startswith("sandbox allow-scripts") and "connect-src 'self' https://api.example.com" in csp
+    base = re.search(r'<base href="([^"]+)">', r.text).group(1)
+    assert base.startswith(f"/ext/_drafts/{did}/f/")
+    from fastapi.testclient import TestClient
+    anon = TestClient(client.app)                                  # the frame's opaque origin sends no cookie
+    f = anon.get(base + "app.js")
+    assert f.status_code == 200 and "ran" in f.text and f.headers["access-control-allow-origin"] == "*"
+    assert anon.get(base + "api.py").status_code == 404           # never its server code
+    assert anon.get(f"/ext/_drafts/{did}/f/nope/app.js").status_code == 404
+    # without the grant (a copied link, another draft's grant): no network at all
+    csp = client.get(f"/ext/_drafts/{did}/widget-frame").headers["content-security-policy"]
+    assert "connect-src 'self';" in csp and "api.example.com" not in csp
     assert client.get(f"/api/atelier/drafts/{did}/api/scores").json() == {"path": "scores"}
     client.post(f"/api/atelier/drafts/{did}/reject")
-    assert client.get(f"/ext/_drafts/{did}/widget-frame").status_code == 404
+    assert client.get(url).status_code == 404
+    assert anon.get(base + "app.js").status_code == 404             # decided: its files are no longer served
     assert client.get(f"/api/atelier/drafts/{did}/api/scores").status_code == 404
 
 
@@ -552,3 +571,42 @@ def test_a_link_never_brings_a_file_from_outside(client, mx, topic, capsys, monk
     atelier.write_request(elsewhere, "other", None, None, "codex")
     (mx["ws"] / topic / ".atelier" / "other").symlink_to(elsewhere)
     assert atelier.ingest_session({"id": "x", "path": topic}) == []
+
+
+def test_who_made_a_cron_job_or_a_theme(client, mx, topic, capsys, monkeypatch):
+    from maxxing import crons
+    s = client.post("/api/sessions", json={"path": topic, "message": "hi NOTOOL"}).json()
+    wait_idle(client, s["id"])
+    # a job made in the app: by the user
+    jid = client.post("/api/crons", json={"name": "Made here", "schedule": "0 3 * * *", "kind": "shell",
+                                          "command": "true"}).json()["id"]
+    it = client.get(f"/api/atelier/cron/{jid}").json()["item"]
+    assert it["origin"]["agent"] == "user" and it["origin"]["session"] is None
+    # a job an agent wrote in jobs.json, then `pilot cron sync` from its session: that session
+    path = crons.jobs_path()
+    data = json.loads(path.read_text())
+    import time as _t
+    data["jobs"].append({**crons.DEFAULTS, "id": "c_agent1", "name": "By Codex", "command": "true",
+                         "created": _t.time(), "updated": _t.time()})
+    data["jobs"].append({**crons.DEFAULTS, "id": "c_old001", "name": "Old", "command": "true",
+                         "created": _t.time() - 30 * 86400, "updated": _t.time() - 30 * 86400})
+    path.write_text(json.dumps(data))
+    monkeypatch.setenv("MAXXING_SESSION", s["id"])
+    monkeypatch.setenv("MAXXING_AGENT", "codex")
+    assert cli.main(["cron", "sync"]) == 0
+    it = client.get("/api/atelier/cron/c_agent1").json()["item"]
+    assert it["origin"]["agent"] == "codex" and it["origin"]["session"] == s["id"]
+    assert it["origin"]["session_path"] == topic
+    assert client.get("/api/atelier/cron/c_old001").json()["item"]["origin"] is None        # older: unknown
+    assert client.get(f"/api/atelier/cron/{jid}").json()["item"]["origin"]["agent"] == "user"
+    client.patch("/api/crons/c_agent1", json={"enabled": False})                             # edits keep it
+    assert client.get("/api/atelier/cron/c_agent1").json()["item"]["origin"]["session"] == s["id"]
+    # a theme saved from the theme generator: its session
+    pal = {"name": "Dusk", "base": "slate", "accent": "violet"}
+    th = client.post("/api/settings/themes", json={"theme": pal, "source": "created", "session": s["id"]}).json()
+    assert th["session"] == s["id"]
+    it = client.get(f"/api/atelier/theme/{th['id']}").json()["item"]
+    assert it["origin"]["session"] == s["id"] and it["origin"]["agent"] == "claude"
+    other = client.post("/api/settings/themes", json={"theme": {"name": "X", "base": "zinc", "accent": "green"},
+                                                       "source": "imported", "session": s["id"]}).json()
+    assert "session" not in other                                  # only the generator's themes carry one

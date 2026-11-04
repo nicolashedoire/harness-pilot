@@ -8,8 +8,9 @@ import type { Extension, ExtPermissionRefusal } from '@/lib/types'
 import { useT } from '@/i18n'
 import { Badge, Button } from '@/components/ui'
 
-/** The keys, sites and files an extension declares, what waits for the user, and the buttons to decide. */
-export function ExtensionPermissions({ ext }: { ext: Extension }) {
+/** The keys, sites and files an extension declares, what waits for the user, and the buttons to decide. The Atelier
+ *  shows the declaration and the keys granted before permissions existed itself: `summary` / `legacyNote` false. */
+export function ExtensionPermissions({ ext, summary = true, legacyNote = true }: { ext: Extension; summary?: boolean; legacyNote?: boolean }) {
   const t = useT()
   const consent = useExtensionConsent()
   const a = ext.access
@@ -23,8 +24,8 @@ export function ExtensionPermissions({ ext }: { ext: Extension }) {
   const askKeys = a.secrets.filter((s) => s.status === 'pending').map((s) => s.name)
   const askSites = (a.network ?? []).filter((n) => n.status === 'pending').map((n) => n.host)
   return (
-    <div className="grid gap-1.5 text-[13px]" data-testid="ext-permissions">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+    <div className="grid gap-1.5 text-[13px] empty:hidden" data-testid="ext-permissions">
+      {summary && <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
         {a.state === 'declared' ? (
           <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
         ) : (
@@ -40,15 +41,15 @@ export function ExtensionPermissions({ ext }: { ext: Extension }) {
           </>
         )}
         {a.refused && <Badge variant="muted">{t('ext.perm.refused')}</Badge>}
-      </div>
-      {a.state === 'legacy' && (
+      </div>}
+      {legacyNote && a.state === 'legacy' && (
         <div className="grid gap-0.5 text-xs text-muted-foreground">
           <p>{legacy.length ? t('ext.perm.legacyKeys', { names: legacy.join(', ') }) : t('ext.perm.legacy')}</p>
           {legacySites.length > 0 && <p>{t('ext.perm.legacySites', { hosts: legacySites.join(', ') })}</p>}
           {a.network_open && ext.type === 'widget' && <p>{t('ext.perm.networkOpen')}</p>}
         </div>
       )}
-      {a.state === 'undeclared' && <p className="text-xs text-muted-foreground">{t('ext.perm.undeclared')}</p>}
+      {summary && a.state === 'undeclared' && <p className="text-xs text-muted-foreground">{t('ext.perm.undeclared')}</p>}
       {a.pending && !a.refused && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2">
           {askKeys.length ? <KeyRound className="size-3.5 shrink-0 text-warning" aria-hidden /> : <Globe className="size-3.5 shrink-0 text-warning" aria-hidden />}

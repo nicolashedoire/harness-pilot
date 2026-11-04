@@ -209,12 +209,24 @@ const STATES_ANSWER = [
   j('chart', { title: 'Visits', kind: 'pie', series: [{ name: 'Visits', points: [['Mon', 'many']] }] }),
 ].join('\n\n')
 
+const PROPOSAL_ANSWER = [
+  'I wrote the widget and proposed it to the Atelier: nothing is on your dashboard until you approve it.',
+  '',
+  '```proposal',
+  '{"draft": "d_1a2b3c4d5e6f", "title": "Weather board"}',
+  '```',
+  '',
+  'It calls api.open-meteo.com once an hour; nothing else leaves the server.',
+].join('\n')
+
 export function seedBlocksSessions(st, t, { uuid, topicPath, ROOT, MIN, HOUR }) {
   const shows = [
     { title: 'October sales report', path: topicPath('acme', 'website'), ago: 8 * MIN, prompt: 'Analyse October sales against September: the key figures, the daily trend and the best products.', answer: DATA_ANSWER(ROOT) },
     { title: 'Checkout test failing', path: topicPath('acme', 'website'), ago: 12 * MIN, prompt: 'The checkout test fails since this morning. Find out why and fix it.', answer: CODE_ANSWER(ROOT) },
     { title: 'Mug launch campaign', path: topicPath('acme', 'website'), ago: 16 * MIN, prompt: 'Prepare the mug launch campaign. I want to choose the audience and the budget.', answer: INTERACTIVE_ANSWER },
     { title: 'Block plugins and states', path: topicPath('acme', 'website'), ago: 20 * MIN, prompt: 'Show me the launch plan, the pick-up points and the week.', answer: STATES_ANSWER },
+    // the proposal card of the Atelier (web/mock/atelier.mjs seeds the draft d_1a2b3c4d5e6f, "Weather board")
+    { title: 'Weather widget for the office', path: topicPath('acme', 'website'), ago: 4 * MIN, prompt: 'Make me a small weather widget for the office.', answer: PROPOSAL_ANSWER },
   ]
   for (const d of shows) {
     const id = uuid()
