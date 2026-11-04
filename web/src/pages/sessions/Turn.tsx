@@ -48,15 +48,18 @@ export function buildBlocks(items: Item[], provider: Session['provider']): Block
   let turn: TurnBlock | null = null
   let users = 0
   let replies = 0
+  let summary = false // a summary turn follows its request: it is not a reply of the discussion
   for (let i = 0; i < items.length; i++) {
     const it = items[i]
     if (it.kind === 'user') {
       turn = null
+      summary = false
       out.push({ kind: 'user', key: it.key, item: it, first: i, last: i, intervention: duo && users++ > 0 })
       continue
     }
     if (it.kind === 'request') {
       turn = null
+      summary = true
       out.push({ kind: 'request', key: it.key, item: it, first: i, last: i })
       continue
     }
@@ -64,6 +67,7 @@ export function buildBlocks(items: Item[], provider: Session['provider']): Block
       const agent = duo && it.ev.level === 'info' ? AGENT_NOTES[it.ev.text.trim()] : undefined
       if (agent) {
         // the note itself is not shown: the turn's header says who answers
+        summary = false
         turn = { kind: 'turn', key: it.key, agent, items: [], first: i, last: i, reply: ++replies }
         out.push(turn)
         continue
@@ -74,7 +78,8 @@ export function buildBlocks(items: Item[], provider: Session['provider']): Block
       }
     }
     if (!turn) {
-      turn = { kind: 'turn', key: it.key, agent: base, items: [], first: i, last: i, reply: duo ? ++replies : 0 }
+      turn = { kind: 'turn', key: it.key, agent: base, items: [], first: i, last: i, reply: duo && !summary ? ++replies : 0 }
+      summary = false
       out.push(turn)
     }
     turn.items.push(it)

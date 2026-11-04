@@ -90,6 +90,7 @@ Python modules call each other only through these functions. Keep signatures sta
   `base_tokens`) says whether a summary goes first. If so the idle-compaction mechanics run (`held` + `compact` item)
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
+- Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
@@ -104,8 +105,13 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `store.edit`, sets `team_parent` on each worker and sends it its role and the mission (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
-- `get(sid)` -> `{id, phase, agents: [{..., state, session}]}`; `state` = `stopped` once the user stopped that worker,
-  else the session's state (`missing` when it is gone). A session without a team -> 404 `not_found`.
+- `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
+  `state` = `stopped` once the user stopped that worker, else the session's state (`missing` when it is gone). A
+  session without a team -> 404 `not_found`. `activity` / `report` come from `_live_view`: the last `LIVE_TAIL`
+  (128 kB) of the worker's log (`service._tail_events`), its latest turn (after the last `user` event), the last
+  `ACTIVITY_MAX` (3) tool calls and texts, the first `REPORT_MAX` (600) characters of its last answer once it stopped.
+  Cached per worker in `_live` (64 entries) on `(service.log_ident, running)`: the panel's polls re-read a log only
+  when it changed.
 - `stop_agent(sid, agent_id)`: only while `working` and that worker runs (else 409 `not_running`), marks it
   `stopped` and stops it alone. `stop(sid)`: phase `stopped`, running workers marked, every worker and the
   coordinator stopped. Both call `service.stop(..., _team_internal=True)`.
