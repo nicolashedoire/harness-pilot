@@ -61,6 +61,14 @@ def command(thread_id: str, mode: str, model: str = "", images: list[str] | None
     # Never silently give Codex unrestricted machine access, including when Claude's default is bypass.
     sandbox = "read-only" if mode in ("default", "plan") else "workspace-write"
     args = [binary, "exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--sandbox", sandbox]
+    # Keep app-owned turns private even if the CLI's built-in analytics default changes.
+    # analytics.enabled alone does not disable explicitly configured OTLP exporters.
+    for key, value in (
+        ('analytics.enabled', 'false'), ('otel.exporter', '"none"'),
+        ('otel.metrics_exporter', '"none"'), ('otel.trace_exporter', '"none"'),
+        ('otel.log_user_prompt', 'false'), ('otel.log_agent_responses', 'false'),
+    ):
+        args += ['-c', f'{key}={value}']
     if model:
         args += ["--model", model]
     for image in images or []:
