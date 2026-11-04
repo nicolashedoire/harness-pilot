@@ -12,6 +12,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOCAL_DIR="${HARNESS_PILOT_LOCAL_DIR:-$ROOT/.harness-pilot-local}"
 PORT="${HARNESS_PILOT_PORT:-8787}"
 case "$PORT" in *[!0-9]*|"") echo "HARNESS_PILOT_PORT must be a number" >&2; exit 1;; esac
+if [ "${1:-}" = "service" ]; then
+  shift
+  HARNESS_PILOT_LOCAL_DIR="$LOCAL_DIR" HARNESS_PILOT_PORT="$PORT" exec bash "$ROOT/scripts/macos-service.sh" "$@"
+fi
 export MAXXING_STATE="$LOCAL_DIR/state"
 export MAXXING_SPAWN=direct
 export HARNESS_PILOT_LOCAL_MODE=1
@@ -29,10 +33,6 @@ export MAXXING_SKILLS_DIR="$LOCAL_DIR/.claude/skills"
 # The same for Codex: it reads .agents/skills from a session's folder and its parents up to the Git root (the default
 # local dir is inside this checkout), so ~/.agents/skills is never written.
 export MAXXING_CODEX_SKILLS_DIR="$LOCAL_DIR/.agents/skills"
-if [ "${1:-}" = "service" ]; then
-  shift
-  HARNESS_PILOT_LOCAL_DIR="$LOCAL_DIR" HARNESS_PILOT_PORT="$PORT" exec bash "$ROOT/scripts/macos-service.sh" "$@"
-fi
 mkdir -p "$MAXXING_STATE" "$HARNESS_PILOT_WORKSPACE"
 chmod 700 "$LOCAL_DIR" "$MAXXING_STATE"
 cd "$ROOT/server"
