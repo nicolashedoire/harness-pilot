@@ -48,7 +48,8 @@ export async function subscribeBrowser(publicKey: string, sources: PushSource[] 
     requestPermission: () => Notification.requestPermission(),
     getSubscription: () => r.pushManager.getSubscription(),
     matches: (existing) => sameServerKey(existing.options?.applicationServerKey, publicKey),
-    unsubscribe: (existing) => existing.unsubscribe(),
+    // as before: a failed unsubscribe still lets the browser try the new key (it answers for itself)
+    unsubscribe: (existing) => existing.unsubscribe().catch(() => false),
     subscribe: () => r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) }),
   }, signal)
   const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } }
