@@ -41,8 +41,8 @@ terminal there ([Codex sign-in](settings-and-keys#codex-sign-in)).
 
 A Codex session shares the topic's instructions and memory (`CLAUDE.md`, `memory.md`), takes attachments (images
 are sent to Codex directly), supports [Plan mode](#plan-mode) (a read-only turn, then **Approve and run**), **Compact**,
-**Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions, and shows the **context gauge** in its
-header (read from what Codex records after each answer). It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
+**Hand off** ([Compact vs hand off](#compact-vs-hand-off)) and side questions, shows the **context gauge** in its
+header (read from what Codex records after each answer) and is compacted automatically when its context gets large. It has no permission prompts: in **Ask (strict)** and in Plan mode it runs read-only, in **Accept file
 edits** and **Full access** it may write in the session's folder (its workspace sandbox); it is never given
 unrestricted access to the computer.
 On Telegram, `/codex` starts a Codex session and `/discuss` a Claude Code + Codex discussion
@@ -61,8 +61,8 @@ These features are for Claude Code only for now:
   outside Full access, only their read-only tools), but not Claude's sign-ins, the claude.ai connectors nor the
   Browser of my PC.
 - **Claude swarm** and the **Agent map**.
-- The automatic compactions (when the context gets large, and after a long pause): watch the context gauge and
-  compact it yourself from the session menu.
+- The compaction when you come back after a long pause (**Compact when you come back**, **Smart resume**): compact
+  a long Codex session yourself from the session menu before you go on.
 - The extra rules of Claude's permission settings (`claude_deny`): Codex only follows its own sandbox.
 - The **usage quota** and the indicative dollar amount: Codex turns count tokens only.
 
@@ -392,6 +392,9 @@ Long sessions then stop re-sending their whole history on every call, which roug
 Pick a higher threshold (or Off) for a session that needs every detail of a very long exchange. A single long turn
 (many tool calls in a row) is compacted along the way too, near the same threshold, instead of growing up to the
 model's limit. `pilot sessions token-report` shows, on your own sessions, what each threshold would have saved.
+A **Codex** session is compacted the same way, at the threshold or at 80 % of the window Codex works with (206k of its
+258k tokens), whichever comes first - the default threshold is above Codex's window. Inside a long turn, Codex
+compacts its own conversation near 245k tokens.
 
 **Discussions and debates** between Claude Code and Codex are compacted too. When a reply ends near the limit
 (the automatic compaction threshold above, or 80 % of the model's context), or when an agent refuses a reply
@@ -399,8 +402,7 @@ because its conversation is full, Claude summarizes the exchanges so far, then b
 conversations that start from that summary, and a refused reply is asked again. The thread shows a
 *Conversation summarised to continue* separator, the summary and a note; the summary does not count as a reply.
 **Compact context** in the session's **…** menu does the same on demand, also while the discussion is paused (it
-stays paused). Codex does not report how full its conversation is, so on its side the summary comes when it
-refuses a reply.
+stays paused). Codex's side is measured too, from what Codex records after each reply.
 **Summarise & restart** works on a discussion too: a new discussion with the same objective, roles, models and
 limits starts from a summary of the exchanges (shown at its top), both agents start from it, and the old one
 is archived. A discussion paused before the hand-off stays paused in the new one: **Resume** asks the reply it
