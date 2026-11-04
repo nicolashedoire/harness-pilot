@@ -74,6 +74,9 @@ def test_card_errors_keep_the_extension_frames(org, capsys):
     assert r["trace"] == ["api.py:6 in card: return helper({})", "api.py:2 in helper: return d['missing']"]
     assert extcheck.check("listy")["error"] == "ValueError: card() must return a dict, got list"
     assert "no block" in _steps(extcheck.check("noblock"), "warn")[0]
+    _ext(org, "said", {"type": "widget"},
+         api_py="def card(ctx):\n    return {'status': 'error', 'error': 'SHOP_TOKEN is missing', 'blocks': []}\n")
+    assert extcheck.check("said")["error"] == "card() reported an error: SHOP_TOKEN is missing"
     code, out, _ = _run(capsys, "boom")
     assert code == 1 and "at api.py:2 in helper" in out
 

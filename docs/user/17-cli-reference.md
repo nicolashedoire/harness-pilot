@@ -144,7 +144,8 @@ What is checked:
 - every extension: `manifest.json` (or `block.json`) and `api.py` are loaded as the server loads them, with the same
   10-second limit for `api.py`; the error is the one shown in Settings -> Extensions;
 - a card widget: `card(ctx)` runs with the dashboard's 20-second limit and its result goes through the same cleaning
-  as on the dashboard. A card that keeps no block, blocks of an unknown type (dropped) and a card whose status is
+  as on the dashboard. A card that returns an `"error"` (`{"error": "SHOP_TOKEN is missing"}`) is broken, as for
+  `pilot update --verify`; a card that keeps no block, blocks of an unknown type (dropped) and a card whose status is
   `"error"` are warnings; an exception shows the lines of your `api.py` it went through;
 - an HTML widget: the frame is served, `widget.html` is a document with content, every `<script>` is closed and
   parses (`node --check`, with the line numbers of `widget.html`), it loads no other file of the folder (only
