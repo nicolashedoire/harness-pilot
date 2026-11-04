@@ -25,6 +25,7 @@ import { DiffBlock, TerminalBlock } from './builtins/code'
 import { FileBlock, LinkBlock } from './builtins/media'
 import { ChecklistBlock, CreatedBlock, FormBlock } from './builtins/interactive'
 import { AppBlock, PluginBlock } from './builtins/frames'
+import { ProposalBlock } from './builtins/proposal'
 
 /** Larger bodies are not parsed (the server caps block data the same way). */
 export const MAX_BLOCK_BYTES = 512 * 1024
@@ -44,6 +45,7 @@ const RENDERERS: Record<string, React.ComponentType<RendererProps>> = {
   checklist: ChecklistBlock,
   app: AppBlock,
   created: CreatedBlock,
+  proposal: ProposalBlock,
 }
 
 /** FNV-1a: a short stable key of a block (what this browser remembers about it). */

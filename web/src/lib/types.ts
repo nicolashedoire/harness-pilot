@@ -1102,3 +1102,18 @@ export type AtelierPreview =
   | { kind: 'html'; url: string; height: number }
   | { kind: 'none'; reason: 'page' | 'block' | 'agent' }
 export type AtelierDecision = { ok: boolean; item: AtelierItem; version: number }
+export type AtelierHealth = { state: AtelierState; error: AtelierError | null; errors: AtelierError[]; checked_at: number | null }
+export type AtelierItemDetail = {
+  item: AtelierItem
+  /** newest first */
+  versions: AtelierVersion[]
+  /** newest first, 100 at most */
+  history: AtelierEvent[]
+  /** pending first, then the newest decided */
+  drafts: AtelierDraft[]
+  /** the active version's files (kind extension) */
+  files: { path: string; size: number }[]
+  permissions: AtelierPermissions | null
+  health: AtelierHealth
+}
+export type AtelierVersionDiff = { version: AtelierVersion; against?: number | null; files: AtelierDraftFile[] }
