@@ -11,8 +11,8 @@ update) then:
     stays as it is;
   * the prompt of a default job or a starter-pack job the user never edited (equal to the shipped prompt once
     renamed).
-  Only the exact old skill names are replaced. Text the user wrote is never touched: Claude proposes those
-  changes to the user (upgrade notes).
+  CLI references in recognized template-owned CLAUDE.md lines are also refreshed to the current spelling.
+  Text the user wrote is never touched: Claude proposes those changes to the user (upgrade notes).
 """
 from __future__ import annotations
 
@@ -44,6 +44,9 @@ _OLD_SKILL = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in sorted(S
                         + r")(?![\w-])")
 _PRODUCT = re.compile(r"Harness Maxxing|harness-pilot")
 _CLI = re.compile(r"(?<![\w./@-])(?:pilot|maxxing)(?![\w./@-])")
+_OLD_CLI = re.compile(r"(?<![\w./@-])maxxing(?![\w./@-])")
+_CLI_ALIAS_NOTES = (" (`maxxing`, its earlier name, still works)",
+                    " (`maxxing` = the same command, earlier name)")
 RENDERED_SUFFIXES = (".md", ".json", ".txt")
 
 
@@ -131,6 +134,12 @@ def _migrate_file(template: Path, dst: Path, variables: dict[str, str]) -> int:
     return n
 
 
+def _workspace_file(ws: Path, dst: Path) -> bool:
+    """Never follow a link in a template destination, including a linked project or topic folder."""
+    parts = dst.relative_to(ws).parts
+    return not any(ws.joinpath(*parts[:i]).is_symlink() for i in range(1, len(parts) + 1))
+
+
 def migrate_workspace(ws: Path) -> list[str]:
     """Workspace files (relative paths) whose product lines got the new skill names."""
     from .cmd_core import template_vars
@@ -138,10 +147,45 @@ def migrate_workspace(ws: Path) -> list[str]:
     changed = []
     for template, dst in _template_pairs(ws):
         try:
+            if not _workspace_file(ws, dst):
+                continue
             if _migrate_file(template, dst, variables):
                 changed.append(str(dst.relative_to(ws)))
         except OSError as e:
             log.warning("skill rename: %s not migrated: %s", dst, e)
+    return changed
+
+
+def migrate_cli_workspace(ws: Path) -> list[str]:
+    """Refresh only original product instruction lines; custom prose and historical messages are untouched."""
+    from .cmd_core import render_template, template_vars
+    variables = template_vars(ws)
+    changed = []
+    for template, dst in _template_pairs(ws):
+        try:
+            if dst.name != 'CLAUDE.md' or not _workspace_file(ws, dst) or not dst.is_file():
+                continue
+            text = dst.read_bytes().decode('utf-8')  # keep CRLF and missing final newlines
+            if not _OLD_CLI.search(text):
+                continue
+            current = render_template(template.read_text(encoding='utf-8'), variables).splitlines()
+            product = {_neutral(line): line for line in current}
+            out, n = [], 0
+            for line in text.splitlines(keepends=True):
+                body = line.rstrip('\r\n')
+                lookup = body
+                for note in _CLI_ALIAS_NOTES:
+                    lookup = lookup.replace(note, '')
+                target = product.get(_neutral(lookup))
+                if target is not None and _OLD_CLI.search(body) and target != body:
+                    line = target + line[len(body):]
+                    n += 1
+                out.append(line)
+            if n:
+                _write_text(dst, ''.join(out))
+                changed.append(str(dst.relative_to(ws)))
+        except (OSError, UnicodeDecodeError) as error:
+            log.warning('CLI guidance: %s not migrated: %s', dst, error)
     return changed
 
 
@@ -183,5 +227,6 @@ def migrate_jobs() -> list[str]:
 
 
 def migrate(ws: Path) -> dict:
-    """-> {"files": [relative paths], "jobs": [ids]} changed by the skill rename (empty once done)."""
-    return {"files": migrate_workspace(ws), "jobs": migrate_jobs()}
+    """-> {"files": [relative paths], "jobs": [ids]} changed by product-name migrations (empty once done)."""
+    files = migrate_workspace(ws) + migrate_cli_workspace(ws)
+    return {"files": list(dict.fromkeys(files)), "jobs": migrate_jobs()}

@@ -85,7 +85,7 @@ Everything a tool prints stays in the conversation and is re-sent on every follo
 
 This workspace is driven by harness-pilot, a web control room for Claude Code (URL: see
 `pilot status`). Sessions, files, tasks, scheduled jobs, Telegram and backups are managed from the
-UI; the server CLI is `pilot` (`maxxing`, its earlier name, still works):
+UI; the server CLI is `pilot`:
 
 | Command | Purpose |
 |---|---|
