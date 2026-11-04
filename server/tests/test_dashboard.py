@@ -144,6 +144,17 @@ def test_backup_and_usage(client, org, fakes, monkeypatch):
     assert u["status"] == "warn" and u["blocks"][0]["value"] == 85.0 and "hint" not in u["blocks"][1]
 
 
+@pytest.mark.parametrize("reason", ["http_503", "URLError", "TimeoutError"])
+def test_a_failed_plan_usage_reading_shows_no_raw_error(client, org, fakes, monkeypatch, reason):
+    """The plan usage endpoint is undocumented: its failures read as an experimental reading that failed."""
+    _show_all()
+    config.update_config(usage_widget=True)
+    monkeypatch.setattr(health, "usage", lambda force=False: {"available": False, "reason": reason,
+                                                              "five_hour": None, "seven_day": None})
+    text = _by_id(client)["usage"]["card"]["blocks"][0]["text"]
+    assert reason not in text and text.startswith("Experimental:")
+
+
 def test_layout_and_extensions(client, org, fakes):
     d = org.ws / "extensions" / "counter"
     d.mkdir(parents=True)

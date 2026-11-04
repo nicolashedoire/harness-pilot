@@ -91,18 +91,20 @@ Python modules call each other only through these functions. Keep signatures sta
   with `resume.summary_prompt(message)` instead of `SUMMARY_PROMPT`: the summary is written for the waiting message.
   Otherwise `_idle_compact` (plain summary) as before.
 - Discussion compaction (provider `discussion` / `debate`): `_debate_followup` sets meta `discussion_compact_due` (`{tokens, agent}`) when `_debate_due(attempt, cfg)` - Claude's `context_tokens` >= min(max(`auto_compact_tokens`, `AUTO_COMPACT_MIN`), `DEBATE_COMPACT_RATIO` x context window) - or, for a turn refused with `_context_overflow` (`CONTEXT_OVERFLOW` on the error, stderr or an error `result`), `{overflow: agent}` and puts the popped item back at the queue head with `debate_retry: true` (once; no second `mx_user` line). `_take` then inserts a `compact` item (`DEBATE_SUMMARY_PROMPT`, `auto`) before the next `user`/`debate` item (a `user` one `held`) and writes `_debate_due_note`. `turn` sends a discussion's `compact` item to `_debate_compact`: Claude, `--permission-mode plan`, a new `--session-id` (never the agents' threads), prompt = request + `_debate_transcript(log, discussion_compacted_at)` (user messages and each turn's last assistant text with its agent, summary turns skipped, last `DEBATE_TRANSCRIPT_MAX` chars of the last `DEBATE_LOG_TAIL` bytes) + the previous `discussion_summary`. On success: new `csid` + `fresh`, `codex_thread_id` dropped, `discussion_summary` (`DEBATE_SUMMARY_MAX`), `discussion_compacted_at`, due flag cleared; an agent whose thread is fresh (Claude `fresh`, Codex without `codex_thread_id`) gets `SEED_DEBATE` as preface. `_pop` lets a `compact` head run while the discussion is paused (`service.compact`).
+- Discussion hand-off: `service.handoff` copies `DISCUSSION_CARRIED` (`debate_goal`, roles, `codex_model`, limits) and, when paused, `debate_pending` + `debate_next` (new one paused, reason `user`) to the continuation and queues a `handoff` item (`DEBATE_SUMMARY_PROMPT`, `target`) on the old one; `_pop` also runs a `handoff` head while paused. `_debate_compact` ends with `_debate_handoff(target, summary)`: target meta `discussion_summary` + `discussion_from` (old title: `SEED_DEBATE_HANDOFF` instead of `SEED_DEBATE`, dropped by its next compaction), an `mx_user` `kind: seed` line (`source: system`) with that seed, `_start_target(target, None)`; the old one is archived and unpaused. `resume_debate` does not start a continuation still `_handoff_held`.
 - A successful turn of a `cron=True` session archives it; a message from the web/Telegram clears the flag.
 
 
 ## maxxing.sessions.teams  (owner: core) - mixed Claude + Codex teams
 API: `/api/teams*` (API.md). A team is three ordinary sessions of one topic, each stoppable on its own: a Claude
 coordinator (the parent, returned by `create`) and two workers, `claude` and `codex`, in `permission_mode='plan'`.
-- State: coordinator meta `team: {phase, goal, agents: [{id, provider, role, stopped}], created}`, worker meta
+- State: coordinator meta `team: {phase, goal, attachments, agents: [{id, provider, role, stopped}], created}`, worker meta
   `team_parent: <coordinator id>`; the Session JSON exposes `team_phase`, `team_parent` and `team_turn`
   (`service._team_turn`). Phases: `launching` -> `working` -> `synthesizing` -> `completed`, or `stopped` / `error`.
-- `create(path, message, title=None)`: mission of 1-24 000 characters (else 400 `bad_mission`). Creates the
-  coordinator then the workers, logs the mission as the coordinator's `mx_user` line, then, inside the coordinator's
-  `store.edit`, sets `team_parent` on each worker and sends it its role and the mission (`source='team'`; asked not
+- `create(path, message, title=None, attachments=None)`: mission of 1-24 000 characters (else 400 `bad_mission`),
+  attachments checked by `service._check_attachments` (400 `bad_attachment`) before anything is created. Creates the
+  coordinator then the workers, logs the mission and its attachments as the coordinator's `mx_user` line, then, inside the coordinator's
+  `store.edit`, sets `team_parent` on each worker and sends it its role and the mission with the attachments (`source='team'`; asked not
   to edit files - an instruction, not an isolation boundary). A stop during the launch -> 409 `team_stopped`; any
   failure -> phase `error` (unless stopped) and the workers stopped.
 - `get(sid)` -> `{id, phase, created, agents: [{..., state, session, started_at, finished_at, activity, report}]}`;
@@ -122,7 +124,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   carries on after a server restart. `launching` for more than 30 s -> `error`, workers stopped. `working` with no
   worker running -> one synthesis prompt with each report (`service.last_assistant_text`, 20 000 characters, or a
   placeholder for a stopped, failed or silent worker; reports are framed as untrusted observations) queued on the
-  coordinator (`service._item(prompt, [], 'team')`, state `running`, `_spawn`), phase `synthesizing`; skipped when
+  coordinator (`service._item(prompt, team['attachments'], 'team')`, the mission's attachments, state `running`, `_spawn`), phase `synthesizing`; skipped when
   the phase or the agents changed meanwhile (a concurrent stop: rebuilt on the next pass). `synthesizing` and the
   coordinator no longer running -> `completed` (idle with turns) or `error`.
 - Notifications: a worker on its assignment (`team_turn`: `team_parent` set and no `last_turn` yet, or one whose
@@ -219,6 +221,15 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
 - Uses from sessions.service: `create_session`, `get_session`, `list_sessions`, `send_message`, `stop`,
   `update_session(sid, model=…)` (/model), `read_events` / `end_offset` (progress mode), `last_assistant_text`, `models()`.
   These are called from worker threads (`asyncio.to_thread`) and must be thread-safe.
+- `telegram.reviews` (companion decisions): `buttons(ev)` gives a built-in `companion.ready` event (source `system`,
+  params `session_id` + 64-hex `fingerprint`; the companion kinds are reserved against external producers) Review and
+  Discuss buttons, `c:<feed id>:<v|a|r|d>`. `handle()` runs after `_on_callback`'s linked-owner check (linked private
+  chat and owner user id), re-reads `companions.review` and refuses a running or changed proposal (fingerprint other
+  than the event's), an already decided one, and a binary one or one whose complete text (Git patch + new files as
+  `+` lines) exceeds `MAX_REVIEW` (12000). Review sends that text as `<pre>` blocks, then Approve / Reject only when
+  every part was delivered. A decision is `companions.decide(sid, value, <event fingerprint>)`: recorded, never
+  applied, published or merged (a mission step's dependents may start, as after a web approval). Discuss reopens the
+  session's thread (`reopen_thread`) without a model request; messages there follow the normal session path.
 
 ## maxxing.feed / maxxing.feedhooks  (owner: organisation)
 - `feed.post(title, body="", level="info", source="custom", url="", dedupe=None, group=None, notify=True, *,
@@ -233,7 +244,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
   `feed.system(title, body, level, source, url, group, dedupe, *, kind, params, actions)` = trusted post that never
   raises (built-in events: `crons._feed`, `sessionfeed`, `health._to_feed`, `cmd_core.notify_update` / `_notify`,
   `auto_update`, `smartupdate.after_update`, `claude_update`, `deps` / `cmd_deps`, `backup` restore, `twofactor`,
-  `api/auth._alert`, `feedhooks`, `infra._alerts` (trusted `feed.post`)). `feed.link(id, label, url)` /
+  `api/auth._alert`, `feedhooks`, `infra._alerts` and `api/tasks.check_reminders` (trusted `feed.post`)). `feed.link(id, label, url)` /
   `feed.post_action(id, label, url)` build actions. Every built-in kind is in `feed.KINDS` (kind -> (source, level))
   and documented with its params in API.md.
 - Schema: columns `kind, params (JSON), actions (JSON), resolved_at, first_at, occurrences (JSON, <= 20)` were added
@@ -244,7 +255,7 @@ coordinator (the parent, returned by `create`) and two workers, `claude` and `co
 - `feed.resolve(source, group) -> int` (warning / error rows of that group not yet resolved get `resolved_at`;
   `system_resolve` = never raises), `resolve_ids(ids) -> pending count`. Groups used: `failed:<cron id>`,
   `session:<sid>`, `discussion:<sid>`, `hook-secret-<hook id>`, `health:<issue id>`, `down:<resource id>`,
-  `claude-update-failed`.
+  `claude-update-failed`, `task:<task id>`.
 - `feed.list_events(source, unread, before, limit, *, category, kind, pending)` + `counts()` (`{unread, pending,
   sources, categories, kinds}` from `_aggregate(c, cutoff)` = one row per (source, kind), cached per feed.db / WAL
   stamp and minute: `_groups()`), `source_counts()`, `pending_count()`, `get(id, detail=False)`, `category(source)`,
@@ -350,6 +361,15 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
 - `services(force=False)` - GET /api/system/services: ONE `systemctl show <all units>` (blocks split on blank
   lines, matched by `Id`), cached 10 s; `invalidate_services()` after a start / stop / restart.
 
+## maxxing.mediatools  (owner: organisation)
+- `status() -> dict` - GET /api/system/media-tools: `ffmpeg` / `pdftoppm` from `shutil.which` on every call, `webp`
+  from `ffmpeg -hide_banner -encoders` listing `libwebp` (`_encodes_webp`, lru-cached per binary path and mtime);
+  `missing` in the order ffmpeg | ffmpeg_webp, pdftoppm; `install_commands(missing)`: Homebrew on `darwin`
+  (`ffmpeg-full`, keg-only, which `scripts/dev-local.sh` puts first on the PATH when installed; `poppler`), one
+  `sudo apt-get install -y` elsewhere. Never installs anything.
+- `log_missing()` - one warning per missing tool plus the commands, called by `api/system.startup()` in local mode only
+  (the terminal of dev-local.sh); `cmd_core.check_media_tools` is the doctor check `media_tools` (warn, never fail).
+
 ## maxxing.security (session cookie)
 - Cookie `mx_session` = `<issued_at>.<nonce>.<hmac_sha256(cookie_key, "<issued_at>.<nonce>")>` (legacy
   `<issued_at>.<hmac>` from <= 2.0.0a31 still accepted), lifetime `COOKIE_MAX_AGE` = 30 days.
@@ -398,9 +418,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   so a write by any process is seen on the next call.
 - `integrations_paused()`: config `integrations_paused`, set by an instance-backup restore and cleared by
   `instance_backup.resume_integrations()`. While true, `telegram.gateway._should_run()` and `_post()`,
-  `crons.managed_lines()`, `localcron.tick()`, scheduled `pilot cron run` (detached or `--if-due`), `backup.run()`
-  (code `paused`, not recorded in the history) and scheduled instance archives (`instance_backup.schedule_delay()`
-  is None) do nothing.
+  `crons.managed_lines()`, `localcron.tick()`, `api/tasks.check_reminders()`, scheduled `pilot cron run` (detached or
+  `--if-due`), `backup.run()` (code `paused`, not recorded in the history) and scheduled instance archives
+  (`instance_backup.schedule_delay()` is None) do nothing.
 - Scheduled instance archives: config `instance_backup_schedule` `{frequency, hour, keep, since}` + secret
   `instance_backup_schedule_key` `{salt, kdf, key}` (hex; a key derived from the passphrase, never the passphrase).
   `instance_backup.set_schedule()` / `disable_schedule()` / `schedule_status()`; `schedule_delay()` -> seconds until
@@ -471,6 +491,9 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   every line; it ignores the variable and runs the job inline. `cmd_cron` pops it (never inherited) and `spawn_run`
   never forwards it. `cron_keep_background` (true on installs that existed before a70) = scheduled runs stay inline
   (no unit: background programs live on, as in a69). `pilot init` re-syncs the block.
+- Local mode (`HARNESS_PILOT_LOCAL_MODE=1`, no crontab): `api/crons._local_schedule` runs `localcron.boot()` once (every
+  enabled `@reboot` job -> `spawn_run`; `already_running` skipped; nothing while `integrations_paused`), then
+  `localcron.tick()` every 15 s (the current minute, claimed in `<state>/local-cron-minutes.json`; never `@reboot`).
 - `split_crontab`: a BEGIN marker without END (edited by hand) keeps only the ` cron run ` lines as managed; every other
   line after it stays the user's.
 
@@ -671,6 +694,9 @@ rebased; `license_token` -> `license_seat`). Triggers: `api/system._after_update
 failure) and `cmd_update` (saves uncommitted non-`web/` changes first, then stops with the reason if the move
 fails). Until then `_fetch` / `check_update` / `_refresh_remote` fetch nothing. Downloading and verifying archives
 is gone (2.0.0a93): the old code that still runs on those servers does it.
+Offline by default: `offline()` (= `register._offline()`, true unless `MAXXING_LICENSE_PING=1`) makes `_post` raise
+`LicenseError(OFFLINE, "offline")` before a request is built, `move_to_git` return an error before any git command
+against `GIT_URL`, and `register._call` return `{ok:false, error:"offline"}`.
 
 ## maxxing.missions  (owner: organisation) - bounded resident missions
 - State: `<state>/resident-missions/<32 hex>.json` (0600, folder 0700), one file per mission; `_edit(id)` = per-mission

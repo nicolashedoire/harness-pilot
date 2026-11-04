@@ -8,22 +8,42 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from functools import partial
 from pathlib import Path
 
 import pytest
 
 from _conn_helpers import mx_state  # noqa: F401
+from _needs import bash4
 from maxxing import backup, cli, config, security
 
 INSTALL = Path(__file__).resolve().parents[2] / "install.sh"
 
 
-def test_legacy_installer_refuses_execution_before_host_changes():
-    result = subprocess.run(['bash', str(INSTALL), '--check'], capture_output=True, text=True,
-                            timeout=10, env={'PATH': '/usr/bin:/bin'})
-    assert result.returncode == 1
-    assert 'legacy Linux installer is disabled' in result.stderr
-    assert 'scripts/dev-local.sh' in result.stderr
+def _bash_major() -> int:
+    r = subprocess.run(['bash', '-c', 'echo "${BASH_VERSINFO[0]}"'], capture_output=True, text=True, timeout=10)
+    return int(r.stdout.strip() or 0)
+
+
+@pytest.mark.skipif(_bash_major() < 4, reason="the installer needs bash 4 or newer")
+def test_installer_runs_and_its_help_and_bad_options_change_nothing():
+    """The installer is enabled again (Debian 12, Ubuntu 24.04): --help and an unknown option stop before any check
+    or change of this machine."""
+    run = partial(subprocess.run, capture_output=True, text=True, timeout=10, env={'PATH': '/usr/bin:/bin'})
+    r = run(['bash', str(INSTALL), '--help'])
+    assert r.returncode == 0 and 'harness-pilot installer' in r.stdout, r.stderr
+    assert 'raw.githubusercontent.com/nicolashedoire/harness-pilot/main/install.sh' in r.stdout
+    r = run(['bash', str(INSTALL), '--nope'])
+    assert r.returncode == 1 and 'unknown option: --nope' in r.stderr
+
+
+def test_installer_refuses_sh_and_an_old_bash():
+    r = subprocess.run(['sh', str(INSTALL), '--help'], capture_output=True, text=True, timeout=10,
+                       env={'PATH': '/usr/bin:/bin'})
+    if 'harness-pilot installer' in r.stdout:      # `sh` is a bash >= 4 on this system: nothing to refuse
+        return
+    assert r.returncode == 1                        # dash (Debian, Ubuntu) or the bash 3.2 of macOS
+    assert 'Run this installer with bash' in r.stderr or 'needs bash 4 or newer' in r.stderr, r.stderr
 
 
 def sh(snippet: str, **env: str) -> subprocess.CompletedProcess:
@@ -115,11 +135,13 @@ def test_installer_never_pipes_a_download_into_a_shell_nor_uses_fixed_tmp_paths(
     assert "umask 077" in text and "export -n LICENSE GH_TOKEN" in text
 
 
+@bash4
 def test_installer_library_mode_runs_nothing():
     r = sh("type safe_path >/dev/null && echo loaded")
     assert r.returncode == 0 and r.stdout.strip().endswith("loaded"), r.stderr
 
 
+@bash4
 @pytest.mark.parametrize("value, ok", [("/opt/claude-maxxing", True), ("/srv/a_b-c.d", True), ("relative/x", False),
                                        ("/opt/it's", False), ("/opt/a b", False), ("/opt/%h", False),
                                        ("/opt/$(id)", False), ("/opt/../etc", False), ("/opt/a\\b", False)])
@@ -128,6 +150,7 @@ def test_paths_are_validated(value, ok):
     assert ("fine" in r.stdout) is ok, r.stdout + r.stderr
 
 
+@bash4
 @pytest.mark.parametrize("value, ok", [("ui.example.com", True), ("a.b", False), ("ui.example.com;rm", False),
                                        ("-x.example.com", False), ("UI.example.com", False),
                                        ("ui.example.--", False), ("a.b-c.--", False), ("ui.example.-co", False),
@@ -136,6 +159,7 @@ def test_domains_are_validated(value, ok):
     assert (sh('valid_domain "$V" && echo fine', V=value).stdout.strip() == "fine") is ok
 
 
+@bash4
 @pytest.mark.parametrize("value, ok", [("/opt/claude-maxxing", True), ("/var/lib/claude-maxxing", True),
                                        ("/root/.claude", True), ("/workspace", True), ("/", False), ("//", False),
                                        ("/var/lib", False), ("/var/lib/", False), ("/etc", False), ("/etc/maxxing", False),
@@ -149,6 +173,7 @@ def test_system_directories_are_refused(value, ok):
     assert ("fine" in r.stdout) is ok, r.stdout + r.stderr
 
 
+@bash4
 @pytest.mark.parametrize("fn, value", [("valid_domain", "ui.example.com\n:80 { file_server browse }"),
                                        ("valid_domain", "ui.example.com\r"),
                                        ("valid_tz_name", "Europe/Paris\nx")])
@@ -160,6 +185,7 @@ def test_a_second_line_never_passes_a_check(fn, value):
     assert r.returncode != 0 and "one line" in (r.stdout + r.stderr)
 
 
+@bash4
 def test_a_public_udp_service_keeps_the_firewall_off(tmp_path):
     """A server whose only public service is UDP (WireGuard...) looked fresh: the automatic firewall cut it off."""
     fake = ('ss() { case "$1" in -lunpH) printf "%s\\n" \'UNCONN 0 0 0.0.0.0:51820 0.0.0.0:* users:(("wg",pid=1,fd=3))\' '
@@ -169,12 +195,14 @@ def test_a_public_udp_service_keeps_the_firewall_off(tmp_path):
     assert "[51820/udp/wg]" in r.stdout, r.stdout + r.stderr
 
 
+@bash4
 def test_fail2ban_jail_names_the_real_ssh_ports():
     """F11: the jail used to name no port (fail2ban's default "ssh" = 22): a server on 2222 was not protected."""
     r = sh('ssh_ports() { printf "22\\n2222\\n"; }; f2b_jail')
     assert "port = 22,2222" in r.stdout and "backend = systemd" in r.stdout
 
 
+@bash4
 def test_ufw_add_mode_sees_existing_ssh_rules():
     for rules, port, has in (("22/tcp 80", "22", True), ("OpenSSH", "22", True), ("2200:2300/tcp", "2222", True),
                              ("80,443/tcp", "443", True), ("80/tcp", "2222", False)):
@@ -182,6 +210,7 @@ def test_ufw_add_mode_sees_existing_ssh_rules():
         assert ("yes" in r.stdout) is has, (rules, port)
 
 
+@bash4
 def test_ufw_add_mode_only_counts_web_ports_open_to_everyone():
     """443/udp, DENY 80, "22/tcp on tailscale0" or one source address were taken for ports already open."""
     status = ("Status: active\n\nTo                         Action      From\n"
@@ -200,6 +229,7 @@ def test_ufw_add_mode_only_counts_web_ports_open_to_everyone():
     assert "yes" not in sh('ufw_has_port "443/udp" 443 && echo yes').stdout
 
 
+@bash4
 def test_tunnel_instructions_use_the_session_user_address_and_port():
     """F13: `ssh -L ... root@<first address>` was wrong on cloud images (ubuntu@, another port, another address)."""
     r = sh('PORT=8787; tunnel_cmd', SSH_CONNECTION="198.51.100.7 51234 203.0.113.9 2222", SUDO_USER="ubuntu")
@@ -208,6 +238,7 @@ def test_tunnel_instructions_use_the_session_user_address_and_port():
     assert r.stdout == "ssh -N -L 8787:127.0.0.1:8787 ubuntu@203.0.113.9"
 
 
+@bash4
 def test_a_failed_protection_stops_the_install(tmp_path):
     """F06: security updates, fail2ban and the firewall that the installer turns on are checked for real; one that
     does not work stops the installation unless ALLOW_UNPROTECTED=1."""

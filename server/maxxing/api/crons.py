@@ -151,6 +151,11 @@ async def _watch(interval: float = 2.0) -> None:
 
 async def _local_schedule() -> None:
     from .. import localcron
+    try:
+        await asyncio.to_thread(localcron.boot)          # @reboot jobs: once per start of the application
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Local startup jobs failed')
     while True:
         try:
             await asyncio.to_thread(localcron.tick)
