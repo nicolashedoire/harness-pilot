@@ -1,6 +1,8 @@
-# Harness PC agent
+# harness-pilot PC agent
 
-Harness PC (`HarnessPC.exe` on Windows, `harness-pc` on macOS / Linux) lets Claude sessions on a Harness Maxxing
+This agent is not yet distributed by this repository. The source compiles and its automated tests pass on macOS arm64; pairing and browser control have not yet been verified end to end for this version. The server's inherited release manifest contains no downloadable binaries.
+
+harness-pilot PC (`HarnessPC.exe` on Windows, `harness-pc` on macOS / Linux) lets Claude sessions on a harness-pilot
 server drive a Chromium-based browser (Brave, Chrome, Edge, Vivaldi, Opera, Chromium) on the user's computer, in a
 **separate profile**. It only starts / closes that browser and relays its DevTools websocket (bound to 127.0.0.1) to
 the server over one outbound TLS websocket. Nothing listens on the network and nothing else is ever executed.
@@ -43,6 +45,6 @@ Flags: `--status` (configuration without the token), `--version`, `--uninstall`.
 
 ## Uninstall
 
-Quit Harness PC (or remove the computer in Harness Maxxing, which stops it), then run `HarnessPC.exe --uninstall` /
+Quit harness-pilot PC (or remove the computer in harness-pilot, which stops it), then run `HarnessPC.exe --uninstall` /
 `harness-pc --uninstall`: it removes the autostart entry, the configuration, the browser profiles and the installed
 copy. Then delete the downloaded file.

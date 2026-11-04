@@ -95,7 +95,7 @@ func removeAutostart(dir string) error {
 // desktopEntry is the Linux ~/.config/autostart file.
 func desktopEntry(exe string) string {
 	r := strings.NewReplacer(`\`, `\\\\`, `"`, `\\"`, "`", "\\\\`", "$", `\\$`)
-	return "[Desktop Entry]\nType=Application\nName=Harness PC\nComment=Lets Harness Maxxing use a separate browser profile\n" +
+	return "[Desktop Entry]\nType=Application\nName=harness-pilot PC\nComment=Lets harness-pilot use a separate browser profile\n" +
 		"Exec=\"" + r.Replace(exe) + "\"\nTerminal=false\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n"
 }
 

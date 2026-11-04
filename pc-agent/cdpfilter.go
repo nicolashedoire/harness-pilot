@@ -67,10 +67,10 @@ func checkCommand(d string) (reason string, c cdpCall) {
 	}
 	domain, _, _ := strings.Cut(c.Method, ".")
 	if blockedMethods[c.Method] || blockedDomains[domain] {
-		return c.Method + " is not allowed by Harness PC", c
+		return c.Method + " is not allowed by harness-pilot PC", c
 	}
 	if c.Params.URL != nil && !allowedURL(*c.Params.URL) {
-		return "only http(s) pages can be opened by Harness PC", c
+		return "only http(s) pages can be opened by harness-pilot PC", c
 	}
 	if c.Params.Data != nil && len(c.Params.Data.Files) > 0 {
 		return "files of the PC cannot be dragged into pages", c

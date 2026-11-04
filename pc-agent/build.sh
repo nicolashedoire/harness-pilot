@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Harness PC for every target into dist/ (reproducible: -trimpath, no VCS stamp, empty build id).
+# Builds harness-pilot PC for every target into dist/ (reproducible: -trimpath, no VCS stamp, empty build id).
 set -euo pipefail
 cd "$(dirname "$0")"
 VERSION="${VERSION:-0.1.0}"
@@ -9,7 +9,7 @@ LDFLAGS="-s -w -buildid= -X main.version=${VERSION}"
 rm -rf dist && mkdir -p dist
 # Windows: icon + version info (the product logo web/public/icons/icon-512.png, resized by go-winres) as rsrc_windows_*.syso, linked by go build
 "$GO" run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64,arm64 --manifest gui --icon ../web/public/icons/icon-512.png \
-  --product-name "Harness PC" --file-description "Harness PC - browser of my PC for Harness Maxxing" \
+  --product-name "harness-pilot PC" --file-description "harness-pilot PC - browser of my PC for harness-pilot" \
   --product-version "$VERSION" --file-version "$VERSION" --original-filename HarnessPC.exe
 build() { # goos goarch output [extra ldflags]
   GOOS=$1 GOARCH=$2 "$GO" build -ldflags "$LDFLAGS ${4:-}" -o "dist/$3" .
