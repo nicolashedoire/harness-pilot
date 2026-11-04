@@ -153,7 +153,9 @@ export function installAtelier({ R, state, fail, bus, now, sendMessage }) {
     return { network: p?.network || [], secrets: p?.secrets || [], read: p?.read || [], declared: p != null }
   }
   const errorOf = (it) => it.load_error ? { message: it.load_error, where: 'load', at: null, count: 1 } : it.runtime_error || null
-  const stateOf = (it) => !it.enabled ? 'disabled' : errorOf(it) ? 'error' : 'active'
+  // on / off: the extension's own flag (GET /api/extensions, PATCH /api/extensions/{id}) when it is listed there
+  const enabledOf = (it) => (state().extensions || []).find((x) => x.id === it.id)?.enabled ?? it.enabled
+  const stateOf = (it) => !enabledOf(it) ? 'disabled' : errorOf(it) ? 'error' : 'active'
   const href = (it) => it.type === 'page' ? `/x/${it.id}` : ['widget', 'html_widget', 'pin'].includes(it.type) ? `/?widget=${it.id}` : null
   const view = (it) => {
     const act = activeOf(it)
@@ -357,4 +359,14 @@ export function serveDraftFrame(req, res, url, authed, state) {
   if (!d || d.status !== 'pending' || d.type !== 'html_widget' || !d.files['widget.html']) return send(404, 'no HTML widget in this proposal')
   const bridge = `<!doctype html><meta charset="utf-8"><script>(function(){var s=0,p={};window.maxxing={theme:'dark',api:function(path,o){o=o||{};return new Promise(function(r,j){var n=++s;p[n]=[r,j];parent.postMessage({mx:'api',seq:n,path:String(path||''),method:o.method||'GET',body:o.body},'*')})},resize:function(h){parent.postMessage({mx:'resize',height:Number(h)||0},'*')},onTheme:function(){}};addEventListener('message',function(e){var m=e.data||{};if(m.mx==='reply'&&p[m.seq]){var x=p[m.seq];delete p[m.seq];m.ok?x[0](m.data):x[1](new Error(m.error||'request failed'))}})})()</script>`
   return send(200, bridge + '\n' + d.files['widget.html'].text)
+}
+
+// PATCH /api/extensions/{id} of the mock server: an Atelier extension not listed by GET /api/extensions (a pin)
+export function atelierHasExtension(S, id) {
+  return !!(S.atelier || {}).items?.[`extension:${id}`]
+}
+
+export function atelierSetEnabled(S, id, enabled) {
+  const it = (S.atelier || {}).items?.[`extension:${id}`]
+  if (it) it.enabled = enabled
 }
