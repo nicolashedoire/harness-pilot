@@ -10,7 +10,7 @@ const findChromium = () => {
     for (const base of [join(tools, 'browsers'), '/var/lib/claude-maxxing/tools/browsers']) {
       if (!existsSync(base)) continue
       for (const d of readdirSync(base).filter((n) => n.startsWith('chromium-')).sort().reverse()) {
-        for (const sub of ['chrome-linux64', 'chrome-linux']) {
+        for (const sub of ['chrome-linux64', 'chrome-linux-arm64', 'chrome-linux']) {
           const exe = join(base, d, sub, 'chrome')
           if (existsSync(exe)) return exe
         }
