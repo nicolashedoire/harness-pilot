@@ -109,6 +109,19 @@ they are managed; they have no versions here.
 **History** (top of the list) shows the proposals of the last 30 days and what became of them: waiting, approved
 (and as which version), refused (with your reason), replaced by a newer one.
 
+## Settings of the Studio
+
+The gear button at the top of the Studio opens its settings:
+
+- **Turn on safe creations by themselves** (off by default): a proposal that declares no network and no secret - no
+  site on the internet, no key - and whose check passes goes live as soon as the agent proposes it; a notification
+  tells you. Everything else keeps waiting for your approval. A declaration is what the creation says it uses: it is
+  checked, but its server code is not locked in, so keep this off unless you trust what your agents build. Every such
+  version is kept like the others and can be undone from its page.
+- **Keeping versions**: a version stays while it is younger than the number of days set here (90 by default) or among
+  the newest versions of its creation (10 by default). The active version, and the one a waiting proposal builds on,
+  are always kept.
+
 ## Where the rows come from
 
 Extensions (widgets, HTML widgets, pages, conversation blocks, agent engines and cards pinned from a conversation)

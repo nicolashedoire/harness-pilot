@@ -45,6 +45,7 @@ export const PREF_ROWS: PrefRow[] = [
   { id: 'signins', category: 'system', kinds: ['signin.ok'], level: 'info', sound: false },
   { id: 'infra', category: 'system', kinds: ['infra.down', 'infra.up', 'infra.cert_expiring', 'infra.domain_expiring'], level: 'error', sound: true },
   { id: 'task.reminder', category: 'system', kinds: ['task.reminder'], level: 'warning', sound: true },
+  { id: 'atelier', category: 'system', kinds: ['atelier.proposed', 'atelier.activated'], level: 'warning', sound: true },
 ]
 const ROW_OF_KIND = new Map(PREF_ROWS.flatMap((r) => r.kinds.map((k) => [k, r] as const)))
 
@@ -70,7 +71,7 @@ export function rowSound(prefs: Record<string, boolean>, r: PrefRow): boolean {
 }
 
 /** The source of a row's kinds (for a server that only has per-source Telegram rules). */
-export const ROW_SOURCE: Record<string, string> = { sessions: 'sessions', crons: 'crons', updates: 'system', health: 'system', security: 'security', signins: 'security', infra: 'infra', 'task.reminder': 'system' }
+export const ROW_SOURCE: Record<string, string> = { sessions: 'sessions', crons: 'crons', updates: 'system', health: 'system', security: 'security', signins: 'security', infra: 'infra', 'task.reminder': 'system', atelier: 'system' }
 export const rowSource = (r: PrefRow) => ROW_SOURCE[r.id] ?? ROW_SOURCE[r.category]
 
 /** Shown state of a row: on when its first kind is (rows are always set as a whole). */
