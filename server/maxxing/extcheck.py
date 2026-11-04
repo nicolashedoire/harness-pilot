@@ -5,8 +5,9 @@ as the server loads it (`extensions.scan()`: manifest or block.json, api.py impo
 deadline), then, by kind:
 
 - card widget: `card(ctx)` on the extension threads with the dashboard's timeout, then `clean_card` and `strip_none`
-  (what `widget_card(force=True)` and the dashboard do); the frames of the extension's own files are kept on an
-  exception. Warnings: no block left, blocks of an unknown type dropped, a card whose status is "error".
+  (what `extensions.compute_card` and the dashboard do); the frames of the extension's own files are kept on an
+  exception. An "error" the card returns (`extensions.card_error`, as `pilot update --verify`) is an error;
+  warnings: no block left, blocks of an unknown type dropped, a card whose status is "error".
 - HTML widget: `GET /ext/<id>/widget-frame` through the real route, then widget.html is parsed: a document with
   content, every `<script>` closed, `node --check` of each inline script (line numbers of widget.html), no `src` of
   the folder (only widget.html is served), `maxxing.api()` needs `handle()` in api.py, storage the sandbox lacks.
@@ -323,7 +324,7 @@ def _check_card(run: _Run) -> None:
     run.file("api.py")
     raw: list[Any] = []
 
-    def compute() -> dict:                      # = extensions.widget_card(force=True), keeping card()'s own value
+    def compute() -> dict:                      # = extensions.compute_card, keeping card()'s own value
         raw.append(ext.module.card(extensions.make_ctx(ext)))   # type: ignore[union-attr]
         card = extensions.clean_card(raw[0])
         card.setdefault("updated", time.time())
@@ -347,7 +348,11 @@ def _check_card(run: _Run) -> None:
     dropped = [b.get("type") if isinstance(b, dict) else type(b).__name__ for b in given or []
                if not (isinstance(b, dict) and b.get("type") in extensions.BLOCK_TYPES)]
     kinds = ", ".join(str(b.get("type")) for b in blocks) or "none"
-    run.add("card", OK, f"card() -> {len(blocks)} block(s): {kinds}")
+    reported = extensions.card_error(raw[0])      # what `pilot update --verify` counts as broken too
+    if reported:
+        run.add("card", ERROR, f"card() reported an error: {reported}")
+    else:
+        run.add("card", OK, f"card() -> {len(blocks)} block(s): {kinds}")
     if dropped:
         run.add("card", WARN, f"{len(dropped)} block(s) of an unknown type dropped: "
                               f"{', '.join(map(str, dropped[:6]))} (types: {', '.join(sorted(extensions.BLOCK_TYPES))})")

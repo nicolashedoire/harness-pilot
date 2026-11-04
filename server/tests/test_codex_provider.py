@@ -5,7 +5,7 @@ import pytest
 
 from conftest import all_events, codex_profile, codex_sandbox, wait_idle
 from maxxing import config
-from maxxing.sessions import codex
+from maxxing.sessions import codex, spawn
 
 
 def test_codex_session_resumes_its_own_thread(client, topic, mx, monkeypatch):
@@ -70,6 +70,8 @@ def test_protect_secrets_gives_codex_a_profile_that_denies_them(mx, monkeypatch,
     home = tmp_path / 'h "o" mé'                       # quotes and accents survive the inline TOML
     (home / '.ssh').mkdir(parents=True)
     monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('CODEX_HOME', raising=False)     # the agents' sign-ins: in that HOME, none there
+    monkeypatch.delenv('CLAUDE_CONFIG_DIR', raising=False)
     secrets = mx['state'] / 'secrets.json'
     secrets.write_text('{}')
     denied = {str(secrets): 'deny', str(home / '.ssh'): 'deny'}
@@ -92,6 +94,34 @@ def test_protect_secrets_gives_codex_a_profile_that_denies_them(mx, monkeypatch,
         argv = codex.command('', mode)
         assert codex_profile(argv) is None and argv[argv.index('--sandbox') + 1] == sandbox
         assert not any(a.startswith(('default_permissions', 'permissions.')) for a in argv)
+
+
+def test_protect_secrets_also_denies_the_agents_sign_ins(mx, monkeypatch, tmp_path):
+    """Codex's auth.json and Claude Code's credentials file join the protected paths of both agents. The CLIs still
+    read their own (checked with codex-cli 0.150.1 against a stub that needs the auth.json key: INTERNALS.md)."""
+    home = tmp_path / 'home'
+    for name in ('.codex/auth.json', '.claude/.credentials.json'):
+        (home / name).parent.mkdir(parents=True, exist_ok=True)
+        (home / name).write_text('{}')
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('CODEX_HOME', raising=False)
+    monkeypatch.delenv('CLAUDE_CONFIG_DIR', raising=False)
+    auth, creds = str(home / '.codex' / 'auth.json'), str(home / '.claude' / '.credentials.json')
+    assert codex_profile(codex.command('', 'plan'))['filesystem'] == {auth: 'deny', creds: 'deny'}
+    rules = spawn.deny_rules({})
+    assert all(f'{verb}(/{p})' in rules for verb in ('Read', 'Edit') for p in (auth, creds))
+    # Codex's CODEX_HOME and Claude Code's own folder (config claude_dir, else CLAUDE_CONFIG_DIR) are followed
+    codex_home, claude_dir = tmp_path / 'codex-home', tmp_path / 'claude-dir'
+    for path in (codex_home / 'auth.json', claude_dir / '.credentials.json'):
+        path.parent.mkdir()
+        path.write_text('{}')
+    monkeypatch.setenv('CODEX_HOME', str(codex_home))
+    config.update_config(claude_dir=str(claude_dir))
+    expected = {str(codex_home / 'auth.json'): 'deny', str(claude_dir / '.credentials.json'): 'deny'}
+    assert codex_profile(codex.fork_command('thread-1'))['filesystem'] == expected
+    assert f"Read(/{claude_dir / '.credentials.json'})" in spawn.deny_rules({})
+    config.update_config(protect_secrets=False)
+    assert codex_profile(codex.command('', 'plan')) is None and len(spawn.deny_rules(config.load_config())) == 2
 
 
 def test_codex_status_reports_login_without_exposing_cli_output(client, monkeypatch):

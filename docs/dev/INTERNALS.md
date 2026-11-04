@@ -822,7 +822,9 @@ The runner notes the skipped servers in the conversation when that list changes 
 `codex.sandbox_args(mode)` is the sandbox of every `codex exec` the server starts (`command()`: turns, scheduled jobs,
 companions, summaries; `fork_command()`: side questions, always read-only): read-only in `default` / `plan`,
 workspace-write otherwise, never full access. With config `protect_secrets` off, or when none of
-`spawn.secret_paths()` (`<state>/secrets.json`, `~/.ssh`) exists, it is `--sandbox read-only|workspace-write`.
+`spawn.secret_paths()` exists (`<state>/secrets.json`, `~/.ssh`, `codex.home()/auth.json` = CODEX_HOME else
+`~/.codex`, `config.claude_dir()/.credentials.json`; the same list gives Claude's deny rules), it is `--sandbox
+read-only|workspace-write`.
 Otherwise the same sandbox is given as a Codex permission profile that also denies those paths:
 `-c default_permissions="protected"` and `-c permissions.protected={extends = ":read-only" | ":workspace",
 filesystem = {...}}`, with `"<path>" = "deny"` for each existing path (absolute, not resolved: Codex canonicalizes)
@@ -856,6 +858,14 @@ the profile the turn fails at start ("fs sandbox helper failed": Codex reads AGE
 refuses to put its `codex-linux-sandbox` helper under `/tmp`: a `CODEX_HOME` there breaks both forms. Managed
 `requirements.toml` `deny_read` would work with `--sandbox` but lives in `/etc/codex` (root, every Codex run of the
 machine): not used.
+The agents' sign-ins: denying Codex's own `auth.json` does not stop Codex, whose process reads it outside its sandbox.
+Checked on macOS and in the Linux containers (root and uid 1000) with a fake CODEX_HOME (`auth.json` in API-key
+mode; `cli_auth_credentials_store` defaults to `file` in 0.150.1) and a stub provider with `requires_openai_auth`: the
+stub got the key from `auth.json` in `exec`, `exec resume` and `exec --ephemeral fork` while `cat` of `auth.json` and
+of Claude's `.credentials.json` was refused; `codex login status` (no sandbox) still reports the sign-in and the
+file is left as it was. A ChatGPT sign-in refreshes its tokens from the same process (not exercised: it needs the
+real service). Codex's MCP OAuth tokens (`mcp_oauth_credentials_store`, keyring or a file of CODEX_HOME) are not in
+the list. On macOS Claude Code keeps its sign-in in the Keychain: no file to deny there.
 
 Token counts. `turn.completed.usage` of `codex exec --json` (`input_tokens` with the cached ones inside,
 `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`) is the thread's
