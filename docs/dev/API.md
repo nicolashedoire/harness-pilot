@@ -253,7 +253,7 @@ Cron = {id, name, schedule,            // 5-field cron expression
         topic_path, prompt, model, reuse_session:bool,  // claude
         permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode
         enabled, notify:"never"|"failure"|"always", timeout_s,
-        last_run:{at, ok, code, duration_s}|null, next_run:float|null, human:string,
+        last_run:{at, ok, code, duration_s}|null, next_run:float|null, human:string,  // human: in the UI language (settings.language, en|fr), times HH:MM
         running:bool}                  // a run is in progress (flock held); overlapping runs are skipped
 Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|null}   (output_tail: a Claude job keeps the first 2048 characters of its answer, a command the last 2048 of its output)
 ```
@@ -263,7 +263,7 @@ Run  = {id, cron_id, name, at, ok, code, duration_s, output_tail, session_id|nul
 | POST | `/api/crons/{id}/run` | – | `{ok}` (runs now in a transient unit) · `409 already_running` |
 | GET | `/api/crons/runs?cron_id=&limit=50` | – | `[Run]` |
 | GET | `/api/crons/{id}` | – | `Cron` |
-| GET | `/api/crons/preview?schedule=` | – | `{valid, human, next:[at×5], error?}` (next runs in the configured time zone) |
+| GET | `/api/crons/preview?schedule=` | – | `{valid, human, next:[at×5], error?}` (next runs in the configured time zone; `human` in the UI language, like `Cron.human`) |
 
 ## Telegram
 | GET | `/api/telegram` | – | `{configured, running, bot:{id, username, name}\|null, chat:{id, title, type}\|null, topics_enabled, threads:[{path, thread_id, name, session_id?}], settings:{notify_crons, notify_system:bool(true), login_alerts, two_factor:bool, reply_mode:"progress"(default)\|"final", thread_days:int(30), mirror_web:bool(false)}, linking:bool, link:{code, deep_link, expires_at, expires_in, expired}\|null, poll_error, poll_error_code:"token_rejected"\|"conflict"\|"unreachable"\|null, sync_error, topics_notice, last_poll_ok, last_poll_age, last_error}` (special threads: path `"#crons"` / `"#alerts"`; session threads: `session_id`, path `""`). `running`: in the server, the poller itself; in another process (CLI, doctor), the `poller_pid` of the server's heartbeat is alive. `poll_error` is set and cleared only by the poller (getUpdates: 401 → `token_rejected`, the poller stops; 409 → `conflict`, another program reads the bot); `sync_error` only by the thread sync; `topics_notice` = threads are off for the bot (BotFather "Threaded Mode") - information, not an error. `last_poll_ok` = last successful getUpdates (Unix s, written at most every 30 s). `link` = the last link code, pending or expired (kept until a chat links). `last_error` (older readers) = `poll_error` or `sync_error`. Setup is done once a chat is linked (same rule as `/api/onboarding`) |
@@ -771,6 +771,10 @@ Telegram: the bot posts in the thread "Notifications" (`telegram.threads["#feed"
 ## Web Push
 Notifications on the phone / computer while no tab is open, for the events of the feed. The server holds a VAPID key
 pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscriptions (`<state>/push.json`).
+A key made again (that file lost or damaged) makes push services refuse the existing subscriptions (403): the web
+compares `PushSubscription.options.applicationServerKey` with `public_key` and, when they differ, subscribes the
+browser again (POST the new subscription, DELETE the old one) - while the app runs with push on, and when push is
+turned on.
 
 ```
 PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}

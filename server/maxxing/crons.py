@@ -15,8 +15,8 @@ older version restored by a rollback ignores it instead of refusing the line): t
 or in the cron process itself when systemd is not available. Lines outside the block are never touched.
 `last_run` is derived from runs.jsonl at read time, so the runner never rewrites jobs.json.
 
-Cron expressions are parsed, humanised and evaluated here in pure Python (5 fields, ranges,
-steps, lists, month/day names, @daily/@hourly/@weekly/@monthly/@yearly/@reboot), in the
+Cron expressions are parsed, humanised (in the UI language: en / fr) and evaluated here in pure Python
+(5 fields, ranges, steps, lists, month/day names, @daily/@hourly/@weekly/@monthly/@yearly/@reboot), in the
 configured time zone.
 """
 from __future__ import annotations
@@ -229,8 +229,50 @@ def next_run(expr: str, after: float | None = None) -> float | None:
 
 
 # ---- humaniser ------------------------------------------------------------------------------
-def _join(items: list[str]) -> str:
-    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+# The wording of each language (UI language, config "language"); English is the fallback.
+_HUMAN: dict[str, dict[str, Any]] = {
+    "en": {
+        "and": " and ", "or": "{a} or {b}", "boot": "at boot",
+        "special": {"@hourly": "every hour", "@daily": "every day at 00:00", "@midnight": "every day at 00:00",
+                    "@weekly": "every Sunday at 00:00", "@monthly": "on the 1st of every month at 00:00",
+                    "@yearly": "every year on January 1st at 00:00", "@annually": "every year on January 1st at 00:00"},
+        "every_minute": "every minute", "every_n_minutes": "every {n} minutes",
+        "during_hour": "every minute during hour {h}", "during_hours": "every minute during hours {h}",
+        "every_hour": "every hour", "hour_at_minute": "every hour at minute {m}", "hour_at_minutes": "every hour at minute {m}",
+        "every_n_hours": "every {n} hours at :{mm}", "every_n_hours_0": "every {n} hours at :00",
+        "at": "at {t}", "minute_of_hours": "at minute {m} of hours {h}", "minutes_of_hours": "at minute {m} of hours {h}",
+        "every_n_days": "every {n} days", "dom": "on the {d}", "doms": "on the {d}", "of_month": " of the month",
+        "weekdays": "on weekdays", "weekends": "on weekends", "every_day": "every day",
+        "days": DAY_NAMES, "months": MONTH_NAMES,
+    },
+    "fr": {
+        "and": " et ", "or": "{a} ou {b}", "boot": "au démarrage",
+        "special": {"@hourly": "toutes les heures", "@daily": "tous les jours à 00:00", "@midnight": "tous les jours à 00:00",
+                    "@weekly": "tous les dimanches à 00:00", "@monthly": "le 1er de chaque mois à 00:00",
+                    "@yearly": "tous les ans le 1er janvier à 00:00", "@annually": "tous les ans le 1er janvier à 00:00"},
+        "every_minute": "toutes les minutes", "every_n_minutes": "toutes les {n} minutes",
+        "during_hour": "toutes les minutes pendant l’heure {h}", "during_hours": "toutes les minutes pendant les heures {h}",
+        "every_hour": "toutes les heures", "hour_at_minute": "toutes les heures à la minute {m}",
+        "hour_at_minutes": "toutes les heures aux minutes {m}",
+        "every_n_hours": "toutes les {n} heures à la minute {m}", "every_n_hours_0": "toutes les {n} heures pile",
+        "at": "à {t}", "minute_of_hours": "à la minute {m} des heures {h}", "minutes_of_hours": "aux minutes {m} des heures {h}",
+        "every_n_days": "tous les {n} jours", "dom": "le {d}", "doms": "les {d}", "of_month": " du mois",
+        "weekdays": "en semaine", "weekends": "le week-end", "every_day": "tous les jours",
+        "days": ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"],
+        "months": ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre",
+                   "novembre", "décembre"],
+    },
+}
+
+
+def ui_language() -> str:
+    """The configured UI language when the humaniser knows it, else English."""
+    lang = config.load_config().get("language")
+    return lang if lang in _HUMAN else "en"
+
+
+def _join(items: list[str], lang: str = "en") -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + _HUMAN[lang]["and"] + items[-1]
 
 
 def _ranges(vals: list[int]) -> list[tuple[int, int]]:
@@ -243,17 +285,29 @@ def _ranges(vals: list[int]) -> list[tuple[int, int]]:
     return out
 
 
-def _names(vals: set[int] | frozenset[int], names: list[str], offset: int = 0) -> str:
-    parts = []
+def _names(vals: set[int] | frozenset[int], kind: str, lang: str, offset: int = 0) -> str:
+    """Days ("on Monday to Friday" / "du lundi au vendredi") or months ("in January" / "en janvier")."""
+    names = _HUMAN[lang][kind]
+    parts: list[tuple[str, bool]] = []  # (text, is a range)
     for a, b in _ranges(sorted(vals)):
         if b - a >= 2:
-            parts.append(f"{names[a - offset]} to {names[b - offset]}")
+            parts.append((f"{names[a - offset]} to {names[b - offset]}" if lang == "en" else
+                          f"du {names[a - offset]} au {names[b - offset]}" if kind == "days" else
+                          f"de {names[a - offset]} à {names[b - offset]}", True))
         else:
-            parts.extend(names[v - offset] for v in range(a, b + 1))
-    return _join(parts)
+            parts.extend((names[v - offset], False) for v in range(a, b + 1))
+    if lang == "en":
+        return ("on " if kind == "days" else "in ") + _join([t for t, _ in parts], lang)
+    if kind == "days":  # le lundi, du mercredi au vendredi
+        return _join([t if rng else f"le {t}" for t, rng in parts], lang)
+    if not any(rng for _, rng in parts):  # en janvier et juin
+        return "en " + _join([t for t, _ in parts], lang)
+    return _join([t if rng else f"en {t}" for t, rng in parts], lang)
 
 
-def _ordinal(n: int) -> str:
+def _ordinal(n: int, lang: str = "en") -> str:
+    if lang == "fr":
+        return "1er" if n == 1 else str(n)
     suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suf}"
 
@@ -263,64 +317,63 @@ def _step(field: str, lo: int) -> int | None:
     return int(m.group(2)) if m else None
 
 
-def humanize(expr: str) -> str:
-    """English description: '0 5 * * 1-5' -> 'at 05:00 on Monday to Friday'. Never raises."""
+def humanize(expr: str, lang: str | None = None) -> str:
+    """Description in `lang` (en / fr; default: the UI language): '0 5 * * 1-5' -> 'at 05:00 on weekdays' /
+    'à 05:00 en semaine'. Times stay HH:MM (the web shows them in the user's clock format). Never raises."""
     try:
         c = parse(expr)
     except CronError:
         return expr
+    lang = lang if lang in _HUMAN else "en" if lang else ui_language()
+    w = _HUMAN[lang]
     if c.reboot:
-        return "at boot"
-    special = {"@hourly": "every hour", "@daily": "every day at 00:00", "@midnight": "every day at 00:00",
-               "@weekly": "every Sunday at 00:00", "@monthly": "on the 1st of every month at 00:00",
-               "@yearly": "every year on January 1st at 00:00", "@annually": "every year on January 1st at 00:00"}
-    if c.source.lower() in special:
-        return special[c.source.lower()]
+        return w["boot"]
+    if c.source.lower() in w["special"]:
+        return w["special"][c.source.lower()]
     f = SPECIALS.get(c.source.lower(), c.source).split(" ")
     mins, hrs = sorted(c.minutes), sorted(c.hours)
+    join = lambda xs: _join(xs, lang)  # noqa: E731
 
     # -- time of day
+    at_clock = False
     if len(mins) == 60 and len(hrs) == 24:
-        when = "every minute"
+        when = w["every_minute"]
     elif len(hrs) == 24 and (s := _step(f[0], 0)):
-        when = f"every {s} minutes"
+        when = w["every_n_minutes"].format(n=s)
     elif len(mins) == 60:
-        when = f"every minute during hour{'s' if len(hrs) > 1 else ''} {_join([f'{h:02d}' for h in hrs])}"
+        when = w["during_hours" if len(hrs) > 1 else "during_hour"].format(h=join([f"{h:02d}" for h in hrs]))
     elif len(hrs) == 24:
-        when = ("every hour at minute " + _join([str(m) for m in mins])) if mins != [0] else "every hour"
+        when = w["hour_at_minutes" if len(mins) > 1 else "hour_at_minute"].format(m=join([str(m) for m in mins])) \
+            if mins != [0] else w["every_hour"]
     elif (s := _step(f[1], 0)) and len(mins) == 1:
-        when = f"every {s} hours at :{mins[0]:02d}"
+        when = w["every_n_hours" if mins[0] else "every_n_hours_0"].format(n=s, m=mins[0], mm=f"{mins[0]:02d}")
     elif len(mins) * len(hrs) <= 6:
-        when = "at " + _join([f"{h:02d}:{m:02d}" for h in hrs for m in mins])
+        when, at_clock = w["at"].format(t=join([f"{h:02d}:{m:02d}" for h in hrs for m in mins])), True
     else:
-        when = f"at minute {_join([str(m) for m in mins])} of hours {_join([str(h) for h in hrs])}"
+        when, at_clock = w["minutes_of_hours" if len(mins) > 1 else "minute_of_hours"].format(
+            m=join([str(m) for m in mins]), h=join([str(h) for h in hrs])), True
 
     # -- days
     days = ""
     if not c.dom_star:
         if (s := _step(f[2], 1)):
-            dom_txt = f"every {s} days"
+            days = w["every_n_days"].format(n=s)
         else:
-            dom_txt = "on the " + _join([_ordinal(d) for d in sorted(c.doms)])
-            dom_txt += " of the month" if c.months == frozenset(range(1, 13)) else ""
-        days = dom_txt
+            days = w["doms" if len(c.doms) > 1 else "dom"].format(d=join([_ordinal(d, lang) for d in sorted(c.doms)]))
+            days += w["of_month"] if c.months == frozenset(range(1, 13)) else ""
     if not c.dow_star:
         if c.dows == frozenset({1, 2, 3, 4, 5}):
-            dow_txt = "on weekdays"
+            dow_txt = w["weekdays"]
         elif c.dows == frozenset({0, 6}):
-            dow_txt = "on weekends"
+            dow_txt = w["weekends"]
         else:
-            dow_txt = "on " + _names(c.dows, DAY_NAMES)
-        days = f"{days} or {dow_txt}" if days else dow_txt
-    if not days and when.startswith("at "):
-        days = "every day"
-    months = ""
-    if c.months != frozenset(range(1, 13)):
-        months = "in " + _names(c.months, MONTH_NAMES, 1)
-    if days == "every day" and months:
-        days = ""
-    return " ".join(x for x in (days, when, months) if x) if days == "every day" else \
-        " ".join(x for x in (when, days, months) if x)
+            dow_txt = _names(c.dows, "days", lang)
+        days = w["or"].format(a=days, b=dow_txt) if days else dow_txt
+    every_day = not days and at_clock
+    months = _names(c.months, "months", lang, 1) if c.months != frozenset(range(1, 13)) else ""
+    if every_day and not months:
+        return f"{w['every_day']} {when}"
+    return " ".join(x for x in (when, days, months) if x)
 
 
 # =============================================================================================
@@ -506,10 +559,11 @@ def new_id() -> str:
 
 
 def list_jobs() -> list[dict]:
-    """Jobs as API.md `Cron` objects (with last_run, next_run, human, running)."""
+    """Jobs as API.md `Cron` objects (with last_run, next_run, human in the UI language, running)."""
     with _lock:
         jobs = _load_raw()
     last = last_runs()
+    lang = ui_language()
     out = []
     for j in jobs:
         j = {**DEFAULTS, **j}
@@ -518,7 +572,7 @@ def list_jobs() -> list[dict]:
                           "duration_s": r.get("duration_s")} if r else None)
         try:                                           # a job edited by hand with a broken schedule
             j["next_run"] = next_run(j["schedule"]) if j["enabled"] else None
-            j["human"] = humanize(j["schedule"])
+            j["human"] = humanize(j["schedule"], lang)
         except Exception:
             j["next_run"], j["human"] = None, str(j.get("schedule"))
         j["running"] = is_running(j["id"])
@@ -884,6 +938,7 @@ def external_jobs() -> list[dict]:
     """Crontab lines outside the managed block -> [{schedule, command, human}] (read-only)."""
     outside, _ = split_crontab(read_crontab())
     out = []
+    lang = ui_language()
     for line in outside:
         s = line.strip()
         if not s or s.startswith("#") or _ENV_LINE.match(s):
@@ -895,7 +950,7 @@ def external_jobs() -> list[dict]:
             sched, cmd = " ".join(parts[:5]), s.split(None, 5)[5]
         else:
             continue
-        out.append({"schedule": sched, "command": cmd, "human": humanize(sched)})
+        out.append({"schedule": sched, "command": cmd, "human": humanize(sched, lang)})
     return out
 
 
