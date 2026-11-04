@@ -6,6 +6,7 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.
 - The Settings menu groups its sections under headings (You, Agents, Data, Integrations, Platform) with Support last, and a search above it on a computer finds a setting by name or keyword.
 - The agent map of a running agent team now says that its subagents cannot be stopped one by one, and that stopping the session interrupts the coordinator and all its subagents.

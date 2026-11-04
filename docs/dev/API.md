@@ -771,6 +771,10 @@ Telegram: the bot posts in the thread "Notifications" (`telegram.threads["#feed"
 ## Web Push
 Notifications on the phone / computer while no tab is open, for the events of the feed. The server holds a VAPID key
 pair (`<state>/push-vapid.json`, mode 600, made on first use) and the subscriptions (`<state>/push.json`).
+A key made again (that file lost or damaged) makes push services refuse the existing subscriptions (403): the web
+compares `PushSubscription.options.applicationServerKey` with `public_key` and, when they differ, subscribes the
+browser again (POST the new subscription, DELETE the old one) - while the app runs with push on, and when push is
+turned on.
 
 ```
 PushSubscription = {id, endpoint, label, created, last_ok: number|null, last_error: string|null, prefs: PushPrefs}
