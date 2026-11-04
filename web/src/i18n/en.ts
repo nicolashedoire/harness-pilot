@@ -1385,7 +1385,7 @@ export const en = {
   'twofa.needTelegram': 'Approval in Telegram needs a linked Telegram bot:',
   'twofa.linkTelegram': 'Settings -> Telegram',
   'totp.title': 'Authenticator app',
-  'totp.desc': 'After the password, a new browser asks for a 6-digit code from an app such as Google Authenticator, 1Password or Aegis. Works without Telegram.',
+  'totp.desc': 'A 6-digit code from an app such as Google Authenticator, 1Password or Aegis. Works without Telegram.',
   'totp.on': 'On',
   'totp.onDesc': 'A new browser asks for a code from your app. Recovery codes left: {count}.',
   'totp.setUp': 'Set up',

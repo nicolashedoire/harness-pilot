@@ -96,7 +96,7 @@ export function TwoFactorWait({ challenge, trustOption = false, onDone }: { chal
         <div className="grid gap-1">
           <p className="font-medium">{t(app ? 'totp.open' : 'twofa.check')}</p>
           <p className="text-[13px] text-muted-foreground">{app ? t(telegram ? 'totp.openBoth' : 'totp.openDesc') : t('twofa.checkDesc')}</p>
-          <p className="flex items-center gap-2 text-[13px] text-muted-foreground" aria-live="polite">
+          <p className="flex items-center gap-2 text-[13px] text-muted-foreground" aria-live={telegram ? 'polite' : undefined}>
             {telegram ? (
               <>
                 <Spinner className="size-3.5" /> {t('twofa.waiting', { time: mm })}

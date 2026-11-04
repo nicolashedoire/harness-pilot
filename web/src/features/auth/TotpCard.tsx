@@ -99,7 +99,7 @@ export function TotpCard() {
                 </div>
               </div>
               <FormField label={t('totp.code')} error={errors.code}>
-                <Input value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, '').slice(0, 7))} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="font-mono tracking-widest" />
+                <Input value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, '').slice(0, 7))} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="font-mono tracking-widest" autoFocus />
               </FormField>
               <FormField label={t('security.current')} error={errors.password}>
                 <SecretInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
@@ -157,7 +157,7 @@ export function TotpCard() {
             }}
           >
             <FormField label={t('totp.codeOrRecovery')} error={errors.code}>
-              <Input value={code} onChange={(e) => setCode(e.target.value.slice(0, 24))} autoComplete="one-time-code" placeholder="123456" className="font-mono" />
+              <Input value={code} onChange={(e) => setCode(e.target.value.slice(0, 24))} autoComplete="one-time-code" placeholder="123456" className="font-mono" autoFocus />
             </FormField>
             <FormField label={t('security.current')} error={errors.password}>
               <SecretInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />

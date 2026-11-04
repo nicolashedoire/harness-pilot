@@ -1372,7 +1372,7 @@ export const fr: Record<keyof typeof en, string> = {
   'twofa.needTelegram': 'L’accord dans Telegram demande un bot Telegram lié :',
   'twofa.linkTelegram': 'Réglages → Telegram',
   'totp.title': 'Application d’authentification',
-  'totp.desc': 'Après le mot de passe, un nouveau navigateur demande un code à 6 chiffres d’une application comme Google Authenticator, 1Password ou Aegis. Fonctionne sans Telegram.',
+  'totp.desc': 'Un code à 6 chiffres d’une application comme Google Authenticator, 1Password ou Aegis. Fonctionne sans Telegram.',
   'totp.on': 'Activée',
   'totp.onDesc': 'Un nouveau navigateur demande un code de votre application. Codes de secours restants : {count}.',
   'totp.setUp': 'Configurer',
