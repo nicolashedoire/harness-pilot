@@ -331,3 +331,34 @@ def test_one_failing_mission_does_not_stop_the_others(client,topic,agents,monkey
     monkeypatch.setattr(missions,'advance',advance)
     missions.tick()
     assert missions.get(healthy)['steps'][0]['state']=='running'
+
+
+def test_the_approval_covers_the_instructions_and_engine_of_the_roles_used(client,topic,agents):
+    ident=create(client,topic,[step(1)])
+    reviewed=missions.get(ident)['plan_fingerprint']
+    companions.save('Platform observer','Edited instructions after the review.','observer')
+    edited=missions.get(ident)['plan_fingerprint']
+    assert edited!=reviewed
+    assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':reviewed}).status_code==409
+    companions.save('Platform observer','Edited instructions after the review.','observer','claude')
+    assert missions.get(ident)['plan_fingerprint'] not in (reviewed,edited)
+    companions.save('Security and dependencies','A role this plan does not use.','security')
+    assert missions.get(ident)['plan_fingerprint']==missions.listing()[0]['plan_fingerprint']
+    unchanged=missions.get(ident)['plan_fingerprint']
+    companions.save('Security and dependencies','Another edit of the unused role.','security')
+    assert missions.get(ident)['plan_fingerprint']==unchanged
+
+
+def test_editing_a_role_of_an_active_mission_pauses_it_for_a_new_review(client,topic,agents):
+    ident=create(client,topic,[step(1),step(2,['step-1'])])
+    start(ident);missions.tick()
+    sid=agents[1][0]['sid']
+    companions.save('Platform observer','Different instructions.','observer')
+    missions.tick()
+    mission=missions.get(ident)
+    assert mission['phase']=='paused' and mission['reason']=='plan_changed'
+    assert agents[2]==[sid] and mission['steps'][0]['state']=='interrupted' and len(agents[1])==1
+    missions.acknowledge(ident,'step-1')
+    assert client.post('/api/missions/'+ident+'/control',json={'action':'start','fingerprint':mission['plan_fingerprint']}).status_code==200
+    missions.tick()
+    assert missions.get(ident)['phase']=='active' and len(agents[1])==2
