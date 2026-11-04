@@ -77,7 +77,7 @@
         var logo = document.getElementById('logo'), fallback = logo.src;
         if (window.__mxAccent && window.__mxAccent !== 'blue') {
           logo.onerror = function () { logo.onerror = null; logo.src = fallback; };
-          logo.src = '/icons/logo-' + window.__mxAccent + '.svg';
+          logo.src = '/icons/pilot-companion-v2.png';
         }
         document.getElementById('r').onclick = function () { location.reload(); };
         window.addEventListener('online', function () { location.reload(); });

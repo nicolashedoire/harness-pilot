@@ -7,7 +7,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 ### Current project changes (unreleased, 2026-11-04)
 
 - App-launched Codex sessions disable analytics and telemetry exporters. The web server also explicitly disables native request telemetry, including when inherited environment settings enable it. Local history, logs and usage statistics remain available.
-
+- The application now uses the blue crew companion as its icon across sign-in, the sidebar, browser tabs, offline pages and installed-app icons. Its identity stays consistent when the accent colour changes.
+- Reverse-engineering companions can use an REA installation you already have: point the `pilot-rea-investigation` skill at its executable (`REA_BIN` or a connection file) and check the runtime it really uses. For resident runs whose sandbox blocks process inspection, an opt-in launcher connects REA over local MCP with only two analysis tools allowed. REA is not bundled; the platform works without it.
 - Space labels: unclassified items (the default) no longer carry an *Unclassified* badge on every row of the session list and of Files; **Personal**, **Agents** and **Shared** still show theirs, and the *Space* menu still sets and ticks every label.
 - Settings: in a short window, the list of sections fades at the edge it can still scroll to, so the last visible section no longer looks cut off.
 - Settings -> Backup: the *What this backup covers* card is spaced like the other cards.

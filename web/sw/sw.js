@@ -25,7 +25,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const shell = await caches.open(SHELL)
-      await shell.addAll([OFFLINE, '/manifest.webmanifest', '/icons/harness-pilot.png', '/icons/harness-pilot-192.png'])
+      await shell.addAll([OFFLINE, '/manifest.webmanifest', '/icons/pilot-companion-v2.png', '/icons/pilot-companion-v2-192.png'])
       const assets = await caches.open(ASSETS)
       await assets.addAll(PRECACHE)
       // First install: take over immediately. Updates wait for the page to ask (SKIP_WAITING).
@@ -160,7 +160,7 @@ self.addEventListener('push', (event) => {
       const actions = (Array.isArray(d.actions) ? d.actions : [])
         .filter((a) => (a.type === 'post' ? POST_ALLOWED.some((r) => r.test(a.url)) : appPath(a.url) || /^https:\/\//.test(a.url)))
         .slice(0, 2)
-      const icon = (p && p.icon) || '/icons/harness-pilot-192.png'
+      const icon = (p && p.icon) || '/icons/pilot-companion-v2-192.png'
       await self.registration.showNotification(title, {
         body,
         tag: d.tag || (d.id ? `feed-${d.id}` : undefined),
