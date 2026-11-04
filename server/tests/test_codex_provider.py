@@ -62,9 +62,11 @@ def test_codex_status_reports_login_without_exposing_cli_output(client, monkeypa
     monkeypatch.setattr(codex.subprocess, 'run', run)
     result = client.get('/api/system/codex').json()
     assert result == {'installed': True, 'authenticated': True, 'reason': None}
-    assert calls[0][0][0] == '/fake/codex' and calls[0][0][-2:] == ['login', 'status']
-    assert 'analytics.enabled=false' in calls[0][0] and 'otel.exporter="none"' in calls[0][0]
-    assert calls[0][1]['stdout'] == codex.subprocess.DEVNULL and calls[0][1]['stderr'] == codex.subprocess.DEVNULL
+    # subprocess.run is patched process-wide: the app's background tasks may record their own calls too.
+    mine = [call for call in calls if call[0] and call[0][0] == '/fake/codex']
+    assert mine and all(call[0][-2:] == ['login', 'status'] for call in mine)
+    assert 'analytics.enabled=false' in mine[0][0] and 'otel.exporter="none"' in mine[0][0]
+    assert mine[0][1]['stdout'] == codex.subprocess.DEVNULL and mine[0][1]['stderr'] == codex.subprocess.DEVNULL
 
 
 def test_workspace_context_does_not_follow_files_outside_workspace(tmp_path):
