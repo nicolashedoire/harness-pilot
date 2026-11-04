@@ -18,12 +18,12 @@ timeout. "Run now" and history are there too.
 |---|---|
 | `name` | short label (max 80 chars) |
 | `schedule` | 5-field cron expression in the **server system time zone** (keep it equal to the config time zone - `pilot doctor` checks it) - `min hour day month weekday`; also `@daily`, `@hourly`, `@weekly`, `@monthly`, `@reboot` |
-| `kind` | `shell` (runs `command` with bash) or `claude` (sends `prompt` to a Claude session in `topic_path`) |
+| `kind` | `shell` (runs `command` with bash), `claude` or `codex` (sends `prompt` to a Claude Code or Codex session in `topic_path`) |
 | `command` | shell only, e.g. `{{WORKSPACE}}/projects/acme/scripts/report.sh` |
-| `topic_path` | claude only: `projects/acme/topics/blog` (`""` = workspace root) |
-| `prompt` | claude only: the instruction, self-contained (the job has no conversation context unless `reuse_session`) |
-| `model` | claude only, `""` = default model |
-| `reuse_session` | claude only: keep one session for every run (it accumulates context) instead of a new one per run |
+| `topic_path` | claude / codex only: `projects/acme/topics/blog` (`""` = workspace root) |
+| `prompt` | claude / codex only: the instruction, self-contained (the job has no conversation context unless `reuse_session`) |
+| `model` | claude / codex only, `""` = default model (Codex: a model identifier of the account) |
+| `reuse_session` | claude / codex only: keep one session for every run (it accumulates context) instead of a new one per run |
 | `enabled` | on/off |
 | `notify` | `never` \| `failure` (default) \| `always` - Telegram report in the "Crons" thread |
 | `timeout_s` | max duration, 10 s to 7 days (default 3600) |
