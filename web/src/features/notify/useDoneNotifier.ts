@@ -47,7 +47,7 @@ export function playChime() {
 export function showSystemNotification(title: string, body: string, onClick?: () => void, tag?: string) {
   if (!notificationsSupported() || Notification.permission !== 'granted') return false
   try {
-    const icon = appIconSrc(useUI.getState().accent)
+    const icon = appIconSrc()
     const n = new Notification(title, { body, tag, icon, badge: icon })
     n.onclick = () => {
       window.focus()

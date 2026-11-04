@@ -68,11 +68,11 @@
 :where(.mx-ext, [data-mx-kit]) :where(.ui-tile > div > b) { font-size: 14px; font-weight: 500; }
 :where(.mx-ext, [data-mx-kit]) :where(.ui-tile > div > span) { color: var(--muted-foreground); font-size: 12px; line-height: 1.4; }
 
-/* buttons: .ui-btn = primary; add .ui-secondary / .ui-outline / .ui-ghost / .ui-danger, and .ui-sm / .ui-icon-only */
+/* buttons: .ui-btn = the filled action button (--action: the accent, or monochrome with the palette's neutral buttons); add .ui-secondary / .ui-outline / .ui-ghost / .ui-danger, and .ui-sm / .ui-icon-only */
 :where(.mx-ext, [data-mx-kit]) :where(.ui-btn) { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 36px; padding: 0 16px; border-radius: calc(var(--ui-radius) - 2px); font-size: 14px; font-weight: 500; white-space: nowrap; user-select: none;
-  background: var(--primary); color: var(--primary-foreground); transition: background-color .15s, border-color .15s, opacity .15s; }
-:where(.mx-ext, [data-mx-kit]) :where(.ui-btn:hover) { background: color-mix(in oklab, var(--primary) 90%, transparent); }
+  background: var(--action, var(--primary)); color: var(--action-foreground, var(--primary-foreground)); transition: background-color .15s, border-color .15s, opacity .15s; }
+:where(.mx-ext, [data-mx-kit]) :where(.ui-btn:hover) { background: color-mix(in oklab, var(--action, var(--primary)) 90%, transparent); }
 :where(.mx-ext, [data-mx-kit]) :where(.ui-btn.ui-secondary) { background: var(--secondary); color: var(--secondary-foreground, var(--foreground)); }
 :where(.mx-ext, [data-mx-kit]) :where(.ui-btn.ui-secondary:hover) { background: color-mix(in oklab, var(--secondary) 80%, transparent); }
 :where(.mx-ext, [data-mx-kit]) :where(.ui-btn.ui-outline) { background: transparent; color: var(--foreground); border: 1px solid var(--input, var(--border)); }
@@ -93,7 +93,7 @@
 :where(.mx-ext, [data-mx-kit]) :where(.ui-select) { appearance: auto; }
 :where(.mx-ext, [data-mx-kit]) :where(.ui-input::placeholder, .ui-textarea::placeholder) { color: var(--muted-foreground); }
 :where(.mx-ext, [data-mx-kit]) :where(.ui-input:focus-visible, .ui-select:focus-visible, .ui-textarea:focus-visible) { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 25%, transparent); }
-:where(.mx-ext, [data-mx-kit]) :where(.ui-check) { width: 16px; height: 16px; margin: 0; accent-color: var(--primary); }
+:where(.mx-ext, [data-mx-kit]) :where(.ui-check) { width: 16px; height: 16px; margin: 0; accent-color: var(--action, var(--primary)); }
 
 /* badges and status dots: .ui-success / .ui-warning / .ui-error / .ui-primary / .ui-outline */
 :where(.mx-ext, [data-mx-kit]) :where(.ui-badge) { display: inline-flex; align-items: center; gap: 4px; width: fit-content; padding: 2px 6px; border: 1px solid transparent; border-radius: 6px;

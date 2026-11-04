@@ -602,7 +602,7 @@ function SelectBar({
               onClick={() => onPreset(p)}
               className={cn(
                 'h-7 rounded-full border px-2.5 text-[12px] font-medium transition-colors pointer-coarse:h-10',
-                preset === p ? 'border-primary bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
+                preset === p ? 'border-action bg-action text-action-foreground' : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
               )}
             >
               {label}
@@ -671,7 +671,7 @@ function MessageRow({
           <span
             className={cn(
               'inline-flex size-[18px] items-center justify-center rounded-full border transition-colors',
-              selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40 bg-background',
+              selected ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40 bg-background',
             )}
           >
             {selected && <Check className="size-3" strokeWidth={3} />}
@@ -1000,7 +1000,7 @@ function PollCard({ team, chat, m }: { team: TeamState | undefined; chat: TeamCh
                 className={cn(
                   'relative inline-flex size-4 shrink-0 items-center justify-center border',
                   poll.multi ? 'rounded-[4px]' : 'rounded-full',
-                  mineVote ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                  mineVote ? 'border-action bg-action text-action-foreground' : 'border-muted-foreground/40',
                 )}
               >
                 {mineVote && <Check className="size-2.5" strokeWidth={3} />}

@@ -137,9 +137,11 @@ def test_look_shared_with_the_sign_in_page(client):
     assert client.get("/api/auth/state").json()["look"] is None
     assert client.put("/api/settings/look", json={"theme": "light", "accent": "teal"}).status_code == 422
     r = client.put("/api/settings/look", json={"theme": "light", "accent": "rose", "tint": "tinted"})
-    assert r.json() == {"ok": True, "look": {"theme": "light", "accent": "rose", "tint": "tinted"}}
+    look = r.json()["look"]
+    assert {k: look[k] for k in ("theme", "accent", "tint", "rev")} == {"theme": "light", "accent": "rose", "tint": "tinted", "rev": 1}
+    assert {k: look["palette"][k] for k in ("base", "accent", "buttons", "tint")} == {"base": "zinc", "accent": "rose", "buttons": "accent", "tint": "tinted"}
     client.cookies.clear()                                  # signed out: still readable, no longer writable
-    assert client.get("/api/auth/state").json()["look"] == {"theme": "light", "accent": "rose", "tint": "tinted"}
+    assert client.get("/api/auth/state").json()["look"] == look
     assert client.put("/api/settings/look", json={"theme": "dark", "accent": "blue"}).status_code == 401
 
 

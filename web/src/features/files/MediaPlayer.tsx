@@ -855,7 +855,7 @@ export function MediaPlayer({ path, kind, version, onError, onOpen, keepAlive, c
             type="button"
             onClick={toggle}
             aria-label={playing ? t('media.pause') : t('media.play')}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xs transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-action text-action-foreground shadow-xs transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {(waiting && playing) || lost === 'retrying' ? <Spinner className="size-5" /> : playing ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}
           </button>
@@ -926,7 +926,7 @@ export function MediaPlayer({ path, kind, version, onError, onOpen, keepAlive, c
             type="button"
             onClick={toggle}
             aria-label={ended ? t('media.replay') : t('media.play')}
-            className="absolute inset-0 z-10 m-auto flex size-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-pop transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+            className="absolute inset-0 z-10 m-auto flex size-16 items-center justify-center rounded-full bg-action text-action-foreground shadow-pop transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
           >
             {(waiting && started) || lost === 'retrying' ? <Spinner className="size-7" /> : ended ? <RotateCcw className="size-7" /> : <Play className="ml-1 size-7 fill-current" />}
           </button>

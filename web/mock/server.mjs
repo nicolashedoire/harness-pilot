@@ -1083,7 +1083,7 @@ function R(method, pattern, handler, opts = {}) {
 }
 
 /* ---- auth */
-R('GET', '/api/auth/state', ({ authed }) => ({ setup_required: S.setup_required, authenticated: authed, version: VERSION, onboarding_completed: S.onboarding_completed, language: S.settings.language }), { public: true })
+R('GET', '/api/auth/state', ({ authed }) => ({ setup_required: S.setup_required, authenticated: authed, version: VERSION, onboarding_completed: S.onboarding_completed, language: S.settings.language, look: S.look || null }), { public: true })
 
 R('POST', '/api/auth/setup', ({ body, res }) => {
   if (!S.setup_required) fail(409, 'already_setup', 'Setup has already been completed')
@@ -1760,6 +1760,23 @@ R('PUT', '/api/settings', ({ body }) => {
   if (body.public_url !== undefined && body.public_url && !/^https?:\/\//.test(body.public_url)) fail(422, 'invalid', 'public_url must start with http(s)://')
   for (const k of ['timezone', 'language', 'public_url', 'files_root', 'presentation_default', 'usage_widget', 'memory_max_lines', 'donation_hidden']) if (body[k] !== undefined) S.settings[k] = body[k]
   return S.settings
+})
+// The look last chosen (theme + palette, `rev` grows with each palette change; real validation: server/maxxing/themes.py).
+R('PUT', '/api/settings/look', ({ body }) => {
+  if (!['dark', 'light', 'system'].includes(body.theme)) fail(422, 'invalid', 'theme')
+  const old = S.look || { accent: 'blue', tint: 'neutral', palette: null, rev: 0 }
+  const next = { ...old, theme: body.theme }
+  if (body.palette) {
+    if (typeof body.palette !== 'object' || JSON.stringify(body.palette).length > 16384) fail(422, 'invalid_theme', 'a theme is an object of 16 KB at most')
+    next.palette = body.palette
+    next.accent = body.accent || 'blue'
+    next.tint = body.palette.tint === 'tinted' ? 'tinted' : 'neutral'
+  }
+  const changed = JSON.stringify(next.palette) !== JSON.stringify(old.palette)
+  if (changed) next.rev = old.rev + 1
+  S.look = next
+  if (changed) bus('look')
+  return { ok: true, look: S.look }
 })
 const secretOut = (s) => ({ name: s.name, note: s.note, expose: s.expose, updated: s.updated, preview: s.value.slice(0, 4) + '…' })
 R('GET', '/api/secrets', () => S.secrets.map(secretOut))

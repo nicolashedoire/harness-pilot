@@ -12,7 +12,10 @@ import { ConnectionBanner } from './ConnectionBanner'
 import { useAuthState, useSettings } from '@/lib/queries'
 import { useDoneNotifier } from '@/features/notify/useDoneNotifier'
 import { checkVersion, useWhatsNew } from '@/features/whatsnew/store'
-import { useUI } from '@/stores/ui'
+import { useUI, type Look } from '@/stores/ui'
+import { nearestAccent } from '@/lib/theme'
+import { qk } from '@/lib/queries/keys'
+import type { AuthState } from '@/lib/types'
 import { withGroups } from '@/i18n'
 import { useHotkey } from '@/commands/shortcuts'
 import { useCommandStore } from '@/commands/registry'
@@ -128,28 +131,46 @@ function WhatsNew() {
   ) : null
 }
 
-/** The look chosen here (theme, accent, tint) goes to the server: the sign-in page and new browsers show it. */
+/** The look chosen here goes to the server: the sign-in page and new browsers show it, and the palette follows the
+ *  user on every device (`look.rev`; bus topic `look` refetches the auth state, `receiveLook` adopts a newer one). */
 function useShareLook() {
+  const qc = useQueryClient()
   const { data: auth } = useAuthState()
   const serverLook = auth?.look
+  // a newer palette chosen on another device (or in another tab)
+  React.useEffect(() => {
+    if (serverLook) useUI.getState().receiveLook(serverLook)
+  }, [serverLook])
+  const hasLook = serverLook !== null && serverLook !== undefined
   React.useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
-    const send = () => {
-      const { theme, accent, tint, lookChosen } = useUI.getState()
-      if (lookChosen) void api.put('/api/settings/look', { theme, accent, tint }).catch(() => {})
+    const send = (withPalette: boolean) => {
+      const { theme, palette, lookChosen } = useUI.getState()
+      if (!lookChosen) return
+      const body = withPalette ? { theme, palette, accent: nearestAccent(palette.accent), tint: palette.tint } : { theme }
+      void api
+        .put<{ ok: boolean; look: Look }>('/api/settings/look', body)
+        .then((r) => {
+          if (withPalette && useUI.getState().palette === palette) useUI.setState({ palettePending: false, paletteRev: r.look.rev ?? 0 })
+          qc.setQueryData<AuthState>(qk.authState, (a) => (a ? { ...a, look: r.look } : a))
+        })
+        .catch(() => {})
     }
-    // Once, if the server never got one (servers updated to this version keep the look of the first browser).
-    if (serverLook === null) send()
+    // Once: the server never got a look, or a palette chosen here did not reach it (offline). Only a palette the
+    // user changed is sent: the other devices keep theirs until then.
+    const s = useUI.getState()
+    if (!hasLook || s.palettePending) send(true)
     const unsub = useUI.subscribe((s, prev) => {
-      if (s.theme === prev.theme && s.accent === prev.accent && s.tint === prev.tint) return
+      const palette = s.palettePending && s.palette !== prev.palette
+      if (!palette && s.theme === prev.theme) return
       clearTimeout(timer)
-      timer = setTimeout(send, 600)
+      timer = setTimeout(() => send(useUI.getState().palettePending), 600)
     })
     return () => {
       clearTimeout(timer)
       unsub()
     }
-  }, [serverLook])
+  }, [qc, hasLook])
 }
 
 /** Keeps the local language in sync with the server settings (source of truth once signed in). */
