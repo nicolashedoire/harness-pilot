@@ -455,7 +455,9 @@ async def test_message_to_session_and_reply(api, tg, svc):
     reply = tg.sent()[-1]
     assert reply["message_thread_id"] == thread and reply["parse_mode"] == "HTML"
     assert "<b>the plan</b>" in reply["text"] and "x = 1 &lt; 2" in reply["text"]
-    assert gateway.gateway()._pending == {}
+    # the fake Bot API records the reply when the request arrives; on_turn_end forgets the turn only after the
+    # response, the paused notice and the live refs check (a worker thread), so wait instead of reading it at once
+    await wait_for(lambda: gateway.gateway()._pending == {}, what="turn forgotten")
     # a second message reuses the same session
     tg.message("again", thread=thread)
     await wait_for(lambda: len(svc.sent) == 2, what="second")
