@@ -22,6 +22,7 @@ os.environ["MAXXING_SESSION_MAINTENANCE"] = "0"   # no nightly session files upk
 os.environ["MAXXING_PR_QUEUE_WORKER"] = "0"          # tests never merge a real GitHub PR
 os.environ["MAXXING_MISSIONS_WORKER"] = "0"          # no automatic model requests from test servers
 os.environ["MAXXING_SHORT_TITLES"] = "0"           # no background title call (tests/test_titles.py opts in)
+os.environ["MAXXING_CODEX_MCP"] = "0"              # Codex turns never read the real .claude.json (test_codex_provider opts in)
 # run from a Claude session started by Harness: its turn variables would pass through to the fake `claude`
 for _var in ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"):
     os.environ.pop(_var, None)

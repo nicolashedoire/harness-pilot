@@ -41,8 +41,9 @@ unrestricted access to the computer.
 
 These features are for Claude Code only for now:
 
-- **MCP servers** (Settings → MCP): only Claude's turns load them. Codex starts without any MCP server, yours
-  (`~/.codex/config.toml`) included.
+- **MCP sign-ins and connectors**: Codex gets the MCP servers of Settings → MCP (see [MCP servers](28-mcp.md#codex);
+  outside Full access, only their read-only tools), but not Claude's sign-ins, the claude.ai connectors nor the
+  Browser of my PC.
 - **Claude swarm** and the **Agent map**.
 - The **context gauge** and the automatic compactions (when the context gets large, and after a long pause): Codex
   does not report its context size. Compact it yourself from the session menu.

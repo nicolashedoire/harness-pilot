@@ -433,10 +433,26 @@ class Runner:
         root = Path(cfg.get("workspace") or "/").resolve()
         images = [str(p) for p in item.get("attachments") or [] if inline_image(str(p), root)]
         codex_model = meta.get('codex_model') if is_debate else meta.get('model')
-        args = codex.command(thread, mode, str(codex_model or ''), images)
         env = spawn.base_env()
         env.update({str(k): str(v) for k, v in (meta.get("env") or {}).items()
                     if spawn.ENV_NAME_RE.match(str(k))})
+        try:                                           # the MCP servers Claude Code would load here
+            mcp_args, mcp_env, skipped = codex.mcp_config(cwd, env, mode)
+        except Exception as e:  # noqa: BLE001 - a broken MCP config never blocks the turn
+            mcp_args, mcp_env, skipped = [], {}, [("*", f"MCP configuration unreadable: {e}"[:200])]
+        env.update(mcp_env)
+        gone = [f"{n} ({why})" for n, why in skipped]
+        if gone != (meta.get("codex_mcp_skipped") or []):
+            store.update(self.sid, codex_mcp_skipped=gone)
+            if gone:
+                self.note("MCP servers not given to Codex: " + "; ".join(gone)[:1500], "warn")
+        tools = codex.tools_approval(mode) if mcp_args else ""
+        if tools != (meta.get("codex_mcp_tools") or ""):
+            store.update(self.sid, codex_mcp_tools=tools)
+            if tools == "writes":                      # once, until the mode changes
+                self.note("MCP servers: in this permission mode Codex only uses the tools a server marks as "
+                          "read-only; the others are refused (Full access allows them).")
+        args = codex.command(thread, mode, str(codex_model or ''), images, mcp_args)
         context = codex.workspace_context(root, Path(cwd))
         context_prefix = ("[Shared workspace and topic instructions/memory]\n" + context + "\n\n") if context else ""
         prompt = context_prefix + ((DEBATE_PLAN_PREFACE if is_debate else PLAN_PREFACE) if plan else "") + build_prompt(item)
