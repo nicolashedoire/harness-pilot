@@ -8,6 +8,10 @@ The file is plain JSON that Claude may edit at any time, so:
 - a write never erases an edit made to the file since the request read it: the change is re-applied on the
   fresh file (`_retry_on_change`), `409 conflict` if the file keeps changing.
 A watcher notices external edits (mtime poll every 2 s) and invalidates the "tasks" bus topic.
+A reminder loop (every REMIND_EVERY_S) posts a `task.reminder` notification for each open task whose `remind_at` has
+come, once per (task, remind_at): the reminders already sent are kept in `<state>/task-reminders.json`.
+A task with a `repeat` that is marked done gets its next occurrence (`_recur`): by the API at once, and by the same loop
+for a task marked done in the file. The recurrence moves to the new task, so it is created once.
 
 Every workspace project has a linked task project (`workspace: <project name>`), created on demand (`sync_workspace`, run
 by GET and by the workspace change hook), renamed with it and unlinked (kept, as a free project) when it is deleted.
@@ -16,12 +20,14 @@ Free task projects (no `workspace`) are still allowed, and so are tasks without 
 from __future__ import annotations
 
 import asyncio
+import calendar
 import contextlib
 import copy
 import datetime as dt
 import functools
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -38,12 +44,16 @@ from pydantic import BaseModel, Field, field_validator
 from .. import bus, config
 from ..security import require_auth
 
+log = logging.getLogger("maxxing.tasks")
 router = APIRouter(prefix="/api/tasks", tags=["tasks"], dependencies=[Depends(require_auth)])
 
 STATUSES = ("todo", "doing", "done")
 _lock = threading.RLock()
 _cache: dict[str, Any] = {"sig": None, "data": None}
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_REMIND = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$")     # local wall-clock time, in the configured time zone
+REMIND_EVERY_S = 30.0
+REPEATS = ("daily", "weekly", "monthly")
 
 
 class CorruptFile(Exception):
@@ -155,6 +165,9 @@ def _norm_task(t: dict) -> dict:
         out["priority"] = 0
     if not (isinstance(out.get("due"), str) and _DATE.match(out["due"])):
         out["due"] = None
+    if not (isinstance(out.get("remind_at"), str) and _remind_ts(out["remind_at"], dt.timezone.utc) is not None):
+        out["remind_at"] = None
+    out["repeat"] = _norm_repeat(out.get("repeat"))
     for key in ("project_id", "topic_path"):
         out[key] = _text(out.get(key)) or None
     labels = out.get("labels")
@@ -168,6 +181,24 @@ def _norm_task(t: dict) -> dict:
             out["order"] = 0.0
     except (TypeError, ValueError, OverflowError):
         out["order"] = 0.0
+    return out
+
+
+def _int(v: Any) -> int | None:
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _norm_repeat(v: Any) -> dict | None:
+    """`repeat`: {"every": "daily"} | {"every": "weekly", "days": [0-6, 0 = Sunday]} | {"every": "monthly", "day"?: 1-31
+    (the day of the month it keeps, so the 31st comes back after a short month)}; anything else is no recurrence."""
+    if not isinstance(v, dict) or v.get("every") not in REPEATS:
+        return None
+    out: dict = {"every": v["every"]}
+    if v["every"] == "weekly":
+        days = v.get("days") if isinstance(v.get("days"), list) else []
+        out["days"] = sorted({d for d in map(_int, days) if d is not None and 0 <= d <= 6})
+    elif v["every"] == "monthly" and (day := _int(v.get("day"))) is not None and 1 <= day <= 31:
+        out["day"] = day
     return out
 
 
@@ -392,6 +423,24 @@ def _today() -> dt.date:
         return dt.date.today()
 
 
+def _zone() -> dt.tzinfo:
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(config.load_config().get("timezone") or "UTC")
+    except Exception:
+        return dt.timezone.utc
+
+
+def _remind_ts(value: Any, zone: dt.tzinfo) -> float | None:
+    """`remind_at` ("YYYY-MM-DDTHH:MM", wall-clock time in `zone`) -> Unix seconds; None when it is not one."""
+    if not (isinstance(value, str) and _REMIND.match(value)):
+        return None
+    try:
+        return dt.datetime.fromisoformat(value).replace(tzinfo=zone).timestamp()
+    except ValueError:
+        return None
+
+
 def summary() -> dict:
     """Counts used by the dashboard widget: {doing, due_today, overdue, open, items:[task]}."""
     try:
@@ -425,6 +474,13 @@ class _Text(BaseModel):
         return v
 
 
+class RepeatIn(BaseModel):
+    model_config = {"extra": "ignore"}
+    every: Literal["daily", "weekly", "monthly"]
+    days: Optional[list[int]] = None
+    day: Optional[int] = None
+
+
 class TaskIn(_Text):
     model_config = {"extra": "ignore"}
     title: Optional[str] = None
@@ -432,6 +488,8 @@ class TaskIn(_Text):
     status: Optional[Literal["todo", "doing", "done"]] = None
     priority: Optional[int] = None
     due: Optional[str] = None
+    remind_at: Optional[str] = None
+    repeat: Optional[RepeatIn] = None
     project_id: Optional[str] = None
     topic_path: Optional[str] = None
     labels: Optional[list[str]] = None
@@ -473,6 +531,17 @@ def _apply(task: dict, body: TaskIn, data: dict, fields: set[str]) -> None:
             except ValueError:
                 raise _err(400, "invalid_due", "due must be YYYY-MM-DD") from None
         task["due"] = due
+    if "remind_at" in fields:
+        remind = body.remind_at or None
+        if remind is not None and _remind_ts(remind, dt.timezone.utc) is None:
+            raise _err(400, "invalid_remind_at", "remind_at must be YYYY-MM-DDTHH:MM")
+        task["remind_at"] = remind
+    if "repeat" in fields:
+        r = body.repeat
+        if r is not None and (r.every == "weekly" and (not r.days or any(not 0 <= d <= 6 for d in r.days))
+                              or r.day is not None and not 1 <= r.day <= 31):
+            raise _err(400, "invalid_repeat", "repeat: weekly needs days (0-6, 0 = Sunday); a monthly day is 1-31")
+        task["repeat"] = _norm_repeat(r.model_dump(exclude_none=True)) if r is not None else None
     if "project_id" in fields:
         pid = body.project_id or None
         if pid and not any(p["id"] == pid for p in data["projects"]):
@@ -549,6 +618,7 @@ def create_task(body: TaskIn):
         while any(t["id"] == task["id"] for t in data["tasks"]):
             task["id"] = _new_id("t_", 6)
         data["tasks"].append(task)
+        _recur(data)
         save(data)
     return task
 
@@ -679,6 +749,7 @@ def bulk_tasks(body: BulkIn):
                 for i, t in enumerate(moving):
                     t["order"] = end + 1.0 + i
         if targets:
+            _recur(data)
             save(data)
     return {"ok": True, "updated": len(targets), "deleted": 0}
 
@@ -693,6 +764,7 @@ def patch_task(tid: str, body: TaskIn):
             raise _err(404, "not_found", f"no task {tid}")
         _apply(task, body, data, set(body.model_fields_set))
         task["updated"] = time.time()
+        _recur(data)
         save(data)
     return task
 
@@ -710,8 +782,165 @@ def delete_task(tid: str):
     return {"ok": True}
 
 
+# ---- recurrence -----------------------------------------------------------------------------
+def _next_due(repeat: dict, base: dt.date, today: dt.date) -> dt.date:
+    """The next date of a recurrence, strictly after the done occurrence's date (`base`: its due date, else today) and
+    after today: a late task does not come back already overdue."""
+    ref = max(base, today)
+    if repeat["every"] == "daily":
+        return ref + dt.timedelta(days=1)
+    if repeat["every"] == "weekly":
+        days = set(repeat.get("days") or []) or {base.isoweekday() % 7}
+        d = ref + dt.timedelta(days=1)
+        while d.isoweekday() % 7 not in days:
+            d += dt.timedelta(days=1)
+        return d
+    want = repeat.get("day") or base.day                 # monthly: the 31st is the last day of a shorter month
+    y, m = ref.year, ref.month
+    while True:
+        d = dt.date(y, m, min(want, calendar.monthrange(y, m)[1]))
+        if d > ref:
+            return d
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+
+
+def _recur(data: dict, today: dt.date | None = None) -> list[dict]:
+    """Every done task with a `repeat` gets its next occurrence: same title, notes, priority, project, topic, labels and
+    recurrence, status todo, the next due date, its reminder moved by as many days. The recurrence moves to the new
+    task (the done one keeps none): reopening it and closing it again never makes a second one. -> the new tasks."""
+    made: list[dict] = []
+    for t in list(data["tasks"]):
+        rep = t.get("repeat")
+        if t.get("status") != "done" or not rep:
+            continue
+        today = today or _today()
+        try:
+            base = dt.date.fromisoformat(t["due"]) if t.get("due") else today
+        except ValueError:
+            base = today
+        nxt = _next_due(rep, base, today)
+        if rep["every"] == "monthly" and "day" not in rep:
+            rep = {**rep, "day": base.day}
+        remind = None
+        if t.get("remind_at"):
+            try:
+                at = dt.datetime.fromisoformat(t["remind_at"]) + (nxt - base)
+                remind = at.strftime("%Y-%m-%dT%H:%M")
+            except (ValueError, OverflowError):
+                remind = None
+        now = time.time()
+        new = _norm_task({"id": _new_id("t_", 6), "title": t["title"], "notes": t["notes"], "priority": t["priority"],
+                          "due": nxt.isoformat(), "remind_at": remind, "repeat": rep, "project_id": t["project_id"],
+                          "topic_path": t["topic_path"], "labels": list(t["labels"]), "created": now, "updated": now})
+        while any(x["id"] == new["id"] for x in data["tasks"]):
+            new["id"] = _new_id("t_", 6)
+        new["order"] = max([x["order"] for x in data["tasks"] if x["status"] == "todo"], default=0.0) + 1.0
+        t["repeat"] = None
+        data["tasks"].append(new)
+        made.append(new)
+    return made
+
+
+def apply_recurrences() -> list[str]:
+    """The loop's pass: the next occurrence of tasks marked done in the file itself (Claude, an editor). -> new ids."""
+    if config.integrations_paused():
+        return []
+    for _ in range(3):
+        with _lock:
+            try:
+                if not any(t["status"] == "done" and t.get("repeat") for t in load(copy_=False)["tasks"]):
+                    return []
+                data = load()
+            except CorruptFile:
+                return []
+            made = _recur(data)
+            try:
+                save(data)
+            except _Changed:
+                continue
+            return [t["id"] for t in made]
+    return []
+
+
+# ---- reminders ------------------------------------------------------------------------------
+_remind_lock = config.ProcessLock("task-reminders")
+
+
+def reminders_path() -> Path:
+    return config.state_dir() / "task-reminders.json"
+
+
+def _reminder_group(tid: str) -> str:
+    return f"task:{tid}"
+
+
+def check_reminders(now: float | None = None) -> list[str]:
+    """Post a `task.reminder` for every open task whose `remind_at` has come and was not reminded yet; returns their
+    ids. Sent reminders are recorded per task ({tid: {remind_at, resolved}}) AFTER the post, and the post carries a
+    dedupe key: a restart between the two never notifies twice. A done task, a removed one or a changed `remind_at`
+    resolves the notification (no longer "needs attention"); a new `remind_at` reminds again."""
+    from .. import feed
+    if config.integrations_paused():                 # a restored copy: its owner's browsers would be pushed twice
+        return []
+    try:
+        data = load(copy_=False)
+    except CorruptFile:
+        return []
+    now = time.time() if now is None else now
+    zone = _zone()
+    sent_now: list[str] = []
+    with _remind_lock:
+        raw = config.read_json(reminders_path(), {})
+        sent = {k: v for k, v in raw.items() if isinstance(v, dict)} if isinstance(raw, dict) else {}
+        before = copy.deepcopy(sent)
+        tasks = {t["id"]: t for t in data["tasks"]}
+        for tid, rec in list(sent.items()):          # what changed since a reminder was sent
+            t = tasks.get(tid)
+            if t is None or t.get("remind_at") != rec.get("remind_at"):
+                if not rec.get("resolved"):
+                    feed.system_resolve("system", _reminder_group(tid))
+                del sent[tid]
+            elif t["status"] == "done" and not rec.get("resolved"):
+                feed.system_resolve("system", _reminder_group(tid))
+                rec["resolved"] = True
+        for t in data["tasks"]:
+            remind = t.get("remind_at")
+            if not remind or t["status"] == "done" or t["id"] in sent:
+                continue
+            at = _remind_ts(remind, zone)
+            if at is None or at > now:
+                continue
+            url = f"/tasks?task={t['id']}"
+            title = t["title"] or "(untitled)"
+            try:
+                feed.post(f"Reminder: {title}", f"Due {t['due']}" if t.get("due") else "", "warning", "system", url,
+                          dedupe=f"task-reminder:{t['id']}:{remind}", group=_reminder_group(t["id"]),
+                          kind="task.reminder", params={"task_id": t["id"], "title": title, "remind_at": remind,
+                                                        "due": t.get("due")},
+                          actions=[feed.link("open", "Open the task", url)], trusted=True)
+            except Exception:                        # noqa: BLE001 - not recorded: tried again on the next pass
+                log.exception("task %s: could not post its reminder", t["id"])
+                continue
+            sent[t["id"]] = {"remind_at": remind, "resolved": False}
+            sent_now.append(t["id"])
+        if sent != before:
+            config.write_json(reminders_path(), sent, mode=0o600)
+    return sent_now
+
+
+async def _remind(interval: float = REMIND_EVERY_S) -> None:
+    while True:
+        try:
+            await asyncio.to_thread(apply_recurrences)
+            await asyncio.to_thread(check_reminders)
+        except Exception:                            # noqa: BLE001 - the loop must survive one bad pass
+            log.exception("task reminders failed")
+        await asyncio.sleep(interval)
+
+
 # ---- external edits watcher -----------------------------------------------------------------
 _task: asyncio.Task | None = None
+_remind_task: asyncio.Task | None = None
 
 
 async def _watch(interval: float = 2.0) -> None:
@@ -729,16 +958,19 @@ async def _watch(interval: float = 2.0) -> None:
 
 
 async def startup() -> None:
-    global _task
+    global _task, _remind_task
     from .. import workspace
     workspace.on_change(on_workspace_change)
     _task = asyncio.create_task(_watch())
+    _remind_task = asyncio.create_task(_remind())
 
 
 async def shutdown() -> None:
-    global _task
-    if _task:
-        _task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await _task
-        _task = None
+    global _task, _remind_task
+    for name in ("_task", "_remind_task"):
+        task = globals()[name]
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+            globals()[name] = None

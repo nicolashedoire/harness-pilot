@@ -120,7 +120,7 @@ Session = {
 ```
 | GET | `/api/sessions?path=&archived=0\|1` | – | `[Session]` sorted by `updated` desc (no path = all) |
 | POST | `/api/sessions` | `{path, message?, title?, model?, attachments?:[filepath], plan_mode?:bool, voice?:filepath, swarm_agents?:2..6}` | `Session` (starts the first turn if message or voice). `swarm_agents` is available only with `provider: "claude"`; it requests that Claude delegate to that many native subagents when appropriate. This is an instruction, not a hard concurrency limit or a guarantee that subagents will be created. The resulting session includes `swarm_agents`; normal permissions and stop behavior apply. |
-| POST | `/api/teams` | `{path, message, title?}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. |
+| POST | `/api/teams` | `{path, message, title?, attachments?:[filepath]}` | Start a mixed team: independent Claude and Codex sessions analyze the mission concurrently, then a Claude coordinator synthesizes their results in the returned parent session. The agents use the selected topic and existing account permissions. The independent analyses are instructed not to edit files; this instruction is not an isolation boundary. `attachments` (absolute paths of uploaded files, as for a message; `400 bad_attachment` when one is missing) go with the mission to both workers - Claude opens them with its Read tool, Codex gets the images it can take inline (PNG/GIF/WebP/JPEG inside the workspace, 3.5 MB and 8000 px at most) and the path of every other file - and with the synthesis request to the coordinator; the mission message of the coordinator shows them. An empty `message` -> `400 bad_mission`. |
 | GET | `/api/teams/{sid}` | – | `{id, phase, created, agents: [{id, provider, role, stopped, state, session: Session\|null, started_at, finished_at, activity: [{kind: "read"\|"search"\|"run"\|"edit"\|"web"\|"say"\|"other", target}], report: string\|null}]}`: team phase and its two worker sessions, including individual status and links. `started_at` is the team's start, `finished_at` when the worker stopped running (null while it runs). `activity` = the last 3 actions of the worker's latest turn, oldest first: a tool call (`target`: a file path relative to the topic, a pattern, a command or a URL) or the first line of what it said (`say`), 120 characters at most. `report` = the first 600 characters of its final answer once it stopped running, else null. Read from the last 128 kB of the worker's log only, again only when that log changed. The team is retained with the coordinator session. |
 | POST | `/api/teams/{sid}/agents/{agent_id}/stop` | – | Stop one independently launched team worker; other workers continue. Returns 404 for sessions outside this team. |
 | POST | `/api/teams/{sid}/stop` | – | Stop the team, including any running workers and coordinator. |
@@ -235,6 +235,8 @@ Everything deleted (files, folders, topics and projects with their sessions, sin
 ## Tasks (`<workspace>/tasks.json`)
 ```
 Task    = {id, title, notes, status:"todo"|"doing"|"done", priority:0|1|2|3, due:"YYYY-MM-DD"|null,
+           remind_at:"YYYY-MM-DDTHH:MM"|null,   // local time in the configured time zone
+           repeat:{every:"daily"} | {every:"weekly", days:[0-6]} | {every:"monthly", day?:1-31} | null,  // 0 = Sunday
            project_id|null, topic_path|null, labels:[str] (max 50, 40 chars each), created, updated, done_at|null, order:float}
 TaskProject = {id, name, color, workspace?: str, hidden?: true}
 ```
@@ -248,6 +250,17 @@ A hand-written file is normalised on read (missing fields filled in, `id` / `tit
 another type turned into text, non-numeric `created` / `updated` / `done_at` replaced). Every write (POST / PATCH / DELETE
 below) is a read-modify-write under one lock; when the file changed on disk between the read and the write (Claude edited it),
 the change is re-applied on the fresh file (3 tries), then `409 conflict`. Not valid JSON: every route `409 corrupt_file`.
+Reminders: every 30 s the server posts one `task.reminder` (Kinds below) for each task not `done` whose `remind_at` has
+come, including one missed while the server was stopped; never twice for the same (task, `remind_at`), restarts included
+(`<state>/task-reminders.json` + feed dedupe `task-reminder:<id>:<remind_at>`). Marking the task done, deleting it or
+changing its `remind_at` resolves that notification; a new `remind_at` reminds again. Nothing is posted while
+`integrations_paused` (a restored copy). A `remind_at` that is not `YYYY-MM-DDTHH:MM`: `400 invalid_remind_at` (by hand: read as null).
+Recurrence: when a task with a `repeat` is done (POST / PATCH / bulk at once; marked done in the file: within 30 s), a
+new task is added: same title, notes, priority, project, topic, labels and `repeat`, status `todo` at the bottom of the
+column, `due` = the next date strictly after max(its due date or today, today) (weekly: the next listed weekday, none =
+the due date's; monthly: `day`, else the due date's day, kept in the new `repeat`, the last day of a shorter month),
+`remind_at` moved by as many days. The done task's `repeat` becomes null, so it is created once. `400 invalid_repeat`:
+weekly without `days`, a day outside 0-6, a monthly `day` outside 1-31 (`422` for an unknown `every`); by hand: read as null.
 | GET | `/api/tasks` | – | `{projects:[TaskProject], tasks:[Task]}` |
 | POST | `/api/tasks` | partial Task (title required) | `Task` · `422` when `order` is not a finite number |
 | PATCH | `/api/tasks/{id}` | partial Task | `Task` · `422` when `order` is not a finite number |
@@ -257,7 +270,7 @@ the change is re-applied on the fresh file (3 tries), then `409 conflict`. Not v
 
 ## Crons
 ```
-Cron = {id, name, schedule,            // 5-field cron expression
+Cron = {id, name, schedule,            // 5-field cron expression, a shortcut, or @reboot (next_run null)
         kind:"shell"|"claude", command, // shell
         topic_path, prompt, model, reuse_session:bool,  // claude
         permission_mode:""|"bypass"|"acceptEdits"|"default",  // claude; "" = the topic's, else the global mode
@@ -320,9 +333,9 @@ On completion, a proposal is posted to the existing notifications feed with a li
 | DELETE | `/api/settings/themes/{id}` | – | `{ok}` · `404 not_found` |
 | GET | `/api/settings/themes/session/{sid}?since=<at>` | – | `{theme:Theme, file, at}`: the newest `*.theme.json` the session wrote in its topic folder or its `themes/` sub-folder, modified at or after `since` (default: the session's `created`), validated by `clean_theme` (the theme generator of Settings -> Appearance; skill `pilot-theme`). Regular files only (a symbolic link is never read), 16 KB at most · `404 not_found` (session) · `404 no_theme` (none yet) · `422 invalid_theme` (not JSON, too big, a value that is not a colour: `message` says which) |
 | GET / PUT | `/api/settings/profile` | `{name ≤32, color: "clay"\|"blue"\|"violet"\|"green"\|"amber"\|"rose"\|"teal"\|"zinc", emoji}` | `Profile` (bus `profile`) |
-| GET / PUT | `/api/settings/register` | `{count?, email?, news?, asked?}` (email: valid or `""`) | `RegisterState` `{count, count_blocked, email, news, asked, registered, error, synced_at}` (bus `register`). Optional hello to the authors (`maxxing/register.py`): `count` (default `true`) = anonymous daily signal (cloud id + version + `os`, `arch`, `health` codes), `count_blocked` = `MAXXING_NO_TELEMETRY` / `DO_NOT_TRACK` set in the service environment (counter off whatever `count`); `email` (+ `news`) adds pseudo and language; neither = cloud row archived (kept, never contacted again). An update never turns on the email or the news; 2.0.0a94 turned `count` on once where `asked` was false. |
-| GET / POST | `/api/settings/feedback` | POST `{email, type: bug\|idea\|other, message}` | GET `{email, version}` (prefill); POST `{ok}`. Feedback to the authors (`maxxing/feedback.py` -> cloud `/v1/feedback`). Errors: 400 `invalid_email` / `message_required` / `too_long` / cloud codes, 429 `rate`, 502 `unreachable`, 503 `offline`. |
-| GET / PUT / DELETE | `/api/settings/license` | PUT `{key}` (`HM-XXXX-XXXX-XXXX-XXXX`) | `{has_key, key_hint, kind, email, max_servers, expires_at, activated_at, enabled, moved_to_git}` (bus `license`, never the key). Optional Enterprise key: PUT = `license.activate` (cloud `/v1/activate`: checks it, counts this server; 400 `invalid_key` / `limit` / `revoked` / `expired` with the cloud message), DELETE = `remove_key` (frees the seat). Changes nothing else: code and updates stay on git. |
+| GET / PUT | `/api/settings/register` | `{count?, email?, news?, asked?}` (email: valid or `""`) | `RegisterState` `{count, count_blocked, email, news, asked, registered, error, synced_at}` (bus `register`). Optional hello to the authors (`maxxing/register.py`): `count` (default `true`) = anonymous daily signal (cloud id + version + `os`, `arch`, `health` codes), `count_blocked` = `MAXXING_NO_TELEMETRY` / `DO_NOT_TRACK` set in the service environment (counter off whatever `count`); `email` (+ `news`) adds pseudo and language; neither = cloud row archived (kept, never contacted again). An update never turns on the email or the news; 2.0.0a94 turned `count` on once where `asked` was false. · `404 not_found` unless `MAXXING_LICENSE_PING=1` (see below) |
+| GET / POST | `/api/settings/feedback` | POST `{email, type: bug\|idea\|other, message}` | GET `{email, version}` (prefill); POST `{ok}`. Feedback to the authors (`maxxing/feedback.py` -> cloud `/v1/feedback`). Errors: 400 `invalid_email` / `message_required` / `too_long` / cloud codes, 429 `rate`, 502 `unreachable`. · `404 not_found` unless `MAXXING_LICENSE_PING=1` (see below) |
+| GET / PUT / DELETE | `/api/settings/license` | PUT `{key}` (`HM-XXXX-XXXX-XXXX-XXXX`) | `{has_key, key_hint, kind, email, max_servers, expires_at, activated_at, enabled, moved_to_git}` (bus `license`, never the key). Optional Enterprise key: PUT = `license.activate` (cloud `/v1/activate`: checks it, counts this server; 400 `invalid_key` / `limit` / `revoked` / `expired` with the cloud message), DELETE = `remove_key` (frees the seat). Changes nothing else: code and updates stay on git. · `404 not_found` unless `MAXXING_LICENSE_PING=1`: these three legacy routes (register, feedback, license) talk to the original project's cloud, which is not this project's backend, so they answer `404 {error: "not_found"}` after sign-in (unauthenticated: `401` as usual), whatever the method or body, and send nothing. `maxxing/register.py`, `feedback.py` and `license.py` stay for the update and CLI logic. |
 | GET | `/api/secrets` | – | `[{name, note, expose, updated, preview}]` (preview = first 4 chars + …, only `…` for values < 8 chars) |
 | PUT | `/api/secrets/{name}` | `{value?, note?, expose?}` | `{ok}` · `400 invalid_name\|reserved_name\|value_required\|invalid_value\|invalid_note` (PATH, HOME…, MAXXING_* are reserved; a value has 1 to 16384 characters, no null byte, no lone surrogate) — `expose` = exported as env var to Claude sessions |
 | GET | `/api/secrets/{name}/reveal` | – | `{value}` |
@@ -738,7 +751,7 @@ else off). Effective rule of an event: its kind's rule unless auto, else its sou
 default. Telegram posts only new rows (a fold never posts again), never a `quiet` one.
 
 **Kinds.** `params` always hold what the English title says; names in *italics* may be missing. Action ids:
-`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`.
+`open` (the event's own page), `open_run`, `rerun` (post), `open_session`, `resume` (post), `add_secret`, `review` (a companion proposal).
 
 | kind | source | level | params | actions | resolved by |
 |---|---|---|---|---|---|
@@ -757,8 +770,12 @@ default. Telegram posts only new rows (a fold never posts again), never a `quiet
 | `deps.vulnerable` | system | warning | `count` | `open` | – |
 | `deps.update_failed` | system | warning | `count, names` | `open` | – |
 | `health.issue` | system | warning\|error | `issue_id, code, text, level ("warn"\|"error")` (code = `/api/system/health` issue code; `cron_failed` and `login_failures` are not repeated here) | `open` | the issue disappearing from the health check |
+| `companion.ready` | system | warning | `session_id, fingerprint` (a finished companion experiment with a proposal; `fingerprint` = the exact proposal reviewed; Telegram review buttons are bound to it) | `review` | – |
+| `companion.empty` | system | info | `session_id, fingerprint` (finished without a code change) | `review` | – |
+| `companion.error` | system | warning | – (the experiment stopped with an error, or its result cannot be reviewed) | – | – |
 | `mission.review` | system | warning | `title` (a resident mission paused, failed, reached a limit or has a plan to review; `url` = `/settings/missions?mission=<id>`) | `open` | – |
 | `mission.completed` | system | info | `title` | `open` | – |
+| `task.reminder` | system | warning | `task_id, title, remind_at, due` (`url` = `/tasks?task=<id>`, group `task:<id>`) | `open` | the task done, deleted, or its `remind_at` changed |
 | `signin.ok` | security | info | `ip, ua, via ("password"\|"telegram"\|"code")` (folded) | – | – |
 | `signin.failed` | security | warning | `count, ip, ua` | `open` | – |
 | `signin.denied` | security | warning | `ip, ua` (denied in Telegram, password right) | `open` | – |
