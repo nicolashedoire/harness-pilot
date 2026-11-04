@@ -135,6 +135,7 @@ def public(meta: dict) -> dict:
             "turns": int(_num(m.get("turns"))), "cost_usd": round(_num(m.get("cost_usd")), 4),
             "model": m.get("model") or "", "real_model": m.get("real_model") or None,
             "provider": m.get("provider") or "claude",
+            "companion": ({k: m['companion'].get(k) for k in ('id', 'name', 'decision')} if isinstance(m.get('companion'), dict) else None),
             "swarm_agents": m.get("swarm_agents"),
             "team_phase": (m.get("team") or {}).get("phase"),
             "team_parent": m.get("team_parent"),

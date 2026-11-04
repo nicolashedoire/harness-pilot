@@ -12,6 +12,7 @@ ROUTERS = [
     "workspace",
     "space_labels",
     "sessions",
+    "companions",
     "trash",
     "importer",
     "files",

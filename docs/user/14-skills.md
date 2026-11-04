@@ -28,12 +28,13 @@ Skills are instructions Claude Code may load when a task matches their descripti
 | `image-edit` | you want images resized, converted, compressed or batch-processed |
 | `seo-audit` | you ask for an SEO audit or why a site does not rank |
 | `web-scraping` | you want data collected from a website (prices, catalogue, listings…) or a page watched for changes |
+| `rea-investigation` | you want a local application, packaged JavaScript or a binary investigated with an optional external REA installation (not bundled); used by the reverse-engineering companion (see [Settings](settings-and-keys#resident-companions)) |
 
 You can also name a skill explicitly: "use the pilot-doctor skill".
 
 `pilot init` and `pilot update` keep these up to date. They overwrite only the product skills
 (names starting with `pilot-`, plus `memory`, `memory-compaction`, `video-motion-design`,
-`pdf-document`, `image-edit`, `seo-audit` and `web-scraping`). If a skill with one of
+`pdf-document`, `image-edit`, `seo-audit`, `web-scraping` and `rea-investigation`). If a skill with one of
 those names already existed, it is moved to `/var/lib/claude-maxxing/trash/skills/` first.
 
 ### Renamed skills
