@@ -9,6 +9,8 @@ permission, bound to that extension, kept in memory (FRAME_TTL_S, renewed while 
   images, fonts, sound, video, wasm; `extensions.module_file` rules: no hidden file, no link out of the folder, never
   api.py), with `Access-Control-Allow-Origin: *` (module scripts and fonts are CORS requests from the opaque origin)
   and a policy of its own (an SVG opened directly runs nothing).
+- `GET /ext/_drafts/{did}/f/{token}/{path}` - the same for the preview frame of an Atelier draft (token `draft:<did>`,
+  issued by api/atelier.py; files of the draft's frozen copy while it is pending).
 - `POST /ext/{id}/f/{token}/@csp-report` - a grandfathered widget's frame reports the sites its strict report-only
   policy would block: each one is recorded as granted before permissions existed (`permissions.record_hosts`).
 
@@ -81,6 +83,20 @@ async def frame_file(eid: str, token: str, rel: str):
         ext = _widget(eid)
         return extensions.module_file(ext, rel, extensions.FRAME_TYPES) if ext else None
     p = await asyncio.to_thread(find)
+    if p is None:
+        return _not_found()
+    return FileResponse(p, media_type=extensions.FRAME_TYPES[p.suffix.lower()], headers={
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*",
+        "Content-Security-Policy": ASSET_CSP, "Referrer-Policy": "no-referrer"})
+
+
+@router.get("/ext/_drafts/{did}/f/{token}/{rel:path}", include_in_schema=False)
+async def draft_frame_file(did: str, token: str, rel: str):
+    """The same for the preview frame of an Atelier draft (api/atelier.py `draft_widget_frame`, token `draft:<did>`)."""
+    if _frame(f"draft:{did}", token) is None:
+        return _not_found()
+    from .. import atelier
+    p = await asyncio.to_thread(atelier.draft_frame_file, did, rel)
     if p is None:
         return _not_found()
     return FileResponse(p, media_type=extensions.FRAME_TYPES[p.suffix.lower()], headers={

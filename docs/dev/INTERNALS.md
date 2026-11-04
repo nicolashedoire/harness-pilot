@@ -632,8 +632,13 @@ cron jobs through their own modules, no copy of their data).
   extension's ctx with `record=False`; `secret()` = the declared keys, or without a declaration any key for a
   grandfathered extension and none otherwise, `None` for a key it may not read); card widgets run
   `card()` with `api.dashboard.TIMEOUT_S` on the extension threads (key `draft:<did>`) and get the dashboard's
-  cleaning; HTML widgets get `/ext/_drafts/<did>/widget-frame` (the `widget-frame` document of api/extensions.py) and
-  `/api/atelier/drafts/<did>/api/<path>` (their `handle()`, the `/api/ext/<id>` rules). Pages, blocks and agents:
+  cleaning; HTML widgets get `/ext/_drafts/<did>/widget-frame?grant=` (the installed widget frame's document: `<base>` on
+  an `api/extframes.issue("draft:<did>")` token, `widget_csp(hosts)`; `hosts` = the declared sites only with the
+  one-off grant `POST .../preview` returns, kept in memory an hour for that draft - the user asked to see it work, next
+  to the list of sites it declares; none otherwise), its files through `GET /ext/_drafts/<did>/f/<token>/<path>`
+  (`api/extframes.py`, no cookie, `atelier.draft_frame_file`: `extensions.module_file` on the frozen copy with
+  `FRAME_TYPES`, pending drafts only) and `/api/atelier/drafts/<did>/api/<path>` (their `handle()`, the `/api/ext/<id>`
+  rules). Pages, blocks and agents:
   `kind: none`.
 - **User installs**: `record_user_install(id, note)` records an extension the user made in the app as a version
   approved by the user (`blocks.pin` calls it for dashboard pins).
