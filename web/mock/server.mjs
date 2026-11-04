@@ -3343,6 +3343,35 @@ R('PUT', '/api/dashboard/layout', ({ body }) => {
 })
 R('GET', '/api/extensions', () => S.extensions)
 installBlocks({ R, state: () => S, fail, bus })
+// The extensions' own API (`/api/ext/<id>[/<path>]`, forwarded to their api.py `handle()` on the server): the two
+// seeded extensions answer like their example code; a LookupError is 404, a ValueError 400.
+const EXT_HANDLERS = {
+  notes: (method, p, body) => {
+    if (p === 'hello') return { hello: 'world', method, at: now() }
+    if (p === 'notes' && method === 'GET') return { notes: (S.extNotes ||= [{ id: 1, text: 'Call the printer about the flyers', at: now() - DAY }]) }
+    if (p === 'notes' && method === 'POST') {
+      const text = String(body.text || '').trim()
+      if (!text) fail(400, 'bad_request', 'text is required')
+      const n = { id: (S.extNotes ||= []).length + 1, text: text.slice(0, 2000), at: now() }
+      S.extNotes.push(n)
+      return n
+    }
+    fail(404, 'not_found', `No ${method} ${p || '/'} in this extension`)
+  },
+  'shop-sales': (method, p) => {
+    if (p === '' || p === 'summary') return { orders_today: 37, revenue_today: 2184.5, currency: 'EUR', unfulfilled: 4, at: now() }
+    fail(404, 'not_found', `No ${method} ${p || '/'} in this extension`)
+  },
+}
+for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) for (const pattern of ['/api/ext/:id', '/api/ext/:id/*']) R(method, pattern, ({ params, req, body }) => {
+  const e = S.extensions.find((x) => x.id === params.id)
+  if (!e || !e.has_api) fail(404, 'not_found', 'Unknown extension')
+  if (!e.enabled) fail(409, 'disabled', 'Extension is disabled')
+  const p = params.rest || ''
+  if (p.split('/').some((x) => x === '.' || x === '..')) fail(400, 'bad_path', 'No . or .. in the path')
+  const handler = EXT_HANDLERS[e.id] || (() => fail(500, 'extension_error', e.error || 'The extension failed'))
+  return handler(req.method, p, body || {})
+})
 R('PATCH', '/api/extensions/:id', ({ params, body }) => {
   const e = S.extensions.find((x) => x.id === params.id) || fail(404, 'not_found', 'Unknown extension')
   if (typeof body.enabled !== 'boolean') fail(422, 'invalid', 'enabled must be a boolean')
