@@ -6,6 +6,8 @@ Changes to harness-pilot are recorded here. Older version entries below are inhe
 
 ### Current project changes (unreleased, 2026-11-04)
 
+- Browser notification setup now offers Cancel while waiting for permission or push registration and stops waiting after 30 seconds. A late browser response does not resume a cancelled registration. The push switch also becomes available after the first service worker activates, without a reload.
+
 - Push notifications that stopped because the server's push key was replaced come back: the browser subscribes again by itself the next time the app is open, or when you turn push back on.
 - Schedule descriptions ("Every day at 04:40") now follow the interface language on the Crons page, in the schedule preview, in Backup and in the dashboard's scheduled jobs widget.
 - New session: the agent is now chosen with cards, grouped under **One agent** and **Several agents**, each with a one-line description, and a **What will happen** panel explains the chosen mode (for a mixed team: two read-only analyses in parallel, then a synthesis, with one notification at the end). The attach button is turned off, with the reason, when the mode takes written messages only.

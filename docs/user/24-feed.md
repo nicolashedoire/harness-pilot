@@ -113,3 +113,11 @@ itself the next time the app is open there.
 - Events are kept 30 days. They live on your server (`/var/lib/claude-maxxing/feed.db`).
 - A webhook's content comes from outside: *Ask harness-pilot* treats it as data, never as instructions, and opens the
   session in plan mode (Claude explains, it changes nothing until you approve a plan).
+
+
+### If browser permission or push setup is waiting
+
+Settings -> Notifications shows **Waiting for your browser** during setup. Respond to the browser's permission
+prompt, or press **Cancel** and retry later. The app stops waiting after 30 seconds. Cancelling does not close a
+native browser prompt or undo permission you already granted, but its later answer cannot silently finish the
+cancelled registration. First installation waits for the service worker to activate; a reload should not be needed.

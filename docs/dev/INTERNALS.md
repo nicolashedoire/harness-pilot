@@ -296,6 +296,7 @@ inside the functions that need them), so `sessions/codex.py` could read its outp
   `session:<sid>` and post `session.done`. Source `sessions` (in `feed.OWN_THREAD`: Telegram off by default).
 
 ## maxxing.push  (owner: organisation)
+- Browser enrollment (`notifications/enrollment.ts`) bounds native permission/subscription operations to a 30-second attempt and ignores late completions after abort. This cancels application continuation, not native browser operations. First-load readiness waits at most five seconds and refreshes on service-worker controller changes or focus. VAPID key replacement uses the same bounded sequence.
 - Web Push (RFC 8030 / 8291 aes128gcm / 8292 VAPID) with `cryptography` (ECDH, ECDSA, AES-GCM; HKDF by hmac) and httpx.
   Blocking: call through `asyncio.to_thread`. `available()` (the library imports), `public_key()` (VAPID key made on
   first use: `<state>/push-vapid.json`, mode 600, under `ProcessLock("push")`), `vapid_header(endpoint)`,
