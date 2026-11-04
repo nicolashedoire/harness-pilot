@@ -1,6 +1,6 @@
 // Settings -> Notifications -> "External sources": the webhooks (Stripe, Shopify, GitHub, JSON) with their state
 // ("Secret missing · events refused" + "Add the secret"), URL, and menu (test, secret, new URL, delete); the
-// scripts that posted (`maxxing feed post`); "Add a webhook". `?hook=<id>` opens that hook's secret (the action of a
+// scripts that posted (`pilot feed post`); "Add a webhook". `?hook=<id>` opens that hook's secret (the action of a
 // "webhook refused" notification).
 import * as React from 'react'
 import { useSearchParams } from 'react-router'

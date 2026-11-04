@@ -26,7 +26,7 @@ export function ClaudeStatusCard({ onReplace }: { onReplace?: () => void }) {
   if (!s.installed)
     return (
       <Callout tone="error" title={t('claude.notInstalled')}>
-        {t('claude.notInstalledDesc')} <CodeBlock inline code="maxxing doctor" className="mt-2" />
+        {t('claude.notInstalledDesc')} <CodeBlock inline code="pilot doctor" className="mt-2" />
       </Callout>
     )
   return (
